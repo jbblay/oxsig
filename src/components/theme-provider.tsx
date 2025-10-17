@@ -8,10 +8,10 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   return (
     <NextThemesProvider
       {...props}
-      enableSystem
+      enableSystem={false}
       enableColorScheme
       themes={["light", "dark"]}
-      defaultTheme="system"
+      defaultTheme="dark"
       attribute="class"
       value={{
         light: "light",

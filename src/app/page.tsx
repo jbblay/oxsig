@@ -4,75 +4,83 @@ import * as React from "react";
 import Link from "next/link";
 import { 
   Shield, Fingerprint, Brain, Network, 
-  FileSignature, EyeOff, Cpu, ArrowRight, Users, Edit3, FileCheck
+  FileSignature, EyeOff, ArrowRight, Users, Edit3, FileCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
   const features = [
     { 
-      icon: Fingerprint, 
-      label: "Identity", 
-      desc: "Self-Sovereign DIDs",
-      color: "from-blue-500 to-cyan-500",
-      textColor: "text-blue-600 dark:text-blue-400"
-    },
-    { 
-      icon: Cpu, 
-      label: "Quantum-Safe", 
-      desc: "PQ Cryptography",
-      color: "from-purple-500 to-pink-500",
-      textColor: "text-purple-600 dark:text-purple-400"
-    },
-    { 
-      icon: EyeOff, 
-      label: "Privacy", 
-      desc: "Zero-Knowledge",
-      color: "from-pink-500 to-rose-500",
-      textColor: "text-pink-600 dark:text-pink-400"
-    },
-    { 
-      icon: Brain, 
-      label: "AI Security", 
-      desc: "Threat Detection",
-      color: "from-green-500 to-emerald-500",
-      textColor: "text-green-600 dark:text-green-400"
-    },
-    { 
-      icon: Network, 
-      label: "P2P Network", 
-      desc: "Onion Routing",
-      color: "from-orange-500 to-amber-500",
-      textColor: "text-orange-600 dark:text-orange-400"
-    },
-    { 
       icon: FileSignature, 
-      label: "Sign Docs", 
+      label: "Sign Documents", 
       desc: "Smart Signatures",
       color: "from-indigo-500 to-blue-500",
-      textColor: "text-indigo-600 dark:text-indigo-400"
-    },
-    { 
-      icon: Users, 
-      label: "Collab", 
-      desc: "Secure Chat & Files",
-      color: "from-teal-500 to-cyan-500",
-      textColor: "text-teal-600 dark:text-teal-400"
+      textColor: "text-indigo-600 dark:text-indigo-400",
+      href: "/sign"
     },
     { 
       icon: Edit3, 
       label: "Signature Editor", 
       desc: "Custom Signatures",
       color: "from-violet-500 to-purple-500",
-      textColor: "text-violet-600 dark:text-violet-400"
+      textColor: "text-violet-600 dark:text-violet-400",
+      href: "/signature-editor"
+    },
+    { 
+      icon: Users, 
+      label: "Collaboration", 
+      desc: "Secure Chat & Files",
+      color: "from-teal-500 to-cyan-500",
+      textColor: "text-teal-600 dark:text-teal-400",
+      href: "/collab"
+    },
+    { 
+      icon: Fingerprint, 
+      label: "Identity", 
+      desc: "Self-Sovereign DIDs",
+      color: "from-blue-500 to-cyan-500",
+      textColor: "text-blue-600 dark:text-blue-400",
+      href: "/identity"
+    },
+    { 
+      icon: EyeOff, 
+      label: "Privacy", 
+      desc: "Zero-Knowledge",
+      color: "from-pink-500 to-rose-500",
+      textColor: "text-pink-600 dark:text-pink-400",
+      href: "/privacy"
+    },
+    { 
+      icon: Shield, 
+      label: "Security Center", 
+      desc: "Key Management",
+      color: "from-emerald-500 to-green-500",
+      textColor: "text-emerald-600 dark:text-emerald-400",
+      href: "/security"
     },
     { 
       icon: FileCheck, 
-      label: "OPSEC", 
-      desc: "Security Checklist",
+      label: "OPSEC Checklist", 
+      desc: "Security Classification",
       color: "from-red-500 to-orange-500",
       textColor: "text-red-600 dark:text-red-400",
       href: "/opsec"
+    },
+    { 
+      icon: Network, 
+      label: "Network", 
+      desc: "P2P Topology",
+      color: "from-orange-500 to-amber-500",
+      textColor: "text-orange-600 dark:text-orange-400",
+      href: "/network"
+    },
+    { 
+      icon: Brain, 
+      label: "AI Security", 
+      desc: "Threat Detection",
+      color: "from-green-500 to-emerald-500",
+      textColor: "text-green-600 dark:text-green-400",
+      href: "/ai"
     }
   ];
 
@@ -94,7 +102,7 @@ export default function Home() {
         {features.map((feature, i) => (
           <Link 
             key={i}
-            href={feature.href || `/${feature.label.toLowerCase().replace(/\s+/g, '-')}`}
+            href={feature.href}
             className="group"
           >
             <div className="p-4 md:p-6 rounded-xl border border-border bg-card/80 backdrop-blur-sm hover:border-muted-foreground/20 transition-all duration-200 hover:shadow-lg">
