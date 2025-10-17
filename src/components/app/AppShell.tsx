@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarInset, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { Home, Shield, FileSignature, Fingerprint, Brain, Network, Eye, Users, Edit3, FileCheck } from "lucide-react";
+import { Home, Shield, FileSignature, Fingerprint, Brain, Network, Eye, Users, Edit3, FileCheck, UserCircle } from "lucide-react";
 import MobileNav from "@/components/app/MobileNav";
 import TopNav from "@/components/app/TopNav";
 
@@ -84,10 +84,11 @@ function AppShellContent({ children }: AppShellProps) {
   const coreFeatures = [
     { href: "/", icon: Home, label: "Home", tooltip: "Home", gradient: "from-blue-500 to-cyan-500" },
     { href: "/sign", icon: FileSignature, label: "Sign Documents", tooltip: "Document Signing", gradient: "from-indigo-500 to-blue-500" },
-    { href: "/signature-editor", icon: Edit3, label: "Signature Editor", tooltip: "Signature Editor", gradient: "from-violet-500 to-purple-500" },
-    { href: "/collab", icon: Users, label: "Collaboration", tooltip: "Collaboration", gradient: "from-teal-500 to-cyan-500" },
+    { href: "#", icon: Edit3, label: "Signature Editor", tooltip: "Signature Editor", gradient: "from-violet-500 to-purple-500" },
+    { href: "#", icon: Users, label: "Collaboration", tooltip: "Collaboration", gradient: "from-teal-500 to-cyan-500" },
     { href: "/identity", icon: Fingerprint, label: "Identity", tooltip: "Identity & DIDs", gradient: "from-blue-500 to-cyan-500" },
     { href: "/privacy", icon: Eye, label: "Privacy", tooltip: "Privacy & ZK Proofs", gradient: "from-pink-500 to-rose-500" },
+    { href: "/profile", icon: UserCircle, label: "Profile", tooltip: "User Profile", gradient: "from-amber-500 to-yellow-500" },
   ];
 
   const securityFeatures = [

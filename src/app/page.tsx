@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { 
   Shield, Fingerprint, Brain, Network, 
-  FileSignature, EyeOff, ArrowRight, Users, Edit3, FileCheck
+  FileSignature, EyeOff, ArrowRight, Users, Edit3, FileCheck, UserCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -24,7 +24,7 @@ export default function Home() {
       desc: "Custom Signatures",
       color: "from-violet-500 to-purple-500",
       textColor: "text-violet-600 dark:text-violet-400",
-      href: "/signature-editor"
+      href: "#"
     },
     { 
       icon: Users, 
@@ -32,7 +32,7 @@ export default function Home() {
       desc: "Secure Chat & Files",
       color: "from-teal-500 to-cyan-500",
       textColor: "text-teal-600 dark:text-teal-400",
-      href: "/"
+      href: "#"
     },
     { 
       icon: Fingerprint, 
@@ -81,6 +81,14 @@ export default function Home() {
       color: "from-green-500 to-emerald-500",
       textColor: "text-green-600 dark:text-green-400",
       href: "/ai"
+    },
+    { 
+      icon: UserCircle, 
+      label: "Profile", 
+      desc: "Account Settings",
+      color: "from-amber-500 to-yellow-500",
+      textColor: "text-amber-600 dark:text-amber-400",
+      href: "/profile"
     }
   ];
 
@@ -98,7 +106,7 @@ export default function Home() {
       </div>
 
       {/* Small Grid-Based Feature Widgets */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 relative z-10">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 relative z-10">
         {features.map((feature, i) => (
           <Link 
             key={i}
