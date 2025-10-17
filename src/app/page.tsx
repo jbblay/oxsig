@@ -32,7 +32,7 @@ export default function Home() {
       desc: "Secure Chat & Files",
       color: "from-teal-500 to-cyan-500",
       textColor: "text-teal-600 dark:text-teal-400",
-      href: "/collab"
+      href: "/"
     },
     { 
       icon: Fingerprint, 
