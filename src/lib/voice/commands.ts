@@ -22,13 +22,25 @@ export class VoiceCommandSystem {
   private commands: VoiceCommand[] = [];
   private onResultCallback?: (transcript: string) => void;
   private onErrorCallback?: (error: string) => void;
+  private initialized = false;
 
   constructor() {
+    // Don't initialize during SSR
+    if (typeof window === 'undefined') return;
+    this.initialize();
+  }
+
+  /**
+   * Initialize the system (lazy initialization)
+   */
+  private initialize(): void {
+    if (this.initialized) return;
     if (this.isSupported()) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       this.recognition = new SpeechRecognition();
       this.setupRecognition();
       this.registerDefaultCommands();
+      this.initialized = true;
     }
   }
 
@@ -36,6 +48,7 @@ export class VoiceCommandSystem {
    * Check if speech recognition is supported
    */
   isSupported(): boolean {
+    if (typeof window === 'undefined') return false;
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
 
@@ -199,6 +212,9 @@ export class VoiceCommandSystem {
    * Start listening
    */
   start(): void {
+    if (typeof window === 'undefined') return;
+    if (!this.initialized) this.initialize();
+    
     if (!this.isSupported()) {
       console.warn('Speech recognition not supported');
       return;
@@ -246,6 +262,7 @@ export class VoiceCommandSystem {
    * Text-to-speech
    */
   speak(text: string): void {
+    if (typeof window === 'undefined') return;
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
@@ -306,6 +323,8 @@ export const voiceCommands = new VoiceCommandSystem();
  * Initialize voice commands on page load
  */
 export function initVoiceCommands(): void {
+  if (typeof window === 'undefined') return;
+  
   if (!voiceCommands.isSupported()) {
     console.warn('Voice commands not supported on this browser');
     return;

@@ -147,9 +147,12 @@ export default function FeaturesPage() {
   async function handleGenerateQR() {
     setQrLoading(true);
     try {
+      const randomId = typeof crypto !== 'undefined' && crypto.randomUUID 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).substring(2);
       const qrUrl = await generateSigningQR(
         'demo-doc-' + Date.now(),
-        'sha256:' + crypto.randomUUID(),
+        'sha256:' + randomId,
         { test: true }
       );
       setQrCode(qrUrl);
