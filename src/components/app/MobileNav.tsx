@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, FileSignature, Fingerprint, Shield, Brain } from "lucide-react";
+import { Home, FileSignature, Fingerprint, Shield, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Item = ({
@@ -56,10 +56,10 @@ export default function MobileNav() {
           active={pathname?.startsWith("/security")}
         />
         <Item
-          href="/ai"
-          label="AI"
-          icon={Brain}
-          active={pathname?.startsWith("/ai")}
+          href="/features"
+          label="Features"
+          icon={Sparkles}
+          active={pathname?.startsWith("/features")}
         />
       </div>
     </nav>

@@ -4,7 +4,7 @@ import * as React from "react";
 import { 
   FileSignature, Upload, Shield, Lock, Clock, CheckCircle2, 
   AlertTriangle, Download, Share2, Eye, EyeOff, Cpu, Fingerprint, 
-  Sparkles, Zap, Users, FileCheck, X, Plus, Loader2, Hash, Key
+  Sparkles, Zap, Users, FileCheck, X, Plus, Loader2, Hash, Key, FileText, Edit3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import dynamic from 'next/dynamic';
+
+// Dynamically import DocEditor to avoid SSR issues
+const DocEditor = dynamic(() => import('@/components/app/DocEditor'), { ssr: false });
 
 interface Signer {
   id: string;
@@ -46,6 +50,7 @@ export default function DocumentSigningPage() {
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [signatureProgress, setSignatureProgress] = React.useState(0);
   const [isDragging, setIsDragging] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState<'upload' | 'editor'>('upload');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Simulated file upload
@@ -68,7 +73,11 @@ export default function DocumentSigningPage() {
             type: file.type,
             hash: 'sha256:' + Math.random().toString(36).substring(2, 15) + '...'
           });
-          toast.success('Document uploaded and encrypted');
+          toast.success('Document uploaded and encrypted - Opening editor...', {
+            description: 'You can now review and edit before signing'
+          });
+          // Switch to editor mode after upload
+          setTimeout(() => setViewMode('editor'), 500);
           return 100;
         }
         return prev + 10;
@@ -204,83 +213,134 @@ export default function DocumentSigningPage() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left Column - Document Upload & Settings */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Upload Area */}
-          <Card 
-            className={`border-2 transition-all ${
-              isDragging 
-                ? 'border-blue-500 bg-blue-500/5' 
-                : uploadedFile 
-                  ? 'border-green-500/50 bg-green-500/5' 
-                  : 'border-dashed hover:border-primary'
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <CardContent className="pt-6">
-              {uploadedFile ? (
-                <div className="flex items-center gap-4 p-4">
-                  <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shrink-0">
-                    <FileCheck className="h-8 w-8 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold truncate">{uploadedFile.name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {(uploadedFile.size / 1024).toFixed(2)} KB • {uploadedFile.type || 'Unknown type'}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Hash className="h-3 w-3 text-muted-foreground" />
-                      <code className="text-xs text-muted-foreground font-mono">{uploadedFile.hash}</code>
-                    </div>
-                  </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => {
-                      setUploadedFile(null);
-                      setSignatureProgress(0);
-                      toast.info('Document removed');
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className={`h-20 w-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4 transition-transform ${isDragging ? 'scale-110' : ''}`}>
-                    <Upload className="h-10 w-10 text-white" />
-                  </div>
-                  <h3 className="text-xl font-semibold mb-2">
-                    {isDragging ? 'Drop document here' : 'Upload Document'}
-                  </h3>
-                  <p className="text-muted-foreground mb-4 max-w-sm">
-                    Drag and drop your document here or click to browse
-                  </p>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => handleFileSelect(e.target.files)}
-                    accept=".pdf,.docx,.txt"
-                  />
-                  <Button 
-                    size="lg" 
-                    className="gap-2"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? (
-                      <><Loader2 className="h-5 w-5 animate-spin" /> Processing...</>
+          {/* Document Upload & Editor */}
+          <Card className="border-2">
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'upload' | 'editor')} className="w-full">
+              <div className="border-b bg-muted/30 px-4 pt-4">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="upload">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Document
+                  </TabsTrigger>
+                  <TabsTrigger value="editor" disabled={!uploadedFile}>
+                    <Edit3 className="h-4 w-4 mr-2" />
+                    Review & Edit
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="upload" className="m-0">
+                <Card 
+                  className={`border-0 shadow-none transition-all ${
+                    isDragging 
+                      ? 'bg-blue-500/5' 
+                      : uploadedFile 
+                        ? 'bg-green-500/5' 
+                        : ''
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  <CardContent className="pt-6">
+                    {uploadedFile ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-4 p-4 rounded-lg border border-green-500/20 bg-green-500/5">
+                          <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shrink-0">
+                            <FileCheck className="h-8 w-8 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-lg font-semibold truncate">✅ {uploadedFile.name}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {(uploadedFile.size / 1024).toFixed(2)} KB • {uploadedFile.type || 'Unknown type'}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <Hash className="h-3 w-3 text-muted-foreground" />
+                              <code className="text-xs text-muted-foreground font-mono">{uploadedFile.hash}</code>
+                            </div>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => {
+                              setUploadedFile(null);
+                              setSignatureProgress(0);
+                              setViewMode('upload');
+                              toast.info('Document removed');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            className="flex-1" 
+                            onClick={() => setViewMode('editor')}
+                          >
+                            <Edit3 className="h-4 w-4 mr-2" />
+                            Review & Edit Document
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <Upload className="h-4 w-4 mr-2" />
+                            Upload Different File
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
-                      <><Upload className="h-5 w-5" /> Select File</>
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className={`h-20 w-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4 transition-transform ${isDragging ? 'scale-110' : ''}`}>
+                          <Upload className="h-10 w-10 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold mb-2">
+                          {isDragging ? 'Drop document here' : 'Upload Document to Sign'}
+                        </h3>
+                        <p className="text-muted-foreground mb-4 max-w-sm">
+                          Drag and drop your document here or click to browse
+                        </p>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => handleFileSelect(e.target.files)}
+                          accept=".pdf,.docx,.txt,.md,.html,.json,.csv,.xml,.rtf,image/*"
+                        />
+                        <Button 
+                          size="lg" 
+                          className="gap-2"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isProcessing}
+                        >
+                          {isProcessing ? (
+                            <><Loader2 className="h-5 w-5 animate-spin" /> Processing...</>
+                          ) : (
+                            <><Upload className="h-5 w-5" /> Select File</>
+                          )}
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-4">
+                          Supports PDF, DOCX, TXT, MD, HTML, JSON, CSV, XML, Images • Max 50MB • Encrypted on upload
+                        </p>
+                      </div>
                     )}
-                  </Button>
-                  <p className="text-xs text-muted-foreground mt-4">
-                    Supports PDF, DOCX, TXT • Max 50MB • Encrypted on upload
-                  </p>
-                </div>
-              )}
-            </CardContent>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="editor" className="m-0">
+                {uploadedFile && (
+                  <div className="p-4">
+                    <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                      <p className="text-sm text-blue-700 dark:text-blue-300">
+                        📝 <strong>Review & Edit:</strong> You can edit the document before signing. Use the toolbar to format text or switch to Canvas mode to add signatures/annotations.
+                      </p>
+                    </div>
+                    <DocEditor />
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </Card>
 
           {/* Signature Configuration */}
