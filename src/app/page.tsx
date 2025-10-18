@@ -13,18 +13,29 @@ export default function Home() {
     { 
       icon: FileSignature, 
       label: "Sign Documents", 
-      desc: "Smart Signatures",
+      desc: "Quantum-Secure Signatures",
       color: "from-indigo-500 to-blue-500",
       textColor: "text-indigo-600 dark:text-indigo-400",
-      href: "/sign"
+      href: "/sign",
+      badge: "Core"
+    },
+    { 
+      icon: Shield, 
+      label: "Seed Vault", 
+      desc: "BIP39 Recovery Phrases",
+      color: "from-purple-500 to-violet-500",
+      textColor: "text-purple-600 dark:text-purple-400",
+      href: "/vault",
+      badge: "New"
     },
     { 
       icon: Edit3, 
       label: "Signature Editor", 
-      desc: "Custom Signatures",
+      desc: "Create & Save Signatures",
       color: "from-violet-500 to-purple-500",
       textColor: "text-violet-600 dark:text-violet-400",
-      href: "/signature-editor"
+      href: "/signature-editor",
+      badge: "Enhanced"
     },
     { 
       icon: Users, 
@@ -45,7 +56,7 @@ export default function Home() {
     { 
       icon: EyeOff, 
       label: "Privacy", 
-      desc: "Zero-Knowledge",
+      desc: "Zero-Knowledge Proofs",
       color: "from-pink-500 to-rose-500",
       textColor: "text-pink-600 dark:text-pink-400",
       href: "/privacy"
@@ -53,14 +64,15 @@ export default function Home() {
     { 
       icon: Shield, 
       label: "Security Center", 
-      desc: "Key Management",
+      desc: "Key & Device Management",
       color: "from-emerald-500 to-green-500",
       textColor: "text-emerald-600 dark:text-emerald-400",
-      href: "/security"
+      href: "/security",
+      badge: "Enhanced"
     },
     { 
       icon: FileCheck, 
-      label: "OPSEC Checklist", 
+      label: "OPSEC", 
       desc: "Security Classification",
       color: "from-red-500 to-orange-500",
       textColor: "text-red-600 dark:text-red-400",
@@ -85,7 +97,7 @@ export default function Home() {
     { 
       icon: UserCircle, 
       label: "Profile", 
-      desc: "Account Settings",
+      desc: "Settings & Preferences",
       color: "from-amber-500 to-yellow-500",
       textColor: "text-amber-600 dark:text-amber-400",
       href: "/profile"
@@ -114,7 +126,12 @@ export default function Home() {
                 href={feature.href}
                 className="group w-full max-w-[200px]"
               >
-                <div className="p-4 md:p-6 rounded-xl border border-border bg-card/80 backdrop-blur-sm hover:border-muted-foreground/20 transition-all duration-200 hover:shadow-lg h-full flex flex-col">
+                <div className="p-4 md:p-6 rounded-xl border border-border bg-card/80 backdrop-blur-sm hover:border-muted-foreground/20 transition-all duration-200 hover:shadow-lg h-full flex flex-col relative">
+                  {feature.badge && (
+                    <div className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-[10px] font-semibold text-white shadow-md">
+                      {feature.badge}
+                    </div>
+                  )}
                   <div className={`w-10 h-10 md:w-12 md:h-12 rounded-lg bg-gradient-to-br ${feature.color} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto`}>
                     <feature.icon className="w-5 h-5 md:w-6 md:h-6 text-white" />
                   </div>
