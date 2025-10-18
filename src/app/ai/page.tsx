@@ -23,7 +23,7 @@ export default function AISecurityPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-fuchsia-600">
-            AI Security Co-Pilot
+            AI Security oxsigAI
           </h1>
           <p className="text-muted-foreground mt-1">
             Federated AI for threat detection and predictive security
