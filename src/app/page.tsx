@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { 
   Shield, Fingerprint, Brain, Network, 
-  FileSignature, EyeOff, ArrowRight, Users, Edit3, FileCheck, UserCircle
+  FileSignature, Eye, ArrowRight, Users, Edit3, FileCheck, Vault, ScrollText, GitBranch, WifiOff, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -20,7 +20,7 @@ export default function Home() {
       badge: "Core"
     },
     { 
-      icon: Shield, 
+      icon: Vault, 
       label: "Seed Vault", 
       desc: "BIP39 Recovery Phrases",
       color: "from-purple-500 to-violet-500",
@@ -34,8 +34,7 @@ export default function Home() {
       desc: "Create & Save Signatures",
       color: "from-violet-500 to-purple-500",
       textColor: "text-violet-600 dark:text-violet-400",
-      href: "/signature-editor",
-      badge: "Enhanced"
+      href: "/signature-editor"
     },
     { 
       icon: Users, 
@@ -54,7 +53,7 @@ export default function Home() {
       href: "/identity"
     },
     { 
-      icon: EyeOff, 
+      icon: Eye, 
       label: "Privacy", 
       desc: "Zero-Knowledge Proofs",
       color: "from-pink-500 to-rose-500",
@@ -69,6 +68,14 @@ export default function Home() {
       textColor: "text-emerald-600 dark:text-emerald-400",
       href: "/security",
       badge: "Enhanced"
+    },
+    { 
+      icon: ScrollText, 
+      label: "Audit Log", 
+      desc: "Merkle Tree Audit Trail",
+      color: "from-cyan-500 to-blue-500",
+      textColor: "text-cyan-600 dark:text-cyan-400",
+      href: "/audit"
     },
     { 
       icon: FileCheck, 
@@ -95,12 +102,28 @@ export default function Home() {
       href: "/ai"
     },
     { 
-      icon: UserCircle, 
-      label: "Profile", 
-      desc: "Settings & Preferences",
-      color: "from-amber-500 to-yellow-500",
-      textColor: "text-amber-600 dark:text-amber-400",
-      href: "/profile"
+      icon: GitBranch, 
+      label: "Architecture", 
+      desc: "System Architecture",
+      color: "from-slate-500 to-gray-500",
+      textColor: "text-slate-600 dark:text-slate-400",
+      href: "/architecture"
+    },
+    { 
+      icon: WifiOff, 
+      label: "Offline Mode", 
+      desc: "PWA Offline Support",
+      color: "from-zinc-500 to-slate-500",
+      textColor: "text-zinc-600 dark:text-zinc-400",
+      href: "/offline"
+    },
+    { 
+      icon: Sparkles, 
+      label: "Features", 
+      desc: "Advanced Features",
+      color: "from-purple-500 to-pink-500",
+      textColor: "text-purple-600 dark:text-purple-400",
+      href: "/features"
     }
   ];
 
