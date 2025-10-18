@@ -3,7 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app/AppShell";
 import PWARegister from "@/components/app/PWARegister";
-import AnimatedBackground from "@/components/app/AnimatedBackground";
+import BackgroundController from "@/components/app/BackgroundController";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -61,7 +61,7 @@ export default function RootLayout({
         <ErrorBoundary>
           <ThemeProvider>
             <PerformanceMonitor />
-            <AnimatedBackground />
+            <BackgroundController />
             <PWARegister />
             <AppShell>{children}</AppShell>
             <Toaster richColors />
