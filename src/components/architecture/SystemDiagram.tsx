@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const Box = ({
   x,
@@ -96,27 +97,70 @@ const Arrow = ({
   );
 };
 
-export default function SystemDiagram() {
+export default function SystemDiagram({ compact = false }: { compact?: boolean }) {
+  const isMobileHook = useIsMobile();
+  const isMobile = compact || isMobileHook;
+
+  // Define simplified nodes for mobile stacked view
+  const nodes = [
+    "Identity & Access (SSI, DIDs, ZKP, MFA)",
+    "Encryption & Data (E2EE, Threshold, HE)",
+    "Network & Infra (TEE, IPFS, ICP, Multichain)",
+    "Communication Layer (Onion P2P, DHT, Ephemeral)",
+    "Document Signing (Smart Signatures, VC)",
+    "Privacy & Control (Consent Ledger, Selective Disclosure)",
+    "AI Security Co-Pilot (Local, Federated)",
+    "Future-Proofing (Quantum-safe, Mesh/Sat)",
+  ];
+
+  const [expanded, setExpanded] = React.useState<number | null>(null);
+
   return (
-    <div className="w-full rounded-lg border bg-card p-2 sm:p-4">
-      <div className="mb-2 text-sm text-muted-foreground">High-level System Diagram</div>
-      <svg viewBox="0 0 920 520" className="w-full h-auto min-h-[300px] sm:min-h-[400px]">
-        <Box x={40} y={40} w={200} h={70} label="Identity & Access (SSI, DIDs, ZKP, MFA)" />
-        <Box x={360} y={40} w={240} h={70} label="Encryption & Data (E2EE, Threshold, HE)" />
-        <Box x={660} y={40} w={220} h={70} label="Network & Infra (TEE, IPFS, ICP, Multichain)" />
-        <Box x={60} y={170} w={240} h={90} label="Communication Layer (Onion P2P, DHT, Ephemeral)" />
-        <Box x={360} y={170} w={240} h={90} label="Document Signing (Smart Signatures, VC)" />
-        <Box x={660} y={170} w={220} h={90} label="Privacy & Control (Consent Ledger, Selective Disclosure)" />
-        <Box x={120} y={330} w={240} h={90} label="AI Security Co-Pilot (Local, Federated)" />
-        <Box x={480} y={330} w={240} h={90} label="Future-Proofing (Quantum-safe, Mesh/Sat)" />
-        <Arrow x1={140} y1={110} x2={480} y2={170} label="Key Mgmt / Policy" />
-        <Arrow x1={480} y1={110} x2={480} y2={170} label="Crypto Ops" />
-        <Arrow x1={770} y1={110} x2={770} y2={170} label="Anchors / Storage" />
-        <Arrow x1={180} y1={260} x2={480} y2={260} label="Signed Content" />
-        <Arrow x1={480} y1={260} x2={770} y2={260} label="Consent & Disclosure" />
-        <Arrow x1={240} y1={420} x2={480} y2={260} label="Risk Scoring" />
-        <Arrow x1={600} y1={420} x2={770} y2={260} label="Policy Optimization" />
-      </svg>
+    <div className="w-full rounded-lg border bg-card p-2 sm:p-3 md:p-4 max-w-5xl mx-auto overflow-hidden">
+      <div className="mb-2 text-xs sm:text-sm text-muted-foreground font-medium">High-level System Diagram</div>
+
+      {isMobile ? (
+        <div className="space-y-1.5">
+          {nodes.map((n, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setExpanded(expanded === i ? null : i)}
+              className="w-full text-left p-2 rounded-md border bg-muted/5 flex items-center justify-between hover:bg-muted/10 transition-colors"
+            >
+              <div className="min-w-0">
+                <div className="font-medium text-xs leading-tight line-clamp-2">{n}</div>
+                {expanded === i ? (
+                  <div className="mt-1 text-[10px] text-muted-foreground">Tap again to collapse</div>
+                ) : null}
+              </div>
+              <div className="ml-2 text-muted-foreground text-xs flex-shrink-0">{expanded === i ? '−' : '+'}</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="w-full overflow-hidden">
+          <div className="w-full">
+            <svg viewBox="0 0 600 350" preserveAspectRatio="xMidYMid meet" className="w-full h-auto max-h-[250px] sm:max-h-[280px] md:max-h-[320px]">
+              <Box x={20} y={20} w={160} h={50} label="Identity & Access" />
+              <Box x={200} y={20} w={160} h={50} label="Encryption & Data" />
+              <Box x={380} y={20} w={160} h={50} label="Network & Infra" />
+              <Box x={30} y={100} w={160} h={60} label="Communication Layer" />
+              <Box x={210} y={100} w={160} h={60} label="Document Signing" />
+              <Box x={390} y={100} w={160} h={60} label="Privacy & Control" />
+              <Box x={60} y={190} w={160} h={60} label="AI Security Co-Pilot" />
+              <Box x={280} y={190} w={160} h={60} label="Future-Proofing" />
+              <Arrow x1={100} y1={70} x2={280} y2={100} label="Keys" />
+              <Arrow x1={280} y1={70} x2={290} y2={100} label="Crypto" />
+              <Arrow x1={460} y1={70} x2={470} y2={100} label="Storage" />
+              <Arrow x1={110} y1={160} x2={290} y2={160} label="Content" />
+              <Arrow x1={290} y1={160} x2={470} y2={160} label="Consent" />
+              <Arrow x1={140} y1={250} x2={290} y2={160} label="Risk" />
+              <Arrow x1={360} y1={250} x2={470} y2={160} label="Policy" />
+            </svg>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
