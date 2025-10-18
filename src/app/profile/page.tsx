@@ -27,14 +27,14 @@ export default function ProfilePage() {
 
   // Mock user data
   const [userData, setUserData] = React.useState({
-    name: "Alex Rivera",
-    username: "alexrivera",
-    email: "alex.rivera@oxsig.app",
-    bio: "Quantum security enthusiast | Privacy advocate | Building the decentralized future",
-    location: "San Francisco, CA",
-    website: "https://alexrivera.dev",
+    name: "jbblay The Great",
+    username: "00x001",
+    email: "00x001.@oxsig.app",
+    bio: "Self Taught Computer Scientist | Quantum security enthusiast | Privacy advocate | Building the decentralized future",
+    location: "Guess, Hide and Seek",
+    website: "https://00x001.dev",
     did: "did:oxsig:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
-    joinDate: "January 2024",
+    joinDate: "Genesis 00x001",
     avatar: "/avatars/user.png"
   });
 
