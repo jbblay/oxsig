@@ -27,14 +27,14 @@ export default function ArchitecturePage() {
 
   return (
     <TooltipProvider>
-      <div className="container mx-auto p-6 space-y-6">
+      <div className="container mx-auto px-4 md:px-6 py-6 space-y-6 max-w-7xl">
         <AppHero
           title="Decentralized Secure Comms & Signing"
           subtitle="A dApp-style workspace for secure messaging and smart-signing"
         />
 
-        <Tabs defaultValue="workspace">
-          <TabsList className="w-full">
+        <Tabs defaultValue="workspace" className="w-full">
+          <TabsList className="w-full grid grid-cols-2">
             <TabsTrigger value="workspace" className="flex-1">App Workspace</TabsTrigger>
             <TabsTrigger value="architecture" className="flex-1">Architecture Details</TabsTrigger>
           </TabsList>
@@ -50,12 +50,12 @@ export default function ArchitecturePage() {
 
           <TabsContent value="architecture" className="mt-4 space-y-6">
             <Separator />
-            <div className="grid gap-4 md:grid-cols-2 animate-in fade-in-0 duration-300">
+            <div className="grid gap-4 grid-cols-1 md:grid-cols-2 animate-in fade-in-0 duration-300">
               {MODULES.map((m: { id: string; title: string; description?: string; bullets?: string[] }) => (
                 <ModuleCard key={m.id} title={m.title} description={m.description} bullets={m.bullets} />
               ))}
             </div>
-            <div className="grid gap-4 md:grid-cols-2 animate-in fade-in-0 duration-300">
+            <div className="grid gap-4 grid-cols-1 md:grid-cols-2 animate-in fade-in-0 duration-300">
               <PipelineDescription />
               <UXFlow />
             </div>
@@ -73,7 +73,7 @@ export default function ArchitecturePage() {
             <div className="rounded-lg border bg-card p-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
               <div className="text-sm font-medium">Data Schemas</div>
               <Separator className="my-2" />
-              <pre className="text-xs overflow-auto max-h-[300px] p-3 bg-muted rounded">
+              <pre className="text-xs overflow-auto max-h-[300px] p-3 bg-muted rounded whitespace-pre-wrap break-words">
                 {JSON.stringify(SCHEMAS, null, 2)}
               </pre>
             </div>

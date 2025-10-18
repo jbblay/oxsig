@@ -7,6 +7,7 @@ import {
   FileSignature, Eye, ArrowRight, Users, Edit3, FileCheck, Vault, ScrollText, GitBranch, WifiOff, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import AnimatedBackground from "@/components/app/AnimatedBackground";
 
 export default function Home() {
   const features = [
@@ -128,7 +129,10 @@ export default function Home() {
   ];
 
   return (
-    <div className="space-y-8 pb-12 w-full">
+    <div className="space-y-8 pb-12 w-full relative">
+      {/* Animated Background */}
+      <AnimatedBackground />
+      
       {/* Minimal Header */}
       <div className="text-center relative z-10 px-4">
         <h1 className="text-3xl md:text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
