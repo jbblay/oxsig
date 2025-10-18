@@ -13,16 +13,16 @@ export default function ModuleCard({
   bullets?: string[];
 }) {
   return (
-    <Card className="bg-card">
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        {description ? <CardDescription>{description}</CardDescription> : null}
+    <Card className="bg-card h-fit">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm md:text-base leading-tight">{title}</CardTitle>
+        {description ? <CardDescription className="text-xs md:text-sm">{description}</CardDescription> : null}
       </CardHeader>
       {bullets && bullets.length ? (
-        <CardContent>
-          <ul className="list-disc ml-5 space-y-1 text-sm">
+        <CardContent className="pt-0">
+          <ul className="list-disc ml-4 md:ml-5 space-y-1 text-xs md:text-sm">
             {bullets.map((b, i) => (
-              <li key={i}>{b}</li>
+              <li key={i} className="leading-relaxed">{b}</li>
             ))}
           </ul>
         </CardContent>

@@ -6,6 +6,8 @@ import PWARegister from "@/components/app/PWARegister";
 import AnimatedBackground from "@/components/app/AnimatedBackground";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PerformanceMonitor } from "@/components/PerformanceMonitor";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -56,12 +58,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} flex flex-col min-h-screen`}>
-        <ThemeProvider>
-          <AnimatedBackground />
-          <PWARegister />
-          <AppShell>{children}</AppShell>
-          <Toaster richColors />
-        </ThemeProvider>
+        <ErrorBoundary>
+          <ThemeProvider>
+            <PerformanceMonitor />
+            <AnimatedBackground />
+            <PWARegister />
+            <AppShell>{children}</AppShell>
+            <Toaster richColors />
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

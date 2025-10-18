@@ -14,20 +14,41 @@ const Box = ({
   w: number;
   h: number;
   label: string;
-}) => (
-  <g>
-    <rect x={x} y={y} width={w} height={h} rx={8} fill="hsl(var(--card))" stroke="hsl(var(--border))" />
-    <text
-      x={x + 12}
-      y={y + 22}
-      fontSize={12}
-      fill="hsl(var(--foreground))"
-      style={{ fontFamily: "system-ui, sans-serif" }}
-    >
-      {label}
-    </text>
-  </g>
-);
+}) => {
+  // Split long labels into multiple lines for better mobile display
+  const words = label.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+  const maxCharsPerLine = w > 200 ? 25 : 20;
+  
+  words.forEach(word => {
+    if ((currentLine + word).length <= maxCharsPerLine) {
+      currentLine += (currentLine ? ' ' : '') + word;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  });
+  if (currentLine) lines.push(currentLine);
+
+  return (
+    <g>
+      <rect x={x} y={y} width={w} height={h} rx={8} fill="hsl(var(--card))" stroke="hsl(var(--border))" />
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          x={x + 8}
+          y={y + 16 + (i * 12)}
+          fontSize={9}
+          fill="hsl(var(--foreground))"
+          style={{ fontFamily: "system-ui, sans-serif" }}
+        >
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+};
 
 const Arrow = ({
   x1,
@@ -64,7 +85,7 @@ const Arrow = ({
         <text
           x={midX + 4}
           y={midY - 4}
-          fontSize={11}
+          fontSize={9}
           fill="hsl(var(--muted-foreground))"
           style={{ fontFamily: "system-ui, sans-serif" }}
         >
@@ -77,9 +98,9 @@ const Arrow = ({
 
 export default function SystemDiagram() {
   return (
-    <div className="w-full rounded-lg border bg-card p-4">
+    <div className="w-full rounded-lg border bg-card p-2 sm:p-4">
       <div className="mb-2 text-sm text-muted-foreground">High-level System Diagram</div>
-      <svg viewBox="0 0 920 520" className="w-full h-auto">
+      <svg viewBox="0 0 920 520" className="w-full h-auto min-h-[300px] sm:min-h-[400px]">
         <Box x={40} y={40} w={200} h={70} label="Identity & Access (SSI, DIDs, ZKP, MFA)" />
         <Box x={360} y={40} w={240} h={70} label="Encryption & Data (E2EE, Threshold, HE)" />
         <Box x={660} y={40} w={220} h={70} label="Network & Infra (TEE, IPFS, ICP, Multichain)" />

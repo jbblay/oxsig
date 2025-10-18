@@ -193,3 +193,23 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* Faster sidebar transitions */
+[data-sidebar] {
+  transition-duration: 200ms !important;
+}
+
+[data-sidebar="sidebar"] {
+  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1), 
+              transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Remove sidebar border/rail on the right */
+[data-sidebar="sidebar"][data-side="left"] {
+  border-right: none;
+}
+
+/* Smooth content shift when sidebar toggles */
+[data-sidebar="sidebar"] + * {
+  transition: margin-left 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}

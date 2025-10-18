@@ -15,12 +15,12 @@ export default function PipelineDescription() {
   ];
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-lg border bg-card p-3 md:p-4">
       <div className="text-sm font-medium">Secure Communication Pipeline</div>
       <Separator className="my-2" />
-      <ol className="list-decimal ml-5 space-y-2 text-sm">
+      <ol className="list-decimal ml-4 md:ml-5 space-y-2 text-xs md:text-sm">
         {steps.map((s, i) => (
-          <li key={i}>{s}</li>
+          <li key={i} className="leading-relaxed">{s}</li>
         ))}
       </ol>
     </div>

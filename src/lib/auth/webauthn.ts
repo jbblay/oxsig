@@ -99,9 +99,10 @@ export async function registerBiometric(
       counter: 0,
       created: Date.now(),
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Biometric registration failed:', error);
-    throw new Error(`Registration failed: ${error.message}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Registration failed: ${message}`);
   }
 }
 
@@ -146,9 +147,10 @@ export async function authenticateBiometric(
       credentialId: assertion.id,
       signature,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Biometric authentication failed:', error);
-    throw new Error(`Authentication failed: ${error.message}`);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Authentication failed: ${message}`);
   }
 }
 
@@ -177,12 +179,24 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 }
 
 /**
- * Store credential in localStorage (for demo - use secure storage in production)
+ * Store credential in localStorage
+ * 
+ * SECURITY WARNING: For production use, consider:
+ * - IndexedDB with encryption for larger payloads
+ * - Secure enclave storage on mobile devices
+ * - Hardware security modules (HSM) for enterprise
+ * - Browser's secure credential storage APIs when available
  */
 export function saveCredential(credential: BiometricCredential): void {
   const existing = getStoredCredentials();
   existing.push(credential);
-  localStorage.setItem('oxsig_biometric_credentials', JSON.stringify(existing));
+  
+  try {
+    localStorage.setItem('oxsig_biometric_credentials', JSON.stringify(existing));
+  } catch (error) {
+    console.error('Failed to store credential:', error);
+    throw new Error('Storage quota exceeded or storage not available');
+  }
 }
 
 /**

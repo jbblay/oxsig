@@ -115,7 +115,7 @@ function AppShellContent({ children }: AppShellProps) {
 
   return (
     <>
-      <Sidebar collapsible="icon" variant="inset" side="left">
+      <Sidebar collapsible="icon" variant="inset" side="left" className="border-r-0">
         <SidebarHeader>
           <motion.div 
             className="flex items-center justify-between"
@@ -130,7 +130,7 @@ function AppShellContent({ children }: AppShellProps) {
           <SidebarInput placeholder="Search…" />
         </SidebarHeader>
 
-        <SidebarContent>
+        <SidebarContent className="scrollbar-hidden">
           <SidebarGroup>
             <SidebarGroupLabel>Core Features</SidebarGroupLabel>
             <motion.div
@@ -161,7 +161,8 @@ function AppShellContent({ children }: AppShellProps) {
             </motion.div>
           </SidebarGroup>
 
-          <SidebarSeparator />
+          {/* subtle spacer instead of hard separator for modern look */}
+          <div className="h-2" />
 
           <SidebarGroup>
             <SidebarGroupLabel>Security</SidebarGroupLabel>
@@ -193,7 +194,7 @@ function AppShellContent({ children }: AppShellProps) {
             </motion.div>
           </SidebarGroup>
 
-          <SidebarSeparator />
+          <div className="h-2" />
 
           <SidebarGroup>
             <SidebarGroupLabel>Developer</SidebarGroupLabel>
@@ -225,7 +226,6 @@ function AppShellContent({ children }: AppShellProps) {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarSeparator />
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -251,6 +251,10 @@ function AppShellContent({ children }: AppShellProps) {
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
+          {/* Modern compact toggle */}
+          <div className="mt-2 px-2">
+            <ModernSidebarToggle />
+          </div>
           <motion.div 
             className="text-xs text-muted-foreground px-2 pt-2"
             initial={{ opacity: 0 }}
@@ -260,8 +264,6 @@ function AppShellContent({ children }: AppShellProps) {
             v0.1.0
           </motion.div>
         </SidebarFooter>
-
-        <SidebarRail />
       </Sidebar>
 
       <SidebarInset>
@@ -277,9 +279,41 @@ function AppShellContent({ children }: AppShellProps) {
   );
 }
 
+// Modern pill toggle for sidebar collapse/expand
+function ModernSidebarToggle() {
+  const { state, toggleSidebar } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  return (
+    <button
+      onClick={toggleSidebar}
+      aria-label="Toggle sidebar"
+      className="group w-full flex items-center justify-between rounded-full bg-muted/60 hover:bg-muted px-2 py-1 transition-colors"
+    >
+      <span className="text-xs text-muted-foreground pl-1">Sidebar</span>
+      <span
+        className={
+          "relative inline-flex h-6 w-12 items-center rounded-full bg-background border border-border transition-colors"
+        }
+      >
+        <span
+          className={
+            `inline-block h-5 w-5 transform rounded-full bg-gradient-to-br from-blue-600 to-purple-600 shadow-sm transition-transform duration-200 ${
+              isCollapsed ? "translate-x-1" : "translate-x-6"
+            }`
+          }
+        />
+      </span>
+    </button>
+  );
+}
+
 export default function AppShell({ children }: AppShellProps) {
   return (
-    <SidebarProvider className="min-h-svh">
+    <SidebarProvider 
+      defaultOpen={true}
+      className="min-h-svh"
+    >
       <AppShellContent>{children}</AppShellContent>
     </SidebarProvider>
   );

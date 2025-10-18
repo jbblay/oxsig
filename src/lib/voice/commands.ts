@@ -9,15 +9,42 @@ export interface VoiceCommand {
   description: string;
 }
 
+// Define SpeechRecognition types for better TypeScript support
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
 declare global {
   interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
+    SpeechRecognition: {
+      new (): SpeechRecognition;
+    };
+    webkitSpeechRecognition: {
+      new (): SpeechRecognition;
+    };
   }
 }
 
 export class VoiceCommandSystem {
-  private recognition: any = null;
+  private recognition: SpeechRecognition | null = null;
   private isListening = false;
   private commands: VoiceCommand[] = [];
   private onResultCallback?: (transcript: string) => void;
@@ -95,7 +122,7 @@ export class VoiceCommandSystem {
 
     this.recognition.onend = () => {
       // Auto-restart if still listening
-      if (this.isListening) {
+      if (this.isListening && this.recognition) {
         this.recognition.start();
       }
     };
@@ -226,6 +253,9 @@ export class VoiceCommandSystem {
     }
 
     try {
+      if (!this.recognition) {
+        throw new Error('Speech recognition not initialized');
+      }
       this.recognition.start();
       this.isListening = true;
       console.log('Voice commands activated');
