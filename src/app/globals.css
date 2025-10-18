@@ -108,10 +108,20 @@
   }
 }
 
+/* Hide native scrollbars but keep scrolling accessible */
+.scrollbar-hidden::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+.scrollbar-hidden {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
 /* Enhanced animations aligned with app-clinode */
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+  50% { transform: translateY(-8px); }
 }
 
 @keyframes blob {
@@ -119,10 +129,10 @@
     transform: translate(0px, 0px) scale(1);
   }
   33% {
-    transform: translate(30px, -50px) scale(1.1);
+    transform: translate(18px, -30px) scale(1.05);
   }
   66% {
-    transform: translate(-20px, 20px) scale(0.9);
+    transform: translate(-12px, 12px) scale(0.95);
   }
 }
 
@@ -147,11 +157,11 @@
 }
 
 .animate-float {
-  animation: float 3s ease-in-out infinite;
+  animation: float 2.6s ease-in-out infinite;
 }
 
 .animate-blob {
-  animation: blob 7s ease-in-out infinite;
+  animation: blob 5.5s ease-in-out infinite;
 }
 
 .animation-delay-2000 {

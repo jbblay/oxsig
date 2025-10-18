@@ -18,7 +18,8 @@ export default function Workspace() {
         <CardTitle className="text-base">Workspace</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <ResizablePanelGroup direction="horizontal" className="h-[600px]">
+        {/* On small screens stack panels vertically by switching the Resizable group to column layout */}
+        <ResizablePanelGroup direction="horizontal" className="h-auto md:h-[600px]">
           <ResizablePanel defaultSize={55} minSize={35} className="min-w-0">
             <div className="h-full p-4">
               <Tabs defaultValue="sign" className="h-full flex flex-col">
@@ -67,10 +68,10 @@ export default function Workspace() {
             </div>
           </ResizablePanel>
 
-          <ResizableHandle withHandle className="transition-colors hover:bg-primary/10" />
+          <ResizableHandle withHandle className="transition-colors hover:bg-primary/10 md:mx-2" />
 
           <ResizablePanel defaultSize={45} minSize={30} className="min-w-0">
-            <div className="h-full p-4 space-y-4 overflow-auto animate-in fade-in-0 slide-in-from-right-2 duration-300">
+            <div className="h-full p-4 space-y-4 overflow-auto animate-in fade-in-0 slide-in-from-right-2 duration-300 scrollbar-hidden">
               <StatusPanel />
               <ActivityFeed />
             </div>
