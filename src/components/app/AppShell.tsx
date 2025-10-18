@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarInset, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Home, Shield, FileSignature, Fingerprint, Brain, Network, Eye, Users, Edit3, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff } from "lucide-react";
+import { Home, Shield, FileSignature, Fingerprint, Brain, Network, Eye, Users, Edit3, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff, HardDrive } from "lucide-react";
 import MobileNav from "@/components/app/MobileNav";
 import TopNav from "@/components/app/TopNav";
 
@@ -93,6 +93,7 @@ function AppShellContent({ children }: AppShellProps) {
     { href: "/", icon: Home, label: "Home", tooltip: "Home", gradient: "from-blue-500 to-cyan-500" },
     { href: "/sign", icon: FileSignature, label: "Sign Documents", tooltip: "Quantum-Secure Signatures", gradient: "from-indigo-500 to-blue-500" },
     { href: "/vault", icon: Vault, label: "Seed Vault", tooltip: "BIP39 Recovery Phrases", gradient: "from-purple-500 to-violet-500", badge: "New" },
+    { href: "/storage", icon: HardDrive, label: "Secure Storage", tooltip: "Encrypted File Storage", gradient: "from-emerald-500 to-green-500", badge: "New" },
     { href: "/signature-editor", icon: Edit3, label: "Signature Editor", tooltip: "Create & Save Signatures", gradient: "from-violet-500 to-purple-500" },
     { href: "/collab", icon: Users, label: "Collaboration", tooltip: "Secure Chat & Files", gradient: "from-teal-500 to-cyan-500" },
     { href: "/identity", icon: Fingerprint, label: "Identity", tooltip: "Self-Sovereign DIDs", gradient: "from-blue-500 to-cyan-500" },

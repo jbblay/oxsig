@@ -164,18 +164,18 @@ export default function DocumentSigningPage() {
   }, [quantumSecure, zkProof, duressMode]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+          <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
             Smart Document Signing
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Post-quantum cryptographic signatures with multi-context awareness
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Badge variant="secondary" className="gap-1 animate-pulse">
             <Cpu className="h-3 w-3" />
             Quantum Secure
@@ -192,15 +192,15 @@ export default function DocumentSigningPage() {
       {/* Processing Indicator */}
       {isProcessing && (
         <Card className="border-blue-500/50 bg-blue-500/5">
-          <CardContent className="pt-6">
+          <CardContent className="pt-4 md:pt-6">
             <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <span className="text-xs sm:text-sm font-medium truncate">
                     {uploadedFile ? 'Generating quantum signature...' : 'Encrypting document...'}
                   </span>
-                  <span className="text-sm text-muted-foreground">{signatureProgress}%</span>
+                  <span className="text-xs sm:text-sm text-muted-foreground shrink-0">{signatureProgress}%</span>
                 </div>
                 <Progress value={signatureProgress} className="h-2" />
               </div>
@@ -210,21 +210,23 @@ export default function DocumentSigningPage() {
       )}
 
       {/* Main Content */}
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Left Column - Document Upload & Settings */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4 md:space-y-6">
           {/* Document Upload & Editor */}
           <Card className="border-2">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'upload' | 'editor')} className="w-full">
               <div className="border-b bg-muted/30 px-4 pt-4">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="upload">
+                <TabsList className="grid w-full grid-cols-2 h-auto">
+                  <TabsTrigger value="upload" className="py-2.5">
                     <Upload className="h-4 w-4 mr-2" />
-                    Upload Document
+                    <span className="hidden sm:inline">Upload Document</span>
+                    <span className="sm:hidden">Upload</span>
                   </TabsTrigger>
-                  <TabsTrigger value="editor" disabled={!uploadedFile}>
+                  <TabsTrigger value="editor" disabled={!uploadedFile} className="py-2.5">
                     <Edit3 className="h-4 w-4 mr-2" />
-                    Review & Edit
+                    <span className="hidden sm:inline">Review & Edit</span>
+                    <span className="sm:hidden">Edit</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -245,23 +247,24 @@ export default function DocumentSigningPage() {
                   <CardContent className="pt-6">
                     {uploadedFile ? (
                       <div className="space-y-4">
-                        <div className="flex items-center gap-4 p-4 rounded-lg border border-green-500/20 bg-green-500/5">
-                          <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shrink-0">
-                            <FileCheck className="h-8 w-8 text-white" />
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 sm:p-4 rounded-lg border border-green-500/20 bg-green-500/5">
+                          <div className="h-12 w-12 sm:h-16 sm:w-16 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shrink-0">
+                            <FileCheck className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="text-lg font-semibold truncate">✅ {uploadedFile.name}</h3>
-                            <p className="text-sm text-muted-foreground">
+                            <h3 className="text-base sm:text-lg font-semibold truncate">✅ {uploadedFile.name}</h3>
+                            <p className="text-xs sm:text-sm text-muted-foreground">
                               {(uploadedFile.size / 1024).toFixed(2)} KB • {uploadedFile.type || 'Unknown type'}
                             </p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <Hash className="h-3 w-3 text-muted-foreground" />
-                              <code className="text-xs text-muted-foreground font-mono">{uploadedFile.hash}</code>
+                            <div className="flex items-center gap-2 mt-2 overflow-hidden">
+                              <Hash className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <code className="text-xs text-muted-foreground font-mono truncate">{uploadedFile.hash}</code>
                             </div>
                           </div>
                           <Button 
                             variant="ghost" 
                             size="icon"
+                            className="shrink-0"
                             onClick={() => {
                               setUploadedFile(null);
                               setSignatureProgress(0);
@@ -272,7 +275,7 @@ export default function DocumentSigningPage() {
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           <Button 
                             className="flex-1" 
                             onClick={() => setViewMode('editor')}
@@ -285,7 +288,8 @@ export default function DocumentSigningPage() {
                             onClick={() => fileInputRef.current?.click()}
                           >
                             <Upload className="h-4 w-4 mr-2" />
-                            Upload Different File
+                            <span className="hidden sm:inline">Upload Different File</span>
+                            <span className="sm:hidden">New File</span>
                           </Button>
                         </div>
                       </div>
@@ -481,7 +485,7 @@ export default function DocumentSigningPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <Button 
                   className="flex-1 gap-2" 
                   size="lg"
@@ -494,7 +498,7 @@ export default function DocumentSigningPage() {
                     <><FileSignature className="h-5 w-5" /> Sign Document</>
                   )}
                 </Button>
-                <Button variant="outline" size="lg" disabled={!uploadedFile}>
+                <Button variant="outline" size="lg" disabled={!uploadedFile} className="sm:w-auto">
                   <Eye className="h-5 w-5 mr-2" />
                   Preview
                 </Button>
@@ -504,7 +508,7 @@ export default function DocumentSigningPage() {
         </div>
 
         {/* Right Column - Security Info & Status */}
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {/* Security Status */}
           <Card className={`border-2 transition-all ${
             securityScore >= 90 

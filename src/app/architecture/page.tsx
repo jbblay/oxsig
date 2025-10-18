@@ -35,8 +35,12 @@ export default function ArchitecturePage() {
 
         <Tabs defaultValue="workspace" className="w-full">
           <TabsList className="w-full grid grid-cols-1 sm:grid-cols-2 h-auto gap-0 sm:gap-1">
-            <TabsTrigger value="workspace" className="w-full py-2.5 md:py-3 text-xs md:text-sm">App Workspace</TabsTrigger>
-            <TabsTrigger value="architecture" className="w-full py-2.5 md:py-3 text-xs md:text-sm">Architecture Details</TabsTrigger>
+            <TabsTrigger value="workspace" className="w-full py-2.5 md:py-3 text-xs md:text-sm">
+              App Workspace
+            </TabsTrigger>
+            <TabsTrigger value="architecture" className="w-full py-2.5 md:py-3 text-xs md:text-sm">
+              Architecture Details
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="workspace" className="mt-4 space-y-4 md:space-y-6">
