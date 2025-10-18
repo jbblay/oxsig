@@ -21,7 +21,6 @@ export default function AppHero({
         className
       )}
     >
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(80%_60%_at_50%_-10%,hsl(var(--primary)/0.08),transparent_60%)]" />
       <div className="flex items-center gap-3">
         <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-card shadow-sm">
           <Shield className="h-4 w-4" />
