@@ -46,7 +46,7 @@ const AnimatedMenuItem = ({
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={isActive} tooltip={tooltip}>
+      <SidebarMenuButton asChild isActive={isActive} tooltip={tooltip} className="group-data-[collapsible=icon]:justify-center">
         <Link href={href} className="group relative">
           <motion.div
             whileHover={{ scale: 1.15, rotate: 8 }}
@@ -70,12 +70,12 @@ const AnimatedMenuItem = ({
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.2 }}
-            className={isActive ? 'font-semibold' : ''}
+            className={`${isActive ? 'font-semibold' : ''} group-data-[collapsible=icon]:hidden`}
           >
             {label}
           </motion.span>
           {badge && (
-            <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+            <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white group-data-[collapsible=icon]:hidden">
               {badge}
             </span>
           )}
@@ -124,11 +124,11 @@ function AppShellContent({ children }: AppShellProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
           >
-            <span className="text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent group-data-[collapsible=icon]:hidden">
               OxSig
             </span>
           </motion.div>
-          <SidebarInput placeholder="Search…" />
+          <SidebarInput placeholder="Search…" className="group-data-[collapsible=icon]:hidden" />
         </SidebarHeader>
 
         <SidebarContent className="scrollbar-hidden">
@@ -244,7 +244,7 @@ function AppShellContent({ children }: AppShellProps) {
                       </AvatarFallback>
                     </Avatar>
                   </motion.div>
-                  <div className="flex flex-col flex-1 overflow-hidden">
+                  <div className="flex flex-col flex-1 overflow-hidden group-data-[collapsible=icon]:hidden">
                     <span className="text-sm font-medium truncate">OxSig User</span>
                     <span className="text-xs text-muted-foreground truncate">did:key:z6Mk...</span>
                   </div>
@@ -253,11 +253,15 @@ function AppShellContent({ children }: AppShellProps) {
             </SidebarMenuItem>
           </SidebarMenu>
           {/* Modern compact toggle */}
-          <div className="mt-2 px-2">
+          <div className="mt-2 px-2 group-data-[collapsible=icon]:hidden">
             <ModernSidebarToggle />
           </div>
+          {/* Reset layout helper */}
+          <div className="px-2 pt-1 group-data-[collapsible=icon]:hidden">
+            <ResetLayoutButton />
+          </div>
           <motion.div 
-            className="text-xs text-muted-foreground px-2 pt-2"
+            className="text-xs text-muted-foreground px-2 pt-2 group-data-[collapsible=icon]:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.7 }}
@@ -305,6 +309,30 @@ function ModernSidebarToggle() {
           }
         />
       </span>
+    </button>
+  );
+}
+
+// Small helper to reset sidebar layout preference
+function ResetLayoutButton() {
+  const { setOpen } = useSidebar();
+  const onReset = React.useCallback(() => {
+    try {
+      // Expire the cookie immediately
+      document.cookie = `sidebar_state=; path=/; max-age=0`;
+    } catch {}
+    // Expand after reset
+    setOpen(true);
+  }, [setOpen]);
+
+  return (
+    <button
+      type="button"
+      onClick={onReset}
+      className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+      aria-label="Reset layout"
+    >
+      Reset layout
     </button>
   );
 }

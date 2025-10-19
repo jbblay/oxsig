@@ -1,8 +1,11 @@
 # 🔐 OxSig - Quantum-Safe Secure Communications Platform
 
 > **Production-ready PWA for post-quantum secure document signing, identity management, and encrypted communications**
+# 🔐 OxSig - Quantum-Safe Secure Communications Platform
 
-[![Production Ready](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)](https://github.com/yourusername/oxsig)
+> **Production-ready PWA for post-quantum secure document signing, identity management, and encrypted communications**
+
+[![CI](https://github.com/jbblay/oxsig/actions/workflows/ci.yml/badge.svg)](https://github.com/jbblay/oxsig/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15.3-black)](https://nextjs.org/)
 [![PWA Ready](https://img.shields.io/badge/PWA-Ready-purple)](https://web.dev/progressive-web-apps/)
@@ -11,7 +14,7 @@
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/oxsig.git
+git clone https://github.com/jbblay/oxsig.git
 cd oxsig
 pnpm install
 
@@ -117,7 +120,7 @@ oxsig/
 
 ### Prerequisites
 
-- Node.js 18+ 
+Node.js 18+ 
 - pnpm (recommended) or npm
 - Modern browser with WebAuthn support
 
@@ -164,7 +167,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 - 🔄 **Blockchain Anchoring** - Immutable signature verification
 
 ## 🎯 Use Cases
-
+✅ **WebAuthn/FIDO2** - Hardware-backed authentication
 ### For Journalists
 - Verify document authenticity with QR codes
 - Secure source communications
@@ -173,7 +176,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 
 ### For Legal/Business
 - Digital contract signing with legal validity
-- Client identity verification
+🔄 **Post-Quantum Crypto** - Dilithium signatures, Kyber key exchange
 - Secure document collaboration
 - Audit trail compliance
 
@@ -181,26 +184,26 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 - Password-free authentication
 - Secure note-taking and document storage
 - Digital signature creation
-- Private communications
+Verify document authenticity with QR codes
 
 ## 📊 Performance
 
 - **Load Time:** <100ms
 - **Bundle Size:** ~500KB gzipped
-- **Lighthouse Score:** 95+ (Performance, Accessibility, SEO)
+Digital contract signing with legal validity
 - **Offline Capable:** 100% feature availability
 - **Mobile Optimized:** Touch-first responsive design
 
 ## 🚀 Deployment
 
-### One-Click Deploy
+Password-free authentication
 
 #### Vercel (Recommended)
 ```bash
 vercel --prod
 ```
 
-#### Railway
+**Load Time:** <100ms
 ```bash
 railway up
 ```
@@ -228,6 +231,10 @@ pnpm export
 - **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Production deployment guide
 - **[CONTRIBUTING.md](docs/CONTRIBUTING.md)** - Development & contribution guidelines
 - **[ROADMAP.md](docs/ROADMAP.md)** - Development roadmap & open source strategy
+ - **[GRANTS.md](docs/GRANTS.md)** - Grant proposal overview and milestones
+ - **[OPEN_CALLS.md](docs/OPEN_CALLS.md)** - Areas where we need help
+ - **[DATA_FLOWS.md](docs/DATA_FLOWS.md)** - Data flows and trust boundaries
+ - **[QANDA.md](docs/QANDA.md)** - Q&A guide for reviewers and contributors
 
 ## 🤝 Contributing
 
@@ -246,7 +253,9 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🔗 Links
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md), our [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md), and [GOVERNANCE](GOVERNANCE.md).
 
+Funding & sponsorship: see [FUNDING](.github/FUNDING.yml). Maintainers: see [MAINTAINERS](MAINTAINERS.md). Support: [SUPPORT](SUPPORT.md). Security: [SECURITY](SECURITY.md).
 - **Demo:** [https://oxsig.vercel.app](https://oxsig.vercel.app)
 - **Documentation:** [https://docs.oxsig.dev](https://docs.oxsig.dev)
 - **Issues:** [GitHub Issues](https://github.com/yourusername/oxsig/issues)
@@ -254,10 +263,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## ⭐ Show Your Support
 
-If you find OxSig useful, please give it a star! It helps others discover the project.
+**Repo:** https://github.com/jbblay/oxsig
+- **Issues:** https://github.com/jbblay/oxsig/issues
+- **Pull Requests:** https://github.com/jbblay/oxsig/pulls
+[![GitHub stars](https://img.shields.io/github/stars/jbblay/oxsig?style=social)](https://github.com/jbblay/oxsig)
 
-[![GitHub stars](https://img.shields.io/github/stars/yourusername/oxsig?style=social)](https://github.com/yourusername/oxsig)
+---
 
+Note on cryptography: certain modules are DEMO-ONLY and not suitable for production without hardening (e.g., `lib/storage/secure-storage.ts` uses XOR/base64, `lib/vault/seed-vault.ts` uses a partial BIP39 list and simplified flows). See `SECURITY_STATUS.md`, `docs/GRANTS.md` and `docs/OPEN_CALLS.md` for the hardening plan.
 ---
 
 **Built with ❤️ using Next.js, TypeScript, and modern web standards**

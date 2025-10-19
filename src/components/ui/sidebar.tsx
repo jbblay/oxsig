@@ -75,6 +75,7 @@ const SidebarProvider = React.forwardRef<
   ) => {
     const isMobile = useIsMobile()
     const [openMobile, setOpenMobile] = React.useState(false)
+    const [initializedFromCookie, setInitializedFromCookie] = React.useState(false)
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
@@ -102,6 +103,20 @@ const SidebarProvider = React.forwardRef<
         : setOpen((open) => !open)
     }, [isMobile, setOpen, setOpenMobile])
 
+    // Initialize from cookie if present so we remember last state across reloads.
+    React.useEffect(() => {
+      try {
+        const match = document.cookie.match(new RegExp(`(?:^|; )${SIDEBAR_COOKIE_NAME}=([^;]*)`))
+        if (match && match[1] !== undefined) {
+          const val = decodeURIComponent(match[1])
+          const isOpen = val === "true"
+          _setOpen(isOpen)
+        }
+      } catch {}
+      setInitializedFromCookie(true)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
     // Adds a keyboard shortcut to toggle the sidebar.
     React.useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
@@ -117,6 +132,16 @@ const SidebarProvider = React.forwardRef<
       window.addEventListener("keydown", handleKeyDown)
       return () => window.removeEventListener("keydown", handleKeyDown)
     }, [toggleSidebar])
+
+    // Auto-open on large screens (desktop/tablet) only if no cookie preference exists yet.
+    React.useEffect(() => {
+      if (!isMobile) {
+        const hasCookie = document.cookie.includes(`${SIDEBAR_COOKIE_NAME}=`)
+        if (!hasCookie && open === false && initializedFromCookie) {
+          setOpen(true)
+        }
+      }
+    }, [isMobile, setOpen, open, initializedFromCookie])
 
     // We add a state so that we can do data-state="expanded" or "collapsed".
     // This makes it easier to style the sidebar with Tailwind classes.

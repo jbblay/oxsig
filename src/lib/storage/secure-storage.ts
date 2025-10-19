@@ -1,6 +1,11 @@
 /**
  * Secure Storage Library
  * Provides encrypted storage capabilities for sensitive files and data
+ *
+ * Changes (Oct 2025):
+ * - Replaced demo XOR/base64 with AES-256-GCM + PBKDF2(SHA-256)
+ * - Added legacy decrypt fallback for previously stored entries
+ * - Fixed retrieval path to read full records including encryptedData
  */
 
 export interface SecureFile {
@@ -23,53 +28,93 @@ export interface StorageStats {
   lastAccessed?: number;
 }
 
-// Simulate encryption (in production, use actual crypto libraries like SubtleCrypto)
-async function encryptData(data: string, password: string): Promise<string> {
-  // In production, use Web Crypto API or a library like crypto-js
-  // For now, simulate with base64 encoding + simple obfuscation
-  const encoder = new TextEncoder();
-  const dataBytes = encoder.encode(data);
-  const passwordBytes = encoder.encode(password);
-  
-  // Simple XOR for demo (NOT secure for production!)
-  const encrypted = new Uint8Array(dataBytes.length);
-  for (let i = 0; i < dataBytes.length; i++) {
-    encrypted[i] = dataBytes[i] ^ passwordBytes[i % passwordBytes.length];
-  }
-  
-  // Convert to base64
-  return btoa(String.fromCharCode(...encrypted));
+// ===== Base64 helpers =====
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
 
-async function decryptData(encryptedData: string, password: string): Promise<string> {
-  // Reverse the process
-  const encoder = new TextEncoder();
-  const passwordBytes = encoder.encode(password);
-  
-  // Decode from base64
-  const encrypted = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-  
-  // Simple XOR to decrypt
+function fromBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// ===== Crypto helpers (WebCrypto) =====
+async function deriveKeyFromPassword(password: string, salt: Uint8Array, iterations = 150_000): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: ensureArrayBuffer(salt), iterations, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// AES-GCM encrypt: returns format v2:<salt_b64>:<iv_b64>:<ct_b64>
+async function encryptDataV2(plaintext: Uint8Array, password: string): Promise<string> {
+  if (!(crypto && crypto.subtle)) throw new Error('WebCrypto not available');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKeyFromPassword(password, salt);
+  const ctBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: ensureArrayBuffer(iv) }, key, ensureArrayBuffer(plaintext));
+  const ct = new Uint8Array(ctBuf);
+  return `v2:${toBase64(salt)}:${toBase64(iv)}:${toBase64(ct)}`;
+}
+
+async function decryptDataV2(encString: string, password: string): Promise<Uint8Array> {
+  if (!encString.startsWith('v2:')) throw new Error('Not v2 payload');
+  const [_v, saltB64, ivB64, ctB64] = encString.split(':');
+  const salt = fromBase64(saltB64);
+  const iv = fromBase64(ivB64);
+  const ct = fromBase64(ctB64);
+  const key = await deriveKeyFromPassword(password, salt);
+  const ptBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ensureArrayBuffer(iv) }, key, ensureArrayBuffer(ct));
+  return new Uint8Array(ptBuf);
+}
+
+// Legacy demo XOR decrypt (fallback for previously stored entries)
+async function legacyDecryptXorBase64(encryptedData: string, password: string): Promise<Uint8Array> {
+  const passwordBytes = new TextEncoder().encode(password);
+  const encrypted = fromBase64(encryptedData);
   const decrypted = new Uint8Array(encrypted.length);
   for (let i = 0; i < encrypted.length; i++) {
     decrypted[i] = encrypted[i] ^ passwordBytes[i % passwordBytes.length];
   }
-  
-  const decoder = new TextDecoder();
-  return decoder.decode(decrypted);
+  return decrypted;
 }
 
-// Generate a simple hash for file integrity
-async function generateHash(data: string): Promise<string> {
-  // In production, use SubtleCrypto.digest with SHA-256
-  // For now, simple hash simulation
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+// Compute SHA-256 integrity hash (hex)
+async function generateHash(bytes: Uint8Array): Promise<string> {
+  if (crypto && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', ensureArrayBuffer(bytes));
+    const out = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `sha256:${out}`;
   }
-  return `sha256:${Math.abs(hash).toString(16).padStart(16, '0')}`;
+  // Minimal fallback (not cryptographically strong)
+  let h = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    h = ((h << 5) - h) + bytes[i];
+    h |= 0;
+  }
+  return `sha256:${Math.abs(h).toString(16).padStart(16, '0')}`;
+}
+
+// Ensure ArrayBuffer view backing for WebCrypto BufferSource params
+function ensureArrayBuffer(data: Uint8Array): ArrayBuffer {
+  if (data.buffer.byteLength === data.byteLength) return data.buffer as ArrayBuffer;
+  return data.slice().buffer as ArrayBuffer;
 }
 
 /**
@@ -86,13 +131,15 @@ export async function storeSecureFile(
     
     reader.onload = async (e) => {
       try {
-        const data = e.target?.result as string;
-        
-        // Encrypt the data
-        const encryptedData = await encryptData(data, password);
-        
-        // Generate hash for integrity
-        const hash = await generateHash(data);
+        const result = e.target?.result;
+        if (!result) throw new Error('Read failed');
+        const bytes = new Uint8Array(result as ArrayBuffer);
+
+        // Encrypt the data (AES-GCM v2)
+        const encryptedData = await encryptDataV2(bytes, password);
+
+        // Generate hash for integrity (SHA-256)
+        const hash = await generateHash(bytes);
         
         // Create secure file object
         const secureFile: SecureFile = {
@@ -109,9 +156,9 @@ export async function storeSecureFile(
         };
         
         // Store in localStorage (in production, use IndexedDB or backend)
-        const existingFiles = getStoredFiles();
-        existingFiles.push(secureFile);
-        localStorage.setItem('secure_files', JSON.stringify(existingFiles));
+        const all = getStoredFilesRaw();
+        all.push(secureFile);
+        localStorage.setItem('secure_files', JSON.stringify(all));
         
         resolve(secureFile);
       } catch (error) {
@@ -120,7 +167,7 @@ export async function storeSecureFile(
     };
     
     reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+    reader.readAsArrayBuffer(file);
   });
 }
 
@@ -131,7 +178,7 @@ export async function retrieveSecureFile(
   fileId: string,
   password: string
 ): Promise<{ file: SecureFile; decryptedData: string }> {
-  const files = getStoredFiles();
+  const files = getStoredFilesRaw();
   const file = files.find(f => f.id === fileId);
   
   if (!file) {
@@ -143,8 +190,19 @@ export async function retrieveSecureFile(
   }
   
   try {
-    const decryptedData = await decryptData(file.encryptedData, password);
-    return { file, decryptedData };
+    let bytes: Uint8Array;
+    if (file.encryptedData.startsWith('v2:')) {
+      bytes = await decryptDataV2(file.encryptedData, password);
+    } else {
+      // Legacy fallback
+      bytes = await legacyDecryptXorBase64(file.encryptedData, password);
+    }
+
+    // Return as data URL to keep API stable
+    const b64 = toBase64(bytes);
+    const mime = file.type || 'application/octet-stream';
+    const dataUrl = `data:${mime};base64,${b64}`;
+    return { file, decryptedData: dataUrl };
   } catch (error) {
     throw new Error('Decryption failed - incorrect password or corrupted data');
   }
@@ -169,13 +227,25 @@ export function getStoredFiles(): SecureFile[] {
   }
 }
 
+// Internal helper to load full records including encryptedData
+function getStoredFilesRaw(): SecureFile[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem('secure_files');
+    if (!stored) return [];
+    return JSON.parse(stored) as SecureFile[];
+  } catch (e) {
+    console.error('Error loading raw secure files:', e);
+    return [];
+  }
+}
+
 /**
  * Delete a secure file
  */
 export function deleteSecureFile(fileId: string): boolean {
   try {
-    const files = getStoredFiles();
-    const allFiles = JSON.parse(localStorage.getItem('secure_files') || '[]');
+    const allFiles = getStoredFilesRaw();
     const filtered = allFiles.filter((f: SecureFile) => f.id !== fileId);
     localStorage.setItem('secure_files', JSON.stringify(filtered));
     return true;
