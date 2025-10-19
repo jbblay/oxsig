@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { 
   Shield, Fingerprint, Brain, Network, 
-  FileSignature, Eye, ArrowRight, Users, Edit3, FileCheck, Vault, ScrollText, GitBranch, WifiOff, Sparkles, HardDrive
+  FileSignature, Eye, ArrowRight, Users, Edit3, FileCheck, Vault, ScrollText, GitBranch, WifiOff, Sparkles, HardDrive, Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -143,9 +143,25 @@ export default function Home() {
         <h1 className="text-3xl md:text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
           OxSig
         </h1>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-muted-foreground text-sm mb-4">
           Quantum-resistant secure communications with self-sovereign identity
         </p>
+        
+        {/* Download CTA */}
+        <div className="flex items-center justify-center gap-3">
+          <Button asChild size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+            <a href="https://github.com/jbblay/oxsig/releases/download/v0.1.0/oxsig_0.1.0_x64-setup.exe" target="_blank" rel="noopener noreferrer">
+              <Download className="w-4 h-4 mr-2" />
+              Download for Windows
+            </a>
+          </Button>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/downloads">
+              All Platforms
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Small Grid-Based Feature Widgets - Perfectly Centered */}

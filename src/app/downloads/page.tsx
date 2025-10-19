@@ -23,9 +23,7 @@ import { toast } from "sonner";
 export default function DownloadsPage() {
   const handleDownload = (platform: string, url: string) => {
     toast.success(`Downloading OxSig for ${platform}...`);
-    // In production, this would download the actual file
-    // window.open(url, '_blank');
-    console.log(`Download ${platform} from:`, url);
+    window.open(url, '_blank');
   };
 
   const platforms = [
@@ -33,31 +31,34 @@ export default function DownloadsPage() {
       name: "Windows",
       icon: Monitor,
       description: "Windows 10 and 11 (64-bit)",
-      version: "v1.0.0",
-      size: "~85 MB",
-      url: "/downloads/oxsig-windows-latest.exe",
+      version: "v0.1.0",
+      size: "~20 MB",
+      url: "https://github.com/jbblay/oxsig/releases/download/v0.1.0/oxsig_0.1.0_x64-setup.exe",
       gradient: "from-blue-500 to-blue-600",
-      features: ["Native desktop app", "Offline-first", "Auto-updates", "System tray integration"]
+      features: ["Native desktop app", "Offline-first", "System tray integration", "Auto-updates"],
+      available: true
     },
     {
       name: "macOS",
       icon: Apple,
       description: "macOS 11+ (Apple Silicon & Intel)",
-      version: "v1.0.0",
-      size: "~95 MB",
-      url: "/downloads/oxsig-macos-latest.dmg",
+      version: "Coming Soon",
+      size: "~25 MB",
+      url: "#",
       gradient: "from-gray-600 to-gray-700",
-      features: ["Universal binary", "Touch ID support", "Keychain integration", "Notarized by Apple"]
+      features: ["Universal binary", "Touch ID support", "Keychain integration", "Notarized by Apple"],
+      available: false
     },
     {
       name: "Android",
       icon: Smartphone,
       description: "Android 8.0 and above",
-      version: "v1.0.0",
-      size: "~45 MB",
-      url: "/downloads/oxsig-android-latest.apk",
+      version: "Coming Soon",
+      size: "~15 MB",
+      url: "#",
       gradient: "from-green-500 to-green-600",
-      features: ["Biometric auth", "QR code scanning", "Offline mode", "Material Design"]
+      features: ["Biometric auth", "QR code scanning", "Offline mode", "Material Design"],
+      available: false
     }
   ];
 
@@ -133,9 +134,10 @@ export default function DownloadsPage() {
               <Button 
                 className="w-full"
                 onClick={() => handleDownload(platform.name, platform.url)}
+                disabled={!platform.available}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Download for {platform.name}
+                {platform.available ? `Download for ${platform.name}` : 'Coming Soon'}
               </Button>
             </CardContent>
           </Card>

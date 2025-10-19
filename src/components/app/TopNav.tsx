@@ -112,45 +112,40 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
               <DropdownMenuItem 
                 onClick={() => {
                   toast.success("Downloading OxSig for Windows...");
-                  // TODO: Add actual download link
-                  window.open('/downloads/oxsig-windows-latest.exe', '_blank');
+                  window.open('https://github.com/jbblay/oxsig/releases/download/v0.1.0/oxsig_0.1.0_x64-setup.exe', '_blank');
                 }}
                 className="cursor-pointer"
               >
                 <Monitor className="w-4 h-4 mr-2" />
                 <div className="flex flex-col">
                   <span className="font-medium">Windows</span>
-                  <span className="text-xs text-muted-foreground">Windows 10/11 (64-bit)</span>
+                  <span className="text-xs text-muted-foreground">v0.1.0 • Windows 10/11 (64-bit)</span>
                 </div>
               </DropdownMenuItem>
 
               <DropdownMenuItem 
                 onClick={() => {
-                  toast.success("Downloading OxSig for macOS...");
-                  // TODO: Add actual download link
-                  window.open('/downloads/oxsig-macos-latest.dmg', '_blank');
+                  toast.info("macOS version coming soon!");
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer opacity-60"
               >
                 <Apple className="w-4 h-4 mr-2" />
                 <div className="flex flex-col">
                   <span className="font-medium">macOS</span>
-                  <span className="text-xs text-muted-foreground">macOS 11+ (Apple Silicon & Intel)</span>
+                  <span className="text-xs text-muted-foreground">Coming Soon • macOS 11+ (Universal)</span>
                 </div>
               </DropdownMenuItem>
 
               <DropdownMenuItem 
                 onClick={() => {
-                  toast.success("Downloading OxSig for Android...");
-                  // TODO: Add actual download link
-                  window.open('/downloads/oxsig-android-latest.apk', '_blank');
+                  toast.info("Android version coming soon!");
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer opacity-60"
               >
                 <Smartphone className="w-4 h-4 mr-2" />
                 <div className="flex flex-col">
                   <span className="font-medium">Android</span>
-                  <span className="text-xs text-muted-foreground">Android 8.0+ (.apk)</span>
+                  <span className="text-xs text-muted-foreground">Coming Soon • Android 8.0+ (.apk)</span>
                 </div>
               </DropdownMenuItem>
 
