@@ -6,6 +6,80 @@ OxSig implements a defense-in-depth security strategy with multiple layers of pr
 
 ## 🛡️ Security Architecture
 
+### Threat Model & Risk Assessment
+
+OxSig implements a comprehensive threat model aligned with ISO 27005, OWASP ASVS Level 3, and NIST SP 800-53 controls. This section identifies threat actors, assets, attack vectors, and mitigations.
+
+#### Threat Actors
+
+| Actor Type | Motivation | Capability Level | Example Scenarios |
+|------------|------------|------------------|-------------------|
+| **Nation State** | Espionage, disruption | Advanced Persistent Threat | Zero-day exploits, supply chain attacks, cryptanalysis |
+| **Cybercriminal** | Financial gain, ransomware | Professional | Credential theft, malware deployment, data exfiltration |
+| **Insider Threat** | Revenge, financial gain | Privileged access | Key misuse, data theft, sabotage |
+| **Hacktivist** | Political agenda | Intermediate | DDoS attacks, defacement, data leaks |
+| **Corporate Spy** | Competitive advantage | Professional | Industrial espionage, IP theft, customer data |
+| **Quantum Adversary** | Future cryptanalysis | Theoretical (future) | Breaking current crypto, retroactive decryption |
+
+#### Assets & Protection Levels
+
+| Asset Category | Confidentiality | Integrity | Availability | Retention |
+|----------------|----------------|-----------|--------------|-----------|
+| **Private Keys** | Critical | Critical | High | User-controlled |
+| **Signed Documents** | High | Critical | High | Long-term |
+| **User Biometrics** | Critical | Critical | Medium | Device-local only |
+| **Audit Logs** | Medium | Critical | High | 7 years |
+| **Session Data** | High | High | Medium | 30 minutes |
+| **Application Code** | Low | Critical | High | Indefinite |
+
+#### Attack Vectors & Mitigations
+
+| Threat Type | Attack Vector | Impact Level | Mitigation Strategy | NIST Control |
+|-------------|---------------|--------------|-------------------|--------------|
+| **Insider Misuse** | Key theft by employee | High | Role-based ACL + hardware security modules + audit logging | AC-2, AU-2 |
+| **Network Adversary** | MITM on TLS connection | High | HSTS + certificate pinning + forward secrecy | SC-8, SC-23 |
+| **Compromised Device** | Stolen laptop with keys | Critical | Biometric authentication + encrypted key vault + remote wipe | IA-3, SC-28 |
+| **Supply Chain Attack** | Malicious dependency | Critical | Dependency signing + SRI + isolated builds | SA-12, SI-7 |
+| **Quantum Computer** | Future cryptanalysis | Critical | Post-quantum cryptography (Dilithium + Kyber) | SC-12, SC-13 |
+| **Browser Exploit** | XSS/code injection | High | Content Security Policy + input sanitization + sandboxing | SI-10, SI-16 |
+| **Social Engineering** | Phishing for credentials | Medium | WebAuthn + user training + origin validation | AT-2, IA-2 |
+| **Physical Access** | Unattended device | Medium | Auto-lock + secure boot + TPM attestation | PE-3, SI-6 |
+| **Metadata Analysis** | Traffic pattern analysis | Medium | Tor integration + timing obfuscation + dummy traffic | SC-8, SC-23 |
+| **Side Channel** | Timing/power analysis | Low | Constant-time algorithms + key blinding + noise injection | SC-12, SI-16 |
+
+#### Risk Assessment Matrix
+
+| Threat | Likelihood | Impact | Risk Level | Treatment |
+|--------|------------|---------|------------|-----------|
+| Nation State APT | Low | Critical | High | Accept with monitoring |
+| Ransomware/Malware | Medium | High | High | Mitigate (isolation + backups) |
+| Insider Key Misuse | Low | High | Medium | Mitigate (access controls + audit) |
+| Device Theft | Medium | Medium | Medium | Mitigate (encryption + auth) |
+| Browser Vulnerability | Medium | Medium | Medium | Mitigate (CSP + sandboxing) |
+| Quantum Cryptanalysis | Low | Critical | Medium | Mitigate (PQC readiness) |
+| Social Engineering | High | Low | Medium | Mitigate (WebAuthn + training) |
+| Physical Access | Medium | Low | Low | Mitigate (auto-lock + TPM) |
+
+#### Compliance Mapping
+
+**ISO 27001/27005 Controls:**
+- A.9.1.1 - Access control policy ✓ (Role-based access)
+- A.10.1.1 - Cryptographic policy ✓ (Crypto agility framework)
+- A.12.3.1 - Information backup ✓ (Encrypted key backup)
+- A.16.1.2 - Incident reporting ✓ (Automated incident response)
+
+**OWASP ASVS v4.0 Level 3:**
+- V2.1.1 - Password security ✓ (WebAuthn + biometrics)
+- V3.2.1 - Session management ✓ (Secure session tokens)
+- V6.2.1 - Data classification ✓ (Asset protection levels)
+- V7.1.1 - Log security ✓ (Tamper-evident audit logs)
+
+**NIST SP 800-53 (High Baseline):**
+- AC-2 - Account Management ✓ (Automated user provisioning)
+- AU-2 - Audit Events ✓ (Comprehensive logging)
+- SC-8 - Transmission Confidentiality ✓ (E2E encryption)
+- SC-28 - Protection of Information at Rest ✓ (AES-256-GCM)
+
 ### Multi-Layer Security Model
 
 ```
