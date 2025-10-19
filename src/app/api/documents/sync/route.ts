@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Required for static export
+export const dynamic = 'force-static';
+export const revalidate = false;
+
 /**
  * POST /api/documents/sync
  * Sync document from offline storage to backend
+ * 
+ * Note: This route is not used in Tauri builds (static export).
+ * For desktop app, use Tauri commands instead.
  */
 export async function POST(request: NextRequest) {
   try {
