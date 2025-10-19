@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
+import DOMPurify from 'dompurify';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +15,33 @@ import {
   Palette, Move, Square, Circle, ArrowRight, Trash2
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+
+/**
+ * Sanitize HTML content to prevent XSS attacks
+ */
+function sanitizeHtml(dirty: string): string {
+  return DOMPurify.sanitize(dirty, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'b', 'i', 'u', 'strong', 'em', 's', 'strike',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li',
+      'a', 'img',
+      'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      'blockquote', 'code', 'pre',
+      'div', 'span',
+      'hr'
+    ],
+    ALLOWED_ATTR: [
+      'href', 'target', 'rel',
+      'src', 'alt', 'width', 'height',
+      'style', 'class', 'id',
+      'border', 'cellpadding', 'cellspacing'
+    ],
+    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    KEEP_CONTENT: true,
+    RETURN_TRUSTED_TYPE: false
+  });
+}
 
 interface EditorFile {
   name: string;
@@ -76,7 +104,8 @@ export default function DocEditor() {
         const range = selection.getRangeAt(0);
         range.deleteContents();
         const temp = document.createElement('div');
-        temp.innerHTML = html;
+        // Sanitize HTML before inserting
+        temp.innerHTML = sanitizeHtml(html);
         const frag = document.createDocumentFragment();
         let node;
         while ((node = temp.firstChild)) {
@@ -193,7 +222,8 @@ export default function DocEditor() {
         }
 
         if (editorRef.current) {
-          editorRef.current.innerHTML = content;
+          // Sanitize content before setting innerHTML
+          editorRef.current.innerHTML = sanitizeHtml(content);
         }
 
         console.log('File processed successfully, setting content');
@@ -208,7 +238,8 @@ export default function DocEditor() {
         console.error("Error parsing file:", error);
         content = `<p style="color: red;">❌ Error loading file: ${fileName}</p><p>Error: ${error}</p>`;
         if (editorRef.current) {
-          editorRef.current.innerHTML = content;
+          // Sanitize even error messages
+          editorRef.current.innerHTML = sanitizeHtml(content);
         }
       }
     };
@@ -226,7 +257,8 @@ export default function DocEditor() {
         console.log('Image loaded');
         const img = `<img src="${e.target?.result}" alt="${fileName}" style="max-width: 100%; height: auto; display: block; margin: 20px auto;" />`;
         if (editorRef.current) {
-          editorRef.current.innerHTML = img;
+          // Sanitize image HTML
+          editorRef.current.innerHTML = sanitizeHtml(img);
         }
         setCurrentFile({
           name: fileName,

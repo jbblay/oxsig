@@ -29,7 +29,7 @@ export interface VerificationMethod {
 export interface ServiceEndpoint {
   id: string;
   type: string;
-  serviceEndpoint: string | Record<string, any>;
+  serviceEndpoint: string | Record<string, unknown>;
   description?: string;
 }
 
@@ -61,7 +61,7 @@ export interface VerifiableCredential {
 
 export interface CredentialSubject {
   id: string; // DID of subject
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface IssuerObject {
@@ -123,7 +123,7 @@ export interface SelectiveDisclosureResponse {
   holder: string; // DID
   verifiableCredential: VerifiableCredential[];
   proof: Proof;
-  disclosedAttributes: Record<string, any>;
+  disclosedAttributes: Record<string, unknown>;
   zkProof?: ZKProof;
 }
 
@@ -265,7 +265,7 @@ export interface AuditEntry {
   action: string;
   actor: string; // DID
   timestamp: number;
-  details: Record<string, any>;
+  details: Record<string, unknown>;
   signature: string;
 }
 
@@ -586,5 +586,5 @@ export interface EncryptedData {
   ciphertext: string;
   nonce: string;
   algorithm: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }

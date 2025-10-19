@@ -3,6 +3,8 @@
  * Zero-password device pairing via QR + challenge-response
  */
 
+import * as ed25519 from '@noble/ed25519';
+
 export interface PairingChallenge {
   type: 'PAIR_CHALLENGE';
   c: string; // base64 encoded 32-byte challenge
@@ -92,10 +94,53 @@ export async function verifyPairingResponse(
     return { valid: false, error: 'Challenge expired' };
   }
 
-  // TODO: Verify ed25519 signature
-  // For now, we'll trust the response (implement crypto verification later)
+  // Verify ed25519 signature
+  try {
+    // Convert hex strings to Uint8Array
+    const signature = hexToBytes(response.sig);
+    const publicKey = hexToBytes(response.devicePubKey);
+    
+    // The message that was signed is the challenge
+    const message = new TextEncoder().encode(response.c);
+    
+    // Verify the signature
+    const isValid = await ed25519.verify(signature, message, publicKey);
+    
+    if (!isValid) {
+      return { valid: false, error: 'Invalid signature' };
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return { valid: false, error: `Signature verification failed: ${message}` };
+  }
+}
+
+/**
+ * Utility: Convert hex string to Uint8Array
+ */
+function hexToBytes(hex: string): Uint8Array {
+  // Remove 0x prefix if present
+  const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
   
-  return { valid: true };
+  // Ensure even length
+  const paddedHex = cleanHex.length % 2 === 0 ? cleanHex : '0' + cleanHex;
+  
+  const bytes = new Uint8Array(paddedHex.length / 2);
+  for (let i = 0; i < paddedHex.length; i += 2) {
+    bytes[i / 2] = parseInt(paddedHex.slice(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+/**
+ * Utility: Convert Uint8Array to hex string
+ */
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**

@@ -28,7 +28,7 @@ export interface StoredSignature {
 
 export interface StoredSettings {
   key: string;
-  value: any;
+  value: string | number | boolean | null | Record<string, unknown>;
   timestamp: number;
 }
 
@@ -383,21 +383,43 @@ export class SyncManager {
   }
 
   /**
-   * Sync single document (stub - implement with your API)
+   * Sync single document to backend API
    */
   private async syncDocument(doc: StoredDocument): Promise<void> {
-    // TODO: Replace with actual API call
-    console.log('Syncing document:', doc.id);
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // In production, call your backend:
-    // await fetch('/api/documents/sync', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(doc)
-    // });
+    try {
+      const response = await fetch('/api/documents/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: doc.id,
+          hash: doc.hash,
+          name: doc.name,
+          content: doc.content,
+          signatures: doc.signatures,
+          timestamp: doc.timestamp,
+          metadata: doc.metadata,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Sync failed: ${response.status} ${error}`);
+      }
+
+      const result = await response.json();
+      console.log('✓ Document synced:', doc.id, result);
+      
+      return result;
+    } catch (error) {
+      // If API doesn't exist yet, fail gracefully
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        console.warn('API endpoint not available, skipping sync for:', doc.id);
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

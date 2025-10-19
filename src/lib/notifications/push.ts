@@ -8,7 +8,7 @@ export interface NotificationPayload {
   body: string;
   icon?: string;
   badge?: string;
-  data?: any;
+  data?: Record<string, unknown>;
   actions?: NotificationAction[];
   tag?: string;
   requireInteraction?: boolean;
@@ -288,7 +288,7 @@ export class NotificationScheduler {
 /**
  * Notification click handler
  */
-export function handleNotificationClick(action: string, data: any): void {
+export function handleNotificationClick(action: string, data: Record<string, unknown>): void {
   switch (action) {
     case 'view':
     case 'sign':
