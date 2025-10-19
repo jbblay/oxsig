@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "OxSig",
   "version": "0.1.0",
-  "identifier": "com.oxsig.app",
+  "identifier": "com.oxsig.oxsig",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -61,6 +61,16 @@
       "frameworks": [],
       "providerShortName": null,
       "signingIdentity": null
+    }
+  }
+  ,
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://example.com/updates/{{target}}/{{current_version}}"
+      ],
+      "dialog": true
     }
   }
 }
