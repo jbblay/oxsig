@@ -15,7 +15,10 @@ import {
   Lock,
   FileCheck,
   Smartphone,
-  Users
+  Users,
+  Download,
+  Monitor,
+  Apple
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -90,6 +93,78 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Download Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="hidden md:flex items-center gap-2 transition-all hover:bg-primary/10"
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Download OxSig</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              
+              <DropdownMenuItem 
+                onClick={() => {
+                  toast.success("Downloading OxSig for Windows...");
+                  // TODO: Add actual download link
+                  window.open('/downloads/oxsig-windows-latest.exe', '_blank');
+                }}
+                className="cursor-pointer"
+              >
+                <Monitor className="w-4 h-4 mr-2" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Windows</span>
+                  <span className="text-xs text-muted-foreground">Windows 10/11 (64-bit)</span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem 
+                onClick={() => {
+                  toast.success("Downloading OxSig for macOS...");
+                  // TODO: Add actual download link
+                  window.open('/downloads/oxsig-macos-latest.dmg', '_blank');
+                }}
+                className="cursor-pointer"
+              >
+                <Apple className="w-4 h-4 mr-2" />
+                <div className="flex flex-col">
+                  <span className="font-medium">macOS</span>
+                  <span className="text-xs text-muted-foreground">macOS 11+ (Apple Silicon & Intel)</span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem 
+                onClick={() => {
+                  toast.success("Downloading OxSig for Android...");
+                  // TODO: Add actual download link
+                  window.open('/downloads/oxsig-android-latest.apk', '_blank');
+                }}
+                className="cursor-pointer"
+              >
+                <Smartphone className="w-4 h-4 mr-2" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Android</span>
+                  <span className="text-xs text-muted-foreground">Android 8.0+ (.apk)</span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+              
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link href="/features" className="flex items-center">
+                  <Shield className="w-4 h-4 mr-2" />
+                  <span className="text-sm">View all features</span>
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"
@@ -128,6 +203,41 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                   Audit Log
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              
+              {/* Downloads Section */}
+              <DropdownMenuLabel className="md:hidden">Downloads</DropdownMenuLabel>
+              <DropdownMenuItem 
+                className="md:hidden cursor-pointer"
+                onClick={() => {
+                  toast.success("Downloading for Windows...");
+                  window.open('/downloads/oxsig-windows-latest.exe', '_blank');
+                }}
+              >
+                <Monitor className="w-4 h-4 mr-2" />
+                Windows App
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                className="md:hidden cursor-pointer"
+                onClick={() => {
+                  toast.success("Downloading for macOS...");
+                  window.open('/downloads/oxsig-macos-latest.dmg', '_blank');
+                }}
+              >
+                <Apple className="w-4 h-4 mr-2" />
+                macOS App
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                className="md:hidden cursor-pointer"
+                onClick={() => {
+                  toast.success("Downloading for Android...");
+                  window.open('/downloads/oxsig-android-latest.apk', '_blank');
+                }}
+              >
+                <Smartphone className="w-4 h-4 mr-2" />
+                Android App
+              </DropdownMenuItem>
+              
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => toast("Settings clicked")}>
                 <Settings className="w-4 h-4 mr-2" />
