@@ -1,3 +1,5 @@
+import { openDB, DBSchema } from 'idb';
+
 /**
  * Secure Storage Library
  * Provides encrypted storage capabilities for sensitive files and data
@@ -26,6 +28,39 @@ export interface StorageStats {
   totalSize: number;
   encryptedFiles: number;
   lastAccessed?: number;
+}
+
+// ===== DB Setup =====
+const DB_NAME = 'OxSigSecureStorage';
+const DB_VERSION = 1;
+const STORE_NAME = 'secure_files';
+
+interface SecureFileDB extends DBSchema {
+  [STORE_NAME]: {
+    key: string;
+    value: SecureFile;
+    indexes: { 'timestamp': number };
+  };
+}
+
+async function getDb() {
+  if (typeof window === 'undefined') {
+    // Return a mock DB for SSR or environments without window
+    return {
+      get: async () => undefined,
+      getAll: async () => [],
+      put: async () => '',
+      delete: async () => {},
+      clear: async () => {},
+      count: async () => 0,
+    } as any;
+  }
+  return openDB<SecureFileDB>(DB_NAME, DB_VERSION, {
+    upgrade(db) {
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      store.createIndex('timestamp', 'timestamp');
+    },
+  });
 }
 
 // ===== Base64 helpers =====
@@ -155,10 +190,9 @@ export async function storeSecureFile(
           description
         };
         
-        // Store in localStorage (in production, use IndexedDB or backend)
-        const all = getStoredFilesRaw();
-        all.push(secureFile);
-        localStorage.setItem('secure_files', JSON.stringify(all));
+        // Store in IndexedDB
+        const db = await getDb();
+        await db.put(STORE_NAME, secureFile);
         
         resolve(secureFile);
       } catch (error) {
@@ -178,8 +212,8 @@ export async function retrieveSecureFile(
   fileId: string,
   password: string
 ): Promise<{ file: SecureFile; decryptedData: string }> {
-  const files = getStoredFilesRaw();
-  const file = files.find(f => f.id === fileId);
+  const db = await getDb();
+  const file = await db.get(STORE_NAME, fileId);
   
   if (!file) {
     throw new Error('File not found');
@@ -211,16 +245,14 @@ export async function retrieveSecureFile(
 /**
  * Get all stored files (without decrypted data)
  */
-export function getStoredFiles(): SecureFile[] {
+export async function getStoredFiles(): Promise<SecureFile[]> {
   if (typeof window === 'undefined') return [];
   
   try {
-    const stored = localStorage.getItem('secure_files');
-    if (!stored) return [];
-    
-    const files = JSON.parse(stored) as SecureFile[];
+    const db = await getDb();
+    const files = await db.getAll(STORE_NAME);
     // Remove encrypted data from the list for memory efficiency
-    return files.map(({ encryptedData, ...file }) => file);
+    return files.map(({ encryptedData, ...file }: SecureFile) => file);
   } catch (error) {
     console.error('Error loading secure files:', error);
     return [];
@@ -228,26 +260,24 @@ export function getStoredFiles(): SecureFile[] {
 }
 
 // Internal helper to load full records including encryptedData
-function getStoredFilesRaw(): SecureFile[] {
-  if (typeof window === 'undefined') return [];
+async function getStoredFileRaw(fileId: string): Promise<SecureFile | undefined> {
+  if (typeof window === 'undefined') return undefined;
   try {
-    const stored = localStorage.getItem('secure_files');
-    if (!stored) return [];
-    return JSON.parse(stored) as SecureFile[];
+    const db = await getDb();
+    return await db.get(STORE_NAME, fileId);
   } catch (e) {
-    console.error('Error loading raw secure files:', e);
-    return [];
+    console.error('Error loading raw secure file:', e);
+    return undefined;
   }
 }
 
 /**
  * Delete a secure file
  */
-export function deleteSecureFile(fileId: string): boolean {
+export async function deleteSecureFile(fileId: string): Promise<boolean> {
   try {
-    const allFiles = getStoredFilesRaw();
-    const filtered = allFiles.filter((f: SecureFile) => f.id !== fileId);
-    localStorage.setItem('secure_files', JSON.stringify(filtered));
+    const db = await getDb();
+    await db.delete(STORE_NAME, fileId);
     return true;
   } catch (error) {
     console.error('Error deleting file:', error);
@@ -258,8 +288,8 @@ export function deleteSecureFile(fileId: string): boolean {
 /**
  * Get storage statistics
  */
-export function getStorageStats(): StorageStats {
-  const files = getStoredFiles();
+export async function getStorageStats(): Promise<StorageStats> {
+  const files = await getStoredFiles();
   
   return {
     totalFiles: files.length,
@@ -274,9 +304,10 @@ export function getStorageStats(): StorageStats {
 /**
  * Clear all secure storage
  */
-export function clearSecureStorage(): void {
+export async function clearSecureStorage(): Promise<void> {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('secure_files');
+  const db = await getDb();
+  await db.clear(STORE_NAME);
 }
 
 /**

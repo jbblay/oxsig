@@ -82,8 +82,9 @@ export class ApiClient {
 
     // Add default request interceptor for auth
     this.addRequestInterceptor(async (url, options) => {
-      if (!options.skipAuth) {
-        const token = this.getAuthToken();
+      if (!options.skipAuth && typeof window !== 'undefined') {
+        // Get token from localStorage
+        const token = localStorage.getItem('accessToken');
         if (token) {
           options.headers = {
             ...options.headers,

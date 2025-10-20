@@ -1,7 +1,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        Query, State,
     },
     response::IntoResponse,
     routing::{get, post},
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 mod config;
@@ -24,6 +24,9 @@ mod nats_client;
 mod redis_client;
 
 use config::Config;
+use metrics::{gather_metrics, init_metrics, CONNECTED_CLIENTS, MESSAGES_RECEIVED, MESSAGES_SENT};
+use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use std::collections::BTreeMap;
 
 // Message types for WebRTC signaling
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +75,9 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Print to ensure we can see output
+    eprintln!("=== OxSig WS Gateway Starting ===");
+    
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -115,6 +121,9 @@ async fn main() -> anyhow::Result<()> {
         nats_client,
     };
 
+    // Initialize metrics registry and counters
+    init_metrics();
+
     // Setup CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -150,8 +159,11 @@ async fn health_handler() -> impl IntoResponse {
 }
 
 async fn metrics_handler() -> impl IntoResponse {
-    // TODO: Implement Prometheus metrics export
-    "# Metrics endpoint\n"
+    let body = gather_metrics();
+    (
+        [("Content-Type", "text/plain; version=0.0.4")],
+        body,
+    )
 }
 
 async fn list_rooms(State(state): State<AppState>) -> impl IntoResponse {
@@ -162,7 +174,23 @@ async fn list_rooms(State(state): State<AppState>) -> impl IntoResponse {
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
+    Query(params): Query<BTreeMap<String, String>>,
 ) -> impl IntoResponse {
+    // Optional JWT verification from query param `token`
+    if std::env::var("WS_REQUIRE_AUTH").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+        if let Some(token) = params.get("token") {
+            let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "your_secret_key_here".to_string());
+            let key = DecodingKey::from_secret(secret.as_bytes());
+            // Accept HS256 only by default
+            let mut validation = Validation::new(Algorithm::HS256);
+            if decode::<serde_json::Value>(token, &key, &validation).is_err() {
+                return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
+            }
+        } else {
+            return (axum::http::StatusCode::UNAUTHORIZED, "missing token").into_response();
+        }
+    }
+
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -173,6 +201,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     info!("New WebSocket connection: {}", client_id);
 
+    // Track connected clients
+    CONNECTED_CLIENTS.inc();
+
     // Spawn task to handle broadcasting messages to this client
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
@@ -180,6 +211,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 if sender.send(Message::Text(json)).await.is_err() {
                     break;
                 }
+                MESSAGES_SENT.inc();
             }
         }
     });
@@ -191,8 +223,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Text(text) => {
+                    // Basic ping/pong support for keepalive
+                    if text == "{\"type\":\"ping\"}" || text.trim() == "ping" {
+                        let _ = sender
+                            .send(Message::Text("{\"type\":\"pong\"}".to_string()))
+                            .await;
+                        continue;
+                    }
+
                     if let Ok(signal_msg) = serde_json::from_str::<SignalMessage>(&text) {
                         info!("Received message from {}: {:?}", client_id_clone, signal_msg);
+                        MESSAGES_RECEIVED.inc();
                         
                         // Broadcast to all connected clients
                         if tx.send(signal_msg.clone()).is_err() {
@@ -227,4 +268,5 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
 
     info!("WebSocket connection closed: {}", client_id);
+    CONNECTED_CLIENTS.dec();
 }

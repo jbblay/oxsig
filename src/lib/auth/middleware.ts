@@ -1,9 +1,10 @@
 /**
  * Authentication Middleware
- * Simple JWT-based authentication for API routes
+ * JWT-based authentication for API routes
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import * as jose from 'jose';
 
 export interface AuthenticatedUser {
   id: string;
@@ -13,7 +14,19 @@ export interface AuthenticatedUser {
 }
 
 /**
- * Get user from request (stub - to be implemented with real auth)
+ * Verify JWT token
+ */
+async function verifyToken(token: string): Promise<jose.JWTPayload> {
+  const secret = new TextEncoder().encode(
+    process.env.JWT_SECRET || 'your_secret_key_here_change_in_production'
+  );
+
+  const { payload } = await jose.jwtVerify(token, secret);
+  return payload;
+}
+
+/**
+ * Get user from request with real JWT validation
  */
 export async function getUserFromRequest(
   request: NextRequest
@@ -27,18 +40,20 @@ export async function getUserFromRequest(
 
     const token = authHeader.substring(7);
 
-    // TODO: Verify JWT token
-    // For now, return a temp user if token exists
-    if (token) {
+    // Verify JWT token
+    try {
+      const payload = await verifyToken(token);
+      
       return {
-        id: 'temp-user-id',
-        email: 'user@example.com',
-        name: 'Test User',
-        role: 'user',
+        id: payload.sub as string,
+        email: payload.email as string,
+        name: payload.name as string,
+        role: (payload.role as 'user' | 'admin') || 'user',
       };
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      return null;
     }
-
-    return null;
   } catch (error) {
     console.error('Auth error:', error);
     return null;

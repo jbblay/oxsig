@@ -16,9 +16,9 @@
         reverse_proxy ws-gateway:8080
     }
 
-    # API endpoints
+    # API endpoints (served by Next.js app in dev)
     handle /api/* {
-        reverse_proxy ws-gateway:8080
+        reverse_proxy host.docker.internal:3000
     }
 
     # Next.js application

@@ -18,7 +18,7 @@ git clone https://github.com/jbblay/oxsig.git
 cd oxsig
 pnpm install
 
-# Start development server
+# Start development server (uses scripts/backend.ps1)
 pnpm dev
 
 # Open http://localhost:3000
@@ -223,39 +223,31 @@ pnpm export
 
 ## 📚 Documentation
 
-### Essential Documentation
-- **[SETUP.md](docs/SETUP.md)** - Complete development setup (backend + environment)
-- **[FEATURES.md](docs/FEATURES.md)** - All features documentation (basic + advanced)
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Technical architecture & design patterns
-- **[SECURITY.md](docs/SECURITY.md)** - Security implementation & threat model
-- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Production deployment guide
-- **[CONTRIBUTING.md](docs/CONTRIBUTING.md)** - Development & contribution guidelines
-- **[ROADMAP.md](docs/ROADMAP.md)** - Development roadmap & open source strategy
- - **[GRANTS.md](docs/GRANTS.md)** - Grant proposal overview and milestones
- - **[OPEN_CALLS.md](docs/OPEN_CALLS.md)** - Areas where we need help
- - **[DATA_FLOWS.md](docs/DATA_FLOWS.md)** - Data flows and trust boundaries
- - **[QANDA.md](docs/QANDA.md)** - Q&A guide for reviewers and contributors
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** - Complete setup and backend integration.
+- **[Features](docs/FEATURES.md)** - All features documentation (basic + advanced).
+- **[Architecture](docs/ARCHITECTURE.md)** - Technical architecture & design patterns.
+- **[Security](docs/SECURITY.md)** - Security implementation & threat model.
+- **[Deployment](docs/DEPLOYMENT.md)** - Production deployment guide.
+- **[Contributing](docs/CONTRIBUTING.md)** - Development & contribution guidelines.
+- **[Roadmap](docs/ROADMAP.md)** - Development roadmap & open source strategy.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
 
 ### Development Workflow
 
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+1.  Fork the repository.
+2.  Create your feature branch: `git checkout -b feature/amazing-feature`.
+3.  Commit your changes: `git commit -m 'Add amazing feature'`.
+4.  Push to the branch: `git push origin feature/amazing-feature`.
+5.  Open a Pull Request.
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🔗 Links
-We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md), our [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md), and [GOVERNANCE](GOVERNANCE.md).
-
-Funding & sponsorship: see [FUNDING](.github/FUNDING.yml). Maintainers: see [MAINTAINERS](MAINTAINERS.md). Support: [SUPPORT](SUPPORT.md). Security: [SECURITY](SECURITY.md).
 - **Demo:** [https://oxsig.vercel.app](https://oxsig.vercel.app)
 - **Documentation:** [https://docs.oxsig.dev](https://docs.oxsig.dev)
 - **Issues:** [GitHub Issues](https://github.com/yourusername/oxsig/issues)
@@ -270,7 +262,7 @@ Funding & sponsorship: see [FUNDING](.github/FUNDING.yml). Maintainers: see [MAI
 
 ---
 
-Note on cryptography: certain modules are DEMO-ONLY and not suitable for production without hardening (e.g., `lib/storage/secure-storage.ts` uses XOR/base64, `lib/vault/seed-vault.ts` uses a partial BIP39 list and simplified flows). See `SECURITY_STATUS.md`, `docs/GRANTS.md` and `docs/OPEN_CALLS.md` for the hardening plan.
+Note on cryptography: certain modules are DEMO-ONLY and not suitable for production without hardening (e.g., `lib/storage/secure-storage.ts` uses XOR/base64, `lib/vault/seed-vault.ts` uses a partial BIP39 list and simplified flows). See `docs/SECURITY.md`, `docs/GRANTS.md` and `docs/OPEN_CALLS.md` for the hardening plan.
 ---
 
 **Built with ❤️ using Next.js, TypeScript, and modern web standards**

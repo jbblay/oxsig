@@ -1,44 +1,51 @@
-FROM rust:1.75-slim as builder
+# =========================
+# 🏗️  Build Stage
+# =========================
+FROM rustlang/rust:nightly-slim AS builder
+# (or use `rust:1.85-slim` when available)
 
 WORKDIR /app
 
-# Install dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests
+# Copy manifests first for caching
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy main to build dependencies
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
-    rm -rf src
+# Pre-build dependencies (dummy main)
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
 
-# Copy source code
+# Copy the actual source code last (so dependency cache is preserved)
 COPY src ./src
 
-# Build application
-RUN touch src/main.rs && cargo build --release
+# Build the final binary
+RUN cargo build --release
 
-# Runtime stage
+# =========================
+# 🚀 Runtime Stage
+# =========================
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install only the minimal runtime libs
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy binary from builder
+# Copy compiled binary from the builder stage
 COPY --from=builder /app/target/release/oxsig-ws-gateway /usr/local/bin/oxsig-ws-gateway
 
-# Expose ports
+# Expose your app ports
 EXPOSE 8080 9090
 
-# Run the binary
+# Ensure stdout/stderr are unbuffered
+ENV RUST_LOG=info
+ENV RUST_BACKTRACE=1
+
+# Start the service
 CMD ["oxsig-ws-gateway"]

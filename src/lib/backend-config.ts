@@ -40,7 +40,17 @@ export async function checkBackendHealth(): Promise<boolean> {
 
 // WebSocket connection helper
 export function createWebSocketConnection(onMessage?: (data: any) => void): WebSocket {
-  const ws = new WebSocket(backendConfig.wsUrl);
+  // Append JWT token from localStorage if present
+  let url = backendConfig.wsUrl;
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (token) {
+      const u = new URL(url);
+      u.searchParams.set('token', token);
+      url = u.toString();
+    }
+  } catch {}
+  const ws = new WebSocket(url);
   
   ws.onopen = () => {
     console.log('✅ Connected to WebSocket Gateway');

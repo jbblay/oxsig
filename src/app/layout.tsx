@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PerformanceMonitor } from "@/components/PerformanceMonitor";
+import { AuthProvider } from "@/lib/auth/use-auth";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -60,11 +61,13 @@ export default function RootLayout({
       <body className={`${inter.className} flex flex-col min-h-screen`}>
         <ErrorBoundary>
           <ThemeProvider>
-            <PerformanceMonitor />
-            <BackgroundController />
-            <PWARegister />
-            <AppShell>{children}</AppShell>
-            <Toaster richColors />
+            <AuthProvider>
+              <PerformanceMonitor />
+              <BackgroundController />
+              <PWARegister />
+              <AppShell>{children}</AppShell>
+              <Toaster richColors />
+            </AuthProvider>
           </ThemeProvider>
         </ErrorBoundary>
       </body>

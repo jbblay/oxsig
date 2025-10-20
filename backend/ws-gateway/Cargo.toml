@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # Web Framework
 axum = { version = "0.7", features = ["ws", "macros"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
@@ -41,6 +42,7 @@ opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
 
 # Metrics
 prometheus = "0.13"
+lazy_static = "1.4"
 
 # Utilities
 uuid = { version = "1.6", features = ["serde", "v4"] }

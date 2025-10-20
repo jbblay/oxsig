@@ -25,11 +25,13 @@ import {
   exportSecureFile,
   formatFileSize,
   formatTimestamp,
-  type SecureFile
+  type SecureFile,
+  type StorageStats
 } from "@/lib/storage/secure-storage";
 
 export default function SecureStoragePage() {
   const [files, setFiles] = React.useState<SecureFile[]>([]);
+  const [stats, setStats] = React.useState<StorageStats>({ totalFiles: 0, totalSize: 0, encryptedFiles: 0 });
   const [selectedFile, setSelectedFile] = React.useState<SecureFile | null>(null);
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
@@ -38,6 +40,7 @@ export default function SecureStoragePage() {
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
   const [showDecryptDialog, setShowDecryptDialog] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [uploadFile, setUploadFile] = React.useState<File | null>(null);
   const [tags, setTags] = React.useState("");
   const [description, setDescription] = React.useState("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -47,14 +50,14 @@ export default function SecureStoragePage() {
     loadFiles();
   }, []);
 
-  const loadFiles = () => {
-    const storedFiles = getStoredFiles();
+  const loadFiles = async () => {
+    const storedFiles = await getStoredFiles();
     setFiles(storedFiles);
+    const newStats = await getStorageStats();
+    setStats(newStats);
   };
 
-  const stats = React.useMemo(() => getStorageStats(), [files]);
-
-  const handleFileSelect = async (fileList: FileList | null) => {
+  const handleFileSelect = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     
     const file = fileList[0];
@@ -66,12 +69,12 @@ export default function SecureStoragePage() {
       return;
     }
     
+    setUploadFile(file);
     setShowUploadDialog(true);
   };
 
   const handleUpload = async () => {
-    const fileList = fileInputRef.current?.files;
-    if (!fileList || fileList.length === 0 || !password) {
+    if (!uploadFile || !password) {
       toast.error('Please select a file and enter a password');
       return;
     }
@@ -80,7 +83,6 @@ export default function SecureStoragePage() {
     setUploadProgress(0);
 
     try {
-      const file = fileList[0];
       const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
 
       // Simulate progress
@@ -94,20 +96,21 @@ export default function SecureStoragePage() {
         });
       }, 200);
 
-      const secureFile = await storeSecureFile(file, password, tagList, description);
+      const secureFile = await storeSecureFile(uploadFile, password, tagList, description);
       
       clearInterval(progressInterval);
       setUploadProgress(100);
 
       toast.success('File encrypted and stored securely!', {
-        description: `${file.name} is now protected`
+        description: `${uploadFile.name} is now protected`
       });
 
-      loadFiles();
+      await loadFiles();
       setShowUploadDialog(false);
       setPassword("");
       setTags("");
       setDescription("");
+      setUploadFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -121,36 +124,17 @@ export default function SecureStoragePage() {
     }
   };
 
-  const handleDecrypt = async () => {
-    if (!selectedFile || !password) {
-      toast.error('Please enter the password');
-      return;
-    }
-
-    try {
-      await retrieveSecureFile(selectedFile.id, password);
-      toast.success('File decrypted successfully!', {
-        description: 'You can now download the file'
-      });
-      setShowDecryptDialog(false);
-      setPassword("");
-    } catch (error) {
-      toast.error('Decryption failed', {
-        description: 'Incorrect password or corrupted file'
-      });
-    }
-  };
-
-  const handleDownload = async (file: SecureFile) => {
+  const handleDownload = (file: SecureFile) => {
     setSelectedFile(file);
     setShowDecryptDialog(true);
   };
 
-  const handleDelete = (file: SecureFile) => {
+  const handleDelete = async (file: SecureFile) => {
     if (confirm(`Delete ${file.name}? This action cannot be undone.`)) {
-      if (deleteSecureFile(file.id)) {
+      const success = await deleteSecureFile(file.id);
+      if (success) {
         toast.success('File deleted successfully');
-        loadFiles();
+        await loadFiles();
       } else {
         toast.error('Failed to delete file');
       }

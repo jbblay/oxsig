@@ -7,6 +7,7 @@ pub struct Config {
     pub redis_url: String,
     pub nats_url: String,
     pub jwt_secret: String,
+    pub require_auth: bool,
 }
 
 impl Config {
@@ -20,6 +21,9 @@ impl Config {
                 .unwrap_or_else(|_| "nats://localhost:4222".to_string()),
             jwt_secret: std::env::var("JWT_SECRET")
                 .unwrap_or_else(|_| "your_secret_key_here".to_string()),
+            require_auth: std::env::var("WS_REQUIRE_AUTH")
+                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+                .unwrap_or(false),
         })
     }
 }
