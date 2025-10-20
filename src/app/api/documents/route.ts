@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const encrypted = searchParams.get('encrypted');
     const ownerId = searchParams.get('ownerId');
-    const sortBy = searchParams.get('sortBy') || 'created_at';
+    const sortByParam = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
@@ -76,6 +76,14 @@ export async function GET(request: NextRequest) {
     }
 
     const whereClause = conditions.join(' AND ');
+
+    // Map sortBy from API to actual DB columns
+    const sortMap: Record<string, string> = {
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+      title: 'title',
+    };
+    const sortBy = sortMap[sortByParam] || 'created_at';
 
     // Get total count
     const countQuery = `SELECT COUNT(*) FROM documents WHERE ${whereClause}`;
