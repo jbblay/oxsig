@@ -151,7 +151,7 @@ export class PairingRelay {
   private connectionPromise: Promise<void> | null = null;
   private messageHandlers: Map<string, (data: any) => void> = new Map();
 
-  constructor(private relayUrl: string) {}
+  constructor(private relayUrl: string = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_WS_URL) || 'ws://localhost:8080/ws') {}
 
   /**
    * Connect to relay server

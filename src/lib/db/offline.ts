@@ -8,13 +8,18 @@ const DB_VERSION = 1;
 
 export interface StoredDocument {
   id: string;
-  hash: string;
-  name: string;
+  hash?: string;
+  name?: string;
+  title?: string;
   content: string;
-  signatures: any[];
+  contentType?: string;
+  signatures?: any[];
   synced: boolean;
-  timestamp: number;
+  timestamp?: number;
+  tags?: string[];
   metadata?: Record<string, any>;
+  createdAt?: Date;
+  lastModified?: Date;
 }
 
 export interface StoredSignature {

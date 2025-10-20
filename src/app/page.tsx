@@ -7,6 +7,7 @@ import {
   FileSignature, Eye, ArrowRight, Users, Edit3, FileCheck, Vault, ScrollText, GitBranch, WifiOff, Sparkles, HardDrive, Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import SystemStatus from "@/components/system/SystemStatus";
 
 export default function Home() {
   const features = [
@@ -162,6 +163,11 @@ export default function Home() {
             </Link>
           </Button>
         </div>
+      </div>
+
+      {/* System Status */}
+      <div className="relative z-10 w-full px-2 sm:px-4">
+        <SystemStatus />
       </div>
 
       {/* Small Grid-Based Feature Widgets - Perfectly Centered */}
