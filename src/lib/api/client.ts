@@ -138,6 +138,11 @@ export class ApiClient {
       },
     };
 
+    // If sending FormData, let the browser set the multipart boundary.
+    if (requestOptions.body instanceof FormData && requestOptions.headers) {
+      delete (requestOptions.headers as Record<string, string>)['Content-Type'];
+    }
+
     // Apply request interceptors
     for (const interceptor of this.requestInterceptors) {
       const result = await interceptor(url, requestOptions);
@@ -288,8 +293,9 @@ export class ApiClient {
     options?: RequestOptions
   ): Promise<ApiResponse<T>> {
     const formData = new FormData();
-    files.forEach((file, index) => {
-      formData.append(`file${index}`, file);
+    files.forEach((file) => {
+      // Backend expects 'files' repeated field
+      formData.append('files', file);
     });
 
     return this.request<T>(endpoint, {
@@ -297,6 +303,7 @@ export class ApiClient {
       method: 'POST',
       body: formData,
       headers: {
+        // Let browser set Content-Type with boundary
         ...options?.headers,
       },
     });
