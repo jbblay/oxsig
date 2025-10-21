@@ -4,26 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
-
-// Database connection (reuse across requests)
-let pool: Pool | null = null;
-
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
-  }
-  return pool;
-}
+import { query as dbQuery } from '@/lib/db/postgres';
+import { getAuthUserId } from '@/lib/auth/api-helpers';
+import { indexDocument } from '@/lib/search/meilisearch';
+import { publishDocumentCreated } from '@/lib/events/nats';
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     // Get total count
     const countQuery = `SELECT COUNT(*) FROM documents WHERE ${whereClause}`;
-    const countResult = await getPool().query(countQuery, values);
+    const countResult = await dbQuery(countQuery, values);
     const total = parseInt(countResult.rows[0].count);
 
     // Get paginated documents
@@ -116,10 +100,10 @@ export async function GET(request: NextRequest) {
     `;
 
     values.push(pageSize, offset);
-    const documentsResult = await getPool().query(documentsQuery, values);
+    const documentsResult = await dbQuery(documentsQuery, values);
 
     // Transform to camelCase
-    const documents = documentsResult.rows.map((row) => ({
+    const documents = documentsResult.rows.map((row: any) => ({
       id: row.id,
       title: row.title,
       content: row.content,
@@ -156,6 +140,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Get authenticated user
+    const ownerId = await getAuthUserId(request);
+    
     const body = await request.json();
     const {
       title,
@@ -167,14 +154,11 @@ export async function POST(request: NextRequest) {
       status = 'draft',
     } = body;
 
-    // TODO: Get user ID from session/auth
-    const ownerId = 'temp-user-id';
-
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
 
-    const query = `
+    const insertQuery = `
       INSERT INTO documents (
         title,
         content,
@@ -206,7 +190,7 @@ export async function POST(request: NextRequest) {
     `;
 
     const values = [title, content, contentType, ownerId, encrypted, metadata, tags, status];
-    const result = await getPool().query(query, values);
+    const result = await dbQuery(insertQuery, values);
     const row = result.rows[0];
 
     const document = {
@@ -228,12 +212,37 @@ export async function POST(request: NextRequest) {
       updatedAt: row.updated_at,
     };
 
-    // TODO: Index in Meilisearch
-    // TODO: Publish event to NATS
+    // Index in Meilisearch (async, don't wait)
+    indexDocument({
+      id: document.id,
+      title: document.title,
+      content: document.content,
+      ownerId: document.ownerId,
+      tags: document.tags || [],
+      status: document.status,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+    }).catch(err => console.error('Indexing error:', err));
+
+    // Publish event to NATS (async, don't wait)
+    publishDocumentCreated(document.id, document.ownerId, {
+      title: document.title,
+      contentType: document.contentType,
+      encrypted: document.encrypted,
+    }).catch(err => console.error('Event publishing error:', err));
 
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
     console.error('Error creating document:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Unauthorized')) {
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to create document', details: String(error) },
       { status: 500 }

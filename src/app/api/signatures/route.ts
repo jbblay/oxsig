@@ -3,26 +3,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
-
-let pool: Pool | null = null;
-
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 20,
-    });
-  }
-  return pool;
-}
+import { query as dbQuery } from '@/lib/db/postgres';
+import { getAuthUserId } from '@/lib/auth/api-helpers';
+import { publishSignatureCreated } from '@/lib/events/nats';
 
 export async function POST(request: NextRequest) {
   try {
+    // Get authenticated user
+    const signerId = await getAuthUserId(request);
+    
     const body = await request.json();
     const {
       documentId,
@@ -42,9 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const signerId = 'temp-user-id'; // TODO: Get from session
-
-    const query = `
+    const insertQuery = `
       INSERT INTO signatures (
         document_id,
         signer_id,
@@ -89,7 +76,7 @@ export async function POST(request: NextRequest) {
       metadata,
     ];
 
-    const result = await getPool().query(query, values);
+    const result = await dbQuery(insertQuery, values);
     const row = result.rows[0];
 
     const signature = {
@@ -112,9 +99,24 @@ export async function POST(request: NextRequest) {
       createdAt: row.created_at,
     };
 
+    // Publish event to NATS (async, don't wait)
+    publishSignatureCreated(signature.id, signature.documentId, signature.signerId, {
+      signatureType: signature.signatureType,
+      algorithm: signature.algorithm,
+    }).catch(err => console.error('Event publishing error:', err));
+
     return NextResponse.json(signature, { status: 201 });
   } catch (error) {
     console.error('Error creating signature:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Unauthorized')) {
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to create signature', details: String(error) },
       { status: 500 }
@@ -151,7 +153,7 @@ export async function GET(request: NextRequest) {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const countQuery = `SELECT COUNT(*) FROM signatures ${whereClause}`;
-    const countResult = await getPool().query(countQuery, values);
+    const countResult = await dbQuery(countQuery, values);
     const total = parseInt(countResult.rows[0].count);
 
     const signaturesQuery = `
@@ -180,9 +182,9 @@ export async function GET(request: NextRequest) {
     `;
 
     values.push(pageSize, offset);
-    const signaturesResult = await getPool().query(signaturesQuery, values);
+    const signaturesResult = await dbQuery(signaturesQuery, values);
 
-    const signatures = signaturesResult.rows.map((row) => ({
+    const signatures = signaturesResult.rows.map((row: any) => ({
       id: row.id,
       documentId: row.document_id,
       signerId: row.signer_id,
