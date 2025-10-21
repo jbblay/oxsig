@@ -24,10 +24,10 @@ function getPool() {
 
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const txHash = '0x' + crypto.randomBytes(32).toString('hex');
 
     const res = await getPool().query(

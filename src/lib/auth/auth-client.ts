@@ -10,6 +10,7 @@ export interface User {
   publicKey: string;
   displayName?: string;
   email?: string;
+  role?: string;
 }
 
 export interface AuthTokens {
@@ -64,10 +65,10 @@ export class AuthService {
     signature?: string;
   }): Promise<User> {
     const response = await apiClient.post<User>('/api/auth/register', data);
-    if (!response.success) {
+    if (response.error || !response.data) {
       throw new Error(response.error?.message || 'Registration failed');
     }
-    return response.data!;
+    return response.data;
   }
 
   /**
@@ -80,11 +81,11 @@ export class AuthService {
       challenge,
     });
 
-    if (!response.success) {
+    if (response.error || !response.data) {
       throw new Error(response.error?.message || 'Login failed');
     }
 
-    const data = response.data!;
+    const data = response.data;
 
     // Store tokens and user
     this.accessToken = data.accessToken;
@@ -115,13 +116,13 @@ export class AuthService {
       }
     );
 
-    if (!response.success) {
+    if (response.error || !response.data) {
       // Refresh failed, clear all auth data
       this.clearAuth();
       throw new Error(response.error?.message || 'Token refresh failed');
     }
 
-    const data = response.data!;
+    const data = response.data;
     this.accessToken = data.accessToken;
 
     if (typeof window !== 'undefined') {

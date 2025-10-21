@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app/AppShell";
 import PWARegister from "@/components/app/PWARegister";
@@ -9,8 +8,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PerformanceMonitor } from "@/components/PerformanceMonitor";
 import { AuthProvider } from "@/lib/auth/use-auth";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "OxSig - Quantum-Safe Secure Communications",
@@ -58,7 +55,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.className} flex flex-col min-h-screen`}>
+      <body className="flex flex-col min-h-screen font-sans">
         <ErrorBoundary>
           <ThemeProvider>
             <AuthProvider>

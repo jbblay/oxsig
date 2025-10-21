@@ -45,10 +45,10 @@ function mapRow(row: any) {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const query = `
       SELECT 
@@ -90,10 +90,10 @@ export async function GET(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const result = await getPool().query(
       'DELETE FROM signatures WHERE id = $1 RETURNING id',

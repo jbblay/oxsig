@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { index: string } }
+  { params }: { params: Promise<{ index: string }> }
 ) {
   try {
+    const { index } = await params;
     const meiliUrl = process.env.MEILISEARCH_URL || 'http://localhost:7700';
     const apiKey = process.env.MEILISEARCH_KEY || '';
 
-    const res = await fetch(`${meiliUrl}/indexes/${params.index}/stats`, {
+    const res = await fetch(`${meiliUrl}/indexes/${index}/stats`, {
       method: 'GET',
       headers: {
         ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
