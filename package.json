@@ -10,7 +10,7 @@
     "dev": "pnpm --filter @oxsig/frontend dev",
     "dev:frontend": "pnpm --filter @oxsig/frontend dev",
     "dev:backend": "pnpm --filter @oxsig/backend-ws dev",
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @oxsig/frontend build",
     "build:frontend": "pnpm --filter @oxsig/frontend build",
     "build:backend": "pnpm --filter @oxsig/backend-ws build",
     "start": "pnpm --filter @oxsig/frontend start",

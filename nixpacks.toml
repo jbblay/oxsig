@@ -1,0 +1,21 @@
+# Nixpacks configuration for OxSig Frontend
+# Tells Railway to only build the frontend package
+
+[phases.setup]
+nixPkgs = ["nodejs_22", "pnpm"]
+
+[phases.install]
+cmds = [
+  "pnpm install --filter=@oxsig/frontend --frozen-lockfile"
+]
+
+[phases.build]
+cmds = [
+  "pnpm --filter=@oxsig/frontend build"
+]
+
+[start]
+cmd = "cd packages/frontend && pnpm start"
+
+[variables]
+NODE_ENV = "production"
