@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     if (!res.ok) {
       return NextResponse.json({ error: 'Indexing failed', details: json }, { status: res.status });
     }
-    return NextResponse.json({ taskUid: json.taskUid ?? json.taskUid || json.taskUid });
+    return NextResponse.json({ taskUid: json.taskUid });
   } catch (error) {
     console.error('Index document error:', error);
     return NextResponse.json({ error: 'Failed to index document' }, { status: 500 });
