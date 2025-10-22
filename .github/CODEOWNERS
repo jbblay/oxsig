@@ -1,7 +1,0 @@
-# Require review from maintainers on every PR
-* @jbblay
-
-# Areas (customize as the team grows)
-src-tauri/ @jbblay
-src/lib/crypto/ @jbblay
-src/app/ @jbblay
