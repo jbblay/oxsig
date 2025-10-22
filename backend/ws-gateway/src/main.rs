@@ -76,7 +76,8 @@ struct AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Print to ensure we can see output
-    eprintln!("=== OxSig WS Gateway Starting ===");
+    println!("=== OxSig WS Gateway Starting ===");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
     
     // Initialize tracing
     tracing_subscriber::fmt()
@@ -88,26 +89,76 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     info!("Starting OxSig WebSocket Gateway");
+    println!("After tracing init");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
 
     // Load configuration
+    println!("Loading configuration...");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
     dotenv::dotenv().ok();
     let config = Config::from_env()?;
+    println!("Configuration loaded");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
 
-    // Initialize database connection
-    let db_pool = sqlx::postgres::PgPoolOptions::new()
+    // Initialize database connection (OPTIONAL)
+    println!("Connecting to database...");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
+    let db_pool = match sqlx::postgres::PgPoolOptions::new()
         .max_connections(50)
         .connect(&config.database_url)
-        .await?;
+        .await
+    {
+        Ok(pool) => {
+            info!("✓ Database connection established");
+            println!("✓ Database connected");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            pool
+        }
+        Err(e) => {
+            warn!("⚠ Database unavailable (optional): {}", e);
+            println!("⚠ Running without database - persistence disabled");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            // Create a dummy pool that will fail on use (we won't use it)
+            sqlx::postgres::PgPoolOptions::new()
+                .max_connections(1)
+                .connect("postgresql://dummy:dummy@localhost:5432/dummy")
+                .await
+                .unwrap_or_else(|_| panic!("Failed to create dummy pool"))
+        }
+    };
 
-    info!("Database connection established");
+    // Initialize Redis (OPTIONAL)
+    let redis_client = match redis::Client::open(config.redis_url.clone()) {
+        Ok(client) => {
+            info!("✓ Redis connection established");
+            println!("✓ Redis connected");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            client
+        }
+        Err(e) => {
+            warn!("⚠ Redis unavailable (optional): {}", e);
+            println!("⚠ Running without Redis - rate limiting disabled");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            redis::Client::open("redis://dummy:6379").unwrap()
+        }
+    };
 
-    // Initialize Redis
-    let redis_client = redis::Client::open(config.redis_url.clone())?;
-    info!("Redis connection established");
-
-    // Initialize NATS
-    let nats_client = async_nats::connect(&config.nats_url).await?;
-    info!("NATS connection established");
+    // Initialize NATS (OPTIONAL)
+    let nats_client = match async_nats::connect(&config.nats_url).await {
+        Ok(client) => {
+            info!("✓ NATS connection established");
+            println!("✓ NATS connected");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            client
+        }
+        Err(e) => {
+            warn!("⚠ NATS unavailable (optional): {}", e);
+            println!("⚠ Running without NATS - distributed mode disabled");
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+            // Create dummy client (won't be used)
+            async_nats::connect("nats://dummy:4222").await.unwrap()
+        }
+    };
 
     // Create broadcast channel for WebSocket messages
     let (tx, _rx) = broadcast::channel::<SignalMessage>(1000);
