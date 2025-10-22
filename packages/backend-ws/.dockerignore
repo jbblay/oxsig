@@ -1,0 +1,32 @@
+# Rust build artifacts
+target/
+debug/
+release/
+
+# Cargo lock (will be copied separately)
+# Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Tests
+tests/
+
+# Development files
+.env
+.env.local
+*.log

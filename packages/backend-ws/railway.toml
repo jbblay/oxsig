@@ -1,0 +1,26 @@
+# Backend Deployment Configuration
+# For Rust WebSocket Gateway
+
+[build]
+  builder = "NIXPACKS"
+
+[build.nixpacksPlan]
+  providers = ["rust"]
+
+[[build.nixpacksPlan.phases.setup]]
+  nixPkgs = ["rustc", "cargo", "gcc"]
+
+[[build.nixpacksPlan.phases.build]]
+  cmd = "cargo build --release"
+
+[[build.nixpacksPlan.phases.install]]
+  cmd = "cp target/release/oxsig-ws-gateway /app/oxsig-ws-gateway"
+
+[deploy]
+  startCommand = "/app/oxsig-ws-gateway"
+  healthcheckPath = "/health"
+  restartPolicyType = "ON_FAILURE"
+
+[env]
+  RUST_LOG = "info"
+  PORT = "8080"
