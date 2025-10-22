@@ -1,0 +1,44 @@
+# Trivy Configuration
+# Scan settings for container and infrastructure as code
+
+# Severity levels to report
+severity:
+  - CRITICAL
+  - HIGH
+  - MEDIUM
+
+# Vulnerability types to scan
+vuln-type:
+  - os
+  - library
+
+# Skip files
+skip-files:
+  - "**/*_test.go"
+  - "**/node_modules/**"
+  - "**/vendor/**"
+
+# Skip directories
+skip-dirs:
+  - ".git"
+  - ".github"
+  - "node_modules"
+  - "target"
+
+# Security checks
+security-checks:
+  - vuln
+  - config
+  - secret
+
+# Exit code
+exit-code: 1
+
+# Timeout
+timeout: 10m
+
+# Format
+format: json
+
+# Output
+output: trivy-report.json
