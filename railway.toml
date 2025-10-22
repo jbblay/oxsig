@@ -1,6 +1,5 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "cd oxsig-backend && cargo build --release"
+watchPatterns = ["oxsig-backend/**"]
 
 [deploy]
 startCommand = "cd oxsig-backend && ./target/release/ws-gateway"
