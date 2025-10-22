@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "cd oxsig-backend && cargo build --release"
+
+[deploy]
+startCommand = "cd oxsig-backend && ./target/release/ws-gateway"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
