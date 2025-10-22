@@ -6,11 +6,13 @@ nixPkgs = ["nodejs_22", "pnpm"]
 
 [phases.install]
 cmds = [
-  "pnpm install --filter=@oxsig/frontend --frozen-lockfile"
+  "echo 'Installing frontend dependencies only...'",
+  "pnpm install --filter=@oxsig/frontend --frozen-lockfile --prefer-offline"
 ]
 
 [phases.build]
 cmds = [
+  "echo 'Building frontend package...'",
   "pnpm --filter=@oxsig/frontend build"
 ]
 
@@ -19,3 +21,4 @@ cmd = "cd packages/frontend && pnpm start"
 
 [variables]
 NODE_ENV = "production"
+NIXPACKS_NO_MUSL = "1"
