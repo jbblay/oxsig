@@ -100,28 +100,13 @@ async fn main() -> anyhow::Result<()> {
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://oxsig:changeme@localhost:5432/oxsig".to_string());
     
-    info!("📊 Connecting to database...");
-    let db = match db::create_pool(&db_url).await {
-        Ok(pool) => {
-            info!("✓ Database connected");
-            
-            // Run migrations
-            info!("🔄 Running database migrations...");
-            if let Err(e) = db::run_migrations(&pool).await {
-                warn!("⚠️  Migration error (might be expected): {}", e);
-            } else {
-                info!("✓ Migrations completed");
-            }
-            
-            pool
-        }
-        Err(e) => {
-            error!("❌ Database connection failed: {}", e);
-            error!("⚠️  Continuing without database - some features will be disabled");
-            // Create a dummy pool that will fail on use
-            db::create_pool("postgres://localhost/dummy").await?
-        }
-    };
+    let db = db::create_pool(&db_url).await?;
+    info!("✓ Database connected");
+
+    // Run migrations
+    info!("🔄 Running database migrations...");
+    db::run_migrations(&db).await.expect("Failed to run database migrations");
+    info!("✓ Migrations completed");
 
     // Initialize storage (S3/MinIO)
     info!("📦 Initializing storage service...");
