@@ -37,10 +37,8 @@ benches/
 # Infrastructure configs
 infrastructure/
 fly.toml
-railway.toml
 docker-compose.yml
-Dockerfile
-Dockerfile.*
+Dockerfile.dev
 
 # Logs
 *.log
