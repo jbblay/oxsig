@@ -53,5 +53,6 @@ bytes = "1.5"
 jsonwebtoken = "9.2"
 bcrypt = "0.15"
 
-[patch.crates-io]
-base64ct = "=1.6.0"
+# Workaround for base64ct edition2024 issue
+[dependencies.base64ct]
+version = "=1.6.0"
