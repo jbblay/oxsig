@@ -9,10 +9,13 @@ This is a Rust-based WebSocket gateway for real-time communication, WebRTC signa
 - ✅ **WebSocket Real-time Communication** - Instant message relay
 - ✅ **WebRTC Signaling** - P2P connection setup (offer/answer/ICE)
 - ✅ **Room Management** - Multi-user collaboration spaces
+- ✅ **REST API** - Full CRUD for documents, auth, search
+- ✅ **PostgreSQL Database** - Persistent storage for users, documents, signatures
+- ✅ **S3/MinIO Storage** - File upload/download support
+- ✅ **MeiliSearch** - Full-text search across documents
+- ✅ **JWT Authentication** - Secure user authentication
 - ✅ **Health Checks** - Built-in `/health` endpoint
 - ✅ **Prometheus Metrics** - Performance monitoring at `/metrics`
-- ✅ **Zero Dependencies** - Runs standalone, no DB/Redis/NATS required
-- ✅ **JWT Authentication** - Optional token-based auth
 - ✅ **Production Ready** - Multi-stage Docker build, optimized size
 
 ## 🚂 Deploy to Railway
@@ -68,24 +71,50 @@ Set these in Railway Dashboard → Variables:
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `PORT` | Server port | `8080` | No (Railway sets this) |
-| `JWT_SECRET` | JWT signing key | `change-me-in-production` | Yes (for auth) |
-| `WS_REQUIRE_AUTH` | Enable JWT auth | `false` | No |
+| `DATABASE_URL` | PostgreSQL connection | - | Yes |
+| `STORAGE_ENDPOINT` | S3/MinIO endpoint | - | Yes |
+| `STORAGE_ACCESS_KEY` | S3/MinIO access key | - | Yes |
+| `STORAGE_SECRET_KEY` | S3/MinIO secret key | - | Yes |
+| `STORAGE_BUCKET` | S3/MinIO bucket name | `oxsig` | Yes |
+| `STORAGE_REGION` | S3 region | `us-east-1` | No |
+| `SEARCH_URL` | MeiliSearch URL | - | Yes |
+| `SEARCH_KEY` | MeiliSearch API key | - | No (optional) |
+| `JWT_SECRET` | JWT signing key | - | Yes |
+| `WS_REQUIRE_AUTH` | Enable WS JWT auth | `false` | No |
 | `RUST_LOG` | Log level | `info` | No |
 
-### Optional Variables (Advanced)
+### Railway Services Setup
 
-These are **not required** for basic operation:
+Add these services in Railway:
+
+1. **PostgreSQL** - Click "Add Service" → "PostgreSQL"
+   - Railway auto-sets `DATABASE_URL`
+
+2. **MinIO (S3-compatible storage)** - Use template or Docker service:
+   ```bash
+   railway service create
+   # Select Docker image: minio/minio
+   # Command: server /data --console-address ":9001"
+   # Set variables: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD
+   ```
+
+3. **MeiliSearch** - Use template or Docker service:
+   ```bash
+   railway service create
+   # Select Docker image: getmeili/meilisearch
+   # Set variable: MEILI_MASTER_KEY (optional)
+   ```
+
+### Minimal Setup (WebSocket Only)
+
+If you only need WebSocket/WebRTC without database/storage/search:
 
 ```bash
-# PostgreSQL (if you add Railway Postgres addon)
-DATABASE_URL=postgresql://...
-
-# Redis (if you add Railway Redis addon)
-REDIS_URL=redis://...
-
-# NATS (for multi-region deployments)
-NATS_URL=nats://...
+railway variables set JWT_SECRET=your-secret-key
+railway variables set WS_REQUIRE_AUTH=false
 ```
+
+The backend will start but log warnings about missing services. REST API endpoints will fail but WebSocket will work.
 
 ## 📊 Endpoints
 
@@ -99,6 +128,69 @@ With authentication:
 wss://your-app.railway.app/ws?token=YOUR_JWT_TOKEN
 ```
 
+### REST API Endpoints
+
+#### Authentication
+```bash
+# Register new user
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "securepassword",
+  "name": "John Doe"
+}
+
+# Login
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "securepassword"
+}
+
+# Response
+{
+  "token": "eyJhbGc...",
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "name": "John Doe"
+  }
+}
+```
+
+#### Documents
+```bash
+# Upload document (multipart/form-data)
+POST /api/documents
+Authorization: Bearer YOUR_JWT_TOKEN
+Content-Type: multipart/form-data
+
+file: [binary data]
+
+# List documents
+GET /api/documents?page=1&per_page=20
+Authorization: Bearer YOUR_JWT_TOKEN
+
+# Get document
+GET /api/documents/:id
+Authorization: Bearer YOUR_JWT_TOKEN
+
+# Delete document
+DELETE /api/documents/:id
+Authorization: Bearer YOUR_JWT_TOKEN
+```
+
+#### Search
+```bash
+# Search documents
+GET /api/search?q=query&limit=10&offset=0
+Authorization: Bearer YOUR_JWT_TOKEN
+```
+
 ### Health Check
 ```
 GET https://your-app.railway.app/health
@@ -108,8 +200,13 @@ Response:
 ```json
 {
   "status": "healthy",
-  "service": "oxsig-ws-gateway",
-  "version": "0.1.0"
+  "service": "oxsig-backend",
+  "version": "0.1.0",
+  "services": {
+    "database": true,
+    "storage": true,
+    "search": true
+  }
 }
 ```
 

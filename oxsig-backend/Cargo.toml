@@ -9,33 +9,34 @@ path = "src/main.rs"
 
 [dependencies]
 # Web Framework
-axum = { version = "0.7", features = ["ws", "macros"] }
-axum-extra = { version = "0.9", features = ["typed-header"] }
+axum = { version = "0.7", features = ["ws", "macros", "multipart"] }
 tokio = { version = "1.35", features = ["full"] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
+tower-http = { version = "0.5", features = ["trace", "cors"] }
 
 # WebSocket & Async
-tokio-tungstenite = "0.21"
 futures = "0.3"
-futures-util = "0.3"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Database (Optional)
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"], optional = true }
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
 
-# Redis (Optional)
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"], optional = true }
+# Storage (S3/MinIO)
+aws-config = { version = "1.0", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.0"
+aws-credential-types = "1.0"
 
-# NATS (Optional)
-async-nats = { version = "0.33", optional = true }
+# Search (MeiliSearch)
+meilisearch-sdk = "0.26"
 
-# Logging & Tracing (Simplified for Railway)
+# Redis (Cache)
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Logging & Tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Metrics
 prometheus = "0.13"
@@ -45,15 +46,9 @@ lazy_static = "1.4"
 uuid = { version = "1.6", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
-thiserror = "1.0"
 dotenv = "0.15"
+bytes = "1.5"
 
 # Security
 jsonwebtoken = "9.2"
-
-[features]
-default = []
-database = ["sqlx"]
-cache = ["redis"]
-messaging = ["async-nats"]
-full = ["database", "cache", "messaging"]
+bcrypt = "0.15"

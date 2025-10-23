@@ -4,23 +4,30 @@ use axum::{
         Query, State,
     },
     response::IntoResponse,
-    routing::get,
+    routing::{delete, get, post},
     Json, Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use uuid::Uuid;
 
+mod api;
 mod config;
-mod handlers;
+mod db;
 mod metrics;
+mod models;
+mod search;
+mod storage;
 
 use config::Config;
 use metrics::{gather_metrics, init_metrics, CONNECTED_CLIENTS, MESSAGES_RECEIVED, MESSAGES_SENT};
+use search::SearchService;
+use storage::StorageService;
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use std::collections::BTreeMap;
 
@@ -59,16 +66,20 @@ enum SignalMessage {
     },
 }
 
-// Application state (simplified - no external dependencies required)
+// Application state
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     rooms: Arc<RwLock<HashMap<String, Vec<String>>>>,
     tx: broadcast::Sender<SignalMessage>,
+    pub db: PgPool,
+    pub storage: Arc<StorageService>,
+    pub search: Arc<SearchService>,
+    pub jwt_secret: String,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing first
+    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -78,21 +89,95 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
-    info!("🚀 Starting OxSig WebSocket Gateway v{}", env!("CARGO_PKG_VERSION"));
+    info!("🚀 Starting OxSig Backend v{}", env!("CARGO_PKG_VERSION"));
 
-    // Load configuration with .env file support
+    // Load configuration
     dotenv::dotenv().ok();
-    let _config = Config::from_env()?;
+    let config = Config::from_env()?;
     info!("✓ Configuration loaded");
+
+    // Initialize database
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://oxsig:changeme@localhost:5432/oxsig".to_string());
+    
+    info!("📊 Connecting to database...");
+    let db = match db::create_pool(&db_url).await {
+        Ok(pool) => {
+            info!("✓ Database connected");
+            
+            // Run migrations
+            info!("🔄 Running database migrations...");
+            if let Err(e) = db::run_migrations(&pool).await {
+                warn!("⚠️  Migration error (might be expected): {}", e);
+            } else {
+                info!("✓ Migrations completed");
+            }
+            
+            pool
+        }
+        Err(e) => {
+            error!("❌ Database connection failed: {}", e);
+            error!("⚠️  Continuing without database - some features will be disabled");
+            // Create a dummy pool that will fail on use
+            db::create_pool("postgres://localhost/dummy").await?
+        }
+    };
+
+    // Initialize storage (S3/MinIO)
+    info!("📦 Initializing storage service...");
+    let storage = match StorageService::new(
+        &std::env::var("STORAGE_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".to_string()),
+        &std::env::var("STORAGE_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".to_string()),
+        &std::env::var("STORAGE_SECRET_KEY").unwrap_or_else(|_| "minioadmin".to_string()),
+        &std::env::var("STORAGE_BUCKET").unwrap_or_else(|_| "oxsig".to_string()),
+        &std::env::var("STORAGE_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
+    ).await {
+        Ok(s) => {
+            info!("✓ Storage service initialized");
+            Arc::new(s)
+        }
+        Err(e) => {
+            error!("❌ Storage initialization failed: {}", e);
+            error!("⚠️  Continuing without storage - uploads will fail");
+            // Create dummy storage
+            Arc::new(StorageService::new("http://localhost:9000", "dummy", "dummy", "dummy", "us-east-1").await?)
+        }
+    };
+
+    // Initialize search (MeiliSearch)
+    info!("🔍 Initializing search service...");
+    let search = match SearchService::new(
+        &std::env::var("SEARCH_URL").unwrap_or_else(|_| "http://localhost:7700".to_string()),
+        &std::env::var("SEARCH_KEY").unwrap_or_else(|_| "".to_string()),
+    ).await {
+        Ok(s) => {
+            info!("✓ Search service initialized");
+            Arc::new(s)
+        }
+        Err(e) => {
+            error!("❌ Search initialization failed: {}", e);
+            error!("⚠️  Continuing without search - search features will be disabled");
+            // Create dummy search
+            Arc::new(SearchService::new("http://localhost:7700", "").await?)
+        }
+    };
 
     // Create broadcast channel for WebSocket messages
     let (tx, _rx) = broadcast::channel::<SignalMessage>(1000);
 
-    // Initialize app state (no external dependencies required)
-    let state = AppState {
+    // JWT secret
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "your_secret_key_here_change_in_production".to_string());
+
+    // Initialize app state
+    let state = Arc::new(AppState {
         rooms: Arc::new(RwLock::new(HashMap::new())),
         tx,
-    };
+        db,
+        storage,
+        search,
+        jwt_secret,
+    });
 
     // Initialize metrics
     init_metrics();
@@ -104,17 +189,32 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build router
+    // Build API router
+    let api_router = Router::new()
+        // Auth routes
+        .route("/auth/register", post(api::register))
+        .route("/auth/login", post(api::login))
+        // Document routes
+        .route("/documents", get(api::list_documents).post(api::upload_document))
+        .route("/documents/:id", get(api::get_document).delete(api::delete_document))
+        // Search route
+        .route("/search", get(api::search_documents));
+
+    // Build main router
     let app = Router::new()
+        // WebSocket endpoint
         .route("/ws", get(ws_handler))
+        // Health and metrics
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
         .route("/rooms", get(list_rooms))
+        // API routes under /api
+        .nest("/api", api_router)
         .with_state(state)
         .layer(cors)
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
-    // Get port from environment or use default
+    // Get port from environment
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
@@ -122,9 +222,11 @@ async fn main() -> anyhow::Result<()> {
     
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     
-    info!("✓ WebSocket gateway listening on {}", addr);
-    info!("✓ Health check available at http://0.0.0.0:{}/health", port);
-    info!("✓ Metrics available at http://0.0.0.0:{}/metrics", port);
+    info!("✅ OxSig Backend ready!");
+    info!("🌐 WebSocket gateway: ws://0.0.0.0:{}/ws", port);
+    info!("🏥 Health check: http://0.0.0.0:{}/health", port);
+    info!("📊 Metrics: http://0.0.0.0:{}/metrics", port);
+    info!("🔌 API endpoints: http://0.0.0.0:{}/api/*", port);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
@@ -132,11 +234,19 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn health_handler() -> impl IntoResponse {
+async fn health_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // Check database health
+    let db_healthy = sqlx::query("SELECT 1").fetch_one(&state.db).await.is_ok();
+
     Json(serde_json::json!({
         "status": "healthy",
-        "service": "oxsig-ws-gateway",
-        "version": env!("CARGO_PKG_VERSION")
+        "service": "oxsig-backend",
+        "version": env!("CARGO_PKG_VERSION"),
+        "services": {
+            "database": db_healthy,
+            "storage": true, // Could add actual health check
+            "search": true,  // Could add actual health check
+        }
     }))
 }
 
@@ -148,22 +258,20 @@ async fn metrics_handler() -> impl IntoResponse {
     )
 }
 
-async fn list_rooms(State(state): State<AppState>) -> impl IntoResponse {
+async fn list_rooms(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let rooms = state.rooms.read().await;
     Json(rooms.clone())
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(state): State<AppState>,
+    State(state): State<Arc<AppState>>,
     Query(params): Query<BTreeMap<String, String>>,
 ) -> impl IntoResponse {
-    // Optional JWT verification from query param `token`
+    // Optional JWT verification
     if std::env::var("WS_REQUIRE_AUTH").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
         if let Some(token) = params.get("token") {
-            let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "your_secret_key_here".to_string());
-            let key = DecodingKey::from_secret(secret.as_bytes());
-            // Accept HS256 only by default
+            let key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
             let validation = Validation::new(Algorithm::HS256);
             if decode::<serde_json::Value>(token, &key, &validation).is_err() {
                 return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
@@ -176,24 +284,20 @@ async fn ws_handler(
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState) {
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (mut sender, mut receiver) = socket.split();
     let mut rx = state.tx.subscribe();
     let client_id = Uuid::new_v4().to_string();
 
     info!("New WebSocket connection: {}", client_id);
-
-    // Track connected clients
     CONNECTED_CLIENTS.inc();
 
-    // Create a channel for sending pong responses
     let (pong_tx, mut pong_rx) = tokio::sync::mpsc::channel::<String>(10);
 
-    // Spawn task to handle broadcasting messages to this client
+    // Spawn task to handle broadcasting
     let mut send_task = tokio::spawn(async move {
         loop {
             tokio::select! {
-                // Handle broadcast messages
                 Ok(msg) = rx.recv() => {
                     if let Ok(json) = serde_json::to_string(&msg) {
                         if sender.send(Message::Text(json)).await.is_err() {
@@ -202,7 +306,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         MESSAGES_SENT.inc();
                     }
                 }
-                // Handle pong responses
                 Some(pong) = pong_rx.recv() => {
                     if sender.send(Message::Text(pong)).await.is_err() {
                         break;
@@ -212,14 +315,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     });
 
-    // Spawn task to handle receiving messages from this client
+    // Spawn task to handle receiving
     let tx = state.tx.clone();
     let client_id_clone = client_id.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Text(text) => {
-                    // Basic ping/pong support for keepalive
+                    // Handle ping/pong
                     if text == "{\"type\":\"ping\"}" || text.trim() == "ping" {
                         let _ = pong_tx.send("{\"type\":\"pong\"}".to_string()).await;
                         continue;
@@ -229,12 +332,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         info!("Received message from {}: {:?}", client_id_clone, signal_msg);
                         MESSAGES_RECEIVED.inc();
                         
-                        // Broadcast to all connected clients
                         if tx.send(signal_msg.clone()).is_err() {
                             warn!("Failed to broadcast message");
                         }
 
-                        // Handle specific message types
                         match signal_msg {
                             SignalMessage::Join { room, user_id } => {
                                 info!("User {} joined room {}", user_id, room);
