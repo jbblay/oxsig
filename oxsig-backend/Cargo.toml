@@ -52,3 +52,6 @@ bytes = "1.5"
 # Security
 jsonwebtoken = "9.2"
 bcrypt = "0.15"
+
+[patch.crates-io]
+base64ct = "=1.6.0"
