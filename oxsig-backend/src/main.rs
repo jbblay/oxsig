@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 mod config;
@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration with .env file support
     dotenv::dotenv().ok();
-    let config = Config::from_env()?;
+    let _config = Config::from_env()?;
     info!("✓ Configuration loaded");
 
     // Create broadcast channel for WebSocket messages
@@ -164,7 +164,7 @@ async fn ws_handler(
             let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "your_secret_key_here".to_string());
             let key = DecodingKey::from_secret(secret.as_bytes());
             // Accept HS256 only by default
-            let mut validation = Validation::new(Algorithm::HS256);
+            let validation = Validation::new(Algorithm::HS256);
             if decode::<serde_json::Value>(token, &key, &validation).is_err() {
                 return (axum::http::StatusCode::UNAUTHORIZED, "invalid token").into_response();
             }
@@ -186,14 +186,28 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // Track connected clients
     CONNECTED_CLIENTS.inc();
 
+    // Create a channel for sending pong responses
+    let (pong_tx, mut pong_rx) = tokio::sync::mpsc::channel::<String>(10);
+
     // Spawn task to handle broadcasting messages to this client
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            if let Ok(json) = serde_json::to_string(&msg) {
-                if sender.send(Message::Text(json)).await.is_err() {
-                    break;
+        loop {
+            tokio::select! {
+                // Handle broadcast messages
+                Ok(msg) = rx.recv() => {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        if sender.send(Message::Text(json)).await.is_err() {
+                            break;
+                        }
+                        MESSAGES_SENT.inc();
+                    }
                 }
-                MESSAGES_SENT.inc();
+                // Handle pong responses
+                Some(pong) = pong_rx.recv() => {
+                    if sender.send(Message::Text(pong)).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     });
@@ -207,9 +221,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 Message::Text(text) => {
                     // Basic ping/pong support for keepalive
                     if text == "{\"type\":\"ping\"}" || text.trim() == "ping" {
-                        let _ = sender
-                            .send(Message::Text("{\"type\":\"pong\"}".to_string()))
-                            .await;
+                        let _ = pong_tx.send("{\"type\":\"pong\"}".to_string()).await;
                         continue;
                     }
 
