@@ -4,7 +4,7 @@ use axum::{
         Query, State,
     },
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
@@ -12,16 +12,12 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use uuid::Uuid;
 
 mod config;
-mod db;
 mod handlers;
-mod models;
 mod metrics;
-mod nats_client;
-mod redis_client;
 
 use config::Config;
 use metrics::{gather_metrics, init_metrics, CONNECTED_CLIENTS, MESSAGES_RECEIVED, MESSAGES_SENT};
@@ -63,117 +59,44 @@ enum SignalMessage {
     },
 }
 
-// Application state
+// Application state (simplified - no external dependencies required)
 #[derive(Clone)]
 struct AppState {
     rooms: Arc<RwLock<HashMap<String, Vec<String>>>>,
     tx: broadcast::Sender<SignalMessage>,
-    db_pool: sqlx::PgPool,
-    redis_client: redis::Client,
-    nats_client: async_nats::Client,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Print to ensure we can see output
-    println!("=== OxSig WS Gateway Starting ===");
-    std::io::Write::flush(&mut std::io::stdout()).ok();
-    
-    // Initialize tracing
+    // Initialize tracing first
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
-        .json()
+        .with_target(false)
+        .compact()
         .init();
 
-    info!("Starting OxSig WebSocket Gateway");
-    println!("After tracing init");
-    std::io::Write::flush(&mut std::io::stdout()).ok();
+    info!("🚀 Starting OxSig WebSocket Gateway v{}", env!("CARGO_PKG_VERSION"));
 
-    // Load configuration
-    println!("Loading configuration...");
-    std::io::Write::flush(&mut std::io::stdout()).ok();
+    // Load configuration with .env file support
     dotenv::dotenv().ok();
     let config = Config::from_env()?;
-    println!("Configuration loaded");
-    std::io::Write::flush(&mut std::io::stdout()).ok();
-
-    // Initialize database connection (OPTIONAL)
-    println!("Connecting to database...");
-    std::io::Write::flush(&mut std::io::stdout()).ok();
-    let db_pool = match sqlx::postgres::PgPoolOptions::new()
-        .max_connections(50)
-        .connect(&config.database_url)
-        .await
-    {
-        Ok(pool) => {
-            info!("✓ Database connection established");
-            println!("✓ Database connected");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            pool
-        }
-        Err(e) => {
-            warn!("⚠ Database unavailable (optional): {}", e);
-            println!("⚠ Running without database - persistence disabled");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            // Create a dummy pool that will fail on use (we won't use it)
-            sqlx::postgres::PgPoolOptions::new()
-                .max_connections(1)
-                .connect("postgresql://dummy:dummy@localhost:5432/dummy")
-                .await
-                .unwrap_or_else(|_| panic!("Failed to create dummy pool"))
-        }
-    };
-
-    // Initialize Redis (OPTIONAL)
-    let redis_client = match redis::Client::open(config.redis_url.clone()) {
-        Ok(client) => {
-            info!("✓ Redis connection established");
-            println!("✓ Redis connected");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            client
-        }
-        Err(e) => {
-            warn!("⚠ Redis unavailable (optional): {}", e);
-            println!("⚠ Running without Redis - rate limiting disabled");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            redis::Client::open("redis://dummy:6379").unwrap()
-        }
-    };
-
-    // Initialize NATS (OPTIONAL)
-    let nats_client = match async_nats::connect(&config.nats_url).await {
-        Ok(client) => {
-            info!("✓ NATS connection established");
-            println!("✓ NATS connected");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            client
-        }
-        Err(e) => {
-            warn!("⚠ NATS unavailable (optional): {}", e);
-            println!("⚠ Running without NATS - distributed mode disabled");
-            std::io::Write::flush(&mut std::io::stdout()).ok();
-            // Create dummy client (won't be used)
-            async_nats::connect("nats://dummy:4222").await.unwrap()
-        }
-    };
+    info!("✓ Configuration loaded");
 
     // Create broadcast channel for WebSocket messages
     let (tx, _rx) = broadcast::channel::<SignalMessage>(1000);
 
-    // Initialize app state
+    // Initialize app state (no external dependencies required)
     let state = AppState {
         rooms: Arc::new(RwLock::new(HashMap::new())),
         tx,
-        db_pool,
-        redis_client,
-        nats_client,
     };
 
-    // Initialize metrics registry and counters
+    // Initialize metrics
     init_metrics();
+    info!("✓ Metrics initialized");
 
     // Setup CORS
     let cors = CorsLayer::new()
@@ -191,9 +114,17 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
-    // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
-    info!("WebSocket gateway listening on {}", addr);
+    // Get port from environment or use default
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8080);
+    
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    
+    info!("✓ WebSocket gateway listening on {}", addr);
+    info!("✓ Health check available at http://0.0.0.0:{}/health", port);
+    info!("✓ Metrics available at http://0.0.0.0:{}/metrics", port);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

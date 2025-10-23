@@ -1,32 +1,52 @@
 # Rust build artifacts
 target/
-debug/
-release/
+**/*.rs.bk
+*.pdb
 
-# Cargo lock (will be copied separately)
-# Cargo.lock
-
-# IDE files
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.DS_Store
 
 # Git
 .git/
 .gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
 
 # Documentation
 *.md
 !README.md
-
-# CI/CD
-.github/
+docs/
 
 # Tests
 tests/
+benches/
 
-# Development files
+# Environment files
 .env
-.env.local
+.env.*
+!.env.example
+
+# Infrastructure configs
+infrastructure/
+fly.toml
+railway.toml
+docker-compose.yml
+Dockerfile
+Dockerfile.*
+
+# Logs
 *.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
