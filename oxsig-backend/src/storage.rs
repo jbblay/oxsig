@@ -91,6 +91,7 @@ impl StorageService {
     }
 
     pub fn get_public_url(&self, key: &str) -> String {
-        format!("{}/{}/{}", self.client.config().endpoint_url().unwrap(), self.bucket, key)
+        let endpoint = self.client.conf().endpoint_url().unwrap();
+        format!("{}/{}/{}", endpoint, self.bucket, key)
     }
 }

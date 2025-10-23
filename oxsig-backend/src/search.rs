@@ -1,5 +1,5 @@
 // Search service using MeiliSearch
-use meilisearch_sdk::{Client, IndexesQuery};
+use meilisearch_sdk::{client::Client, indexes::IndexesQuery};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

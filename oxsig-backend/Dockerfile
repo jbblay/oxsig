@@ -23,6 +23,7 @@ RUN mkdir -p src && \
 
 # Copy source code
 COPY src ./src
+COPY migrations ./migrations
 
 # Build actual binary
 RUN cargo build --release && \
