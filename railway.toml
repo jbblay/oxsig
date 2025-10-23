@@ -1,10 +1,11 @@
 [build]
-builder = "RAILPACK"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.production"
+watchPatterns = ["oxsig-backend/**"]
 
 [deploy]
-runtime = "V2"
-numReplicas = 1
-sleepApplication = false
-useLegacyStacker = false
+startCommand = "oxsig-ws-gateway"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
