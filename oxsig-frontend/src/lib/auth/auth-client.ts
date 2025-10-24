@@ -64,8 +64,8 @@ export class AuthService {
     signature?: string;
   }): Promise<User> {
     const response = await apiClient.post<User>('/api/auth/register', data);
-    if (!response.success) {
-      throw new Error(response.error?.message || 'Registration failed');
+    if (response.error) {
+      throw new Error(response.error.message || 'Registration failed');
     }
     return response.data!;
   }
@@ -80,8 +80,8 @@ export class AuthService {
       challenge,
     });
 
-    if (!response.success) {
-      throw new Error(response.error?.message || 'Login failed');
+    if (response.error) {
+      throw new Error(response.error.message || 'Login failed');
     }
 
     const data = response.data!;
@@ -115,10 +115,10 @@ export class AuthService {
       }
     );
 
-    if (!response.success) {
+    if (response.error) {
       // Refresh failed, clear all auth data
       this.clearAuth();
-      throw new Error(response.error?.message || 'Token refresh failed');
+      throw new Error(response.error.message || 'Token refresh failed');
     }
 
     const data = response.data!;

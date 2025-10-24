@@ -17,11 +17,12 @@ const pool = new Pool({
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return optionalAuth(request, async (req, currentUser) => {
     try {
-      const userId = params.id;
+      const { id } = await params;
+      const userId = id;
 
       const client = await pool.connect();
 

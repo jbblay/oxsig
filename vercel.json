@@ -1,7 +1,0 @@
-{
-  "buildCommand": "cd oxsig-frontend && pnpm install && pnpm build",
-  "outputDirectory": "oxsig-frontend/.next",
-  "installCommand": "cd oxsig-frontend && pnpm install",
-  "framework": "nextjs",
-  "regions": ["iad1"]
-}

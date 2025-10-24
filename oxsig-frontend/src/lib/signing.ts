@@ -111,7 +111,7 @@ export async function generateKeypair(): Promise<{
   privateKey: string;
   publicKey: string;
 }> {
-  const privateKey = ed25519.utils.randomPrivateKey();
+  const privateKey = ed25519.utils.randomSecretKey();
   const publicKey = await ed25519.getPublicKey(privateKey);
 
   return {

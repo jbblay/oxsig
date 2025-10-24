@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { index: string; documentId: string } }
+  { params }: { params: Promise<{ index: string; documentId: string }> }
 ) {
   try {
+    const { index, documentId } = await params;
     const meiliUrl = process.env.MEILISEARCH_URL || 'http://localhost:7700';
     const apiKey = process.env.MEILISEARCH_KEY || '';
 
-    const res = await fetch(`${meiliUrl}/indexes/${params.index}/documents/${params.documentId}`, {
+    const res = await fetch(`${meiliUrl}/indexes/${index}/documents/${documentId}`, {
       method: 'DELETE',
       headers: {
         ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),

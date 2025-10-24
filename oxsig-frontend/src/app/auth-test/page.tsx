@@ -174,7 +174,6 @@ export default function AuthTestPage() {
                   <p><strong>Display Name:</strong> {user.displayName || 'N/A'}</p>
                   <p><strong>Email:</strong> {user.email || 'N/A'}</p>
                   <p><strong>Public Key:</strong> {user.publicKey}</p>
-                  <p><strong>Role:</strong> {user.role}</p>
                 </div>
               )}
             </div>

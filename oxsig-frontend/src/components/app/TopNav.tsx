@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
 interface TopNavProps {
   onMenuClick?: () => void;
@@ -58,14 +59,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
       <div className="container mx-auto flex items-center justify-between h-14 px-4">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden transition-transform hover:scale-[1.04] active:scale-[0.98]"
-              onClick={onMenuClick}
-            >
-              <Menu className="w-5 h-5" />
-            </Button>
+            <SidebarTrigger className="transition-transform hover:scale-[1.04] active:scale-[0.98]" />
             <Link href="/" className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
               <span className="font-semibold text-sm bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">
