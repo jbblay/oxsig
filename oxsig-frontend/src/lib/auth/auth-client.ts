@@ -10,6 +10,7 @@ export interface User {
   publicKey: string;
   displayName?: string;
   email?: string;
+  role?: string;
 }
 
 export interface AuthTokens {

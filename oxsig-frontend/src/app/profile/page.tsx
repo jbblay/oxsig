@@ -8,7 +8,7 @@ import {
   Calendar, Link as LinkIcon, Github, Twitter, Linkedin,
   Download, Upload, Copy, Eye, EyeOff, Trash2, Plus,
   Activity, Award, Clock, TrendingUp, Zap, Users, FileSignature,
-  QrCode, Smartphone, Laptop, Monitor, RefreshCw
+  QrCode, Smartphone, Laptop, Monitor, RefreshCw, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -19,24 +19,61 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/lib/auth/use-auth";
 
 export default function ProfilePage() {
+  const { user, isLoading: authLoading } = useAuth();
   const [isEditing, setIsEditing] = React.useState(false);
   const [showDID, setShowDID] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState("overview");
+  const [isLoadingProfile, setIsLoadingProfile] = React.useState(true);
 
-  // Mock user data
+  // User data from API
   const [userData, setUserData] = React.useState({
-    name: "jbblay The Great",
-    username: "00x001",
-    email: "00x001.@oxsig.app",
-    bio: "Self Taught Computer Scientist | Quantum security enthusiast | Privacy advocate | Building the decentralized future",
-    location: "Guess, Hide and Seek",
-    website: "https://00x001.dev",
-    did: "did:oxsig:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
-    joinDate: "Genesis 00x001",
+    name: "",
+    username: "",
+    email: "",
+    bio: "",
+    location: "",
+    website: "",
+    did: "",
+    joinDate: "",
     avatar: "/avatars/user.png"
   });
+
+  // Fetch real user data from API
+  React.useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const response = await fetch('/api/users/me', {
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setUserData({
+            name: data.display_name || data.email || "Anonymous User",
+            username: data.email?.split('@')[0] || "user",
+            email: data.email || "",
+            bio: data.bio || "OxSig user building the decentralized future",
+            location: data.location || "",
+            website: data.website || "",
+            did: data.public_key || `did:oxsig:${data.id}`,
+            joinDate: new Date(data.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) || "Recently",
+            avatar: data.avatar_url || "/avatars/user.png"
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    if (!authLoading) {
+      fetchUserData();
+    }
+  }, [authLoading]);
 
   const [settings, setSettings] = React.useState({
     twoFactorAuth: true,
@@ -79,6 +116,36 @@ export default function ProfilePage() {
     navigator.clipboard.writeText(text);
     // You could add a toast notification here
   };
+
+  // Show loading state
+  if (authLoading || isLoadingProfile) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login required state
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <UserCircle className="h-16 w-16 mx-auto text-muted-foreground" />
+          <div>
+            <h2 className="text-2xl font-bold">Authentication Required</h2>
+            <p className="text-muted-foreground mt-2">Please log in to view your profile</p>
+          </div>
+          <Button onClick={() => window.location.href = '/auth'}>
+            Go to Login
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12">
