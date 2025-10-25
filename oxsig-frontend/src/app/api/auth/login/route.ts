@@ -5,27 +5,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { generateTokenPair, verifyPassword, hashPassword } from '@/lib/auth/jwt';
-
-// Temporary in-memory user store (replace with PostgreSQL in production)
-const users = new Map<string, { id: string; email: string; passwordHash: string }>();
-
-// Initialize with a test user
-const initTestUser = async () => {
-  if (users.size === 0) {
-    const testPasswordHash = await hashPassword('test123');
-    users.set('test@example.com', {
-      id: 'user-1',
-      email: 'test@example.com',
-      passwordHash: testPasswordHash,
-    });
-  }
-};
+import { generateTokenPair, verifyPassword } from '@/lib/auth/jwt';
+import { getPool } from '@/lib/db/pool';
 
 export async function POST(request: NextRequest) {
   try {
-    await initTestUser();
-    
     const body = await request.json();
     const { email, password } = body;
     
@@ -37,23 +21,46 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Find user
-    const user = users.get(email);
-    if (!user) {
+    // Query user from database
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT id, email, password_hash, is_active 
+       FROM users 
+       WHERE email = $1`,
+      [email]
+    );
+    
+    if (result.rows.length === 0) {
       return NextResponse.json(
         { error: 'Invalid credentials', message: 'Invalid email or password' },
         { status: 401 }
       );
     }
     
-    // Verify password
-    const isValid = await verifyPassword(password, user.passwordHash);
+    const user = result.rows[0];
+    
+    // Check if user is active
+    if (!user.is_active) {
+      return NextResponse.json(
+        { error: 'Account disabled', message: 'Your account has been disabled' },
+        { status: 403 }
+      );
+    }
+    
+    // Verify password with bcrypt
+    const isValid = await verifyPassword(password, user.password_hash);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Invalid credentials', message: 'Invalid email or password' },
         { status: 401 }
       );
     }
+    
+    // Update last seen
+    await pool.query(
+      'UPDATE users SET last_seen_at = NOW() WHERE id = $1',
+      [user.id]
+    );
     
     // Generate Ed25519 signed tokens
     const { accessToken, refreshToken } = await generateTokenPair(user.id, user.email);

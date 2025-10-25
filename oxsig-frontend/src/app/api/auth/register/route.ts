@@ -6,11 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { generateTokenPair, hashPassword } from '@/lib/auth/jwt';
-
-// Temporary in-memory user store (replace with PostgreSQL in production)
-// Note: This should be the same Map instance as login route
-// In production, use a shared database
-const users = new Map<string, { id: string; email: string; passwordHash: string }>();
+import { getPool } from '@/lib/db/pool';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,33 +39,41 @@ export async function POST(request: NextRequest) {
     }
     
     // Check if user already exists
-    if (users.has(email)) {
+    const pool = getPool();
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
+    );
+    
+    if (existingUser.rows.length > 0) {
       return NextResponse.json(
         { error: 'User exists', message: 'An account with this email already exists' },
         { status: 409 }
       );
     }
     
-    // Hash password
+    // Hash password with bcrypt
     const passwordHash = await hashPassword(password);
     
-    // Create user
-    const userId = `user-${crypto.randomUUID()}`;
-    users.set(email, {
-      id: userId,
-      email,
-      passwordHash,
-    });
+    // Create user in database
+    const result = await pool.query(
+      `INSERT INTO users (email, password_hash, is_active)
+       VALUES ($1, $2, true)
+       RETURNING id, email`,
+      [email, passwordHash]
+    );
+    
+    const user = result.rows[0];
     
     // Generate Ed25519 signed tokens
-    const { accessToken, refreshToken } = await generateTokenPair(userId, email);
+    const { accessToken, refreshToken } = await generateTokenPair(user.id, user.email);
     
     // Create response with httpOnly cookies
     const response = NextResponse.json({
       success: true,
       user: {
-        id: userId,
-        email,
+        id: user.id,
+        email: user.email,
       },
     }, { status: 201 });
     

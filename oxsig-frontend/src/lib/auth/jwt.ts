@@ -6,7 +6,9 @@
  */
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import { sha256 } from '@noble/hashes/sha256';
+import bcrypt from 'bcrypt';
+
+const BCRYPT_ROUNDS = 10;
 
 // JWT token expiration times
 export const TOKEN_EXPIRY = {
@@ -256,21 +258,23 @@ export function extractBearerToken(authHeader?: string | null): string | null {
 }
 
 /**
- * Hash password with SHA-256 (for simple demo - use bcrypt/argon2 in production)
+ * Hash password with bcrypt (production-grade)
  */
 export async function hashPassword(password: string): Promise<string> {
-  const passwordBytes = new TextEncoder().encode(password);
-  const hash = sha256(passwordBytes);
-  return bytesToHex(hash);
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
 /**
- * Verify password against hash
+ * Verify password against bcrypt hash
  */
 export async function verifyPassword(
   password: string,
   hash: string
 ): Promise<boolean> {
-  const computedHash = await hashPassword(password);
-  return computedHash === hash;
+  try {
+    return await bcrypt.compare(password, hash);
+  } catch (error) {
+    console.error('Password verification error:', error);
+    return false;
+  }
 }

@@ -1,10 +1,11 @@
 /**
  * Authentication Middleware
- * JWT-based authentication for API routes
+ * JWT-based authentication for API routes with Ed25519 signatures
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import * as jose from 'jose';
+import { verifyJWT } from './jwt';
+import { cookies } from 'next/headers';
 
 export interface AuthenticatedUser {
   id: string;
@@ -14,46 +15,41 @@ export interface AuthenticatedUser {
 }
 
 /**
- * Verify JWT token
- */
-async function verifyToken(token: string): Promise<jose.JWTPayload> {
-  const secret = new TextEncoder().encode(
-    process.env.JWT_SECRET || 'your_secret_key_here_change_in_production'
-  );
-
-  const { payload } = await jose.jwtVerify(token, secret);
-  return payload;
-}
-
-/**
- * Get user from request with real JWT validation
+ * Get user from request with Ed25519 JWT validation
  */
 export async function getUserFromRequest(
   request: NextRequest
 ): Promise<AuthenticatedUser | null> {
   try {
-    // Check Authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    // Try to get token from httpOnly cookie first
+    const cookieStore = await cookies();
+    let token = cookieStore.get('accessToken')?.value;
+
+    // Fallback to Authorization header for API clients
+    if (!token) {
+      const authHeader = request.headers.get('Authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
+    if (!token) {
       return null;
     }
 
-    const token = authHeader.substring(7);
-
-    // Verify JWT token
-    try {
-      const payload = await verifyToken(token);
-      
-      return {
-        id: payload.sub as string,
-        email: payload.email as string,
-        name: payload.name as string,
-        role: (payload.role as 'user' | 'admin') || 'user',
-      };
-    } catch (error) {
-      console.error('Token verification failed:', error);
+    // Verify Ed25519-signed JWT token
+    const payload = await verifyJWT(token);
+    
+    if (!payload || payload.type !== 'access') {
       return null;
     }
+    
+    return {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.email?.split('@')[0], // Extract name from email
+      role: 'user', // TODO: Store role in database and JWT payload
+    };
   } catch (error) {
     console.error('Auth error:', error);
     return null;
