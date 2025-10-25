@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 // Use static export only for Tauri builds or when explicitly requested.
 // Avoids Next "export-no-custom-routes" warning during normal web dev.
@@ -9,6 +10,9 @@ const isStaticExport =
 
 const nextConfig: NextConfig = {
   ...(isStaticExport ? { output: "export" as const } : {}),
+
+  // Set workspace root to silence lockfile warning
+  outputFileTracingRoot: path.join(__dirname, ".."),
 
   // Disable image optimization for static export only
   ...(isStaticExport
@@ -75,7 +79,7 @@ const nextConfig: NextConfig = {
         },
       }),
 
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     if (process.env.NODE_ENV === "development") {
       config.module.rules.push({
         test: /\.(jsx|tsx)$/,
@@ -85,28 +89,13 @@ const nextConfig: NextConfig = {
       });
     }
 
-    // Optimize bundle size
-    config.optimization = {
-      ...config.optimization,
-      moduleIds: "deterministic",
-      runtimeChunk: "single",
-      splitChunks: {
-        chunks: "all",
-        cacheGroups: {
-          vendor: {
-            test: /[\\/]node_modules[\\/]/,
-            name: "vendors",
-            priority: 10,
-            reuseExistingChunk: true,
-          },
-          common: {
-            minChunks: 2,
-            priority: 5,
-            reuseExistingChunk: true,
-          },
-        },
-      },
-    };
+    // Only optimize client-side bundles (fix "exports is not defined" error)
+    if (!isServer) {
+      config.optimization = {
+        ...config.optimization,
+        moduleIds: "deterministic",
+      };
+    }
 
     return config;
   },

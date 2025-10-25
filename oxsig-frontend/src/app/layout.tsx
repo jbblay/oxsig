@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app/AppShell";
@@ -16,10 +16,6 @@ export const metadata: Metadata = {
   title: "OxSig - Quantum-Safe Secure Communications",
   description: "Post-quantum secure communications platform with self-sovereign identity, zero-knowledge proofs, and AI security co-pilot.",
   manifest: "/manifest.webmanifest",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" }
-  ],
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -28,13 +24,6 @@ export const metadata: Metadata = {
   applicationName: "OxSig",
   keywords: ["secure communications", "quantum-safe", "E2EE", "decentralized identity", "zero-knowledge", "privacy"],
   authors: [{ name: "OxSig Team" }],
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 5,
-    userScalable: true,
-    viewportFit: "cover"
-  },
   robots: {
     index: true,
     follow: true
@@ -49,6 +38,18 @@ export const metadata: Metadata = {
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" }
     ]
   }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" }
+  ],
 };
 
 export default function RootLayout({
