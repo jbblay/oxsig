@@ -135,46 +135,27 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener('sync', (event) => {
   console.log('[SW] Background sync:', event.tag);
   if (event.tag === 'sync-data') {
-    event.waitUntil(syncData());
-  }
-});
-
-// Push notifications
-self.addEventListener('push', (event) => {
-  console.log('[SW] Push notification received');
-  const data = event.data ? event.data.json() : {};
-  const options = {
-    body: data.body || 'New notification from OxSig',
-    icon: '/icon-192.png',
-    badge: '/favicon.ico',
-    vibrate: [200, 100, 200],
-    data: data,
-    actions: [
-      { action: 'open', title: 'Open App' },
-      { action: 'close', title: 'Close' }
-    ]
-  };
-  
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'OxSig', options)
-  );
-});
-
-// Notification click handling
-self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked:', event.action);
-  event.notification.close();
-  
-  if (event.action === 'open') {
-    event.waitUntil(
-      clients.openWindow('/')
-    );
+    event.waitUntil(syncOfflineOperations());
   }
 });
 
 // Helper function for background sync
-async function syncData() {
-  // Implement your background sync logic here
-  console.log('[SW] Syncing data...');
-  return Promise.resolve();
+async function syncOfflineOperations() {
+  console.log('[SW] Syncing offline operations...');
+  
+  try {
+    // Notify all clients to start sync
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+      client.postMessage({
+        type: 'SYNC_TRIGGERED',
+        timestamp: Date.now(),
+      });
+    });
+    
+    return Promise.resolve();
+  } catch (error) {
+    console.error('[SW] Sync failed:', error);
+    throw error;
+  }
 }
