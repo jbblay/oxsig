@@ -504,14 +504,46 @@ pnpm test
 - ✅ Upgraded password security from SHA-256 to bcrypt
 - ✅ Protected all API routes with JWT verification
 - ✅ Moved tokens to httpOnly cookies
-- ✅ All 44 tests passing
-- ✅ 3 commits pushed to production
+- ✅ Implemented offline-first capabilities (IndexedDB, sync queue)
+- ✅ Added rate limiting and security headers
+- ✅ All 56 tests (44 unit + 12 integration) passing
+- ✅ 6 commits pushed to production
 
 **Security Vulnerabilities Fixed:**
 - 🔒 Mock cryptography replaced with production algorithms
 - 🔒 Weak password hashing upgraded to industry standard
 - 🔒 In-memory user storage replaced with persistent database
 - 🔒 JWT tokens now use cryptographic signatures instead of HMAC
+- 🔒 Rate limiting protects against DDoS attacks
+- 🔒 Security headers prevent XSS, clickjacking, MIME sniffing
+
+---
+
+## 📊 Test Suite Status
+
+### Unit Tests (44 tests) ✅
+- **Post-Quantum Crypto:** 10 tests - ML-DSA-87, ML-KEM-768, hybrid signatures
+- **Zero-Knowledge Proofs:** 12 tests - Selective disclosure, range proofs, membership
+- **DID System:** 14 tests - did:key, did:web creation and resolution
+- **API Client:** 8 tests - Request handling, retry logic, error handling
+
+**Run Command:** `cd oxsig-frontend && pnpm test:run`
+
+### Integration Tests (12 tests) ✅
+- **User Registration:** 4 tests - New user, duplicate email, validation, password strength
+- **User Login:** 3 tests - Correct credentials, wrong password, non-existent user
+- **Rate Limiting:** 2 tests - Login attempts, registration attempts
+- **Security Headers:** 2 tests - CSP, X-Frame-Options, HSTS
+- **Protected Routes:** 1 test - Unauthenticated access rejection
+
+**Requirements:** Dev server must be running (`pnpm dev`)  
+**Run Command:** `cd oxsig-frontend && pnpm test:run` (while server is running)
+
+### Test Coverage
+- **Total Tests:** 56 (100% passing ✅)
+- **Coverage:** Core crypto, auth, database, offline, security
+- **CI/CD:** GitHub Actions pipeline with automated testing
+- **Skipped in CI:** Integration tests (requires running server)
 
 ---
 
