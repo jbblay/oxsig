@@ -7,8 +7,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateTokenPair, hashPassword } from '@/lib/auth/jwt';
 import { getPool } from '@/lib/db/pool';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 3 requests per minute to prevent spam registration
+  const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.AUTH_REGISTER);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
   try {
     const body = await request.json();
     const { email, password } = body;
