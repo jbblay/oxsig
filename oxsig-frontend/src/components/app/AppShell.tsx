@@ -89,8 +89,11 @@ function AppShellContent({ children }: AppShellProps) {
   const pathname = usePathname();
   const { toggleSidebar } = useSidebar();
 
+  // Hide sidebar and nav on login/auth pages
+  const isAuthPage = pathname === '/' || pathname === '/auth';
+
   const coreFeatures = [
-    { href: "/", icon: Home, label: "Home", tooltip: "Home", gradient: "from-blue-500 to-cyan-500" },
+    { href: "/home", icon: Home, label: "Home", tooltip: "Home", gradient: "from-blue-500 to-cyan-500" },
     { href: "/sign", icon: FileSignature, label: "Sign Documents", tooltip: "Quantum-Secure Signatures", gradient: "from-indigo-500 to-blue-500" },
     { href: "/vault", icon: Vault, label: "Seed Vault", tooltip: "BIP39 Recovery Phrases", gradient: "from-purple-500 to-violet-500", badge: "New" },
     { href: "/storage", icon: HardDrive, label: "Secure Storage", tooltip: "Encrypted File Storage", gradient: "from-emerald-500 to-green-500", badge: "New" },
@@ -113,6 +116,15 @@ function AppShellContent({ children }: AppShellProps) {
     { href: "/offline", icon: WifiOff, label: "Offline Mode", tooltip: "PWA Offline Support", gradient: "from-zinc-500 to-slate-500" },
     { href: "/features", icon: Sparkles, label: "Features", tooltip: "Advanced Features", gradient: "from-purple-500 to-pink-500" },
   ];
+
+  // If on auth page, just render children without shell
+  if (isAuthPage) {
+    return (
+      <div className="min-h-svh w-full">
+        {children}
+      </div>
+    );
+  }
 
   return (
     <>
