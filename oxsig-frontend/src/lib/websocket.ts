@@ -1,38 +1,41 @@
 /**
- * WebSocket Manager - Real-time communication with auto-reconnect
+ * WebSocket Manager - Real-time communication with Socket.io
+ * Migrated from custom WebSocket to Socket.io client
  */
 
-import { backendConfig } from './backend-config';
+import { io, Socket } from 'socket.io-client';
 
 export type WebSocketMessage = {
   type: string;
   payload?: any;
   timestamp?: string;
+  from?: string;
+  to?: string;
+  room?: string;
 };
 
 export type WebSocketEventHandler = (message: WebSocketMessage) => void;
 
 export class WebSocketManager {
-  private ws: WebSocket | null = null;
+  private socket: Socket | null = null;
   private url: string;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
-  private reconnectDelay = 1000;
-  private heartbeatInterval: NodeJS.Timeout | null = null;
-  private heartbeatTimeout: NodeJS.Timeout | null = null;
   private eventHandlers: Map<string, Set<WebSocketEventHandler>> = new Map();
   private messageQueue: WebSocketMessage[] = [];
   private isConnecting = false;
   private isConnected = false;
+  private userId: string | null = null;
 
   constructor(url?: string) {
-    this.url = url || backendConfig.wsUrl;
+    // Default to Next.js server
+    this.url = url || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
   }
 
   /**
-   * Connect to WebSocket server
+   * Connect to Socket.io server
    */
-  connect(): Promise<void> {
+  connect(userId?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.isConnected || this.isConnecting) {
         resolve();
@@ -40,48 +43,57 @@ export class WebSocketManager {
       }
 
       this.isConnecting = true;
+      this.userId = userId || null;
 
       try {
-        this.ws = new WebSocket(this.url);
+        // Initialize Socket.io client
+        this.socket = io(this.url, {
+          path: '/socket.io/',
+          transports: ['websocket', 'polling'],
+          auth: {
+            userId: this.userId,
+          },
+          reconnection: true,
+          reconnectionAttempts: this.maxReconnectAttempts,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+        });
 
-        this.ws.onopen = () => {
-          console.log('[WebSocket] Connected');
+        this.socket.on('connect', () => {
+          console.log('[Socket.io] Connected:', this.socket?.id);
           this.isConnecting = false;
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          this.startHeartbeat();
           this.flushMessageQueue();
           this.emit('connected', {});
           resolve();
-        };
+        });
 
-        this.ws.onmessage = (event) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(event.data);
-            this.handleMessage(message);
-          } catch (error) {
-            console.error('[WebSocket] Failed to parse message:', error);
-          }
-        };
-
-        this.ws.onerror = (error) => {
-          console.error('[WebSocket] Error:', error);
+        this.socket.on('connect_error', (error) => {
+          console.error('[Socket.io] Connection error:', error);
           this.emit('error', { error });
-        };
+        });
 
-        this.ws.onclose = () => {
-          console.log('[WebSocket] Disconnected');
+        this.socket.on('disconnect', (reason) => {
+          console.log('[Socket.io] Disconnected:', reason);
           this.isConnected = false;
-          this.isConnecting = false;
-          this.stopHeartbeat();
-          this.emit('disconnected', {});
-          this.attemptReconnect();
-        };
+          this.emit('disconnected', { reason });
+        });
+
+        // Handle all custom events
+        this.socket.onAny((eventName, ...args) => {
+          const message: WebSocketMessage = {
+            type: eventName,
+            payload: args[0],
+            timestamp: new Date().toISOString(),
+          };
+          this.handleMessage(message);
+        });
 
         // Timeout if connection takes too long
         setTimeout(() => {
           if (this.isConnecting) {
-            this.ws?.close();
+            this.socket?.disconnect();
             reject(new Error('Connection timeout'));
           }
         }, 10000);
@@ -93,15 +105,12 @@ export class WebSocketManager {
   }
 
   /**
-   * Disconnect from WebSocket server
+   * Disconnect from Socket.io server
    */
   disconnect(): void {
-    this.maxReconnectAttempts = 0; // Prevent reconnection
-    this.stopHeartbeat();
-    
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
     }
     
     this.isConnected = false;
@@ -118,18 +127,53 @@ export class WebSocketManager {
       timestamp: new Date().toISOString(),
     };
 
-    if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.log('[WebSocket] Queueing message:', type);
+    if (!this.isConnected || !this.socket) {
+      console.log('[Socket.io] Queueing message:', type);
       this.messageQueue.push(message);
       return;
     }
 
     try {
-      this.ws.send(JSON.stringify(message));
+      this.socket.emit(type, payload);
     } catch (error) {
-      console.error('[WebSocket] Failed to send message:', error);
+      console.error('[Socket.io] Failed to send message:', error);
       this.messageQueue.push(message);
     }
+  }
+
+  /**
+   * Join a room
+   */
+  joinRoom(room: string, userId?: string): void {
+    this.send('join-room', { room, userId: userId || this.userId });
+  }
+
+  /**
+   * Leave a room
+   */
+  leaveRoom(room: string, userId?: string): void {
+    this.send('leave-room', { room, userId: userId || this.userId });
+  }
+
+  /**
+   * Send WebRTC offer
+   */
+  sendOffer(to: string, sdp: string, from?: string): void {
+    this.send('offer', { to, from: from || this.userId, sdp });
+  }
+
+  /**
+   * Send WebRTC answer
+   */
+  sendAnswer(to: string, sdp: string, from?: string): void {
+    this.send('answer', { to, from: from || this.userId, sdp });
+  }
+
+  /**
+   * Send ICE candidate
+   */
+  sendIceCandidate(to: string, candidate: any, from?: string): void {
+    this.send('ice-candidate', { to, from: from || this.userId, candidate });
   }
 
   /**
@@ -178,12 +222,6 @@ export class WebSocketManager {
   // ============================================================================
 
   private handleMessage(message: WebSocketMessage): void {
-    // Handle pong
-    if (message.type === 'pong') {
-      this.resetHeartbeatTimeout();
-      return;
-    }
-
     // Emit to specific event handlers
     const handlers = this.eventHandlers.get(message.type);
     if (handlers) {
@@ -191,7 +229,7 @@ export class WebSocketManager {
         try {
           handler(message);
         } catch (error) {
-          console.error('[WebSocket] Handler error:', error);
+          console.error('[Socket.io] Handler error:', error);
         }
       });
     }
@@ -203,7 +241,7 @@ export class WebSocketManager {
         try {
           handler(message);
         } catch (error) {
-          console.error('[WebSocket] Wildcard handler error:', error);
+          console.error('[Socket.io] Wildcard handler error:', error);
         }
       });
     }
@@ -213,63 +251,10 @@ export class WebSocketManager {
     this.handleMessage({ type, payload, timestamp: new Date().toISOString() });
   }
 
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('[WebSocket] Max reconnection attempts reached');
-      return;
-    }
-
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    
-    console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-
-    setTimeout(() => {
-      this.connect().catch((error) => {
-        console.error('[WebSocket] Reconnection failed:', error);
-      });
-    }, delay);
-  }
-
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-
-    this.heartbeatInterval = setInterval(() => {
-      if (this.isConnected) {
-        this.send('ping');
-      }
-    }, 30000); // Ping every 30 seconds
-
-    this.resetHeartbeatTimeout();
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-
-    if (this.heartbeatTimeout) {
-      clearTimeout(this.heartbeatTimeout);
-      this.heartbeatTimeout = null;
-    }
-  }
-
-  private resetHeartbeatTimeout(): void {
-    if (this.heartbeatTimeout) {
-      clearTimeout(this.heartbeatTimeout);
-    }
-
-    this.heartbeatTimeout = setTimeout(() => {
-      console.log('[WebSocket] Heartbeat timeout - reconnecting');
-      this.ws?.close();
-    }, 60000); // Timeout after 60 seconds
-  }
-
   private flushMessageQueue(): void {
     if (this.messageQueue.length === 0) return;
 
-    console.log(`[WebSocket] Flushing ${this.messageQueue.length} queued messages`);
+    console.log(`[Socket.io] Flushing ${this.messageQueue.length} queued messages`);
 
     while (this.messageQueue.length > 0) {
       const message = this.messageQueue.shift()!;
@@ -286,9 +271,10 @@ export const wsManager = new WebSocketManager();
 
 // Auto-connect if in browser
 if (typeof window !== 'undefined') {
-  wsManager.connect().catch((error) => {
-    console.error('[WebSocket] Failed to connect:', error);
-  });
+  // Wait for user authentication before auto-connecting
+  // wsManager.connect().catch((error) => {
+  //   console.error('[Socket.io] Failed to connect:', error);
+  // });
 }
 
 // ============================================================================

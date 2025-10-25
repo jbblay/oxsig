@@ -1,21 +1,25 @@
 // Backend service configuration
-// This connects the Next.js frontend to the backend services
+// Now using Next.js full-stack (no separate Rust backend)
 
 export const backendConfig = {
-  // WebSocket Gateway
-  wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws',
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api',
+  // WebSocket via Socket.io (Next.js custom server)
+  wsUrl: process.env.NEXT_PUBLIC_WS_URL || 
+         (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'),
   
-  // Storage
+  // API routes (Next.js)
+  apiUrl: process.env.NEXT_PUBLIC_API_URL || 
+          (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:3000/api'),
+  
+  // Storage (S3/MinIO)
   storageUrl: process.env.NEXT_PUBLIC_STORAGE_URL || 'http://localhost:9000',
   
-  // Search
+  // Search (MeiliSearch)
   searchUrl: process.env.NEXT_PUBLIC_SEARCH_URL || 'http://localhost:7700',
   searchKey: process.env.NEXT_PUBLIC_SEARCH_KEY || '',
   
-  // TURN Server for WebRTC
-  turnUrl: process.env.NEXT_PUBLIC_TURN_URL || 'turn:localhost:3478',
-  turnUsername: process.env.NEXT_PUBLIC_TURN_USERNAME || 'oxsig',
+  // TURN Server for WebRTC (optional)
+  turnUrl: process.env.NEXT_PUBLIC_TURN_URL || '',
+  turnUsername: process.env.NEXT_PUBLIC_TURN_USERNAME || '',
   turnCredential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || '',
   
   // Database (for server-side operations)
@@ -27,7 +31,8 @@ export const backendConfig = {
 // Check if backend is available
 export async function checkBackendHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${backendConfig.apiUrl.replace('/api', '')}/health`, {
+    const baseUrl = backendConfig.apiUrl.replace('/api', '');
+    const response = await fetch(`${baseUrl}/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(5000),
     });
@@ -38,42 +43,10 @@ export async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
-// WebSocket connection helper
-export function createWebSocketConnection(onMessage?: (data: any) => void): WebSocket {
-  // Append JWT token from localStorage if present
-  let url = backendConfig.wsUrl;
-  try {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    if (token) {
-      const u = new URL(url);
-      u.searchParams.set('token', token);
-      url = u.toString();
-    }
-  } catch {}
-  const ws = new WebSocket(url);
-  
-  ws.onopen = () => {
-    console.log('✅ Connected to WebSocket Gateway');
-  };
-  
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      onMessage?.(data);
-    } catch (error) {
-      console.error('Failed to parse WebSocket message:', error);
-    }
-  };
-  
-  ws.onerror = (error) => {
-    console.error('❌ WebSocket error:', error);
-  };
-  
-  ws.onclose = () => {
-    console.log('🔌 WebSocket connection closed');
-  };
-  
-  return ws;
+// WebSocket connection helper (Socket.io) - DEPRECATED
+export function createWebSocketConnection(onMessage?: (data: any) => void, userId?: string): any {
+  console.warn('createWebSocketConnection is deprecated. Use wsManager from @/lib/websocket instead.');
+  return null;
 }
 
 // API fetch helper with backend endpoint

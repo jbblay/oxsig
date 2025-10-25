@@ -1,6 +1,7 @@
 /**
  * Updated Sign Page Integration Helper
  * This module provides updated handlers for the sign page using real API
+ * Includes Post-Quantum Cryptography support
  */
 
 import { documents, signatures } from '@/lib/api';
@@ -8,6 +9,9 @@ import { toast } from 'sonner';
 import * as ed25519 from '@noble/ed25519';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
+import { pqCrypto, shouldUseQuantumSafe } from '@/lib/crypto/pqc';
+import { zkProofs } from '@/lib/crypto/zkp';
+import { didManager } from '@/lib/did';
 
 export interface SignatureData {
   signatureData: string;
@@ -105,7 +109,7 @@ export async function createDocument(
 }
 
 /**
- * Generate Ed25519 keypair for signing
+ * Generate Ed25519 keypair for signing (classical)
  */
 export async function generateKeypair(): Promise<{
   privateKey: string;
@@ -121,16 +125,88 @@ export async function generateKeypair(): Promise<{
 }
 
 /**
- * Sign document with Ed25519
+ * Generate Post-Quantum keypair (Dilithium3)
+ */
+export async function generateQuantumSafeKeypair(): Promise<{
+  privateKey: string;
+  publicKey: string;
+  keyId: string;
+}> {
+  const keyPair = await pqCrypto.generateDilithiumKeyPair();
+  const exported = pqCrypto.exportKeyPair(keyPair);
+
+  return {
+    privateKey: exported.secretKey,
+    publicKey: exported.publicKey,
+    keyId: exported.keyId,
+  };
+}
+
+/**
+ * Generate Hybrid keypair (Ed25519 + Dilithium3)
+ */
+export async function generateHybridKeypair(): Promise<{
+  classical: { privateKey: string; publicKey: string };
+  postQuantum: { privateKey: string; publicKey: string };
+  keyId: string;
+}> {
+  const hybridKeyPair = await pqCrypto.generateHybridSigningKeyPair();
+
+  return {
+    classical: {
+      privateKey: bytesToHex(hybridKeyPair.classical.secretKey),
+      publicKey: bytesToHex(hybridKeyPair.classical.publicKey),
+    },
+    postQuantum: {
+      privateKey: bytesToHex(hybridKeyPair.postQuantum.secretKey),
+      publicKey: bytesToHex(hybridKeyPair.postQuantum.publicKey),
+    },
+    keyId: hybridKeyPair.keyId,
+  };
+}
+
+/**
+ * Sign document with Ed25519 or Post-Quantum (auto-detect based on settings)
  */
 export async function signDocument(
   documentId: string,
   documentHash: string,
   privateKey: string,
   signerName?: string,
-  signerEmail?: string
+  signerEmail?: string,
+  options?: {
+    useQuantumSafe?: boolean;
+    useHybrid?: boolean;
+    hybridKeys?: {
+      classical: { privateKey: string; publicKey: string };
+      postQuantum: { privateKey: string; publicKey: string };
+    };
+  }
 ): Promise<boolean> {
   try {
+    const useQuantumSafe = options?.useQuantumSafe ?? shouldUseQuantumSafe();
+
+    if (options?.useHybrid && options.hybridKeys) {
+      return signDocumentHybrid(
+        documentId,
+        documentHash,
+        options.hybridKeys,
+        signerName,
+        signerEmail
+      );
+    }
+
+    if (useQuantumSafe) {
+      return signDocumentQuantumSafe(
+        documentId,
+        documentHash,
+        privateKey,
+        signerName,
+        signerEmail
+      );
+    }
+
+    // Classical Ed25519 signing
     // Convert hash to bytes
     const hashBytes = new Uint8Array(
       documentHash.replace('sha256:', '').match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
@@ -161,6 +237,7 @@ export async function signDocument(
       metadata: {
         documentHash,
         signedAt: new Date().toISOString(),
+        quantumSafe: false,
       },
     });
 
@@ -182,6 +259,156 @@ export async function signDocument(
     return true;
   } catch (error) {
     console.error('Signing failed:', error);
+    toast.error('Failed to sign document', {
+      description: String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Sign document with Post-Quantum Dilithium3
+ */
+async function signDocumentQuantumSafe(
+  documentId: string,
+  documentHash: string,
+  privateKey: string,
+  signerName?: string,
+  signerEmail?: string
+): Promise<boolean> {
+  try {
+    // Convert hash to bytes
+    const hashBytes = new Uint8Array(
+      documentHash.replace('sha256:', '').match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+
+    // Import PQ key
+    const keyPair = pqCrypto.importKeyPair({
+      algorithm: 'Dilithium3',
+      publicKey: '', // Will be derived
+      secretKey: privateKey,
+      keyId: crypto.randomUUID(),
+      createdAt: Date.now(),
+    });
+
+    // Sign with Dilithium3
+    const pqSignature = await pqCrypto.signDilithium(hashBytes, keyPair);
+
+    // Encode to base64
+    const signatureData = Buffer.from(pqSignature.signature).toString('base64');
+    const publicKey = Buffer.from(keyPair.publicKey).toString('base64');
+
+    // Create signature on backend
+    const signature = await signatures.create({
+      documentId,
+      signatureData,
+      signatureType: 'certificate',
+      publicKey,
+      algorithm: 'dilithium3' as any,
+      signerName,
+      signerEmail,
+      metadata: {
+        documentHash,
+        signedAt: new Date().toISOString(),
+        'quantum-safe': true,
+        algorithm: 'Dilithium3',
+      },
+    });
+
+    toast.success('Document signed with quantum-safe signature!', {
+      description: `Dilithium3 • Signature ID: ${signature.id.substring(0, 8)}...`,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Quantum-safe signing failed:', error);
+    toast.error('Failed to sign document', {
+      description: String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Sign document with Hybrid (Ed25519 + Dilithium3)
+ */
+async function signDocumentHybrid(
+  documentId: string,
+  documentHash: string,
+  hybridKeys: {
+    classical: { privateKey: string; publicKey: string };
+    postQuantum: { privateKey: string; publicKey: string };
+  },
+  signerName?: string,
+  signerEmail?: string
+): Promise<boolean> {
+  try {
+    // Convert hash to bytes
+    const hashBytes = new Uint8Array(
+      documentHash.replace('sha256:', '').match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+
+    // Create hybrid key pair structure
+    const hybridKeyPair = {
+      classical: {
+        algorithm: 'Ed25519' as const,
+        publicKey: new Uint8Array(
+          hybridKeys.classical.publicKey.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+        ),
+        secretKey: new Uint8Array(
+          hybridKeys.classical.privateKey.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+        ),
+      },
+      postQuantum: {
+        algorithm: 'Dilithium3' as const,
+        publicKey: new Uint8Array(
+          hybridKeys.postQuantum.publicKey.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+        ),
+        secretKey: new Uint8Array(
+          hybridKeys.postQuantum.privateKey.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+        ),
+      },
+      keyId: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+
+    // Sign with hybrid mode
+    const hybridSig = await pqCrypto.signHybrid(hashBytes, hybridKeyPair);
+
+    // Combine signatures
+    const combinedSignature = {
+      classical: bytesToHex(hybridSig.classical),
+      postQuantum: bytesToHex(hybridSig.postQuantum),
+      timestamp: hybridSig.timestamp,
+    };
+
+    // Create signature on backend
+    const signature = await signatures.create({
+      documentId,
+      signatureData: Buffer.from(JSON.stringify(combinedSignature)).toString('base64'),
+      signatureType: 'certificate',
+      publicKey: Buffer.from(JSON.stringify({
+        classical: hybridKeys.classical.publicKey,
+        postQuantum: hybridKeys.postQuantum.publicKey,
+      })).toString('base64'),
+      algorithm: 'hybrid-ed25519-dilithium3' as any,
+      signerName,
+      signerEmail,
+      metadata: {
+        documentHash,
+        signedAt: new Date().toISOString(),
+        'quantum-safe': true,
+        algorithm: 'Hybrid-Ed25519-Dilithium3',
+      },
+    });
+
+    toast.success('Document signed with hybrid signature!', {
+      description: `Ed25519 + Dilithium3 • ID: ${signature.id.substring(0, 8)}...`,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Hybrid signing failed:', error);
     toast.error('Failed to sign document', {
       description: String(error),
     });
