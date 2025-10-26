@@ -622,8 +622,9 @@ export class VaultBackupSystem {
   }
 
   private async deriveBackupKey(userId: string): Promise<string> {
-    // Derive a backup-specific key from user credentials
-    const keyMaterial = `backup_key_${userId}_${Date.now()}`;
+    // Derive a deterministic backup-specific key from user credentials
+    // This key must be deterministic so backups can be decrypted later
+    const keyMaterial = `backup_key_${userId}`;
     const hash = sha256(new TextEncoder().encode(keyMaterial));
     return bytesToHex(hash);
   }
