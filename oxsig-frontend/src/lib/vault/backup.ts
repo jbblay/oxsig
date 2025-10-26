@@ -624,6 +624,8 @@ export class VaultBackupSystem {
   private async deriveBackupKey(userId: string): Promise<string> {
     // Derive a deterministic backup-specific key from user credentials
     // This key must be deterministic so backups can be decrypted later
+    // NOTE: In production, use a proper KDF (PBKDF2/Argon2) with user passphrase
+    // Current implementation provides basic encryption for userId-based backups
     const keyMaterial = `backup_key_${userId}`;
     const hash = sha256(new TextEncoder().encode(keyMaterial));
     return bytesToHex(hash);
