@@ -1,5 +1,6 @@
--- Add collaboration tables to support real collaboration features
--- Migration 003: Collaboration System
+-- DEPRECATED: This migration is superseded by migration 004
+-- DO NOT RUN: Use migration 004_collaboration_system.sql instead
+-- Migration 003: Collaboration System (SUPERSEDED)
 
 -- ============================================================================
 -- Collaborations Table
