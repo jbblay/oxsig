@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       const guardians = sessionData.guardians;
       const guardian = guardians.find((g: any) => g.did === user.did);
 
-      if (!guardian) {
+      if (!guardian || !user.did) {
         return NextResponse.json(
           { error: 'You are not a guardian for this recovery' },
           { status: 403 }

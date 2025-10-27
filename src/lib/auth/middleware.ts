@@ -9,6 +9,7 @@ import { cookies } from 'next/headers';
 
 export interface AuthenticatedUser {
   id: string;
+  did?: string;
   email?: string;
   name?: string;
   role: 'user' | 'admin';
@@ -46,6 +47,7 @@ export async function getUserFromRequest(
     
     return {
       id: payload.sub,
+      did: payload.did,
       email: payload.email,
       name: payload.email?.split('@')[0],
       role: (payload.role as 'user' | 'admin') || 'user',

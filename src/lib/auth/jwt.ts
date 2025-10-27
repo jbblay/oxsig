@@ -19,6 +19,7 @@ export const TOKEN_EXPIRY = {
 // JWT payload interface
 export interface JWTPayload {
   sub: string; // User ID
+  did?: string; // Decentralized Identifier
   email?: string;
   role?: string;
   iat: number; // Issued at

@@ -14,8 +14,13 @@
 
 import { splitSecret, combineShares, type ShamirShare } from './shamir';
 import { randomBytes } from 'crypto';
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519 } from '@noble/curves/ed25519.js';
+import { x25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha256';
+import { sha512 } from '@noble/hashes/sha512';
+
+// Re-export ShamirShare for API routes
+export type { ShamirShare };
 
 export interface Guardian {
   /** Guardian's DID */
@@ -154,13 +159,16 @@ async function encryptShareForGuardian(
   share: ShamirShare,
   guardianPublicKey: string
 ): Promise<string> {
-  // Generate ephemeral keypair
-  const ephemeralPrivateKey = ed25519.utils.randomPrivateKey();
-  const ephemeralPublicKey = ed25519.getPublicKey(ephemeralPrivateKey);
+  // Generate ephemeral keypair for X25519 ECDH
+  const ephemeralPrivateKey = x25519.utils.randomSecretKey();
+  const ephemeralPublicKey = x25519.getPublicKey(ephemeralPrivateKey);
 
-  // Derive shared secret using ECDH
+  // Convert Ed25519 public key to X25519 for ECDH
   const guardianPubKeyBytes = Buffer.from(guardianPublicKey, 'hex');
-  const sharedSecret = ed25519.getSharedSecret(ephemeralPrivateKey, guardianPubKeyBytes);
+  const guardianX25519PubKey = ed25519.utils.toMontgomery(guardianPubKeyBytes);
+  
+  // Derive shared secret using X25519 ECDH
+  const sharedSecret = x25519.getSharedSecret(ephemeralPrivateKey, guardianX25519PubKey);
   
   // Derive encryption key from shared secret
   const encryptionKey = sha256(sharedSecret);
@@ -190,10 +198,21 @@ export async function decryptShareForGuardian(
 ): Promise<ShamirShare> {
   const { ephemeralPubKey, encrypted } = JSON.parse(encryptedShare);
 
-  // Derive shared secret
-  const ephemeralPubKeyBytes = Buffer.from(ephemeralPubKey, 'hex');
+  // Convert Ed25519 private key to X25519 scalar
+  // Ed25519 private keys need to be hashed and clamped for X25519
   const guardianPrivKeyBytes = Buffer.from(guardianPrivateKey, 'hex');
-  const sharedSecret = ed25519.getSharedSecret(guardianPrivKeyBytes, ephemeralPubKeyBytes);
+  const hashedKey = sha512(guardianPrivKeyBytes);
+  const x25519PrivKey = hashedKey.slice(0, 32);
+  
+  // Clamp the scalar for X25519 (clear bits, set bit 254)
+  x25519PrivKey[0] &= 248;
+  x25519PrivKey[31] &= 127;
+  x25519PrivKey[31] |= 64;
+  
+  const ephemeralPubKeyBytes = Buffer.from(ephemeralPubKey, 'hex');
+  
+  // Derive shared secret using X25519 ECDH
+  const sharedSecret = x25519.getSharedSecret(x25519PrivKey, ephemeralPubKeyBytes);
   
   // Derive decryption key
   const decryptionKey = sha256(sharedSecret);
@@ -282,6 +301,11 @@ export function submitGuardianShare(
 export function completeRecovery(session: RecoverySession): Buffer {
   const now = Date.now();
 
+  // Check expiration first
+  if (now > session.expiresAt) {
+    throw new Error('Recovery session has expired');
+  }
+
   // Validate session status
   if (session.status !== 'ready') {
     if (now < session.canCompleteAt) {
@@ -289,9 +313,6 @@ export function completeRecovery(session: RecoverySession): Buffer {
     }
     if (session.collectedShares.length < session.threshold) {
       throw new Error(`Need ${session.threshold} shares, only have ${session.collectedShares.length}`);
-    }
-    if (now > session.expiresAt) {
-      throw new Error('Recovery session has expired');
     }
   }
 

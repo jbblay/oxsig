@@ -257,7 +257,7 @@ async function signWithWebAuthn(
     throw new Error('WebAuthn not available');
   }
 
-  const challenge = data; // Use data as challenge
+  const challenge = data.buffer as ArrayBuffer;
 
   const assertion = await navigator.credentials.get({
     publicKey: {

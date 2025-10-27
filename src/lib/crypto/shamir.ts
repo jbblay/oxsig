@@ -23,11 +23,14 @@ const EXP_TABLE = new Uint8Array(GF256_SIZE * 2);
 // Initialize GF(2^8) tables
 function initGF256Tables() {
   let x = 1;
-  for (let i = 0; i < GF256_SIZE; i++) {
+  for (let i = 0; i < 255; i++) {
     EXP_TABLE[i] = x;
-    EXP_TABLE[i + GF256_SIZE] = x; // Duplicate for overflow handling
     LOG_TABLE[x] = i;
-    x = (x << 1) ^ ((x & 0x80) ? 0x1d : 0);
+    x = ((x << 1) ^ ((x & 0x80) ? 0x1d : 0)) & 0xFF;
+  }
+  // Duplicate for modular arithmetic in multiplication/division
+  for (let i = 0; i < 256; i++) {
+    EXP_TABLE[i + 255] = EXP_TABLE[i];
   }
   LOG_TABLE[0] = 0; // Not used, but initialize
 }
@@ -49,7 +52,9 @@ function gfMul(a: number, b: number): number {
 function gfDiv(a: number, b: number): number {
   if (b === 0) throw new Error('Division by zero in GF(2^8)');
   if (a === 0) return 0;
-  return EXP_TABLE[LOG_TABLE[a] + GF256_SIZE - LOG_TABLE[b]];
+  // Division: a/b = a * b^(-1) = EXP[LOG[a] - LOG[b]]
+  // Add 255 to handle negative results (since field has 255 non-zero elements)
+  return EXP_TABLE[(LOG_TABLE[a] - LOG_TABLE[b] + 255) % 255];
 }
 
 /**
@@ -191,6 +196,7 @@ export function combineShares(shares: ShamirShare[]): Buffer {
   // Validate shares
   const threshold = shares[0].threshold;
   const total = shares[0].total;
+  const created = shares[0].created;
 
   if (shares.length < threshold) {
     throw new Error(`Need at least ${threshold} shares to reconstruct, got ${shares.length}`);
@@ -211,6 +217,13 @@ export function combineShares(shares: ShamirShare[]): Buffer {
   for (const bytes of shareBytes) {
     if (bytes.length !== secretLength) {
       throw new Error('Shares have different lengths');
+    }
+  }
+
+  // Verify shares are from the same split (same creation timestamp)
+  for (const share of shares) {
+    if (share.created !== created) {
+      throw new Error('Shares must be from the same split (different creation timestamps)');
     }
   }
 

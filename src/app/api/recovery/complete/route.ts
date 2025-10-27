@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db/postgres';
 import { z } from 'zod';
 import { completeRecovery, type ShamirShare } from '@/lib/crypto/social-recovery';
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519 } from '@noble/curves/ed25519.js';
 
 const completeRecoverySchema = z.object({
   sessionId: z.string(),
