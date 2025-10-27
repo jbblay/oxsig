@@ -291,7 +291,7 @@ function verifySignature(publicKey: Buffer, message: Buffer, signature: Buffer):
 }
 
 /**
- * Generate random challenge
+ * Generate random challenge for WebAuthn
  */
 export function generateChallenge(): Buffer {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(32)));
