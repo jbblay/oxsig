@@ -13,6 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { DynamicSecurityScore } from "@/components/app/DynamicSecurityScore";
 import { DevicePairingModal } from "@/components/pairing/DevicePairingModal";
+import { WebAuthnRegister } from "@/components/security/WebAuthnRegister";
+import { WebAuthnCredentialsList } from "@/components/security/WebAuthnCredentialsList";
 import { getUserDevices } from "@/lib/db/devices";
 import { format } from "date-fns";
 
@@ -51,11 +53,18 @@ export default function SecurityPage() {
       <DynamicSecurityScore />
 
       <Tabs defaultValue="keys" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="keys">Keys</TabsTrigger>
+          <TabsTrigger value="webauthn">Security Keys</TabsTrigger>
           <TabsTrigger value="devices">Devices</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="webauthn" className="space-y-4">
+          {/* WebAuthn/FIDO2 Security Keys */}
+          <WebAuthnRegister />
+          <WebAuthnCredentialsList />
+        </TabsContent>
 
         <TabsContent value="keys" className="space-y-4">
           {/* Active Keys */}
