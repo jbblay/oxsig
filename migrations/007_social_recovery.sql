@@ -5,7 +5,7 @@
 -- Recovery packages table
 CREATE TABLE IF NOT EXISTS recovery_packages (
   id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   config JSONB NOT NULL, -- RecoveryConfig: threshold, totalGuardians, timeLock, sessionExpiry
   guardians JSONB NOT NULL, -- Array of Guardian objects with encrypted shares
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS recovery_packages (
 -- Recovery sessions table
 CREATE TABLE IF NOT EXISTS recovery_sessions (
   id VARCHAR(32) PRIMARY KEY, -- UUID
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   initiated_at TIMESTAMP NOT NULL DEFAULT NOW(),
   can_complete_at TIMESTAMP NOT NULL, -- Time lock
   threshold INTEGER NOT NULL,
