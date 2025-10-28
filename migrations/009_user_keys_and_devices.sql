@@ -4,7 +4,7 @@
 -- Create user_crypto_keys table for storing user cryptographic keys
 CREATE TABLE IF NOT EXISTS user_crypto_keys (
   id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   key_type VARCHAR(50) NOT NULL DEFAULT 'signing', -- signing, encryption, recovery, backup
   algorithm VARCHAR(100) NOT NULL, -- Ed25519, CRYSTALS-Dilithium, SPHINCS+, RSA-4096
   public_key TEXT NOT NULL,

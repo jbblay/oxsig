@@ -42,16 +42,35 @@ export default function DocumentSigningPage() {
   const [zkProof, setZkProof] = React.useState(true);
   const [selectedContext, setSelectedContext] = React.useState("legal");
   const [uploadedFile, setUploadedFile] = React.useState<UploadedFile | null>(null);
-  const [signers, setSigners] = React.useState<Signer[]>([
-    { id: '1', address: 'did:example:alice...7a2b', status: 'signed', signedAt: new Date() },
-    { id: '2', address: 'did:example:bob...9c4d', status: 'pending' },
-  ]);
+  const [signers, setSigners] = React.useState<Signer[]>([]);
   const [newSignerAddress, setNewSignerAddress] = React.useState('');
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [signatureProgress, setSignatureProgress] = React.useState(0);
   const [isDragging, setIsDragging] = React.useState(false);
   const [viewMode, setViewMode] = React.useState<'upload' | 'editor'>('upload');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [recentSignatures, setRecentSignatures] = React.useState<any[]>([]);
+  const [loadingSignatures, setLoadingSignatures] = React.useState(true);
+
+  // Fetch recent signatures
+  React.useEffect(() => {
+    const fetchRecentSignatures = async () => {
+      try {
+        setLoadingSignatures(true);
+        const response = await fetch('/api/signatures/recent?limit=3');
+        if (response.ok) {
+          const data = await response.json();
+          setRecentSignatures(data.signatures || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch recent signatures:', error);
+      } finally {
+        setLoadingSignatures(false);
+      }
+    };
+
+    fetchRecentSignatures();
+  }, []);
 
   // Simulated file upload
   const handleFileSelect = (files: FileList | null) => {
@@ -637,31 +656,37 @@ export default function DocumentSigningPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
-              {[
-                { name: "Contract_2024.pdf", status: "Completed", time: "2h ago", verified: true },
-                { name: "NDA_Agreement.pdf", status: "Pending", time: "5h ago", verified: false },
-                { name: "Invoice_Jan24.pdf", status: "Completed", time: "1d ago", verified: true },
-              ].map((doc, i) => (
-                <button
-                  key={i}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-accent/50 transition-colors text-left"
-                >
-                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${
-                    doc.verified ? 'bg-green-500/10' : 'bg-yellow-500/10'
-                  }`}>
-                    <FileSignature className={`h-4 w-4 ${
-                      doc.verified ? 'text-green-600' : 'text-yellow-600'
-                    }`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{doc.name}</p>
-                    <p className="text-xs text-muted-foreground">{doc.time} • {doc.status}</p>
-                  </div>
-                  {doc.verified && (
-                    <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                  )}
-                </button>
-              ))}
+              {loadingSignatures ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : recentSignatures.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  No recent signatures yet
+                </div>
+              ) : (
+                recentSignatures.map((doc, i) => (
+                  <button
+                    key={i}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-accent/50 transition-colors text-left"
+                  >
+                    <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${
+                      doc.verified ? 'bg-green-500/10' : 'bg-yellow-500/10'
+                    }`}>
+                      <FileSignature className={`h-4 w-4 ${
+                        doc.verified ? 'text-green-600' : 'text-yellow-600'
+                      }`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground">{doc.time} • {doc.status}</p>
+                    </div>
+                    {doc.verified && (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                    )}
+                  </button>
+                ))
+              )}
             </CardContent>
           </Card>
         </div>
