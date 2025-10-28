@@ -24,6 +24,7 @@ function getS3Client() {
 
 export async function POST(request: NextRequest) {
   try {
+    // @ts-ignore - formData exists on NextRequest at runtime
     const formData = await request.formData();
     const files = formData.getAll('files') as File[];
     const optionsStr = formData.get('options') as string;

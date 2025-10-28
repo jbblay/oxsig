@@ -49,11 +49,11 @@ export default function AIAssistChat() {
         </div>
         <div className="flex gap-2">
           <Textarea
-            rows={2}
+            {...({ rows: 2 } as any)}
             placeholder="Type prompt…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 send(input);

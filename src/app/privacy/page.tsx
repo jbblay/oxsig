@@ -135,9 +135,7 @@ export default function PrivacyPage() {
           <Slider 
             value={privacyLevel} 
             onValueChange={setPrivacyLevel}
-            min={0}
-            max={100}
-            step={5}
+            {...({ min: 0, max: 100, step: 5 } as any)}
             className="w-full"
           />
           <p className="text-xs text-muted-foreground">

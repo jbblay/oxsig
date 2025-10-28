@@ -13,11 +13,11 @@ import { getPool } from '@/lib/db/postgres';
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const credentialId = params.id;
+      const { id: credentialId } = await params;
       const pool = getPool();
 
       // Check credential exists and belongs to user

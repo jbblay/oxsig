@@ -312,9 +312,7 @@ export default function SignatureEditorPage() {
                   <Slider
                     value={[penSize]}
                     onValueChange={(v) => setPenSize(v[0])}
-                    min={1}
-                    max={20}
-                    step={1}
+                    {...({ min: 1, max: 20, step: 1 } as any)}
                     className="w-20"
                   />
                   <span className="text-xs w-4">{penSize}</span>

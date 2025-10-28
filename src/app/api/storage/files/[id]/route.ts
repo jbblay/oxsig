@@ -16,11 +16,11 @@ import { getPool } from '@/lib/db/pool';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const fileId = params.id;
+      const { id: fileId } = await params;
 
       if (!fileId || !/^\d+$/.test(fileId)) {
         return NextResponse.json(
@@ -106,11 +106,11 @@ export async function GET(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const fileId = params.id;
+      const { id: fileId } = await params;
 
       if (!fileId || !/^\d+$/.test(fileId)) {
         return NextResponse.json(
@@ -185,11 +185,11 @@ export async function DELETE(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const fileId = params.id;
+      const { id: fileId } = await params;
       const body = await req.json();
       const { filename, tags, metadata } = body;
 

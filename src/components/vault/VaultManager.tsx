@@ -255,11 +255,13 @@ export function VaultManager() {
 
       {/* Unlock Modal */}
       <Dialog open={showUnlock} onOpenChange={handleCloseUnlock}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent {...{className: "max-w-2xl"} as any}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Unlock Vault: {selectedVault?.metadata.label}
+            <DialogTitle>
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Unlock Vault: {selectedVault?.metadata.label}
+              </div>
             </DialogTitle>
             <DialogDescription>
               Enter your master password to view the seed phrase

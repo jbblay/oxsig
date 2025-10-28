@@ -4,17 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/lib/db/pool';
-import { getUserFromRequest } from '@/lib/auth/middleware';
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
-  }
-  return pool;
-}
+import { getPool } from '@/lib/db/postgres';
+import { requireAuth } from '@/lib/auth/middleware';
 
 function mapRow(row: any) {
   return {
@@ -38,81 +29,75 @@ function mapRow(row: any) {
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    // Get authenticated user
-    const user = await getUserFromRequest(request);
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+  return requireAuth(request, async (req, user) => {
+    try {
+      const body = await req.json();
+      const {
+        id,
+        hash,
+        name,
+        content,
+        signatures,
+        timestamp,
+        metadata,
+      } = body;
 
-    const body = await request.json();
-    const {
-      id,
-      hash,
-      name,
-      content,
-      signatures,
-      timestamp,
-      metadata,
-    } = body;
+      const pool = getPool();
+      const ownerId = user.id;
+      const title = name || 'Synced Document';
+      const contentType = 'text';
 
-    const ownerId = user.id;
-    const title = name || 'Synced Document';
-    const contentType = 'text';
-
-    if (id) {
-      // Try update existing
-      const exists = await getPool().query(
-        `SELECT id FROM documents WHERE id = $1 AND deleted_at IS NULL`,
-        [id]
-      );
-
-      if (exists.rows.length > 0) {
-        const updated = await getPool().query(
-          `
-          UPDATE documents
-          SET 
-            title = COALESCE($1, title),
-            content = COALESCE($2, content),
-            metadata = COALESCE($3, metadata),
-            updated_at = NOW()
-          WHERE id = $4
-          RETURNING 
-            id, title, content, content_type, owner_id, encrypted, encryption_key,
-            file_url, file_size, mime_type, metadata, tags, status, version,
-            created_at, updated_at
-          `,
-          [title, content ?? '', metadata ?? {}, id]
+      if (id) {
+        // Try update existing
+        const exists = await pool.query(
+          `SELECT id FROM documents WHERE id = $1 AND deleted_at IS NULL`,
+          [id]
         );
 
-        // Note: signatures sync is not implemented server-side here
-        return NextResponse.json(mapRow(updated.rows[0]));
+        if (exists.rows.length > 0) {
+          const updated = await pool.query(
+            `
+            UPDATE documents
+            SET 
+              title = COALESCE($1, title),
+              content = COALESCE($2, content),
+              metadata = COALESCE($3, metadata),
+              updated_at = NOW()
+            WHERE id = $4
+            RETURNING 
+              id, title, content, content_type, owner_id, encrypted, encryption_key,
+              file_url, file_size, mime_type, metadata, tags, status, version,
+              created_at, updated_at
+            `,
+            [title, content ?? '', metadata ?? {}, id]
+          );
+
+          // Note: signatures sync is not implemented server-side here
+          return NextResponse.json(mapRow(updated.rows[0]));
+        }
       }
+
+      // Create new
+      const created = await pool.query(
+        `
+        INSERT INTO documents (
+          title, content, content_type, owner_id, encrypted, metadata, tags, status, version
+        ) VALUES ($1, $2, $3, $4, false, $5, $6, 'draft', 1)
+        RETURNING 
+          id, title, content, content_type, owner_id, encrypted, encryption_key,
+          file_url, file_size, mime_type, metadata, tags, status, version,
+          created_at, updated_at
+        `,
+        [title, content ?? '', contentType, ownerId, metadata ?? {}, []]
+      );
+
+      return NextResponse.json(mapRow(created.rows[0]), { status: 201 });
+    } catch (error) {
+      console.error('Error syncing document:', error);
+      return NextResponse.json(
+        { error: 'Failed to sync document', details: String(error) },
+        { status: 500 }
+      );
     }
-
-    // Create new
-    const created = await getPool().query(
-      `
-      INSERT INTO documents (
-        title, content, content_type, owner_id, encrypted, metadata, tags, status, version
-      ) VALUES ($1, $2, $3, $4, false, $5, $6, 'draft', 1)
-      RETURNING 
-        id, title, content, content_type, owner_id, encrypted, encryption_key,
-        file_url, file_size, mime_type, metadata, tags, status, version,
-        created_at, updated_at
-      `,
-      [title, content ?? '', contentType, ownerId, metadata ?? {}, [],]
-    );
-
-    return NextResponse.json(mapRow(created.rows[0]), { status: 201 });
-  } catch (error) {
-    console.error('Error syncing document:', error);
-    return NextResponse.json(
-      { error: 'Failed to sync document', details: String(error) },
-      { status: 500 }
-    );
-  }
+  });
 }

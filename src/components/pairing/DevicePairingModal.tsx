@@ -145,11 +145,13 @@ export function DevicePairingModal({ open, onClose, onSuccess, userDid }: Device
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent {...{className: "sm:max-w-md"} as any}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Smartphone className="h-5 w-5" />
-            Pair New Device
+          <DialogTitle>
+            <div className="flex items-center gap-2">
+              <Smartphone className="h-5 w-5" />
+              Pair New Device
+            </div>
           </DialogTitle>
           <DialogDescription>
             Scan the QR code with your mobile device to pair it securely

@@ -24,11 +24,11 @@ const updateCollaborationSchema = z.object({
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (_req, user) => {
     try {
-      const { id } = params;
+      const { id } = await params;
       const pool = getPool();
 
       // Check if user has access to this collaboration
@@ -144,11 +144,11 @@ export async function GET(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const { id } = params;
+      const { id } = await params;
       const body = await req.json();
 
       // Validate input
@@ -275,11 +275,11 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (_req, user) => {
     try {
-      const { id } = params;
+      const { id } = await params;
       const pool = getPool();
 
       // Check if user is owner

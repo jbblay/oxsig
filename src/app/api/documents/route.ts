@@ -11,7 +11,7 @@ import { publishDocumentCreated } from '@/lib/events/nats';
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const { searchParams } = new URL(request.url);
     const query = searchParams.get('query');
     const tags = searchParams.get('tags')?.split(',');
     const status = searchParams.get('status');

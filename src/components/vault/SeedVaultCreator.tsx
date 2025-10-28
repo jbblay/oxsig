@@ -138,11 +138,13 @@ export function SeedVaultCreator({ open, onClose, onSuccess }: SeedVaultCreatorP
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent {...{className: "max-w-2xl max-h-[90vh] overflow-y-auto"} as any}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-500" />
-            Create Seed Vault
+          <DialogTitle>
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-blue-500" />
+              Create Seed Vault
+            </div>
           </DialogTitle>
           <DialogDescription>
             Secure your identity with an encrypted recovery phrase

@@ -128,10 +128,10 @@ export function VoiceCallDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent {...{className: "sm:max-w-md"} as any}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Phone className="h-5 w-5" />
+          <DialogTitle>
+            <Phone className="h-5 w-5 inline mr-2" />
             Voice Call
           </DialogTitle>
         </DialogHeader>
@@ -219,8 +219,7 @@ export function VoiceCallDialog({
             <Slider
               value={volume}
               onValueChange={setVolume}
-              max={100}
-              step={1}
+              {...{max: 100, step: 1} as any}
               className="w-full"
             />
           </div>

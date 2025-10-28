@@ -22,6 +22,7 @@ export function AuthButton({
   variant = "default",
   className,
   disabled,
+  onClick,
   ...props
 }: AuthButtonProps) {
   return (
@@ -29,6 +30,7 @@ export function AuthButton({
       variant={variant}
       className={cn("w-full h-11 font-medium", className)}
       disabled={loading || disabled}
+      onClick={onClick as any}
       {...props}
     >
       {loading ? (
@@ -55,6 +57,7 @@ export function OAuthButton({
   icon,
   className,
   children,
+  onClick,
   ...props
 }: OAuthButtonProps) {
   const providerConfig = {
@@ -83,6 +86,7 @@ export function OAuthButton({
       variant="outline"
       className={cn("w-full", config.className, className)}
       disabled={loading}
+      onClick={onClick as any}
       {...props}
     >
       {loading ? (

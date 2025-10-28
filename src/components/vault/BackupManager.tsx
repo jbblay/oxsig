@@ -90,7 +90,7 @@ export function BackupDialog({ onBackupComplete }: BackupDialogProps) {
           Create Backup
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent {...{className: "sm:max-w-md"} as any}>
         <DialogHeader>
           <DialogTitle>Create Vault Backup</DialogTitle>
           <DialogDescription>
@@ -255,7 +255,7 @@ export function RestoreDialog({ backup, isOpen, onOpenChange, onRestoreComplete 
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent {...{className: "sm:max-w-md"} as any}>
         <DialogHeader>
           <DialogTitle>Restore from Backup</DialogTitle>
           <DialogDescription>
@@ -589,7 +589,7 @@ export function ImportBackupDialog() {
           Import Backup
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent {...{className: "sm:max-w-md"} as any}>
         <DialogHeader>
           <DialogTitle>Import Backup</DialogTitle>
           <DialogDescription>

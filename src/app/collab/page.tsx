@@ -24,6 +24,8 @@ interface Peer {
   name: string;
   avatar?: string;
   online: boolean;
+  ownerName?: string;
+  memberCount?: number;
 }
 
 interface Message {
@@ -57,9 +59,18 @@ export default function CollabPage() {
     fetch('/api/collaborations')
       .then(res => res.json())
       .then(data => {
-        setPeers(data.collaborations || []);
-        if (data.collaborations?.length > 0) {
-          setSelectedPeer(data.collaborations[0]);
+        // Map collaboration data to peer format
+        const mappedPeers = (data.collaborations || []).map((collab: any) => ({
+          id: collab.id,
+          name: collab.name,
+          avatar: collab.avatar || undefined,
+          online: true, // Could be based on real-time status later
+          ownerName: collab.ownerName,
+          memberCount: collab.memberCount
+        }));
+        setPeers(mappedPeers);
+        if (mappedPeers.length > 0) {
+          setSelectedPeer(mappedPeers[0]);
         }
       })
       .catch(err => console.error('Failed to fetch peers:', err))

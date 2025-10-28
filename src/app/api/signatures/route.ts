@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const { searchParams } = new URL(request.url);
     const documentId = searchParams.get('documentId');
     const userId = searchParams.get('userId');
     const page = parseInt(searchParams.get('page') || '1');

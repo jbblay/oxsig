@@ -27,11 +27,11 @@ const addMemberSchema = z.object({
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const { id: collaborationId } = params;
+      const { id: collaborationId } = await params;
       const body = await req.json();
 
       // Validate input

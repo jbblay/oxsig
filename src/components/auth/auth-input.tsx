@@ -17,6 +17,7 @@ interface AuthInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function EmailInput({ label = "Email", error, className, ...props }: AuthInputProps) {
+  const { value, ...restProps } = props;
   return (
     <div className="space-y-2">
       <Label htmlFor={props.id || "email"} className="text-sm font-medium">
@@ -27,7 +28,8 @@ export function EmailInput({ label = "Email", error, className, ...props }: Auth
         type="email"
         placeholder="name@example.com"
         className={cn("h-11", error && "border-destructive focus-visible:ring-destructive", className)}
-        {...props}
+        value={value as string | undefined}
+        {...restProps}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
@@ -46,6 +48,7 @@ export function PasswordInput({
   ...props
 }: PasswordInputProps) {
   const [showPassword, setShowPassword] = React.useState(false);
+  const { value, ...restProps } = props;
 
   return (
     <div className="space-y-2">
@@ -58,7 +61,8 @@ export function PasswordInput({
           type={showPassword ? "text" : "password"}
           placeholder="••••••••"
           className={cn("h-11", showToggle && "pr-10", error && "border-destructive focus-visible:ring-destructive", className)}
-          {...props}
+          value={value as string | undefined}
+          {...restProps}
         />
         {showToggle && (
           <button
@@ -86,6 +90,7 @@ interface TextInputProps extends AuthInputProps {
 }
 
 export function TextInput({ label, error, icon, className, ...props }: TextInputProps) {
+  const { value, ...restProps } = props;
   return (
     <div className="space-y-2">
       {label && (
@@ -95,7 +100,8 @@ export function TextInput({ label, error, icon, className, ...props }: TextInput
       )}
       <Input
         className={cn("h-11", error && "border-destructive focus-visible:ring-destructive", className)}
-        {...props}
+        value={value as string | undefined}
+        {...restProps}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>

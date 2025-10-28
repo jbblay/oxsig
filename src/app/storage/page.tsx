@@ -471,8 +471,7 @@ export default function SecureStoragePage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description"
-                disabled={isUploading}
-                rows={3}
+                {...({ disabled: isUploading, rows: 3 } as any)}
               />
             </div>
             {isUploading && (

@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
 import { applySecurityHeaders } from '@/lib/security/headers';
 
 // Routes that require authentication
@@ -44,7 +45,7 @@ function isPublicRoute(pathname: string): boolean {
 }
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname } = new URL(request.url);
   
   // Skip public routes
   if (isPublicRoute(pathname)) {
@@ -59,7 +60,8 @@ export async function middleware(request: NextRequest) {
   }
   
   // Get token from cookie
-  const token = request.cookies.get('accessToken')?.value;
+  const cookieStore = await cookies();
+  const token = cookieStore.get('accessToken')?.value;
   
   if (!token) {
     // No token - redirect to login or return 401 for API routes

@@ -59,7 +59,7 @@ export default function SigningForm() {
 
           <div className="space-y-2">
             <Label htmlFor="sections">Sections to sign or mask</Label>
-            <Textarea id="sections" rows={4} placeholder="e.g., section-1, section-3; mask section-2" {...register("sections")} />
+            <Textarea id="sections" {...({ rows: 4 } as any)} placeholder="e.g., section-1, section-3; mask section-2" {...register("sections")} />
             {errors.sections ? <p className="text-xs text-destructive">{errors.sections.message}</p> : null}
           </div>
 

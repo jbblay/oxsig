@@ -429,12 +429,13 @@ export default function OpsecPage() {
                             transition={{ delay: 0.6 + itemIndex * 0.05 }}
                             className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                           >
-                            <Checkbox
-                              id={item.id}
-                              checked={item.completed}
-                              onCheckedChange={() => toggleChecklistItem(item.id)}
-                              className="mt-1"
-                            />
+                            <div className="mt-1">
+                              <Checkbox
+                                id={item.id}
+                                checked={item.completed}
+                                onCheckedChange={() => toggleChecklistItem(item.id)}
+                              />
+                            </div>
                             <div className="flex-1">
                               <label
                                 htmlFor={item.id}
@@ -489,12 +490,13 @@ export default function OpsecPage() {
                         key={item.id}
                         className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                       >
-                        <Checkbox
-                          id={item.id}
-                          checked={item.completed}
-                          onCheckedChange={() => toggleChecklistItem(item.id)}
-                          className="mt-1"
-                        />
+                        <div className="mt-1">
+                          <Checkbox
+                            id={item.id}
+                            checked={item.completed}
+                            onCheckedChange={() => toggleChecklistItem(item.id)}
+                          />
+                        </div>
                         <div className="flex-1">
                           <label
                             htmlFor={item.id}

@@ -26,11 +26,11 @@ const updateMemberSchema = z.object({
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; userId: string } }
+  { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
     try {
-      const { id: collaborationId, userId: targetUserId } = params;
+      const { id: collaborationId, userId: targetUserId } = await params;
       const body = await req.json();
 
       // Validate input
@@ -178,11 +178,11 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string; userId: string } }
+  { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
   return requireAuth(request, async (_req, user) => {
     try {
-      const { id: collaborationId, userId: targetUserId } = params;
+      const { id: collaborationId, userId: targetUserId } = await params;
       const pool = getPool();
 
       // Check if requester has admin permissions
