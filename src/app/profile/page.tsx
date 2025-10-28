@@ -86,35 +86,106 @@ export default function ProfilePage() {
     quantumResistant: true
   });
 
-  const stats = [
-    { label: "Documents Signed", value: "247", icon: FileSignature, color: "text-blue-500" },
-    { label: "Collaborations", value: "34", icon: Users, color: "text-teal-500" },
-    { label: "Security Score", value: "98%", icon: Shield, color: "text-emerald-500" },
-    { label: "Uptime", value: "99.9%", icon: TrendingUp, color: "text-purple-500" }
-  ];
+  // API data states
+  const [stats, setStats] = React.useState<any>(null);
+  const [recentActivity, setRecentActivity] = React.useState<any[]>([]);
+  const [connectedDevices, setConnectedDevices] = React.useState<any[]>([]);
+  const [cryptoKeys, setCryptoKeys] = React.useState<any[]>([]);
+  const [loadingStats, setLoadingStats] = React.useState(true);
+  const [loadingActivity, setLoadingActivity] = React.useState(true);
+  const [loadingDevices, setLoadingDevices] = React.useState(true);
+  const [loadingKeys, setLoadingKeys] = React.useState(true);
 
-  const recentActivity = [
-    { action: "Signed document", file: "Q4_Report.pdf", time: "2 hours ago", icon: FileSignature },
-    { action: "Updated DID", detail: "Added new verification method", time: "1 day ago", icon: Fingerprint },
-    { action: "Joined collaboration", detail: "Project Quantum", time: "3 days ago", icon: Users },
-    { action: "Security scan completed", detail: "No threats detected", time: "5 days ago", icon: Shield }
-  ];
+  // Fetch stats
+  React.useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/users/me/stats');
+        if (response.ok) {
+          const data = await response.json();
+          setStats(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+    fetchStats();
+  }, []);
 
-  const connectedDevices = [
-    { name: "MacBook Pro", type: "laptop", lastActive: "Active now", trusted: true, icon: Laptop },
-    { name: "iPhone 15 Pro", type: "mobile", lastActive: "5 min ago", trusted: true, icon: Smartphone },
-    { name: "iPad Air", type: "tablet", lastActive: "2 hours ago", trusted: true, icon: Monitor }
-  ];
+  // Fetch activity
+  React.useEffect(() => {
+    const fetchActivity = async () => {
+      try {
+        const response = await fetch('/api/users/me/activity?limit=5');
+        if (response.ok) {
+          const data = await response.json();
+          setRecentActivity(data.activities || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch activity:', error);
+      } finally {
+        setLoadingActivity(false);
+      }
+    };
+    fetchActivity();
+  }, []);
 
-  const cryptoKeys = [
-    { id: 1, name: "Primary Signing Key", type: "CRYSTALS-Dilithium", created: "Jan 2024", uses: 247, status: "active" },
-    { id: 2, name: "Backup Key", type: "SPHINCS+", created: "Jan 2024", uses: 12, status: "backup" },
-    { id: 3, name: "Legacy Key", type: "RSA-4096", created: "Dec 2023", uses: 89, status: "deprecated" }
-  ];
+  // Fetch devices
+  React.useEffect(() => {
+    const fetchDevices = async () => {
+      try {
+        const response = await fetch('/api/users/me/devices');
+        if (response.ok) {
+          const data = await response.json();
+          setConnectedDevices(data.devices || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch devices:', error);
+      } finally {
+        setLoadingDevices(false);
+      }
+    };
+    fetchDevices();
+  }, []);
+
+  // Fetch keys
+  React.useEffect(() => {
+    const fetchKeys = async () => {
+      try {
+        const response = await fetch('/api/users/me/keys');
+        if (response.ok) {
+          const data = await response.json();
+          setCryptoKeys(data.keys || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch keys:', error);
+      } finally {
+        setLoadingKeys(false);
+      }
+    };
+    fetchKeys();
+  }, []);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     // You could add a toast notification here
+  };
+
+  const getDeviceIcon = (deviceType: string) => {
+    switch (deviceType?.toLowerCase()) {
+      case 'mobile':
+      case 'phone':
+        return Smartphone;
+      case 'tablet':
+        return Monitor;
+      case 'desktop':
+      case 'laptop':
+        return Laptop;
+      default:
+        return Monitor;
+    }
   };
 
   // Show loading state
@@ -242,19 +313,34 @@ export default function ProfilePage() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-              {stats.map((stat, i) => (
-                <motion.div
-                  key={stat.label}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="text-center p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                >
-                  <stat.icon className={`h-6 w-6 mx-auto mb-2 ${stat.color}`} />
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                  <div className="text-xs text-muted-foreground">{stat.label}</div>
-                </motion.div>
-              ))}
+              {loadingStats ? (
+                <div className="col-span-2 md:col-span-4 flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : stats ? (
+                [
+                  { label: "Documents Signed", value: stats.documentsSigned || 0, icon: FileSignature, color: "text-blue-500" },
+                  { label: "Collaborations", value: stats.collaborations || 0, icon: Users, color: "text-teal-500" },
+                  { label: "Security Score", value: `${stats.securityScore || 0}%`, icon: Shield, color: "text-emerald-500" },
+                  { label: "Uptime", value: `${stats.uptime || 0}%`, icon: TrendingUp, color: "text-purple-500" }
+                ].map((stat, i) => (
+                  <motion.div
+                    key={stat.label}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="text-center p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  >
+                    <stat.icon className={`h-6 w-6 mx-auto mb-2 ${stat.color}`} />
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                    <div className="text-xs text-muted-foreground">{stat.label}</div>
+                  </motion.div>
+                ))
+              ) : (
+                <div className="col-span-2 md:col-span-4 text-center text-sm text-muted-foreground py-8">
+                  No stats available
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -283,26 +369,44 @@ export default function ProfilePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {recentActivity.map((activity, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <activity.icon className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{activity.action}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {activity.file || activity.detail}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">{activity.time}</p>
-                      </div>
-                    </motion.div>
-                  ))}
+                  {loadingActivity ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : recentActivity.length === 0 ? (
+                    <div className="text-center text-sm text-muted-foreground py-8">
+                      No recent activity
+                    </div>
+                  ) : (
+                    recentActivity.map((activity, i) => {
+                      // Map icon from activity type
+                      let IconComponent = Activity;
+                      if (activity.type === 'SIGNATURE_CREATE') IconComponent = FileSignature;
+                      else if (activity.type === 'COLLABORATION_JOIN') IconComponent = Users;
+                      else if (activity.type === 'DOCUMENT_UPLOAD') IconComponent = Upload;
+                      
+                      return (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.1 }}
+                          className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="p-2 rounded-lg bg-primary/10">
+                            <IconComponent className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{activity.action}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {activity.file || activity.detail}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">{activity.time}</p>
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -406,20 +510,30 @@ export default function ProfilePage() {
               <div className="space-y-3">
                 <Label className="text-base">Cryptographic Keys</Label>
                 <div className="space-y-2">
-                  {cryptoKeys.map((key) => (
-                    <div key={key.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div className="flex items-center gap-3">
-                        <Key className="h-5 w-5 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium text-sm">{key.name}</p>
-                          <p className="text-xs text-muted-foreground">{key.type} • {key.uses} uses • {key.created}</p>
-                        </div>
-                      </div>
-                      <Badge variant={key.status === "active" ? "default" : key.status === "backup" ? "secondary" : "outline"}>
-                        {key.status}
-                      </Badge>
+                  {loadingKeys ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
-                  ))}
+                  ) : cryptoKeys.length === 0 ? (
+                    <div className="text-center text-sm text-muted-foreground py-8">
+                      No cryptographic keys yet
+                    </div>
+                  ) : (
+                    cryptoKeys.map((key) => (
+                      <div key={key.id} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <Key className="h-5 w-5 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium text-sm">{key.name}</p>
+                            <p className="text-xs text-muted-foreground">{key.type} • {key.uses} uses • {key.created}</p>
+                          </div>
+                        </div>
+                        <Badge variant={key.status === "active" ? "default" : key.status === "backup" ? "secondary" : "outline"}>
+                          {key.status}
+                        </Badge>
+                      </div>
+                    ))
+                  )}
                 </div>
                 <Button variant="outline" className="w-full">
                   <Plus className="h-4 w-4 mr-2" />
@@ -522,36 +636,51 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {connectedDevices.map((device, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="flex items-center justify-between p-4 rounded-lg border"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-lg bg-primary/10">
-                        <device.icon className="h-6 w-6 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{device.name}</p>
-                        <p className="text-sm text-muted-foreground">{device.lastActive}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {device.trusted && (
-                        <Badge variant="secondary" className="gap-1">
-                          <Shield className="h-3 w-3" />
-                          Trusted
-                        </Badge>
-                      )}
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
+                {loadingDevices ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : connectedDevices.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No connected devices yet
+                  </div>
+                ) : (
+                  connectedDevices.map((device, i) => {
+                    const DeviceIcon = getDeviceIcon(device.device_type);
+                    return (
+                      <motion.div
+                        key={device.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="flex items-center justify-between p-4 rounded-lg border"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-3 rounded-lg bg-primary/10">
+                            <DeviceIcon className="h-6 w-6 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{device.device_name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Last active: {new Date(device.last_used).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {device.is_trusted && (
+                            <Badge variant="secondary" className="gap-1">
+                              <Shield className="h-3 w-3" />
+                              Trusted
+                            </Badge>
+                          )}
+                          <Button variant="ghost" size="icon">
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
               </div>
               <Button variant="outline" className="w-full mt-4">
                 <Plus className="h-4 w-4 mr-2" />

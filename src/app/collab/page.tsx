@@ -3,7 +3,7 @@
 import * as React from "react";
 import {
   Users, MessageSquare, Paperclip, Search, PlusCircle, Send,
-  File, Download, Trash2, X, Shield, Lock, FileEdit
+  File, Download, Trash2, X, Shield, Lock, FileEdit, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,39 +19,119 @@ const DocEditor = dynamic(() => import('@/components/app/DocEditor'), {
   loading: () => <div className="flex items-center justify-center h-96"><div className="text-muted-foreground">Loading editor...</div></div>
 });
 
-const peers = [
-  { id: 1, name: "Alice", avatar: "/avatars/01.png", online: true },
-  { id: 2, name: "Bob", avatar: "/avatars/02.png", online: false },
-  { id: 3, name: "Charlie", avatar: "/avatars/03.png", online: true },
-  { id: 4, name: "David", avatar: "/avatars/04.png", online: true },
-];
+interface Peer {
+  id: string;
+  name: string;
+  avatar?: string;
+  online: boolean;
+}
 
-const initialMessages = [
-  { peerId: 1, text: "Hey, can you review the Q4 security report?", sender: "Alice", time: "10:30 AM" },
-  { peerId: 1, text: "Sure, on it. Looks good so far.", sender: "Me", time: "10:31 AM" },
-];
+interface Message {
+  id: string;
+  peer_id: string;
+  text: string;
+  sender: string;
+  created_at: string;
+}
 
-const initialFiles = [
-  { id: 1, name: "Q4_Security_Report.pdf", size: "2.3 MB", encrypted: true },
-  { id: 2, name: "PQC_Implementation_Plan.docx", size: "850 KB", encrypted: true },
-];
+interface CollabFile {
+  id: string;
+  name: string;
+  size: string;
+  encrypted: boolean;
+}
 
 export default function CollabPage() {
   const [activeView, setActiveView] = React.useState<"chat" | "files" | "editor">("chat");
-  const [selectedPeer, setSelectedPeer] = React.useState(peers[0]);
-  const [messages, setMessages] = React.useState(initialMessages);
-  const [files, setFiles] = React.useState(initialFiles);
+  const [peers, setPeers] = React.useState<Peer[]>([]);
+  const [selectedPeer, setSelectedPeer] = React.useState<Peer | null>(null);
+  const [messages, setMessages] = React.useState<Message[]>([]);
+  const [files, setFiles] = React.useState<CollabFile[]>([]);
   const [newMessage, setNewMessage] = React.useState("");
+  const [loadingPeers, setLoadingPeers] = React.useState(true);
+  const [loadingMessages, setLoadingMessages] = React.useState(false);
+  const [loadingFiles, setLoadingFiles] = React.useState(false);
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      setMessages([
-        ...messages,
-        { peerId: selectedPeer.id, text: newMessage, sender: "Me", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-      ]);
+  // Fetch peers/collaborations
+  React.useEffect(() => {
+    fetch('/api/collaborations')
+      .then(res => res.json())
+      .then(data => {
+        setPeers(data.collaborations || []);
+        if (data.collaborations?.length > 0) {
+          setSelectedPeer(data.collaborations[0]);
+        }
+      })
+      .catch(err => console.error('Failed to fetch peers:', err))
+      .finally(() => setLoadingPeers(false));
+  }, []);
+
+  // Fetch messages when peer changes
+  React.useEffect(() => {
+    if (!selectedPeer) return;
+    setLoadingMessages(true);
+    fetch(`/api/collaborations/${selectedPeer.id}/messages`)
+      .then(res => res.json())
+      .then(data => setMessages(data.messages || []))
+      .catch(err => console.error('Failed to fetch messages:', err))
+      .finally(() => setLoadingMessages(false));
+  }, [selectedPeer]);
+
+  // Fetch files when peer changes
+  React.useEffect(() => {
+    if (!selectedPeer) return;
+    setLoadingFiles(true);
+    fetch(`/api/collaborations/${selectedPeer.id}/files`)
+      .then(res => res.json())
+      .then(data => setFiles(data.files || []))
+      .catch(err => console.error('Failed to fetch files:', err))
+      .finally(() => setLoadingFiles(false));
+  }, [selectedPeer]);
+
+  const handleSendMessage = async () => {
+    if (newMessage.trim() && selectedPeer) {
+      const optimisticMessage = {
+        id: 'temp-' + Date.now(),
+        peer_id: selectedPeer.id,
+        text: newMessage,
+        sender: "Me",
+        created_at: new Date().toISOString()
+      };
+      setMessages([...messages, optimisticMessage]);
       setNewMessage("");
+
+      try {
+        await fetch(`/api/collaborations/${selectedPeer.id}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: newMessage })
+        });
+      } catch (err) {
+        console.error('Failed to send message:', err);
+      }
     }
   };
+
+  if (loadingPeers) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (peers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] gap-4">
+        <Users className="h-16 w-16 text-muted-foreground" />
+        <p className="text-muted-foreground">No collaborations yet</p>
+        <Button>
+          <PlusCircle className="h-4 w-4 mr-2" />
+          Start Collaboration
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-8rem)] gap-4 md:gap-0">
@@ -74,14 +154,14 @@ export default function CollabPage() {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.3, delay: index * 0.1 }}
-                className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${selectedPeer.id === peer.id ? 'bg-muted' : 'hover:bg-muted/50'}`}
+                className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${selectedPeer?.id === peer.id ? 'bg-muted' : 'hover:bg-muted/50'}`}
                 onClick={() => setSelectedPeer(peer)}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
                 <Avatar className="h-9 w-9 relative">
                   <AvatarImage src={peer.avatar} alt={peer.name} />
-                  <AvatarFallback>{peer.name.charAt(0)}</AvatarFallback>
+                  <AvatarFallback>{peer.name?.charAt(0) || 'U'}</AvatarFallback>
                   {peer.online && (
                     <motion.div
                       className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-background"
@@ -103,13 +183,13 @@ export default function CollabPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <Avatar className="h-10 w-10">
-                <AvatarImage src={selectedPeer.avatar} alt={selectedPeer.name} />
-                <AvatarFallback>{selectedPeer.name.charAt(0)}</AvatarFallback>
+                <AvatarImage src={selectedPeer?.avatar} alt={selectedPeer?.name} />
+                <AvatarFallback>{selectedPeer?.name?.charAt(0) || 'U'}</AvatarFallback>
               </Avatar>
               <select
                 className="flex-1 bg-background border rounded-md px-3 py-2 text-sm"
-                value={selectedPeer.id}
-                onChange={(e) => setSelectedPeer(peers.find(p => p.id === Number(e.target.value)) || peers[0])}
+                value={selectedPeer?.id || ''}
+                onChange={(e) => setSelectedPeer(peers.find(p => p.id === e.target.value) || null)}
               >
                 {peers.map((peer) => (
                   <option key={peer.id} value={peer.id}>
@@ -128,12 +208,12 @@ export default function CollabPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <div className="flex items-center gap-3">
               <Avatar className="h-10 w-10 hidden md:block">
-                <AvatarImage src={selectedPeer.avatar} alt={selectedPeer.name} />
-                <AvatarFallback>{selectedPeer.name.charAt(0)}</AvatarFallback>
+                <AvatarImage src={selectedPeer?.avatar} alt={selectedPeer?.name} />
+                <AvatarFallback>{selectedPeer?.name?.charAt(0) || 'U'}</AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-base md:text-lg font-semibold">{selectedPeer.name}</h2>
-                <p className="text-xs text-muted-foreground">{selectedPeer.online ? "Online" : "Offline"}</p>
+                <h2 className="text-base md:text-lg font-semibold">{selectedPeer?.name || 'Select a peer'}</h2>
+                <p className="text-xs text-muted-foreground">{selectedPeer?.online ? "Online" : "Offline"}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -153,24 +233,36 @@ export default function CollabPage() {
             {activeView === 'chat' ? (
               <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 flex flex-col">
                 <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
-                  <AnimatePresence>
-                    {messages.filter(m => m.peerId === selectedPeer.id).map((msg, i) => (
-                      <motion.div
-                        key={i}
-                        layout
-                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                        className={`flex ${msg.sender === 'Me' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md p-3 rounded-lg ${msg.sender === 'Me' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                          <p className="text-sm">{msg.text}</p>
-                          <p className="text-xs text-right mt-1 opacity-70">{msg.time}</p>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
+                  {loadingMessages ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No messages yet. Start the conversation!
+                    </div>
+                  ) : (
+                    <AnimatePresence>
+                      {messages.filter(m => m.peer_id === selectedPeer?.id).map((msg, i) => (
+                        <motion.div
+                          key={msg.id}
+                          layout
+                          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          transition={{ duration: 0.3, ease: "easeOut" }}
+                          className={`flex ${msg.sender === 'Me' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div className={`max-w-[85%] sm:max-w-xs lg:max-w-md p-3 rounded-lg ${msg.sender === 'Me' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                            <p className="text-sm">{msg.text}</p>
+                            <p className="text-xs text-right mt-1 opacity-70">
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  )}
                 </CardContent>
                 <div className="p-4 border-t">
                   <div className="relative">
@@ -214,29 +306,43 @@ export default function CollabPage() {
                   </motion.div>
                   <h3 className="font-semibold text-sm">Shared Files</h3>
                   <div className="space-y-2">
-                    {files.map((file, index) => (
-                      <motion.div
-                        key={file.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.1 }}
-                        whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-                        className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <File className="h-5 w-5 text-blue-500 flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">{file.name}</p>
-                            <p className="text-xs text-muted-foreground">{file.size}</p>
+                    {loadingFiles ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : files.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No files shared yet
+                      </div>
+                    ) : (
+                      files.map((file, index) => (
+                        <motion.div
+                          key={file.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.3, delay: index * 0.1 }}
+                          whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
+                          className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <File className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{file.name}</p>
+                              <p className="text-xs text-muted-foreground">{file.size}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <Badge variant="outline" className="gap-1 text-green-600 border-green-600 hidden sm:flex"><Shield className="h-3 w-3" /> Encrypted</Badge>
-                          <Button variant="ghost" size="icon" className="h-8 w-8"><Download className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hidden sm:inline-flex"><Trash2 className="h-4 w-4" /></Button>
-                        </div>
-                      </motion.div>
-                    ))}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {file.encrypted && (
+                              <Badge variant="outline" className="gap-1 text-green-600 border-green-600 hidden sm:flex">
+                                <Shield className="h-3 w-3" /> Encrypted
+                              </Badge>
+                            )}
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><Download className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hidden sm:inline-flex"><Trash2 className="h-4 w-4" /></Button>
+                          </div>
+                        </motion.div>
+                      ))
+                    )}
                   </div>
                 </CardContent>
               </motion.div>
