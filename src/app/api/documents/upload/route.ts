@@ -10,18 +10,6 @@ import { getPool } from '@/lib/db/pool';
 import { getUserFromRequest } from '@/lib/auth/middleware';
 
 let s3Client: S3Client | null = null;
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
-  }
-  return pool;
-}
 
 function getS3Client() {
   if (!s3Client) {
@@ -40,7 +28,7 @@ function getS3Client() {
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
+    const formData = await (request as any).formData();
     const file = formData.get('file') as File;
     const metadataStr = formData.get('metadata') as string;
 
@@ -160,8 +148,45 @@ export async function POST(request: NextRequest) {
       updatedAt: row.updated_at,
     };
 
-    // TODO: Index in Meilisearch
-    // TODO: Publish event to NATS
+    // Index in Meilisearch (optional - only if configured)
+    try {
+      if (process.env.MEILISEARCH_URL && process.env.MEILISEARCH_KEY) {
+        const { MeiliSearch } = await import('meilisearch');
+        const client = new MeiliSearch({
+          host: process.env.MEILISEARCH_URL,
+          apiKey: process.env.MEILISEARCH_KEY,
+        });
+
+        await client.index('documents').addDocuments([{
+          id: document.id,
+          title: document.title,
+          content: document.content,
+          owner_id: document.ownerId,
+          tags: document.tags,
+          created_at: new Date(document.createdAt).getTime(),
+        }]);
+        console.log(`✅ Document indexed in Meilisearch: ${document.id}`);
+      }
+    } catch (searchError) {
+      console.warn('Failed to index in Meilisearch:', searchError);
+      // Don't fail upload if search indexing fails
+    }
+
+    // Publish event to NATS (optional - only if configured)
+    try {
+      if (process.env.NATS_URL) {
+        const { publishDocumentCreated } = await import('@/lib/events/nats');
+        await publishDocumentCreated(
+          document.id.toString(),
+          document.ownerId.toString(),
+          { title: document.title, fileSize: document.fileSize }
+        );
+        console.log(`✅ Document event published: ${document.id}`);
+      }
+    } catch (eventError) {
+      console.warn('Failed to publish event:', eventError);
+      // Don't fail upload if event publishing fails
+    }
 
     return NextResponse.json(document, { status: 201 });
   } catch (error) {

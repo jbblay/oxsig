@@ -232,19 +232,21 @@ export default function DocumentSigningPage() {
               </div>
 
               <TabsContent value="upload" className="m-0">
-                <Card 
-                  className={`border-0 shadow-none transition-all ${
-                    isDragging 
-                      ? 'bg-blue-500/5' 
-                      : uploadedFile 
-                        ? 'bg-green-500/5' 
-                        : ''
-                  }`}
+                <div 
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                 >
-                  <CardContent className="pt-6">
+                  <Card 
+                    className={`border-0 shadow-none transition-all ${
+                      isDragging 
+                        ? 'bg-blue-500/5' 
+                        : uploadedFile 
+                          ? 'bg-green-500/5' 
+                          : ''
+                    }`}
+                  >
+                    <CardContent className="pt-6">
                     {uploadedFile ? (
                       <div className="space-y-4">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 sm:p-4 rounded-lg border border-green-500/20 bg-green-500/5">
@@ -330,6 +332,7 @@ export default function DocumentSigningPage() {
                     )}
                   </CardContent>
                 </Card>
+              </div>
               </TabsContent>
 
               <TabsContent value="editor" className="m-0">
