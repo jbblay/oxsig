@@ -59,6 +59,8 @@ The checked-in PostgreSQL and MinIO credentials are development defaults. Replac
 
 Fresh PostgreSQL volumes run the SQL files in `migrations/` automatically. `pnpm db:migrate` is idempotent and applies any migration not recorded in `schema_migrations`, which also supports existing development volumes.
 
+Vercel Preview builds apply those same migrations automatically when `DATABASE_URL` is connected. Other environments keep using the explicit `pnpm db:migrate` command so a Production database is never changed merely by building the application.
+
 ## Verification
 
 Run the complete local quality gate:
