@@ -6,7 +6,7 @@
 "use client";
 
 import * as React from "react";
-import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -85,11 +85,7 @@ export function PasswordInput({
   );
 }
 
-interface TextInputProps extends AuthInputProps {
-  icon?: React.ReactNode;
-}
-
-export function TextInput({ label, error, icon, className, ...props }: TextInputProps) {
+export function TextInput({ label, error, className, ...props }: AuthInputProps) {
   const { value, ...restProps } = props;
   return (
     <div className="space-y-2">

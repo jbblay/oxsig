@@ -29,17 +29,12 @@ export function LoginForm({ onSuccess, redirectTo = "/" }: LoginFormProps): Reac
     message,
     handleChange,
     handleSubmit,
-    setSuccess,
-    setError,
   } = useAuthForm({
     onSubmit: async (data) => {
       try {
         await loginWithEmail(data.email, data.password);
-        setSuccess("Login successful! Redirecting...");
-        setTimeout(() => {
-          if (onSuccess) onSuccess();
-          router.push(redirectTo);
-        }, 1000);
+        if (onSuccess) onSuccess();
+        router.push(redirectTo);
       } catch (error: any) {
         throw new Error(error.message || "Login failed. Please check your credentials.");
       }

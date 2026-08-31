@@ -1,221 +1,153 @@
-/**
- * Signatures API Route - POST /api/signatures (create), GET /api/signatures (list)
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { query as dbQuery } from '@/lib/db/postgres';
-import { getAuthUserId } from '@/lib/auth/api-helpers';
-import { publishSignatureCreated } from '@/lib/events/nats';
+import { z } from 'zod';
+import { getUserFromRequest } from '@/lib/auth/middleware';
+import { AUDIT_ACTIONS, logSignatureEvent } from '@/lib/audit/logger';
+import { query as dbQuery, transaction } from '@/lib/db/pool';
+import { metadataSchema } from '@/lib/http/schemas';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
+import { verifyEd25519DocumentSignature } from '@/lib/signatures/ed25519';
+import { mapSignatureRow } from '@/lib/signatures/map-signature';
+
+const signatureSchema = z.object({
+  documentId: z.string().uuid(),
+  signatureData: z.string().min(80).max(100),
+  publicKey: z.string().min(40).max(60),
+  signatureType: z.string().trim().min(1).max(50).default('approval'),
+  algorithm: z.literal('ed25519').default('ed25519'),
+  metadata: metadataSchema.default({}),
+});
+
+class SignatureError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 export async function POST(request: NextRequest) {
+  const user = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_SIGNATURES, user.id);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
-    // Get authenticated user
-    const signerId = await getAuthUserId(request);
-    
-    const body = await request.json();
-    const {
-      documentId,
-      signatureData,
-      signatureType,
-      publicKey,
-      algorithm = 'ed25519',
-      metadata = {},
-      signerName,
-      signerEmail,
-    } = body;
-
-    if (!documentId || !signatureData || !publicKey) {
+    const parsed = signatureSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Missing required fields: documentId, signatureData, publicKey' },
-        { status: 400 }
+        { error: 'Invalid signature', message: parsed.error.issues[0]?.message },
+        { status: 400 },
       );
     }
 
-    const insertQuery = `
-      INSERT INTO signatures (
-        document_id,
-        signer_id,
-        signer_name,
-        signer_email,
-        signature_data,
-        signature_type,
-        public_key,
-        algorithm,
-        metadata,
-        verified
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
-      RETURNING 
-        id,
-        document_id,
-        signer_id,
-        signer_name,
-        signer_email,
-        signature_data,
-        signature_type,
-        public_key,
-        algorithm,
-        timestamp,
-        ip_address,
-        location,
-        metadata,
-        verified,
-        verified_at,
-        blockchain_tx_hash,
-        created_at
-    `;
+    const row = await transaction(async (client) => {
+      const documentResult = await client.query(
+        `SELECT d.id, d.content_hash, d.title, u.display_name, u.email
+         FROM documents d
+         JOIN users u ON u.id = d.owner_id
+         WHERE d.id = $1 AND d.owner_id = $2 AND d.deleted_at IS NULL
+         FOR SHARE OF d`,
+        [parsed.data.documentId, user.id],
+      );
+      if (documentResult.rows.length === 0) {
+        throw new SignatureError('Document not found', 404);
+      }
+      const document = documentResult.rows[0];
+      if (!document.content_hash) {
+        throw new SignatureError('Document has no stored digest', 409);
+      }
 
-    const values = [
-      documentId,
-      signerId,
-      signerName,
-      signerEmail,
-      signatureData,
-      signatureType,
-      publicKey,
-      algorithm,
-      metadata,
-    ];
+      const valid = await verifyEd25519DocumentSignature({
+        signatureData: parsed.data.signatureData,
+        publicKey: parsed.data.publicKey,
+        contentHash: document.content_hash,
+      });
+      if (!valid) throw new SignatureError('Cryptographic signature is invalid', 422);
 
-    const result = await dbQuery(insertQuery, values);
-    const row = result.rows[0];
+      const result = await client.query(
+        `INSERT INTO signatures (
+           document_id, signer_id, signer_name, signer_email, signature_data,
+           signature_type, public_key, algorithm, metadata, verified, verified_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'ed25519', $8, true, NOW())
+         RETURNING id, document_id, signer_id, signer_name, signer_email,
+                   signature_data, signature_type, public_key, algorithm,
+                   signed_at, metadata, verified, verified_at, created_at`,
+        [
+          document.id,
+          user.id,
+          document.display_name,
+          document.email,
+          parsed.data.signatureData,
+          parsed.data.signatureType,
+          parsed.data.publicKey,
+          parsed.data.metadata,
+        ],
+      );
+      await client.query(
+        `UPDATE documents SET status = 'signed', updated_at = NOW() WHERE id = $1`,
+        [document.id],
+      );
+      return { ...result.rows[0], document_title: document.title };
+    });
 
-    const signature = {
-      id: row.id,
+    await logSignatureEvent(AUDIT_ACTIONS.SIGNATURE_CREATE, user.id, row.id, request, {
       documentId: row.document_id,
-      signerId: row.signer_id,
-      signerName: row.signer_name,
-      signerEmail: row.signer_email,
-      signatureData: row.signature_data,
-      signatureType: row.signature_type,
-      publicKey: row.public_key,
       algorithm: row.algorithm,
-      timestamp: row.timestamp,
-      ipAddress: row.ip_address,
-      location: row.location,
-      metadata: row.metadata,
-      verified: row.verified,
-      verifiedAt: row.verified_at,
-      blockchainTxHash: row.blockchain_tx_hash,
-      createdAt: row.created_at,
-    };
-
-    // Publish event to NATS (async, don't wait)
-    publishSignatureCreated(signature.id, signature.documentId, signature.signerId, {
-      signatureType: signature.signatureType,
-      algorithm: signature.algorithm,
-    }).catch(err => console.error('Event publishing error:', err));
-
-    return NextResponse.json(signature, { status: 201 });
+    });
+    return NextResponse.json(mapSignatureRow(row), { status: 201 });
   } catch (error) {
-    console.error('Error creating signature:', error);
-    
-    // Handle authentication errors
-    if (error instanceof Error && error.message.includes('Unauthorized')) {
-      return NextResponse.json(
-        { error: 'Unauthorized', message: 'Authentication required' },
-        { status: 401 }
-      );
+    if (error instanceof SignatureError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    
-    return NextResponse.json(
-      { error: 'Failed to create signature', details: String(error) },
-      { status: 500 }
-    );
+    console.error('Signature creation failed:', error);
+    return NextResponse.json({ error: 'Failed to create signature' }, { status: 500 });
   }
 }
 
 export async function GET(request: NextRequest) {
+  const user = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
-    const { searchParams } = new URL(request.url);
-    const documentId = searchParams.get('documentId');
-    const userId = searchParams.get('userId');
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '20');
-
+    const documentId = request.nextUrl.searchParams.get('documentId');
+    if (documentId && !z.string().uuid().safeParse(documentId).success) {
+      return NextResponse.json({ error: 'Invalid document ID' }, { status: 400 });
+    }
+    const page = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('page') || '1', 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('pageSize') || '20', 10) || 20));
     const offset = (page - 1) * pageSize;
-
-    const conditions: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
-
+    const values: any[] = [user.id];
+    let documentCondition = '';
     if (documentId) {
-      conditions.push(`document_id = $${paramIndex}`);
       values.push(documentId);
-      paramIndex++;
+      documentCondition = ` AND s.document_id = $${values.length}`;
     }
 
-    if (userId) {
-      conditions.push(`signer_id = $${paramIndex}`);
-      values.push(userId);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const countQuery = `SELECT COUNT(*) FROM signatures ${whereClause}`;
-    const countResult = await dbQuery(countQuery, values);
-    const total = parseInt(countResult.rows[0].count);
-
-    const signaturesQuery = `
-      SELECT 
-        id,
-        document_id,
-        signer_id,
-        signer_name,
-        signer_email,
-        signature_data,
-        signature_type,
-        public_key,
-        algorithm,
-        timestamp,
-        ip_address,
-        location,
-        metadata,
-        verified,
-        verified_at,
-        blockchain_tx_hash,
-        created_at
-      FROM signatures
-      ${whereClause}
-      ORDER BY created_at DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `;
-
+    const countResult = await dbQuery(
+      `SELECT COUNT(*) FROM signatures s WHERE s.signer_id = $1${documentCondition}`,
+      values,
+    );
+    const total = Number.parseInt(countResult.rows[0].count, 10);
     values.push(pageSize, offset);
-    const signaturesResult = await dbQuery(signaturesQuery, values);
-
-    const signatures = signaturesResult.rows.map((row: any) => ({
-      id: row.id,
-      documentId: row.document_id,
-      signerId: row.signer_id,
-      signerName: row.signer_name,
-      signerEmail: row.signer_email,
-      signatureData: row.signature_data,
-      signatureType: row.signature_type,
-      publicKey: row.public_key,
-      algorithm: row.algorithm,
-      timestamp: row.timestamp,
-      ipAddress: row.ip_address,
-      location: row.location,
-      metadata: row.metadata,
-      verified: row.verified,
-      verifiedAt: row.verified_at,
-      blockchainTxHash: row.blockchain_tx_hash,
-      createdAt: row.created_at,
-    }));
-
+    const result = await dbQuery(
+      `SELECT s.id, s.document_id, d.title AS document_title, s.signer_id,
+              s.signer_name, s.signer_email, s.signature_data, s.signature_type,
+              s.public_key, s.algorithm, s.signed_at, s.metadata, s.verified,
+              s.verified_at, s.created_at
+       FROM signatures s
+       JOIN documents d ON d.id = s.document_id
+       WHERE s.signer_id = $1${documentCondition}
+       ORDER BY s.created_at DESC
+       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+      values,
+    );
     return NextResponse.json({
-      data: signatures,
+      data: result.rows.map(mapSignatureRow),
       total,
       page,
       pageSize,
       hasMore: offset + pageSize < total,
     });
   } catch (error) {
-    console.error('Error fetching signatures:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch signatures', details: String(error) },
-      { status: 500 }
-    );
+    console.error('Signature list failed:', error);
+    return NextResponse.json({ error: 'Failed to fetch signatures' }, { status: 500 });
   }
 }

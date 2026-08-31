@@ -58,21 +58,6 @@ export function useAuthForm({ onSubmit, validate }: UseAuthFormOptions) {
     }
   };
 
-  const reset = () => {
-    setValues({});
-    setErrors({});
-    setLoading(false);
-    setMessage(null);
-  };
-
-  const setSuccess = (text: string) => {
-    setMessage({ type: "success", text });
-  };
-
-  const setError = (text: string) => {
-    setMessage({ type: "error", text });
-  };
-
   return {
     values,
     errors,
@@ -80,9 +65,6 @@ export function useAuthForm({ onSubmit, validate }: UseAuthFormOptions) {
     message,
     handleChange,
     handleSubmit,
-    reset,
-    setSuccess,
-    setError,
   };
 }
 

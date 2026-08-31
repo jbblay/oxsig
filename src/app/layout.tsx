@@ -2,42 +2,24 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app/AppShell";
-import PWARegister from "@/components/app/PWARegister";
-import BackgroundController from "@/components/app/BackgroundController";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { PerformanceMonitor } from "@/components/PerformanceMonitor";
 import { AuthProvider } from "@/lib/auth/use-auth";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "OxSig - Quantum-Safe Secure Communications",
-  description: "Post-quantum secure communications platform with self-sovereign identity, zero-knowledge proofs, and AI security co-pilot.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "OxSig",
-  },
+  title: "OxSig - Verified Document Signing",
+  description: "Private document storage with SHA-256 integrity checks and verified Ed25519 signatures.",
   applicationName: "OxSig",
-  keywords: ["secure communications", "quantum-safe", "E2EE", "decentralized identity", "zero-knowledge", "privacy"],
+  keywords: ["document signing", "Ed25519", "SHA-256", "private storage", "digital signatures"],
   authors: [{ name: "OxSig Team" }],
   robots: {
     index: true,
     follow: true
   },
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" }
-    ],
-    apple: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" }
-    ]
-  }
+  icons: { icon: "/favicon.ico" },
 };
 
 export const viewport: Viewport = {
@@ -63,9 +45,6 @@ export default function RootLayout({
         <ErrorBoundary>
           <ThemeProvider>
             <AuthProvider>
-              <PerformanceMonitor />
-              <BackgroundController />
-              <PWARegister />
               <AppShell>{children}</AppShell>
               <Toaster richColors />
             </AuthProvider>

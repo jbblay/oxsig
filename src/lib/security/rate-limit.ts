@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getClientIp } from '@/lib/http/client-info';
 
 interface RateLimitConfig {
   maxRequests: number;
@@ -19,16 +20,16 @@ interface RequestRecord {
 
 // In-memory store (use Redis for production multi-server setups)
 const requestStore = new Map<string, RequestRecord>();
+let requestsSinceCleanup = 0;
 
-// Cleanup old entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
+function cleanupExpiredEntries(now: number): void {
+  requestsSinceCleanup += 1;
+  if (requestsSinceCleanup < 500) return;
+  requestsSinceCleanup = 0;
   for (const [key, record] of requestStore.entries()) {
-    if (record.resetTime < now) {
-      requestStore.delete(key);
-    }
+    if (record.resetTime < now) requestStore.delete(key);
   }
-}, 5 * 60 * 1000);
+}
 
 /**
  * Rate limit configurations for different endpoints
@@ -38,33 +39,16 @@ export const RATE_LIMITS = {
   AUTH_LOGIN: { maxRequests: 5, windowMs: 60 * 1000 }, // 5 requests per minute
   AUTH_REGISTER: { maxRequests: 3, windowMs: 60 * 1000 }, // 3 requests per minute
   
-  // API endpoints - moderate limits
-  API_DEFAULT: { maxRequests: 100, windowMs: 60 * 1000 }, // 100 requests per minute
   API_DOCUMENTS: { maxRequests: 50, windowMs: 60 * 1000 }, // 50 requests per minute
   API_SIGNATURES: { maxRequests: 30, windowMs: 60 * 1000 }, // 30 requests per minute
-  
-  // Public endpoints - looser limits
-  PUBLIC: { maxRequests: 200, windowMs: 60 * 1000 }, // 200 requests per minute
+  API_PROFILE: { maxRequests: 20, windowMs: 60 * 1000 }, // 20 profile updates per minute
 } as const;
 
 /**
  * Get client identifier (IP address or session)
  */
 function getClientId(request: NextRequest): string {
-  // Try to get real IP from headers (for proxied requests)
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  const realIp = request.headers.get('x-real-ip');
-  
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
-  }
-  
-  if (realIp) {
-    return realIp;
-  }
-  
-  // Fallback to generic identifier
-  return 'client-' + request.headers.get('user-agent')?.substring(0, 50) || 'unknown';
+  return getClientIp(request) ?? 'unknown-client';
 }
 
 /**
@@ -77,8 +61,9 @@ export async function checkRateLimit(
   identifier?: string
 ): Promise<NextResponse | null> {
   const clientId = identifier || getClientId(request);
-  const key = `${request.url}:${clientId}`;
+  const key = `${request.method}:${request.nextUrl.pathname}:${clientId}`;
   const now = Date.now();
+  cleanupExpiredEntries(now);
   
   const record = requestStore.get(key);
   
@@ -118,68 +103,4 @@ export async function checkRateLimit(
   requestStore.set(key, record);
   
   return null;
-}
-
-/**
- * Rate limit middleware wrapper for API routes
- */
-export function withRateLimit(
-  handler: (request: NextRequest) => Promise<NextResponse>,
-  config: RateLimitConfig = RATE_LIMITS.API_DEFAULT
-) {
-  return async (request: NextRequest): Promise<NextResponse> => {
-    const rateLimitResponse = await checkRateLimit(request, config);
-    
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
-    
-    return handler(request);
-  };
-}
-
-/**
- * Get rate limit info for client
- */
-export function getRateLimitInfo(
-  request: NextRequest,
-  config: RateLimitConfig
-): {
-  limit: number;
-  remaining: number;
-  reset: Date;
-} {
-  const clientId = getClientId(request);
-  const key = `${request.url}:${clientId}`;
-  const record = requestStore.get(key);
-  
-  if (!record) {
-    return {
-      limit: config.maxRequests,
-      remaining: config.maxRequests,
-      reset: new Date(Date.now() + config.windowMs),
-    };
-  }
-  
-  return {
-    limit: config.maxRequests,
-    remaining: Math.max(0, config.maxRequests - record.count),
-    reset: new Date(record.resetTime),
-  };
-}
-
-/**
- * Clear rate limit for a specific client (useful for testing)
- */
-export function clearRateLimit(request: NextRequest): void {
-  const clientId = getClientId(request);
-  const key = `${request.url}:${clientId}`;
-  requestStore.delete(key);
-}
-
-/**
- * Clear all rate limits (useful for testing)
- */
-export function clearAllRateLimits(): void {
-  requestStore.clear();
 }

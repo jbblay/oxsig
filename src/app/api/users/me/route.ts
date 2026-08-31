@@ -1,250 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 
-/**
- * GET /api/users/me
- * Get current authenticated user profile
- */
+const profileSchema = z.object({
+  displayName: z.string().trim().max(100).optional(),
+  email: z.string().trim().email().max(320).optional(),
+  bio: z.string().trim().max(500).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'No fields to update');
+
+function mapUser(row: any) {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    email: row.email,
+    bio: row.bio,
+    role: row.role,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+const userColumns = `
+  id, display_name, email, bio, role, is_active,
+  created_at, updated_at, last_seen_at
+`;
+
 export async function GET(request: NextRequest) {
-  return requireAuth(request, async (req, user) => {
+  return requireAuth(request, async (_request, user) => {
     try {
-      const pool = getPool();
-      const client = await pool.connect();
-      
-      try {
-        // Fetch user with all details
-        const result = await client.query(
-          `SELECT 
-            id,
-            public_key,
-            display_name,
-            email,
-            bio,
-            avatar_url,
-            role,
-            is_active,
-            email_verified,
-            two_factor_enabled,
-            created_at,
-            updated_at,
-            last_seen_at
-          FROM users 
-          WHERE id = $1`,
-          [user.id]
-        );
-
-        if (result.rows.length === 0) {
-          return NextResponse.json(
-            { error: 'User not found' },
-            { status: 404 }
-          );
-        }
-
-        const userProfile = result.rows[0];
-
-        return NextResponse.json({
-          user: {
-            id: userProfile.id,
-            publicKey: userProfile.public_key,
-            displayName: userProfile.display_name,
-            email: userProfile.email,
-            bio: userProfile.bio,
-            avatarUrl: userProfile.avatar_url,
-            role: userProfile.role,
-            isActive: userProfile.is_active,
-            emailVerified: userProfile.email_verified,
-            twoFactorEnabled: userProfile.two_factor_enabled,
-            createdAt: userProfile.created_at,
-            updatedAt: userProfile.updated_at,
-            lastSeenAt: userProfile.last_seen_at,
-          },
-        });
-      } finally {
-        client.release();
-      }
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch user profile' },
-        { status: 500 }
+      const result = await getPool().query(
+        `SELECT ${userColumns} FROM users WHERE id = $1 AND is_active = true`,
+        [user.id],
       );
+      if (result.rows.length === 0) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+      return NextResponse.json({ user: mapUser(result.rows[0]) });
+    } catch (error) {
+      console.error('Profile fetch failed:', error);
+      return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
     }
   });
 }
 
-/**
- * PATCH /api/users/me
- * Update current user profile
- */
 export async function PATCH(request: NextRequest) {
-  return requireAuth(request, async (req, user) => {
+  return requireAuth(request, async (authenticatedRequest, user) => {
+    const rateLimitResponse = await checkRateLimit(
+      authenticatedRequest,
+      RATE_LIMITS.API_PROFILE,
+      user.id,
+    );
+    if (rateLimitResponse) return rateLimitResponse;
+
     try {
-      const body = await request.json();
-      const { displayName, email, bio, avatarUrl } = body;
-
-      // Validate input
-      const updates: string[] = [];
-      const values: any[] = [];
-      let paramIndex = 1;
-
-      if (displayName !== undefined) {
-        updates.push(`display_name = $${paramIndex}`);
-        values.push(displayName);
-        paramIndex++;
-      }
-
-      if (email !== undefined) {
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return NextResponse.json(
-            { error: 'Invalid email format' },
-            { status: 400 }
-          );
-        }
-        updates.push(`email = $${paramIndex}`);
-        values.push(email);
-        paramIndex++;
-        
-        // Reset email verification if email changed
-        updates.push(`email_verified = false`);
-      }
-
-      if (bio !== undefined) {
-        if (bio.length > 500) {
-          return NextResponse.json(
-            { error: 'Bio must be 500 characters or less' },
-            { status: 400 }
-          );
-        }
-        updates.push(`bio = $${paramIndex}`);
-        values.push(bio);
-        paramIndex++;
-      }
-
-      if (avatarUrl !== undefined) {
-        updates.push(`avatar_url = $${paramIndex}`);
-        values.push(avatarUrl);
-        paramIndex++;
-      }
-
-      if (updates.length === 0) {
+      const parsed = profileSchema.safeParse(await authenticatedRequest.json().catch(() => null));
+      if (!parsed.success) {
         return NextResponse.json(
-          { error: 'No fields to update' },
-          { status: 400 }
+          { error: 'Invalid profile', message: parsed.error.issues[0]?.message },
+          { status: 400 },
         );
       }
 
-      // Add updated_at timestamp
-      updates.push(`updated_at = NOW()`);
+      const updates: string[] = [];
+      const values: Array<string | null> = [];
+      if (parsed.data.displayName !== undefined) {
+        values.push(parsed.data.displayName || null);
+        updates.push(`display_name = $${values.length}`);
+      }
+      if (parsed.data.email !== undefined) {
+        values.push(parsed.data.email.toLowerCase());
+        updates.push(`email = $${values.length}`);
+      }
+      if (parsed.data.bio !== undefined) {
+        values.push(parsed.data.bio || null);
+        updates.push(`bio = $${values.length}`);
+      }
       values.push(user.id);
 
-      const pool = getPool();
-      const client = await pool.connect();
-
-      try {
-        const query = `
-          UPDATE users 
-          SET ${updates.join(', ')}
-          WHERE id = $${paramIndex}
-          RETURNING 
-            id,
-            public_key,
-            display_name,
-            email,
-            bio,
-            avatar_url,
-            role,
-            is_active,
-            email_verified,
-            two_factor_enabled,
-            created_at,
-            updated_at,
-            last_seen_at
-        `;
-
-        const result = await client.query(query, values);
-
-        if (result.rows.length === 0) {
-          return NextResponse.json(
-            { error: 'User not found' },
-            { status: 404 }
-          );
-        }
-
-        const updatedUser = result.rows[0];
-
-        return NextResponse.json({
-          user: {
-            id: updatedUser.id,
-            publicKey: updatedUser.public_key,
-            displayName: updatedUser.display_name,
-            email: updatedUser.email,
-            bio: updatedUser.bio,
-            avatarUrl: updatedUser.avatar_url,
-            role: updatedUser.role,
-            isActive: updatedUser.is_active,
-            emailVerified: updatedUser.email_verified,
-            twoFactorEnabled: updatedUser.two_factor_enabled,
-            createdAt: updatedUser.created_at,
-            updatedAt: updatedUser.updated_at,
-            lastSeenAt: updatedUser.last_seen_at,
-          },
-        });
-      } finally {
-        client.release();
-      }
-    } catch (error) {
-      console.error('Error updating user profile:', error);
-      return NextResponse.json(
-        { error: 'Failed to update user profile' },
-        { status: 500 }
+      const result = await getPool().query(
+        `UPDATE users
+         SET ${updates.join(', ')}, updated_at = NOW()
+         WHERE id = $${values.length} AND is_active = true
+         RETURNING ${userColumns}`,
+        values,
       );
-    }
-  });
-}
-
-/**
- * DELETE /api/users/me
- * Deactivate current user account
- */
-export async function DELETE(request: NextRequest) {
-  return requireAuth(request, async (req, user) => {
-    try {
-      const pool = getPool();
-      const client = await pool.connect();
-
-      try {
-        // Soft delete - mark user as inactive
-        const result = await client.query(
-          `UPDATE users 
-           SET is_active = false, updated_at = NOW()
-           WHERE id = $1
-           RETURNING id`,
-          [user.id]
-        );
-
-        if (result.rows.length === 0) {
-          return NextResponse.json(
-            { error: 'User not found' },
-            { status: 404 }
-          );
-        }
-
-        return NextResponse.json({
-          message: 'Account deactivated successfully',
-          userId: user.id,
-        });
-      } finally {
-        client.release();
+      if (result.rows.length === 0) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
+      return NextResponse.json({ user: mapUser(result.rows[0]) });
     } catch (error) {
-      console.error('Error deactivating user account:', error);
-      return NextResponse.json(
-        { error: 'Failed to deactivate account' },
-        { status: 500 }
-      );
+      if ((error as { code?: string }).code === '23505') {
+        return NextResponse.json({ error: 'Email is already in use' }, { status: 409 });
+      }
+      console.error('Profile update failed:', error);
+      return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
     }
   });
 }

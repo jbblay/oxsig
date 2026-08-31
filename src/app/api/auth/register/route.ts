@@ -1,137 +1,104 @@
-/**
- * Authentication API - POST /api/auth/register
- * Creates new user account with email/password
- * Returns JWT tokens in httpOnly cookies (Ed25519 signed)
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { generateTokenPair, hashPassword } from '@/lib/auth/jwt';
-import { getPool } from '@/lib/db/pool';
-import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 import { z } from 'zod';
+import { generateTokenPair } from '@/lib/auth/jwt';
+import { hashPassword } from '@/lib/auth/password';
+import { setAuthCookies } from '@/lib/auth/cookies';
+import { fingerprintSessionToken } from '@/lib/auth/session-token';
+import { getPool } from '@/lib/db/pool';
+import { getClientIp, getUserAgent } from '@/lib/http/client-info';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
+import { logAuthEvent, AUDIT_ACTIONS } from '@/lib/audit/logger';
 
-// Strong password validation schema
-const passwordSchema = z.string()
-  .min(8, 'Password must be at least 8 characters')
-  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-  .regex(/[0-9]/, 'Password must contain at least one number')
-  .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character');
-
-const emailSchema = z.string().email('Invalid email address');
+const registrationSchema = z.object({
+  email: z.string().trim().email('Enter a valid email address').max(320),
+  password: z.string()
+    .min(12, 'Password must be at least 12 characters')
+    .max(128, 'Password must be at most 128 characters')
+    .regex(/[a-z]/, 'Password must contain a lowercase letter')
+    .regex(/[A-Z]/, 'Password must contain an uppercase letter')
+    .regex(/[0-9]/, 'Password must contain a number')
+    .regex(/[^a-zA-Z0-9]/, 'Password must contain a special character'),
+  displayName: z.string().trim().min(1).max(100).optional(),
+  display_name: z.string().trim().min(1).max(100).optional(),
+});
 
 export async function POST(request: NextRequest) {
-  // Rate limit: 3 requests per minute to prevent spam registration
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.AUTH_REGISTER);
-  if (rateLimitResponse) {
-    return rateLimitResponse;
-  }
-  try {
-    const body = await request.json();
-    console.log('📝 Register request body:', body);
-    const { email, password } = body;
-    
-    // Validate input
-    if (!email || !password) {
-      console.log('❌ Missing fields - email:', email, 'password:', password ? '[PRESENT]' : '[MISSING]');
-      return NextResponse.json(
-        { error: 'Missing fields', message: 'Email and password are required' },
-        { status: 400 }
-      );
-    }
-    
-    // Validate email format
-    const emailValidation = emailSchema.safeParse(email);
-    if (!emailValidation.success) {
-      return NextResponse.json(
-        { error: 'Invalid email', message: emailValidation.error.errors[0].message },
-        { status: 400 }
-      );
-    }
-    
-    // Validate password strength
-    const passwordValidation = passwordSchema.safeParse(password);
-    if (!passwordValidation.success) {
-      return NextResponse.json(
-        { error: 'Weak password', message: passwordValidation.error.errors[0].message },
-        { status: 400 }
-      );
-    }
-    
-    // Check if user already exists
-    const pool = getPool();
-    const existingUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [email]
-    );
-    
-    if (existingUser.rows.length > 0) {
-      return NextResponse.json(
-        { error: 'User exists', message: 'An account with this email already exists' },
-        { status: 409 }
-      );
-    }
-    
-    // Hash password with bcrypt
-    const passwordHash = await hashPassword(password);
-    
-    // Create user in database with default role
-    const result = await pool.query(
-      `INSERT INTO users (email, password_hash, is_active, role)
-       VALUES ($1, $2, true, 'user')
-       RETURNING id, email, role`,
-      [email, passwordHash]
-    );
-    
-    const user = result.rows[0];
-    
-    // Generate Ed25519 signed tokens with role
-    const { accessToken, refreshToken } = await generateTokenPair(user.id, user.email, user.role);
+  if (rateLimitResponse) return rateLimitResponse;
 
-    // Store refresh token in sessions table
-    const userAgent = request.headers.get('user-agent') || 'unknown';
-    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] || 
-                      request.headers.get('x-real-ip') || 
-                      'unknown';
-    
-    await pool.query(
-      `INSERT INTO sessions (user_id, refresh_token, device_info, ip_address, expires_at)
-       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '7 days')`,
-      [user.id, refreshToken, userAgent, ipAddress]
+  try {
+    const parsed = registrationSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid registration', message: parsed.error.issues[0]?.message },
+        { status: 400 },
+      );
+    }
+
+    const email = parsed.data.email.toLowerCase();
+    const accountRateLimitResponse = await checkRateLimit(
+      request,
+      RATE_LIMITS.AUTH_REGISTER,
+      `account:${email}`,
     );
-    
-    // Create response with httpOnly cookies
-    const response = NextResponse.json({
-      success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-      },
-    }, { status: 201 });
-    
-    // Set httpOnly cookies for security
-    response.cookies.set('accessToken', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60, // 15 minutes
-      path: '/',
-    });
-    
-    response.cookies.set('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
-      path: '/',
-    });
-    
-    return response;
+    if (accountRateLimitResponse) return accountRateLimitResponse;
+    const displayName = parsed.data.displayName ?? parsed.data.display_name ?? null;
+    const passwordHash = await hashPassword(parsed.data.password);
+    const pool = getPool();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO users (email, password_hash, display_name, is_active, role)
+         VALUES ($1, $2, $3, true, 'user')
+         RETURNING id, email, display_name, role`,
+        [email, passwordHash, displayName],
+      );
+
+      const user = result.rows[0];
+      const tokens = await generateTokenPair(user.id, user.email, user.role);
+      await client.query(
+        `INSERT INTO sessions (user_id, refresh_token, device_info, ip_address, expires_at)
+         VALUES ($1, $2, $3, $4, NOW() + INTERVAL '7 days')`,
+        [
+          user.id,
+          fingerprintSessionToken(tokens.refreshToken),
+          getUserAgent(request),
+          getClientIp(request),
+        ],
+      );
+      await client.query('COMMIT');
+
+      await logAuthEvent(AUDIT_ACTIONS.REGISTER, user.id, request, true);
+      const response = NextResponse.json({
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.display_name,
+          role: user.role,
+        },
+      }, { status: 201 });
+      setAuthCookies(response, tokens);
+      return response;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
-    console.error('Registration error:', error);
+    if ((error as { code?: string }).code === '23505') {
+      return NextResponse.json(
+        { error: 'Account exists', message: 'An account with this email already exists' },
+        { status: 409 },
+      );
+    }
+    console.error('Registration failed:', error);
     return NextResponse.json(
-      { error: 'Server error', message: 'An error occurred during registration' },
-      { status: 500 }
+      { error: 'Registration failed', message: 'Unable to create the account' },
+      { status: 500 },
     );
   }
 }

@@ -7,7 +7,6 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { User } from "lucide-react";
 import { useAuth } from "@/lib/auth/use-auth";
 import { EmailInput, PasswordInput, TextInput } from "./auth-input";
 import { AuthButton } from "./auth-button";
@@ -35,8 +34,6 @@ export function RegisterForm({
     message,
     handleChange,
     handleSubmit,
-    setSuccess,
-    setError,
   } = useAuthForm({
     onSubmit: async (data) => {
       try {
@@ -45,11 +42,8 @@ export function RegisterForm({
           data.password,
           data.displayName || undefined
         );
-        setSuccess("Account created successfully! Redirecting...");
-        setTimeout(() => {
-          if (onSuccess) onSuccess();
-          router.push(redirectTo);
-        }, 1000);
+        if (onSuccess) onSuccess();
+        router.push(redirectTo);
       } catch (error: any) {
         throw new Error(error.message || "Registration failed. Please try again.");
       }
@@ -65,7 +59,11 @@ export function RegisterForm({
       const emailError = validators.email(data.email);
       if (emailError) newErrors.email = emailError;
       
-      const passwordError = validators.password(data.password);
+      const passwordError = validators.password(data.password, 12)
+        || (!/[a-z]/.test(data.password) ? "Password must contain a lowercase letter" : "")
+        || (!/[A-Z]/.test(data.password) ? "Password must contain an uppercase letter" : "")
+        || (!/[0-9]/.test(data.password) ? "Password must contain a number" : "")
+        || (!/[^a-zA-Z0-9]/.test(data.password) ? "Password must contain a special character" : "");
       if (passwordError) newErrors.password = passwordError;
 
       const confirmError = validators.confirmPassword(data.confirmPassword, data.password);
@@ -86,7 +84,6 @@ export function RegisterForm({
           id="displayName"
           label={`Display Name ${requireDisplayName ? "" : "(Optional)"}`}
           placeholder="John Doe"
-          icon={<User className="h-4 w-4" />}
           value={values.displayName || ""}
           onChange={(e) => handleChange("displayName", e.target.value)}
           error={errors.displayName}

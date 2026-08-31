@@ -4,15 +4,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyJWT } from './jwt';
-import { cookies } from 'next/headers';
+import { extractBearerToken, verifyJWT } from './jwt';
 
 export interface AuthenticatedUser {
   id: string;
   did?: string;
   email?: string;
   name?: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'moderator';
 }
 
 /**
@@ -22,17 +21,8 @@ export async function getUserFromRequest(
   request: NextRequest
 ): Promise<AuthenticatedUser | null> {
   try {
-    // Try to get token from httpOnly cookie first
-    const cookieStore = await cookies();
-    let token = cookieStore.get('accessToken')?.value;
-
-    // Fallback to Authorization header for API clients
-    if (!token) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
-    }
+    const token = request.cookies.get('accessToken')?.value
+      ?? extractBearerToken(request.headers.get('authorization'));
 
     if (!token) {
       return null;
@@ -50,7 +40,7 @@ export async function getUserFromRequest(
       did: payload.did,
       email: payload.email,
       name: payload.email?.split('@')[0],
-      role: (payload.role as 'user' | 'admin') || 'user',
+      role: payload.role === 'admin' || payload.role === 'moderator' ? payload.role : 'user',
     };
   } catch (error) {
     console.error('Auth error:', error);
@@ -74,42 +64,5 @@ export async function requireAuth(
     );
   }
 
-  return handler(request, user);
-}
-
-/**
- * Require admin role
- */
-export async function requireAdmin(
-  request: NextRequest,
-  handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>
-): Promise<NextResponse> {
-  const user = await getUserFromRequest(request);
-
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      { status: 401 }
-    );
-  }
-
-  if (user.role !== 'admin') {
-    return NextResponse.json(
-      { error: 'Forbidden', message: 'Admin access required' },
-      { status: 403 }
-    );
-  }
-
-  return handler(request, user);
-}
-
-/**
- * Optional auth - provides user if authenticated, but doesn't require it
- */
-export async function optionalAuth(
-  request: NextRequest,
-  handler: (request: NextRequest, user: AuthenticatedUser | null) => Promise<NextResponse>
-): Promise<NextResponse> {
-  const user = await getUserFromRequest(request);
   return handler(request, user);
 }

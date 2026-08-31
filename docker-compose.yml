@@ -1,85 +1,63 @@
-version: '3.8'
+name: oxsig
 
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: oxsig-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: oxsig
-      POSTGRES_PASSWORD: oxsig_secure_password
-      POSTGRES_DB: oxsig
+      POSTGRES_USER: ${POSTGRES_USER:-oxsig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oxsig_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-oxsig}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U oxsig"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oxsig} -d ${POSTGRES_DB:-oxsig}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
-  # MinIO (S3-compatible object storage)
   minio:
     image: minio/minio:latest
-    container_name: oxsig-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
-  # MeiliSearch (Full-text search)
-  meilisearch:
-    image: getmeili/meilisearch:v1.11
-    container_name: oxsig-meilisearch
-    restart: unless-stopped
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
     environment:
-      MEILI_ENV: development
-      MEILI_MASTER_KEY: ""
-      MEILI_NO_ANALYTICS: true
-    ports:
-      - "7700:7700"
-    volumes:
-      - meilisearch_data:/meili_data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-oxsig-documents}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}"
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+        mc anonymous set none "local/$${MINIO_BUCKET}"
+    restart: "no"
 
-  # Redis (Caching & Sessions)
-  redis:
-    image: redis:7-alpine
-    container_name: oxsig-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # pgAdmin (PostgreSQL GUI - Optional)
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: oxsig-pgadmin
+    profiles: ["tools"]
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@oxsig.local
@@ -90,20 +68,10 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
-    driver: local
   minio_data:
-    driver: local
-  meilisearch_data:
-    driver: local
-  redis_data:
-    driver: local
   pgadmin_data:
-    driver: local
-
-networks:
-  default:
-    name: oxsig-network

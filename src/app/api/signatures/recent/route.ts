@@ -1,90 +1,46 @@
-/**
- * Recent Signatures API
- * GET /api/signatures/recent - Get user's recent signatures
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth/middleware';
+import { getUserFromRequest } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 
 export async function GET(request: NextRequest) {
-  return requireAuth(request, async (req, user) => {
-    try {
-      const { searchParams } = new URL(req.url);
-      const limit = parseInt(searchParams.get('limit') || '10');
-      const offset = parseInt(searchParams.get('offset') || '0');
+  const user = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-      const result = await getPool().query(
-        `SELECT 
-          s.id,
-          s.document_id,
-          s.signature_data,
-          s.algorithm,
-          s.created_at,
-          s.verified,
-          d.filename,
-          d.file_size,
-          d.mime_type,
-          (SELECT COUNT(*) FROM signatures WHERE document_id = d.id) as total_signatures
-         FROM signatures s
-         JOIN documents d ON s.document_id = d.id
-         WHERE s.signer_id = $1
-         ORDER BY s.created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [user.id, limit, offset]
-      );
-
-      const signatures = result.rows.map((row: any) => ({
+  try {
+    const limit = Math.min(50, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('limit') || '10', 10) || 10));
+    const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get('offset') || '0', 10) || 0);
+    const result = await getPool().query(
+      `SELECT s.id, s.document_id, s.algorithm, s.signed_at, s.verified,
+              d.title, d.file_size, d.mime_type
+       FROM signatures s
+       JOIN documents d ON d.id = s.document_id
+       WHERE s.signer_id = $1 AND s.verified = true
+       ORDER BY s.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [user.id, limit, offset],
+    );
+    const countResult = await getPool().query(
+      'SELECT COUNT(*) AS total FROM signatures WHERE signer_id = $1 AND verified = true',
+      [user.id],
+    );
+    return NextResponse.json({
+      signatures: result.rows.map((row) => ({
         id: row.id,
         documentId: row.document_id,
-        name: row.filename,
-        status: row.verified ? 'Completed' : 'Pending',
+        name: row.title,
+        status: row.verified ? 'Verified' : 'Invalid',
         verified: row.verified,
-        time: formatRelativeTime(new Date(row.created_at)),
-        timestamp: row.created_at,
+        timestamp: row.signed_at,
         algorithm: row.algorithm,
-        totalSigners: row.total_signatures,
-        fileSize: formatFileSize(row.file_size),
-        mimeType: row.mime_type
-      }));
-
-      // Get total count
-      const countResult = await getPool().query(
-        'SELECT COUNT(*) as total FROM signatures WHERE signer_id = $1',
-        [user.id]
-      );
-      const total = parseInt(countResult.rows[0]?.total || '0');
-
-      return NextResponse.json({
-        signatures,
-        total,
-        limit,
-        offset
-      });
-    } catch (error) {
-      console.error('Failed to get recent signatures:', error);
-      return NextResponse.json(
-        { error: 'Failed to retrieve signatures' },
-        { status: 500 }
-      );
-    }
-  });
-}
-
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffHours < 1) return 'Just now';
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        fileSize: row.file_size === null ? null : Number(row.file_size),
+        mimeType: row.mime_type,
+      })),
+      total: Number(countResult.rows[0]?.total || 0),
+      limit,
+      offset,
+    });
+  } catch (error) {
+    console.error('Recent signatures fetch failed:', error);
+    return NextResponse.json({ error: 'Failed to retrieve signatures' }, { status: 500 });
+  }
 }

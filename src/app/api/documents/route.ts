@@ -1,251 +1,132 @@
-/**
- * Documents API Route - GET /api/documents
- * List and search documents
- */
-
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { query as dbQuery } from '@/lib/db/postgres';
-import { getAuthUserId } from '@/lib/auth/api-helpers';
-import { indexDocument } from '@/lib/search/meilisearch';
-import { publishDocumentCreated } from '@/lib/events/nats';
+import { z } from 'zod';
+import { getUserFromRequest } from '@/lib/auth/middleware';
+import { AUDIT_ACTIONS, logDocumentEvent } from '@/lib/audit/logger';
+import { query as dbQuery } from '@/lib/db/pool';
+import { mapDocumentRow } from '@/lib/documents/map-document';
+import { metadataSchema } from '@/lib/http/schemas';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
+
+const documentSchema = z.object({
+  title: z.string().trim().min(1).max(500),
+  content: z.string().max(5_000_000).default(''),
+  contentType: z.string().trim().min(1).max(50).default('text/plain'),
+  metadata: metadataSchema.default({}),
+  tags: z.array(z.string().trim().min(1).max(64)).max(25).default([]),
+  status: z.enum(['draft', 'ready']).default('draft'),
+});
+
+function positiveInteger(value: string | null, fallback: number, maximum: number): number {
+  const parsed = Number.parseInt(value || '', 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, maximum);
+}
 
 export async function GET(request: NextRequest) {
+  const user = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
-    const { searchParams } = new URL(request.url);
-    const query = searchParams.get('query');
-    const tags = searchParams.get('tags')?.split(',');
-    const status = searchParams.get('status');
-    const encrypted = searchParams.get('encrypted');
-    const ownerId = searchParams.get('ownerId');
-    const sortByParam = searchParams.get('sortBy') || 'createdAt';
-    const sortOrder = searchParams.get('sortOrder') || 'desc';
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '20');
-
-    const offset = (page - 1) * pageSize;
-
-    // Build WHERE clause
-    const conditions: string[] = ['deleted_at IS NULL'];
-    const values: any[] = [];
-    let paramIndex = 1;
-
-    if (query) {
-      conditions.push(`(title ILIKE $${paramIndex} OR content ILIKE $${paramIndex})`);
-      values.push(`%${query}%`);
-      paramIndex++;
-    }
-
-    if (tags && tags.length > 0) {
-      conditions.push(`tags && $${paramIndex}`);
-      values.push(tags);
-      paramIndex++;
-    }
-
-    if (status) {
-      conditions.push(`status = $${paramIndex}`);
-      values.push(status);
-      paramIndex++;
-    }
-
-    if (encrypted !== null && encrypted !== undefined) {
-      conditions.push(`encrypted = $${paramIndex}`);
-      values.push(encrypted === 'true');
-      paramIndex++;
-    }
-
-    if (ownerId) {
-      conditions.push(`owner_id = $${paramIndex}`);
-      values.push(ownerId);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.join(' AND ');
-
-    // Map sortBy from API to actual DB columns
+    const { searchParams } = request.nextUrl;
+    const search = searchParams.get('query')?.trim();
+    const tags = searchParams.get('tags')?.split(',').map((tag) => tag.trim()).filter(Boolean);
+    const status = searchParams.get('status')?.trim();
     const sortMap: Record<string, string> = {
       createdAt: 'created_at',
       updatedAt: 'updated_at',
       title: 'title',
     };
-    const sortBy = sortMap[sortByParam] || 'created_at';
+    const sortBy = sortMap[searchParams.get('sortBy') || 'createdAt'] || 'created_at';
+    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'ASC' : 'DESC';
+    const page = positiveInteger(searchParams.get('page'), 1, 100_000);
+    const pageSize = positiveInteger(searchParams.get('pageSize'), 20, 100);
+    const offset = (page - 1) * pageSize;
 
-    // Get total count
-    const countQuery = `SELECT COUNT(*) FROM documents WHERE ${whereClause}`;
-    const countResult = await dbQuery(countQuery, values);
-    const total = parseInt(countResult.rows[0].count);
-
-    // Get paginated documents
-    const documentsQuery = `
-      SELECT 
-        id,
-        title,
-        content,
-        content_type,
-        owner_id,
-        encrypted,
-        encryption_key,
-        file_url,
-        file_size,
-        mime_type,
-        metadata,
-        tags,
-        status,
-        version,
-        created_at,
-        updated_at
-      FROM documents
-      WHERE ${whereClause}
-      ORDER BY ${sortBy} ${sortOrder}
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `;
+    const conditions = ['owner_id = $1', 'deleted_at IS NULL'];
+    const values: any[] = [user.id];
+    if (search) {
+      values.push(`%${search}%`);
+      conditions.push(`(title ILIKE $${values.length} OR content ILIKE $${values.length})`);
+    }
+    if (tags?.length) {
+      values.push(tags);
+      conditions.push(`tags && $${values.length}::text[]`);
+    }
+    if (status) {
+      values.push(status);
+      conditions.push(`status = $${values.length}`);
+    }
+    const where = conditions.join(' AND ');
+    const countResult = await dbQuery(`SELECT COUNT(*) FROM documents WHERE ${where}`, values);
+    const total = Number.parseInt(countResult.rows[0].count, 10);
 
     values.push(pageSize, offset);
-    const documentsResult = await dbQuery(documentsQuery, values);
-
-    // Transform to camelCase
-    const documents = documentsResult.rows.map((row: any) => ({
-      id: row.id,
-      title: row.title,
-      content: row.content,
-      contentType: row.content_type,
-      ownerId: row.owner_id,
-      encrypted: row.encrypted,
-      encryptionKey: row.encryption_key,
-      fileUrl: row.file_url,
-      fileSize: row.file_size,
-      mimeType: row.mime_type,
-      metadata: row.metadata,
-      tags: row.tags,
-      status: row.status,
-      version: row.version,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    const result = await dbQuery(
+      `SELECT id, title, content_type, owner_id, encrypted, file_url,
+              file_size, mime_type, storage_key, content_hash, metadata, tags,
+              status, version, created_at, updated_at
+       FROM documents
+       WHERE ${where}
+       ORDER BY ${sortBy} ${sortOrder}
+       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+      values,
+    );
 
     return NextResponse.json({
-      data: documents,
+      data: result.rows.map(mapDocumentRow),
       total,
       page,
       pageSize,
       hasMore: offset + pageSize < total,
     });
   } catch (error) {
-    console.error('Error fetching documents:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch documents', details: String(error) },
-      { status: 500 }
-    );
+    console.error('Document list failed:', error);
+    return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const user = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_DOCUMENTS, user.id);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
-    // Get authenticated user
-    const ownerId = await getAuthUserId(request);
-    
-    const body = await request.json();
-    const {
-      title,
-      content = '',
-      contentType = 'html',
-      encrypted = false,
-      metadata = {},
-      tags = [],
-      status = 'draft',
-    } = body;
-
-    if (!title) {
-      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
-    }
-
-    const insertQuery = `
-      INSERT INTO documents (
-        title,
-        content,
-        content_type,
-        owner_id,
-        encrypted,
-        metadata,
-        tags,
-        status,
-        version
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
-      RETURNING 
-        id,
-        title,
-        content,
-        content_type,
-        owner_id,
-        encrypted,
-        encryption_key,
-        file_url,
-        file_size,
-        mime_type,
-        metadata,
-        tags,
-        status,
-        version,
-        created_at,
-        updated_at
-    `;
-
-    const values = [title, content, contentType, ownerId, encrypted, metadata, tags, status];
-    const result = await dbQuery(insertQuery, values);
-    const row = result.rows[0];
-
-    const document = {
-      id: row.id,
-      title: row.title,
-      content: row.content,
-      contentType: row.content_type,
-      ownerId: row.owner_id,
-      encrypted: row.encrypted,
-      encryptionKey: row.encryption_key,
-      fileUrl: row.file_url,
-      fileSize: row.file_size,
-      mimeType: row.mime_type,
-      metadata: row.metadata,
-      tags: row.tags,
-      status: row.status,
-      version: row.version,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-
-    // Index in Meilisearch (async, don't wait)
-    indexDocument({
-      id: document.id,
-      title: document.title,
-      content: document.content,
-      ownerId: document.ownerId,
-      tags: document.tags || [],
-      status: document.status,
-      createdAt: document.createdAt,
-      updatedAt: document.updatedAt,
-    }).catch(err => console.error('Indexing error:', err));
-
-    // Publish event to NATS (async, don't wait)
-    publishDocumentCreated(document.id, document.ownerId, {
-      title: document.title,
-      contentType: document.contentType,
-      encrypted: document.encrypted,
-    }).catch(err => console.error('Event publishing error:', err));
-
-    return NextResponse.json(document, { status: 201 });
-  } catch (error) {
-    console.error('Error creating document:', error);
-    
-    // Handle authentication errors
-    if (error instanceof Error && error.message.includes('Unauthorized')) {
+    const parsed = documentSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Unauthorized', message: 'Authentication required' },
-        { status: 401 }
+        { error: 'Invalid document', message: parsed.error.issues[0]?.message },
+        { status: 400 },
       );
     }
-    
-    return NextResponse.json(
-      { error: 'Failed to create document', details: String(error) },
-      { status: 500 }
+    const document = parsed.data;
+    const contentHash = createHash('sha256').update(document.content, 'utf8').digest('hex');
+    const result = await dbQuery(
+      `INSERT INTO documents (
+         title, content, content_type, owner_id, encrypted, content_hash,
+         metadata, tags, status, version
+       ) VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8, 1)
+       RETURNING id, title, content, content_type, owner_id, encrypted, file_url,
+                 file_size, mime_type, storage_key, content_hash, metadata, tags,
+                 status, version, created_at, updated_at`,
+      [
+        document.title,
+        document.content,
+        document.contentType,
+        user.id,
+        contentHash,
+        document.metadata,
+        document.tags,
+        document.status,
+      ],
     );
+    await logDocumentEvent(AUDIT_ACTIONS.DOCUMENT_CREATE, user.id, result.rows[0].id, request, {
+      kind: 'text',
+    });
+    return NextResponse.json(mapDocumentRow(result.rows[0]), { status: 201 });
+  } catch (error) {
+    console.error('Document creation failed:', error);
+    return NextResponse.json({ error: 'Failed to create document' }, { status: 500 });
   }
 }

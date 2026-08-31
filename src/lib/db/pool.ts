@@ -4,7 +4,7 @@
  * Manages database connections for the application
  */
 
-import { Pool, PoolConfig } from 'pg';
+import { Pool, PoolConfig, type PoolClient, type QueryResult } from 'pg';
 
 let pool: Pool | null = null;
 
@@ -12,6 +12,29 @@ let pool: Pool | null = null;
  * Get database configuration from environment
  */
 function getConfig(): PoolConfig {
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    };
+  }
+  if (process.env.NODE_ENV === 'production') {
+    const required = [
+      process.env.POSTGRES_HOST,
+      process.env.POSTGRES_DB,
+      process.env.POSTGRES_USER,
+      process.env.POSTGRES_PASSWORD,
+    ];
+    const localDatabase = ['localhost', '127.0.0.1', 'postgres'].includes(process.env.POSTGRES_HOST || '');
+    if (
+      required.some((value) => !value) ||
+      (process.env.POSTGRES_PASSWORD === 'oxsig_secure_password' && !localDatabase)
+    ) {
+      throw new Error('Production PostgreSQL configuration is missing or uses development credentials');
+    }
+  }
   return {
     host: process.env.POSTGRES_HOST || 'localhost',
     port: parseInt(process.env.POSTGRES_PORT || '5432'),
@@ -31,40 +54,33 @@ export function getPool(): Pool {
   if (!pool) {
     pool = new Pool(getConfig());
     
-    // Handle pool errors
     pool.on('error', (err) => {
       console.error('Unexpected error on idle database client', err);
-      process.exit(-1);
     });
-    
-    console.log('✅ Database connection pool initialized');
   }
   
   return pool;
 }
 
-/**
- * Close the connection pool
- */
-export async function closePool(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
-    console.log('Database connection pool closed');
-  }
+export async function query(text: string, params?: any[]): Promise<QueryResult> {
+  return getPool().query(text, params);
 }
 
-/**
- * Check database connection
- */
-export async function checkConnection(): Promise<boolean> {
+async function getClient(): Promise<PoolClient> {
+  return getPool().connect();
+}
+
+export async function transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getClient();
   try {
-    const client = await getPool().connect();
-    await client.query('SELECT 1');
-    client.release();
-    return true;
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
   } catch (error) {
-    console.error('Database connection check failed:', error);
-    return false;
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 }

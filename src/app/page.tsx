@@ -36,12 +36,12 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-32 sm:px-48 md:px-64 lg:px-96 xl:px-[30rem] bg-background">
-      <div className="w-full max-w-[220px]">
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-background">
+      <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
         <div className="flex flex-col space-y-6">
           <div className="flex flex-col space-y-2 text-center">
             <h1 className="text-2xl font-semibold tracking-tight">OxSig</h1>
-            <p className="text-sm text-muted-foreground">Quantum-safe document signing</p>
+            <p className="text-sm text-muted-foreground">Private document storage and verified digital signatures</p>
           </div>
 
           <div className="flex flex-col space-y-4">
@@ -54,7 +54,7 @@ export default function Home() {
             <div className="text-center text-sm">
               {mode === "login" ? (
                 <p className="text-muted-foreground">
-                  Don't have an account?{" "}
+                  Don&apos;t have an account?{" "}
                   <button
                     onClick={() => setMode("register")}
                     className="font-semibold text-foreground underline-offset-4 hover:underline"

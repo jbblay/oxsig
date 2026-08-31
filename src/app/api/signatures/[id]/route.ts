@@ -1,115 +1,44 @@
-/**
- * Signature by ID API - GET/DELETE /api/signatures/[id]
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
-
-let pool: Pool | null = null;
-
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 20,
-    });
-  }
-  return pool;
-}
-
-function mapRow(row: any) {
-  return {
-    id: row.id,
-    documentId: row.document_id,
-    signerId: row.signer_id,
-    signerName: row.signer_name,
-    signerEmail: row.signer_email,
-    signatureData: row.signature_data,
-    signatureType: row.signature_type,
-    publicKey: row.public_key,
-    algorithm: row.algorithm,
-    timestamp: row.timestamp,
-    ipAddress: row.ip_address,
-    location: row.location,
-    metadata: row.metadata,
-    verified: row.verified,
-    verifiedAt: row.verified_at,
-    blockchainTxHash: row.blockchain_tx_hash,
-    createdAt: row.created_at,
-  };
-}
+import { getUserFromRequest } from '@/lib/auth/middleware';
+import { getPool } from '@/lib/db/pool';
+import { uuidSchema } from '@/lib/http/schemas';
+import { mapSignatureRow } from '@/lib/signatures/map-signature';
 
 export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const user = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { id } = await params;
-
-    const query = `
-      SELECT 
-        id,
-        document_id,
-        signer_id,
-        signer_name,
-        signer_email,
-        signature_data,
-        signature_type,
-        public_key,
-        algorithm,
-        timestamp,
-        ip_address,
-        location,
-        metadata,
-        verified,
-        verified_at,
-        blockchain_tx_hash,
-        created_at
-      FROM signatures
-      WHERE id = $1
-    `;
-    const result = await getPool().query(query, [id]);
-
+    if (!uuidSchema.safeParse(id).success) {
+      return NextResponse.json({ error: 'Invalid signature ID' }, { status: 400 });
+    }
+    const result = await getPool().query(
+      `SELECT s.id, s.document_id, d.title AS document_title, s.signer_id,
+              s.signer_name, s.signer_email, s.signature_data, s.signature_type,
+              s.public_key, s.algorithm, s.signed_at, s.metadata, s.verified,
+              s.verified_at, s.created_at
+       FROM signatures s
+       JOIN documents d ON d.id = s.document_id
+       WHERE s.id = $1 AND s.signer_id = $2`,
+      [id, user.id],
+    );
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Signature not found' }, { status: 404 });
     }
-
-    return NextResponse.json(mapRow(result.rows[0]));
+    return NextResponse.json(mapSignatureRow(result.rows[0]));
   } catch (error) {
-    console.error('Error fetching signature:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch signature', details: String(error) },
-      { status: 500 }
-    );
+    console.error('Signature fetch failed:', error);
+    return NextResponse.json({ error: 'Failed to fetch signature' }, { status: 500 });
   }
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-
-    const result = await getPool().query(
-      'DELETE FROM signatures WHERE id = $1 RETURNING id',
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: 'Signature not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting signature:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete signature', details: String(error) },
-      { status: 500 }
-    );
-  }
+export async function DELETE() {
+  return NextResponse.json(
+    { error: 'Signatures are immutable and cannot be deleted' },
+    { status: 405, headers: { Allow: 'GET' } },
+  );
 }

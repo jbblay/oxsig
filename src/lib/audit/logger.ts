@@ -4,21 +4,22 @@
  */
 
 import { getPool } from '@/lib/db/pool';
+import { getClientIp, getUserAgent } from '@/lib/http/client-info';
 
-export interface AuditLogEntry {
+interface AuditLogEntry {
   userId?: string;
   action: string;
   resourceType?: string;
   resourceId?: string;
   ipAddress?: string;
   userAgent?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
  * Log an audit entry to database
  */
-export async function logAudit(entry: AuditLogEntry): Promise<void> {
+async function logAudit(entry: AuditLogEntry): Promise<void> {
   try {
     const pool = getPool();
     await pool.query(
@@ -31,7 +32,7 @@ export async function logAudit(entry: AuditLogEntry): Promise<void> {
         entry.resourceId || null,
         entry.ipAddress || null,
         entry.userAgent || null,
-        entry.metadata ? JSON.stringify(entry.metadata) : null,
+        JSON.stringify(entry.metadata ?? {}),
       ]
     );
   } catch (error) {
@@ -43,20 +44,14 @@ export async function logAudit(entry: AuditLogEntry): Promise<void> {
 /**
  * Extract IP and user agent from request
  */
-export function getRequestMetadata(request: Request | { headers: { get(name: string): string | null } }): {
-  ipAddress: string;
-  userAgent: string;
+function getRequestMetadata(request: Request | { headers: { get(name: string): string | null } }): {
+  ipAddress?: string;
+  userAgent?: string;
 } {
-  const headers = request.headers;
-  
-  const ipAddress = 
-    headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    headers.get('x-real-ip') ||
-    'unknown';
-  
-  const userAgent = headers.get('user-agent') || 'unknown';
-  
-  return { ipAddress, userAgent };
+  return {
+    ipAddress: getClientIp(request) ?? undefined,
+    userAgent: getUserAgent(request) ?? undefined,
+  };
 }
 
 /**
@@ -66,32 +61,12 @@ export const AUDIT_ACTIONS = {
   // Authentication
   LOGIN_SUCCESS: 'auth.login.success',
   LOGIN_FAILED: 'auth.login.failed',
-  LOGOUT: 'auth.logout',
   REGISTER: 'auth.register',
-  PASSWORD_CHANGE: 'auth.password.change',
-  PASSWORD_RESET: 'auth.password.reset',
-  
-  // Documents
   DOCUMENT_CREATE: 'document.create',
-  DOCUMENT_VIEW: 'document.view',
-  DOCUMENT_UPDATE: 'document.update',
   DOCUMENT_DELETE: 'document.delete',
   DOCUMENT_DOWNLOAD: 'document.download',
-  
-  // Signatures
   SIGNATURE_CREATE: 'signature.create',
   SIGNATURE_VERIFY: 'signature.verify',
-  SIGNATURE_REVOKE: 'signature.revoke',
-  
-  // Keys
-  KEY_GENERATE: 'key.generate',
-  KEY_ROTATE: 'key.rotate',
-  KEY_EXPORT: 'key.export',
-  
-  // Admin
-  USER_UPDATE: 'admin.user.update',
-  USER_DELETE: 'admin.user.delete',
-  ROLE_CHANGE: 'admin.role.change',
 } as const;
 
 /**
@@ -102,7 +77,7 @@ export async function logAuthEvent(
   userId: string | null,
   request: Request | { headers: { get(name: string): string | null } },
   success: boolean,
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   const { ipAddress, userAgent } = getRequestMetadata(request);
   
@@ -126,7 +101,7 @@ export async function logDocumentEvent(
   userId: string,
   documentId: string,
   request: Request | { headers: { get(name: string): string | null } },
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   const { ipAddress, userAgent } = getRequestMetadata(request);
   
@@ -149,7 +124,7 @@ export async function logSignatureEvent(
   userId: string,
   signatureId: string,
   request: Request | { headers: { get(name: string): string | null } },
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   const { ipAddress, userAgent } = getRequestMetadata(request);
   
