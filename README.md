@@ -16,7 +16,7 @@ Ed25519 is a modern digital-signature algorithm, but it is **not post-quantum**.
 
 ## Quick start
 
-Requirements: Node.js 20+, pnpm 11.19+, and Docker with Compose.
+Requirements: Node.js 22.13+ (Node.js 24 recommended), pnpm 11.19+, and Docker with Compose.
 
 ```bash
 pnpm install --frozen-lockfile
