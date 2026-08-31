@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateTokenPair, TOKEN_EXPIRY, verifyJWT } from '@/lib/auth/jwt';
 import { clearAuthCookies, setAuthCookies } from '@/lib/auth/cookies';
+import { hasDemoSession, setDemoSessionCookie } from '@/lib/auth/demo';
 import { fingerprintSessionToken } from '@/lib/auth/session-token';
 import { getPool } from '@/lib/db/pool';
 import { getClientIp, getUserAgent } from '@/lib/http/client-info';
@@ -13,6 +14,16 @@ function unauthorized(message: string): NextResponse {
 
 export async function POST(request: NextRequest) {
   try {
+    if (hasDemoSession(request)) {
+      const response = NextResponse.json({
+        success: true,
+        expiresIn: TOKEN_EXPIRY.ACCESS,
+        demo: true,
+      });
+      setDemoSessionCookie(response);
+      return response;
+    }
+
     const token = request.cookies.get('refreshToken')?.value;
     if (!token) return unauthorized('A refresh token is required');
 

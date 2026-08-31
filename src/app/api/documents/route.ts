@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserFromRequest } from '@/lib/auth/middleware';
+import { demoReadOnlyResponse } from '@/lib/auth/demo';
 import { AUDIT_ACTIONS, logDocumentEvent } from '@/lib/audit/logger';
 import { query as dbQuery } from '@/lib/db/pool';
 import { mapDocumentRow } from '@/lib/documents/map-document';
@@ -26,6 +27,12 @@ function positiveInteger(value: string | null, fallback: number, maximum: number
 export async function GET(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (user.role === 'demo') {
+    const page = positiveInteger(request.nextUrl.searchParams.get('page'), 1, 100_000);
+    const pageSize = positiveInteger(request.nextUrl.searchParams.get('pageSize'), 20, 100);
+    return NextResponse.json({ data: [], total: 0, page, pageSize, hasMore: false });
+  }
 
   try {
     const { searchParams } = request.nextUrl;
@@ -89,6 +96,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') return demoReadOnlyResponse();
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_DOCUMENTS, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 

@@ -45,6 +45,12 @@ Stop local services with:
 pnpm services:down
 ```
 
+## Preview demo
+
+Vercel Preview deployments show an **Enter demo workspace** button. The demo uses a short-lived, HTTP-only preview session, does not require PostgreSQL, returns an empty workspace, and rejects every write operation. It is disabled on production deployments.
+
+To exercise the same flow locally, set `OXSIG_DEMO_MODE=true` while running in development.
+
 ## Configuration
 
 `pnpm setup` creates `.env.local`, preserves existing values, and generates a persistent Ed25519 JWT key pair without printing private key material. See `.env.example` for every supported setting.

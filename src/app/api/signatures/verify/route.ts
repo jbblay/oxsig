@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserFromRequest } from '@/lib/auth/middleware';
+import { demoReadOnlyResponse } from '@/lib/auth/demo';
 import { AUDIT_ACTIONS, logSignatureEvent } from '@/lib/audit/logger';
 import { getPool } from '@/lib/db/pool';
 import { verifyEd25519DocumentSignature } from '@/lib/signatures/ed25519';
@@ -14,6 +15,7 @@ const verifySchema = z.object({
 export async function POST(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') return demoReadOnlyResponse();
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_SIGNATURES, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 

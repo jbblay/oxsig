@@ -13,6 +13,9 @@ export async function GET(
 ) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') {
+    return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+  }
 
   try {
     const { id } = await params;

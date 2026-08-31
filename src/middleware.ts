@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { hasDemoSession } from '@/lib/auth/demo';
 import { extractBearerToken, verifyJWT } from '@/lib/auth/jwt';
 import { applySecurityHeaders } from '@/lib/security/headers';
 
@@ -22,6 +23,10 @@ export async function middleware(request: NextRequest) {
   const protectedRequest = (apiRequest && !isPublicApi(pathname)) || isProtectedPage(pathname);
 
   if (!protectedRequest) return applySecurityHeaders(NextResponse.next());
+
+  if (hasDemoSession(request)) {
+    return applySecurityHeaders(NextResponse.next());
+  }
 
   const accessToken = request.cookies.get('accessToken')?.value
     ?? extractBearerToken(request.headers.get('authorization'));

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
+import { DEMO_USER, demoReadOnlyResponse } from '@/lib/auth/demo';
 import { getPool } from '@/lib/db/pool';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 
@@ -31,6 +32,10 @@ const userColumns = `
 
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (_request, user) => {
+    if (user.role === 'demo') {
+      return NextResponse.json({ user: DEMO_USER });
+    }
+
     try {
       const result = await getPool().query(
         `SELECT ${userColumns} FROM users WHERE id = $1 AND is_active = true`,
@@ -49,6 +54,8 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   return requireAuth(request, async (authenticatedRequest, user) => {
+    if (user.role === 'demo') return demoReadOnlyResponse();
+
     const rateLimitResponse = await checkRateLimit(
       authenticatedRequest,
       RATE_LIMITS.API_PROFILE,

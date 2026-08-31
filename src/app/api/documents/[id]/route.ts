@@ -3,6 +3,7 @@ import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserFromRequest } from '@/lib/auth/middleware';
+import { demoReadOnlyResponse } from '@/lib/auth/demo';
 import { AUDIT_ACTIONS, logDocumentEvent } from '@/lib/audit/logger';
 import { query as dbQuery, transaction } from '@/lib/db/pool';
 import { mapDocumentRow } from '@/lib/documents/map-document';
@@ -32,6 +33,9 @@ export async function GET(
 ) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') {
+    return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+  }
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_DOCUMENTS, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -62,6 +66,7 @@ export async function PATCH(
 ) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') return demoReadOnlyResponse();
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_DOCUMENTS, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -148,6 +153,7 @@ export async function DELETE(
 ) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') return demoReadOnlyResponse();
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_DOCUMENTS, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 

@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { DEMO_USER, hasDemoSession } from './demo';
 import { extractBearerToken, verifyJWT } from './jwt';
 
 export interface AuthenticatedUser {
@@ -11,7 +12,7 @@ export interface AuthenticatedUser {
   did?: string;
   email?: string;
   name?: string;
-  role: 'user' | 'admin' | 'moderator';
+  role: 'user' | 'admin' | 'moderator' | 'demo';
 }
 
 /**
@@ -21,6 +22,15 @@ export async function getUserFromRequest(
   request: NextRequest
 ): Promise<AuthenticatedUser | null> {
   try {
+    if (hasDemoSession(request)) {
+      return {
+        id: DEMO_USER.id,
+        email: DEMO_USER.email,
+        name: DEMO_USER.displayName,
+        role: DEMO_USER.role,
+      };
+    }
+
     const token = request.cookies.get('accessToken')?.value
       ?? extractBearerToken(request.headers.get('authorization'));
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserFromRequest } from '@/lib/auth/middleware';
+import { demoReadOnlyResponse } from '@/lib/auth/demo';
 import { AUDIT_ACTIONS, logSignatureEvent } from '@/lib/audit/logger';
 import { query as dbQuery, transaction } from '@/lib/db/pool';
 import { metadataSchema } from '@/lib/http/schemas';
@@ -26,6 +27,7 @@ class SignatureError extends Error {
 export async function POST(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') return demoReadOnlyResponse();
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_SIGNATURES, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -105,6 +107,12 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (user.role === 'demo') {
+    const page = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('page') || '1', 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('pageSize') || '20', 10) || 20));
+    return NextResponse.json({ data: [], total: 0, page, pageSize, hasMore: false });
+  }
 
   try {
     const documentId = request.nextUrl.searchParams.get('documentId');

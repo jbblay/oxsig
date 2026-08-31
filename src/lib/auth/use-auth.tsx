@@ -13,8 +13,9 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  authMethod: 'email' | null;
+  authMethod: 'email' | 'demo' | null;
   loginWithEmail: (email: string, password: string) => Promise<void>;
+  loginAsDemo: () => Promise<void>;
   registerWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -123,6 +124,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loginAsDemo = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/auth/demo', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Demo login failed');
+      setUser(normalizeUser(data.user));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const registerWithEmail = useCallback(async (
     email: string,
     password: string,
@@ -158,13 +174,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isAuthenticated: user !== null,
     isLoading,
-    authMethod: user ? 'email' : null,
+    authMethod: user ? (user.role === 'demo' ? 'demo' : 'email') : null,
     loginWithEmail,
+    loginAsDemo,
     registerWithEmail,
     logout,
     refresh,
     fetchUserProfile,
-  }), [fetchUserProfile, isLoading, loginWithEmail, logout, refresh, registerWithEmail, user]);
+  }), [fetchUserProfile, isLoading, loginAsDemo, loginWithEmail, logout, refresh, registerWithEmail, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

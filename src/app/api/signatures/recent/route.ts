@@ -6,6 +6,12 @@ export async function GET(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  if (user.role === 'demo') {
+    const limit = Math.min(50, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('limit') || '10', 10) || 10));
+    const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get('offset') || '0', 10) || 0);
+    return NextResponse.json({ signatures: [], total: 0, limit, offset });
+  }
+
   try {
     const limit = Math.min(50, Math.max(1, Number.parseInt(request.nextUrl.searchParams.get('limit') || '10', 10) || 10));
     const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get('offset') || '0', 10) || 0);

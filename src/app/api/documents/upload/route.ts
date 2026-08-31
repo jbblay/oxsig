@@ -3,6 +3,7 @@ import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserFromRequest } from '@/lib/auth/middleware';
+import { demoReadOnlyResponse } from '@/lib/auth/demo';
 import { AUDIT_ACTIONS, logDocumentEvent } from '@/lib/audit/logger';
 import { getPool } from '@/lib/db/pool';
 import { mapDocumentRow } from '@/lib/documents/map-document';
@@ -22,6 +23,7 @@ const metadataSchema = z.object({
 export async function POST(request: NextRequest) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role === 'demo') return demoReadOnlyResponse();
   const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.API_DOCUMENTS, user.id);
   if (rateLimitResponse) return rateLimitResponse;
 
