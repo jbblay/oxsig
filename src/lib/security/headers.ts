@@ -13,24 +13,41 @@ import { NextResponse } from 'next/server';
  */
 const isDev = process.env.NODE_ENV === 'development';
 
-export const CSP_HEADER = [
-  "default-src 'self'",
-  isDev
+/**
+ * Build the CSP for a response.
+ *
+ * In production, Next.js needs a fresh nonce on its bootstrap scripts. A
+ * static `script-src 'self'` policy blocks those inline scripts and leaves the
+ * application as an unhydrated blank page. Middleware supplies the per-request
+ * nonce; keeping this builder here makes the same policy available to every
+ * response without enabling arbitrary inline JavaScript.
+ */
+export function buildContentSecurityPolicy(nonce?: string): string {
+  const scriptSource = isDev
     ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" // unsafe-eval needed for Next.js dev HMR
-    : "script-src 'self'",
-  isDev
-    ? "style-src 'self' 'unsafe-inline'" // unsafe-inline needed for styled-components in dev
-    : "style-src 'self'",
-  "img-src 'self' data: https: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' ws: wss:", // ws/wss for WebSocket and Socket.io
-  "media-src 'self' blob:",
-  "worker-src 'self' blob:",
-  "frame-ancestors 'none'", // Prevent embedding in iframes
-  "base-uri 'self'",
-  "form-action 'self'",
-  isDev ? "" : "upgrade-insecure-requests",
-].filter(Boolean).join('; ');
+    : nonce
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+      : "script-src 'self'";
+
+  return [
+    "default-src 'self'",
+    scriptSource,
+    isDev
+      ? "style-src 'self' 'unsafe-inline'" // unsafe-inline needed for styled-components in dev
+      : "style-src 'self' 'unsafe-inline'", // React and animation components currently emit inline styles
+    "img-src 'self' data: https: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' ws: wss:", // ws/wss for WebSocket and Socket.io
+    "media-src 'self' blob:",
+    "worker-src 'self' blob:",
+    "frame-ancestors 'none'", // Prevent embedding in iframes
+    "base-uri 'self'",
+    "form-action 'self'",
+    isDev ? "" : "upgrade-insecure-requests",
+  ].filter(Boolean).join('; ');
+}
+
+export const CSP_HEADER = buildContentSecurityPolicy();
 
 /**
  * Strict Transport Security (HSTS)
@@ -75,10 +92,15 @@ export const SECURITY_HEADERS = {
  * Apply security headers to an existing response without changing its status,
  * body, cookies, redirect target, or other response semantics.
  */
-export function applySecurityHeaders(response: NextResponse): NextResponse {
+export function applySecurityHeaders(
+  response: NextResponse,
+  contentSecurityPolicy = CSP_HEADER
+): NextResponse {
   Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
     response.headers.set(key, value);
   });
+
+  response.headers.set('Content-Security-Policy', contentSecurityPolicy);
 
   // Only add HSTS in production with HTTPS
   if (process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true') {

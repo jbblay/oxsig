@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 import AppShell from "@/components/app/AppShell";
 import PWARegister from "@/components/app/PWARegister";
@@ -11,6 +12,11 @@ import { PerformanceMonitor } from "@/components/PerformanceMonitor";
 import { AuthProvider } from "@/lib/auth/use-auth";
 
 const inter = Inter({ subsets: ["latin"] });
+
+// A fresh CSP nonce is attached by middleware for every request. Dynamic
+// rendering lets Next.js apply that nonce to its bootstrap scripts instead of
+// serving build-time HTML whose inline scripts would be blocked by the CSP.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "OxSig - Quantum-Safe Secure Communications",
@@ -52,16 +58,18 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html lang="en">
       <body className={`${inter.className} flex flex-col min-h-screen`}>
         <ErrorBoundary>
-          <ThemeProvider>
+          <ThemeProvider nonce={nonce}>
             <AuthProvider>
               <PerformanceMonitor />
               <BackgroundController />
