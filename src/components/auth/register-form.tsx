@@ -36,7 +36,6 @@ export function RegisterForm({
     handleChange,
     handleSubmit,
     setSuccess,
-    setError,
   } = useAuthForm({
     onSubmit: async (data) => {
       try {
@@ -61,16 +60,16 @@ export function RegisterForm({
         const nameError = validators.required(data.displayName, "Display name");
         if (nameError) newErrors.displayName = nameError;
       }
-      
+
       const emailError = validators.email(data.email);
       if (emailError) newErrors.email = emailError;
-      
-      const passwordError = validators.password(data.password);
+
+      const passwordError = validators.strongPassword(data.password);
       if (passwordError) newErrors.password = passwordError;
 
       const confirmError = validators.confirmPassword(data.confirmPassword, data.password);
       if (confirmError) newErrors.confirmPassword = confirmError;
-      
+
       return newErrors;
     },
   });
