@@ -100,11 +100,11 @@ export default function HomePage() {
 
   const quickActions = [
     {
-      title: "Share Document",
-      description: "Store, share, and explain a document",
+      title: "Secure Storage",
+      description: "Store and manage protected files",
       icon: Share2,
       color: "bg-blue-500",
-      href: "/sharedocs"
+      href: "/storage"
     },
     {
       title: "Start Collaboration",

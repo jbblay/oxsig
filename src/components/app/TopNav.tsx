@@ -8,7 +8,7 @@ import {
   Network,
   Download,
   FileCheck,
-  Share2,
+  HardDrive,
   Lock,
   LogOut,
   Monitor,
@@ -48,7 +48,7 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
   const [signingOut, setSigningOut] = React.useState(false);
 
   const navLinks = [
-    { label: "ShareDocs", href: "/sharedocs", icon: Share2 },
+    { label: "Storage", href: "/storage", icon: HardDrive },
     { label: "Vault", href: "/vault", icon: Lock },
     { label: "Security", href: "/security", icon: Shield },
     { label: "Audit", href: "/audit", icon: FileCheck },

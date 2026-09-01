@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Network,
-  Share2,
   HardDrive,
   Home,
   Lock,
@@ -46,12 +45,6 @@ export default function MobileNav() {
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="flex overflow-x-auto overscroll-x-contain">
         <Item href="/home" label="Home" icon={Home} active={pathname === "/home"} />
-        <Item
-          href="/sharedocs"
-          label="ShareDocs"
-          icon={Share2}
-          active={pathname?.startsWith("/sharedocs")}
-        />
         <Item
           href="/storage"
           label="Storage"
