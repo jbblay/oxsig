@@ -1,28 +1,14 @@
 /**
  * Health API - GET /api/health
- * Checks connectivity for Postgres, MinIO and Meilisearch.
+ * Checks connectivity for Postgres, MinIO and Meilisearch and reports whether
+ * the production authentication prerequisites are configured.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
+import { checkConnection, isDatabaseConfigured } from '@/lib/db/pool';
 
-let pool: Pool | null = null;
 let s3Client: S3Client | null = null;
-
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 5,
-    });
-  }
-  return pool;
-}
 
 function getS3Client() {
   if (!s3Client) {
@@ -40,19 +26,24 @@ function getS3Client() {
 }
 
 export async function GET(_request: NextRequest) {
+  const databaseConfigured = isDatabaseConfigured();
+  const jwtConfigured = Boolean(process.env.JWT_PRIVATE_KEY && process.env.JWT_PUBLIC_KEY);
+
   const status = {
     postgres: false,
     minio: false,
     meilisearch: false,
+    databaseConfigured,
+    jwtConfigured,
+    authReady: false,
     timestamp: new Date().toISOString(),
   };
 
-  try {
-    const res = await getPool().query('SELECT 1 AS ok');
-    status.postgres = res.rows?.[0]?.ok === 1;
-  } catch {
-    status.postgres = false;
+  if (databaseConfigured) {
+    status.postgres = await checkConnection();
   }
+
+  status.authReady = status.postgres && jwtConfigured;
 
   try {
     await getS3Client().send(new ListBucketsCommand({}));
