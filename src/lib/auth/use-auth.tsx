@@ -1,7 +1,6 @@
 /**
  * React Authentication Hook
- * Provides authentication state and methods to React components
- * Supports dual authentication: Email/Password and DID/Internet Identity
+ * Provides authentication state and methods to React components.
  */
 
 'use client';
@@ -15,7 +14,6 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   authMethod: 'email' | 'did' | null;
-  // DID/Internet Identity methods
   login: (publicKey: string, signature: string, challenge?: string) => Promise<void>;
   register: (data: {
     publicKey: string;
@@ -23,7 +21,6 @@ interface AuthContextType {
     email?: string;
     signature?: string;
   }) => Promise<User>;
-  // Email/Password methods
   loginWithEmail: (email: string, password: string) => Promise<void>;
   registerWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -33,85 +30,147 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function normalizeUser(data: any): User {
+  return {
+    id: data.id,
+    publicKey: data.publicKey ?? data.public_key ?? '',
+    email: data.email,
+    displayName: data.displayName ?? data.display_name ?? data.email,
+    role: data.role ?? 'user',
+  };
+}
+
+async function requestEmailProfile(allowRefresh = true): Promise<User | null> {
+  try {
+    let response = await fetch('/api/users/me', {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+
+    if (response.status === 401 && allowRefresh) {
+      const refreshResponse = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (refreshResponse.ok) {
+        response = await fetch('/api/users/me', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+      }
+    }
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+    const profile = payload.user ?? payload;
+
+    if (!profile?.id) {
+      return null;
+    }
+
+    return normalizeUser(profile);
+  } catch (error) {
+    console.error('Failed to fetch user profile:', error);
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authMethod, setAuthMethod] = useState<'email' | 'did' | null>(null);
 
-  // Fetch user profile from /api/users/me (for email auth)
   const fetchUserProfile = async () => {
-    try {
-      const response = await fetch('/api/users/me', {
-        credentials: 'include', // Include httpOnly cookies
-      });
-      
-      if (response.ok) {
-        const userData = await response.json();
-        setUser({
-          id: userData.id,
-          publicKey: userData.public_key || '',
-          email: userData.email,
-          displayName: userData.display_name || userData.email,
-          role: userData.role,
-        });
-        setAuthMethod('email');
-        return;
-      }
-    } catch (error) {
-      console.error('Failed to fetch user profile:', error);
+    const profile = await requestEmailProfile();
+    if (profile) {
+      setUser(profile);
+      setAuthMethod('email');
     }
   };
 
   useEffect(() => {
-    // Initialize auth state
+    let cancelled = false;
+
     const initAuth = async () => {
-      // Check for JWT cookie auth first (email/password)
-      await fetchUserProfile();
-      
-      // Fall back to DID auth from localStorage
-      if (!user) {
+      const emailUser = await requestEmailProfile();
+
+      if (cancelled) return;
+
+      if (emailUser) {
+        setUser(emailUser);
+        setAuthMethod('email');
+      } else {
         const currentUser = authService.getUser();
         if (currentUser) {
           setUser(currentUser);
           setAuthMethod('did');
         }
       }
-      
+
       setIsLoading(false);
     };
 
-    initAuth();
+    void initAuth();
 
-    // Set up token refresh interval for DID auth
-    const refreshInterval = setInterval(async () => {
-      if (authService.isAuthenticated()) {
-        try {
-          await authService.refresh();
-        } catch (error) {
-          console.error('Auto-refresh failed:', error);
-          if (authMethod === 'did') {
-            setUser(null);
-            setAuthMethod(null);
-          }
-        }
-      }
-    }, 20 * 60 * 1000); // Refresh every 20 minutes
-
-    return () => clearInterval(refreshInterval);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Connect WebSocket when user is authenticated
+  // Keep short-lived email access cookies renewed while the user is active.
+  useEffect(() => {
+    if (authMethod !== 'email') return;
+
+    const refreshInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          setUser(null);
+          setAuthMethod(null);
+        }
+      } catch (error) {
+        console.error('Email session refresh failed:', error);
+      }
+    }, 10 * 60 * 1000);
+
+    return () => clearInterval(refreshInterval);
+  }, [authMethod]);
+
+  // Preserve the existing local-token refresh behavior for DID auth.
+  useEffect(() => {
+    if (authMethod !== 'did') return;
+
+    const refreshInterval = setInterval(async () => {
+      try {
+        await authService.refresh();
+      } catch (error) {
+        console.error('DID auto-refresh failed:', error);
+        setUser(null);
+        setAuthMethod(null);
+      }
+    }, 20 * 60 * 1000);
+
+    return () => clearInterval(refreshInterval);
+  }, [authMethod]);
+
   useEffect(() => {
     if (user?.id) {
-      wsManager.connect(user.id).catch(err => {
-        console.error('Failed to connect WebSocket:', err);
+      wsManager.connect(user.id).catch((error) => {
+        console.error('Failed to connect WebSocket:', error);
       });
     } else {
       wsManager.disconnect();
     }
   }, [user]);
 
-  // Email/Password authentication
   const loginWithEmail = async (email: string, password: string) => {
     setIsLoading(true);
     try {
@@ -122,19 +181,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: 'include',
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Login failed');
+        throw new Error(data.message || data.error || 'Login failed');
       }
 
-      const data = await response.json();
-      setUser({
-        id: data.user.id,
-        publicKey: data.user.public_key || '',
-        email: data.user.email,
-        displayName: data.user.display_name || data.user.email,
-        role: data.user.role,
-      });
+      setUser(normalizeUser(data.user));
       setAuthMethod('email');
     } finally {
       setIsLoading(false);
@@ -147,30 +199,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, display_name: displayName }),
+        body: JSON.stringify({ email, password, displayName }),
         credentials: 'include',
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Registration failed');
+        throw new Error(data.message || data.error || 'Registration failed');
       }
 
-      const data = await response.json();
-      setUser({
-        id: data.user.id,
-        publicKey: data.user.public_key || '',
-        email: data.user.email,
-        displayName: data.user.display_name || data.user.email,
-        role: data.user.role,
-      });
+      setUser(normalizeUser(data.user));
       setAuthMethod('email');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // DID/Internet Identity authentication
   const login = async (publicKey: string, signature: string, challenge?: string) => {
     setIsLoading(true);
     try {
@@ -185,9 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (data: Parameters<typeof authService.register>[0]) => {
     setIsLoading(true);
     try {
-      const user = await authService.register(data);
+      const registeredUser = await authService.register(data);
+      setUser(registeredUser);
       setAuthMethod('did');
-      return user;
+      return registeredUser;
     } finally {
       setIsLoading(false);
     }
@@ -196,19 +241,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
-      // Logout from email auth
       if (authMethod === 'email') {
         await fetch('/api/auth/logout', {
           method: 'POST',
           credentials: 'include',
         });
       }
-      
-      // Logout from DID auth
+
       if (authMethod === 'did') {
         await authService.logout();
       }
-      
+
       setUser(null);
       setAuthMethod(null);
     } finally {
@@ -219,11 +262,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = async () => {
     try {
       if (authMethod === 'email') {
-        await fetchUserProfile();
+        const response = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error('Email session refresh failed');
+        }
+
+        const profile = await requestEmailProfile(false);
+        if (!profile) {
+          throw new Error('Failed to restore user profile after refresh');
+        }
+
+        setUser(profile);
       } else if (authMethod === 'did') {
         await authService.refresh();
-        const currentUser = authService.getUser();
-        setUser(currentUser);
+        setUser(authService.getUser());
       }
     } catch (error) {
       console.error('Refresh failed:', error);
