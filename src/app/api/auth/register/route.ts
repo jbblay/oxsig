@@ -28,12 +28,10 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
-    console.log('📝 Register request body:', body);
     const { email, password } = body;
     
     // Validate input
     if (!email || !password) {
-      console.log('❌ Missing fields - email:', email, 'password:', password ? '[PRESENT]' : '[MISSING]');
       return NextResponse.json(
         { error: 'Missing fields', message: 'Email and password are required' },
         { status: 400 }

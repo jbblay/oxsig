@@ -6,7 +6,7 @@
  */
 
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 const BCRYPT_ROUNDS = 10;
 
