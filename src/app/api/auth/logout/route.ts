@@ -1,41 +1,53 @@
 /**
  * Authentication API - POST /api/auth/logout
- * Invalidates the user's session and refresh token
+ * Revokes the current refresh session and clears auth cookies.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { getPool } from '@/lib/db/pool';
-import { getUserFromRequest } from '@/lib/auth/middleware';
+import { hashRefreshToken } from '@/lib/auth/session';
 
 export async function POST(request: NextRequest) {
-  try {
-    const cookieStore = await cookies();
-    const refreshToken = cookieStore.get('refreshToken')?.value;
+  const refreshToken = request.cookies.get('refreshToken')?.value;
+  let revocationFailed = false;
 
-    if (refreshToken) {
-      // Revoke session in database
+  if (refreshToken) {
+    try {
       const pool = getPool();
       await pool.query(
-        'UPDATE sessions SET revoked_at = NOW() WHERE refresh_token = $1',
-        [refreshToken]
+        `UPDATE sessions
+         SET revoked_at = NOW()
+         WHERE refresh_token = $1 OR refresh_token = $2`,
+        [hashRefreshToken(refreshToken), refreshToken]
       );
+    } catch (error) {
+      revocationFailed = true;
+      console.error('Logout session revocation failed:', error);
     }
-
-    // Clear cookies
-    const response = NextResponse.json({
-      message: 'Logged out successfully'
-    });
-
-    response.cookies.delete('accessToken');
-    response.cookies.delete('refreshToken');
-
-    return response;
-  } catch (error) {
-    console.error('Logout error:', error);
-    return NextResponse.json(
-      { error: 'Failed to logout', details: String(error) },
-      { status: 500 }
-    );
   }
+
+  const response = NextResponse.json(
+    revocationFailed
+      ? { message: 'Local logout completed; server session revocation could not be confirmed' }
+      : { message: 'Logged out successfully' },
+    { status: revocationFailed ? 503 : 200 }
+  );
+
+  response.cookies.set('accessToken', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 0,
+    path: '/',
+  });
+
+  response.cookies.set('refreshToken', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 0,
+    path: '/',
+  });
+
+  return response;
 }
