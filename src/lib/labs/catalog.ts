@@ -1,0 +1,57 @@
+import type { LabDefinition } from './types';
+
+export const LAB_CATALOG: LabDefinition[] = [
+  {
+    slug: 'linux-security-foundations',
+    name: 'Linux Security Foundations',
+    category: 'Linux Security',
+    description: 'A disposable Linux target for permissions, processes, services, logs, and introductory privilege-boundary exercises.',
+    difficulty: 'beginner',
+    runtime: 'container',
+    estimatedMemoryMb: 256,
+    estimatedCpu: 0.25,
+    objectives: [
+      'Inspect users, groups, and permissions',
+      'Observe processes and services',
+      'Generate and inspect security-relevant events',
+      'Reset the environment to a known state',
+    ],
+    available: false,
+    availabilityReason: 'Waiting for the isolated container runtime and browser terminal adapter.',
+  },
+  {
+    slug: 'network-two-host-foundations',
+    name: 'Two-Host Network Foundations',
+    category: 'Network Security',
+    description: 'Two isolated Linux machines connected to a private lab network for service discovery and packet-observation exercises.',
+    difficulty: 'beginner',
+    runtime: 'container',
+    estimatedMemoryMb: 512,
+    estimatedCpu: 0.5,
+    objectives: [
+      'Inspect addressing and routes',
+      'Discover services inside the assigned lab network',
+      'Observe traffic between lab machines',
+      'Reset both machines and the virtual network',
+    ],
+    available: false,
+    availabilityReason: 'Scheduled after the single-container vertical slice is proven.',
+  },
+  {
+    slug: 'windows-security-workstation',
+    name: 'Windows Security Workstation',
+    category: 'Windows Security',
+    description: 'A future VM-backed environment for Windows security engineering and defensive investigation.',
+    difficulty: 'intermediate',
+    runtime: 'vm',
+    estimatedMemoryMb: 4096,
+    estimatedCpu: 2,
+    objectives: [
+      'Work with Windows security controls',
+      'Investigate authentication and system events',
+      'Practice defensive configuration and verification',
+    ],
+    available: false,
+    availabilityReason: 'VM infrastructure is intentionally deferred until container isolation is proven.',
+  },
+];
