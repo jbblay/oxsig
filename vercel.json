@@ -1,0 +1,3 @@
+{
+  "buildCommand": "pnpm db:migrate:auth && pnpm build"
+}
