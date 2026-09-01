@@ -14,8 +14,8 @@ export interface User {
 }
 
 export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
+  accessToken?: string;
+  refreshToken?: string;
   expiresIn: number;
 }
 
@@ -62,20 +62,24 @@ export class AuthService {
     publicKey: string;
     displayName?: string;
     email?: string;
-    signature?: string;
+    signature: string;
+    challenge: string;
   }): Promise<User> {
-    const response = await apiClient.post<User>('/api/auth/register', data);
+    const response = await apiClient.post<{ user: User }>('/api/auth/did/register', data);
     if (response.error) {
       throw new Error(response.error.message || 'Registration failed');
     }
-    return response.data!;
+    const user = response.data!.user;
+    this.user = user;
+    if (typeof window !== 'undefined') localStorage.setItem('user', JSON.stringify(user));
+    return user;
   }
 
   /**
    * Login with public key and signature
    */
   async login(publicKey: string, signature: string, challenge?: string): Promise<LoginResponse> {
-    const response = await apiClient.post<LoginResponse>('/api/auth/login', {
+    const response = await apiClient.post<LoginResponse>('/api/auth/did/login', {
       publicKey,
       signature,
       challenge,
@@ -88,13 +92,13 @@ export class AuthService {
     const data = response.data!;
 
     // Store tokens and user
-    this.accessToken = data.accessToken;
-    this.refreshToken = data.refreshToken;
+    this.accessToken = data.accessToken || null;
+    this.refreshToken = data.refreshToken || null;
     this.user = data.user;
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('accessToken', data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
+      if (data.accessToken) localStorage.setItem('accessToken', data.accessToken);
+      if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('user', JSON.stringify(data.user));
     }
 
@@ -136,14 +140,13 @@ export class AuthService {
    * Logout
    */
   async logout(): Promise<void> {
-    if (this.refreshToken) {
-      try {
-        await apiClient.post('/api/auth/logout', {
-          refreshToken: this.refreshToken,
-        });
-      } catch (error) {
-        console.error('Logout error:', error);
-      }
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
     }
 
     this.clearAuth();
@@ -182,7 +185,7 @@ export class AuthService {
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {
-    return !!this.accessToken && !!this.user;
+    return !!this.user;
   }
 
   /**

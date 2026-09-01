@@ -2,23 +2,24 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { 
-  Menu, 
-  User, 
-  Settings, 
-  LogOut, 
-  Moon, 
-  Sun, 
-  Shield,
-  FileSignature,
-  Lock,
-  FileCheck,
-  Smartphone,
-  Users,
+import { usePathname, useRouter } from "next/navigation";
+import {
+  Apple,
+  Network,
   Download,
+  FileCheck,
+  HardDrive,
+  Lock,
+  LogOut,
   Monitor,
-  Apple
+  Moon,
+  Presentation,
+  Settings,
+  Shield,
+  Smartphone,
+  Sun,
+  User,
+  Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -33,48 +34,53 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useAuth } from "@/lib/auth/use-auth";
 
 interface TopNavProps {
   onMenuClick?: () => void;
 }
 
-export default function TopNav({ onMenuClick }: TopNavProps) {
+export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
+  const router = useRouter();
+  const { logout } = useAuth();
+  const [signingOut, setSigningOut] = React.useState(false);
 
   const navLinks = [
-    { label: "Sign", href: "/sign", icon: FileSignature },
+    { label: "Storage", href: "/storage", icon: HardDrive },
     { label: "Vault", href: "/vault", icon: Lock },
     { label: "Security", href: "/security", icon: Shield },
     { label: "Audit", href: "/audit", icon: FileCheck },
-    { label: "Collab", href: "/collab", icon: Users },
+    { label: "Rooms", href: "/collab", icon: Users },
+    { label: "Boards", href: "/collab/storyboards", icon: Presentation },
+    { label: "Cyber Lab", href: "/network", icon: Network },
   ];
 
   const isDev = process.env.NODE_ENV === 'development';
 
   return (
     <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur relative">
-      {/* soft radial glow */}
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(120%_80%_at_50%_-20%,hsl(var(--primary)/0.06),transparent_60%)]" />
       <div className="container mx-auto flex items-center justify-between h-14 px-4">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-6 min-w-0">
+          <div className="flex items-center gap-2 shrink-0">
             <SidebarTrigger className="transition-transform hover:scale-[1.04] active:scale-[0.98]" />
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/home" className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
               <span className="font-semibold text-sm bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">
                 OxSig
               </span>
             </Link>
           </div>
-          <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
+          <nav className="hidden xl:flex items-center space-x-5 text-sm font-medium">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 className={cn(
                   "transition-colors hover:text-foreground/80 flex items-center gap-1.5",
-                  pathname?.startsWith(link.href)
+                  pathname === link.href || pathname?.startsWith(link.href + "/")
                     ? "text-foreground"
                     : "text-foreground/60"
                 )}
@@ -87,12 +93,11 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Download Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 className="hidden md:flex items-center gap-2 transition-all hover:bg-primary/10"
               >
                 <Download className="h-4 w-4" />
@@ -102,8 +107,8 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
             <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel>Download OxSig</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              
-              <DropdownMenuItem 
+
+              <DropdownMenuItem
                 onClick={() => {
                   toast.success("Downloading OxSig for Windows...");
                   window.open('https://github.com/jbblay/oxsig/releases/download/v0.1.0/oxsig_0.1.0_x64-setup.exe', '_blank');
@@ -117,7 +122,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 </div>
               </DropdownMenuItem>
 
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => {
                   toast.info("macOS version coming soon!");
                 }}
@@ -130,7 +135,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 </div>
               </DropdownMenuItem>
 
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => {
                   toast.info("Android version coming soon!");
                 }}
@@ -144,7 +149,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
-              
+
               <DropdownMenuItem asChild className="cursor-pointer">
                 <Link href="/features" className="flex items-center">
                   <Shield className="w-4 h-4 mr-2" />
@@ -175,9 +180,9 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/profile" className="cursor-pointer">
+                <Link href="/account" className="cursor-pointer">
                   <User className="w-4 h-4 mr-2" />
-                  Profile
+                  Account
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
@@ -193,10 +198,9 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              
-              {/* Downloads Section */}
+
               <DropdownMenuLabel className="md:hidden">Downloads</DropdownMenuLabel>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="md:hidden cursor-pointer"
                 onClick={() => {
                   toast.success("Downloading for Windows...");
@@ -206,7 +210,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 <Monitor className="w-4 h-4 mr-2" />
                 Windows App
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="md:hidden cursor-pointer"
                 onClick={() => {
                   toast.success("Downloading for macOS...");
@@ -216,7 +220,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 <Apple className="w-4 h-4 mr-2" />
                 macOS App
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="md:hidden cursor-pointer"
                 onClick={() => {
                   toast.success("Downloading for Android...");
@@ -226,7 +230,7 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 <Smartphone className="w-4 h-4 mr-2" />
                 Android App
               </DropdownMenuItem>
-              
+
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => toast("Settings clicked")}>
                 <Settings className="w-4 h-4 mr-2" />
@@ -244,9 +248,23 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
                 </>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => toast("Sign out clicked")}>
+              <DropdownMenuItem
+                disabled={signingOut}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  setSigningOut(true);
+                  void logout()
+                    .then(() => {
+                      toast.success("Signed out");
+                      router.replace('/');
+                      router.refresh();
+                    })
+                    .catch(() => toast.error("Sign out failed"))
+                    .finally(() => setSigningOut(false));
+                }}
+              >
                 <LogOut className="w-4 h-4 mr-2" />
-                Sign out
+                {signingOut ? 'Signing out…' : 'Sign out'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

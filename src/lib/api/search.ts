@@ -59,13 +59,6 @@ export const searchApi = {
   },
 
   /**
-   * Search signatures
-   */
-  async searchSignatures(options: SearchOptions): Promise<ApiResponse<SearchResult>> {
-    return apiClient.post<SearchResult>('/api/search/signatures', options);
-  },
-
-  /**
    * Search users
    */
   async searchUsers(options: SearchOptions): Promise<ApiResponse<SearchResult>> {
@@ -84,7 +77,7 @@ export const searchApi = {
    */
   async suggest(
     query: string,
-    index: 'documents' | 'signatures' | 'users',
+    index: 'documents' | 'users',
     limit?: number
   ): Promise<ApiResponse<string[]>> {
     return apiClient.post<string[]>('/api/search/suggest', {
@@ -161,10 +154,9 @@ export const searchApi = {
 
 export const search = {
   documents: (options: SearchOptions) => unwrap(searchApi.searchDocuments(options)),
-  signatures: (options: SearchOptions) => unwrap(searchApi.searchSignatures(options)),
   users: (options: SearchOptions) => unwrap(searchApi.searchUsers(options)),
   all: (options: SearchOptions) => unwrap(searchApi.searchAll(options)),
-  suggest: (query: string, index: 'documents' | 'signatures' | 'users', limit?: number) =>
+  suggest: (query: string, index: 'documents' | 'users', limit?: number) =>
     unwrap(searchApi.suggest(query, index, limit)),
   faceted: (index: string, options: SearchOptions & { facets: string[] }) =>
     unwrap(searchApi.facetedSearch(index, options)),

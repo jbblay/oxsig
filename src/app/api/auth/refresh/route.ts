@@ -1,138 +1,149 @@
 /**
  * Authentication API - POST /api/auth/refresh
- * Refreshes an expired access token using a valid refresh token
+ * Rotates a valid email-auth refresh session and renews httpOnly cookies.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
-import * as jose from 'jose';
+import { cookies } from 'next/headers';
+import { generateTokenPair, TOKEN_EXPIRY, verifyJWT } from '@/lib/auth/jwt';
+import { hashRefreshToken } from '@/lib/auth/session';
+import { getPool } from '@/lib/db/pool';
 
-let pool: Pool | null = null;
+async function getRefreshToken(request: NextRequest): Promise<string | null> {
+  const cookieStore = await cookies();
+  const cookieToken = cookieStore.get('refreshToken')?.value;
+  if (cookieToken) return cookieToken;
 
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'changeme',
-      max: 20,
-    });
+  // Optional body fallback for non-browser API clients. Browser email auth uses
+  // the httpOnly cookie and never needs JavaScript access to the refresh token.
+  try {
+    const body = await request.json();
+    return typeof body?.refreshToken === 'string' ? body.refreshToken : null;
+  } catch {
+    return null;
   }
-  return pool;
-}
-
-export interface RefreshRequest {
-  refreshToken: string;
-}
-
-export interface RefreshResponse {
-  accessToken: string;
-  expiresIn: number;
-}
-
-async function verifyRefreshToken(token: string): Promise<jose.JWTPayload> {
-  const secret = new TextEncoder().encode(
-    process.env.JWT_SECRET || 'your_secret_key_here_change_in_production'
-  );
-
-  const { payload } = await jose.jwtVerify(token, secret);
-  return payload;
-}
-
-async function generateAccessToken(userId: string, email: string | null, role: string): Promise<string> {
-  const secret = new TextEncoder().encode(
-    process.env.JWT_SECRET || 'your_secret_key_here_change_in_production'
-  );
-
-  const alg = 'HS256';
-  const jwt = await new jose.SignJWT({
-    sub: userId,
-    email: email || '',
-    role: role || 'user',
-  })
-    .setProtectedHeader({ alg })
-    .setIssuedAt()
-    .setExpirationTime('24h')
-    .setJti(crypto.randomUUID())
-    .sign(secret);
-
-  return jwt;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body: RefreshRequest = await request.json();
-    const { refreshToken } = body;
+    const refreshToken = await getRefreshToken(request);
 
     if (!refreshToken) {
       return NextResponse.json(
         { error: 'Refresh token is required' },
-        { status: 400 }
+        { status: 401 }
       );
     }
 
-    // Verify refresh token
-    let payload: jose.JWTPayload;
-    try {
-      payload = await verifyRefreshToken(refreshToken);
-    } catch (error) {
+    const payload = await verifyJWT(refreshToken);
+    if (!payload || payload.type !== 'refresh') {
       return NextResponse.json(
         { error: 'Invalid or expired refresh token' },
         { status: 401 }
       );
     }
 
-    // Check if it's a refresh token
-    if (payload.type !== 'refresh') {
-      return NextResponse.json(
-        { error: 'Not a refresh token' },
-        { status: 401 }
+    const refreshTokenHash = hashRefreshToken(refreshToken);
+    const pool = getPool();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const sessionResult = await client.query(
+        `SELECT
+           s.id AS session_id,
+           s.refresh_token,
+           u.id,
+           u.email,
+           u.display_name,
+           u.public_key,
+           u.role,
+           u.is_active
+         FROM sessions s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.user_id = $1
+           AND (s.refresh_token = $2 OR s.refresh_token = $3)
+           AND s.revoked_at IS NULL
+           AND s.expires_at > NOW()
+         ORDER BY s.created_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [payload.sub, refreshTokenHash, refreshToken]
       );
-    }
 
-    const userId = payload.sub as string;
+      if (sessionResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Session is invalid or has been revoked' },
+          { status: 401 }
+        );
+      }
 
-    // TODO: Validate session in Redis
-    // const isValidSession = await validateSession(userId, payload.jti);
-    // if (!isValidSession) {
-    //   return NextResponse.json(
-    //     { error: 'Session invalidated' },
-    //     { status: 401 }
-    //   );
-    // }
+      const user = sessionResult.rows[0];
+      if (!user.is_active) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Account disabled' },
+          { status: 403 }
+        );
+      }
 
-    // Get user data
-    const result = await getPool().query(
-      `SELECT id, email, COALESCE(metadata->>'role', 'user') as role, is_active
-       FROM users 
-       WHERE id = $1 AND is_active = true`,
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'User not found or inactive' },
-        { status: 404 }
+      const { accessToken, refreshToken: nextRefreshToken } = await generateTokenPair(
+        user.id,
+        user.email,
+        user.role || 'user'
       );
+
+      await client.query(
+        `UPDATE sessions
+         SET refresh_token = $1,
+             expires_at = NOW() + INTERVAL '7 days'
+         WHERE id = $2`,
+        [hashRefreshToken(nextRefreshToken), user.session_id]
+      );
+
+      await client.query('COMMIT');
+
+      const response = NextResponse.json({
+        success: true,
+        expiresIn: TOKEN_EXPIRY.ACCESS,
+        user: {
+          id: user.id,
+          publicKey: user.public_key || '',
+          displayName: user.display_name || user.email,
+          email: user.email,
+          role: user.role || 'user',
+        },
+      });
+
+      response.cookies.set('accessToken', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: TOKEN_EXPIRY.ACCESS,
+        path: '/',
+      });
+
+      response.cookies.set('refreshToken', nextRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: TOKEN_EXPIRY.REFRESH,
+        path: '/',
+      });
+
+      return response;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const user = result.rows[0];
-
-    // Generate new access token
-    const accessToken = await generateAccessToken(user.id, user.email, user.role);
-
-    const response: RefreshResponse = {
-      accessToken,
-      expiresIn: 24 * 60 * 60, // 24 hours in seconds
-    };
-
-    return NextResponse.json(response, { status: 200 });
   } catch (error) {
     console.error('Token refresh error:', error);
     return NextResponse.json(
-      { error: 'Failed to refresh token', details: String(error) },
+      { error: 'Failed to refresh session' },
       { status: 500 }
     );
   }

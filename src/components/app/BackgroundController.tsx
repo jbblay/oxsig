@@ -12,7 +12,7 @@ export default function BackgroundController() {
   const pathname = usePathname() || "";
 
   // Pages where we want to disable the animated background for performance
-  const disabledPaths = ["/architecture", "/sign"];
+  const disabledPaths = ["/architecture", "/sharedocs"];
 
   const shouldHide = disabledPaths.some((p) => pathname.startsWith(p));
 

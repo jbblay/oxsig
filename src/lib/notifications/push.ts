@@ -292,10 +292,10 @@ export function handleNotificationClick(action: string, data: Record<string, unk
   switch (action) {
     case 'view':
     case 'sign':
-      window.location.href = '/sign';
+      window.location.href = '/sharedocs';
       break;
     case 'review':
-      window.location.href = `/sign?doc=${data.documentName}`;
+      window.location.href = `/sharedocs?doc=${data.documentName}`;
       break;
     case 'accept':
       window.location.href = '/collab';

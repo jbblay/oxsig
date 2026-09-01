@@ -20,7 +20,6 @@ export function useAuthForm({ onSubmit, validate }: UseAuthFormOptions) {
 
   const handleChange = (name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user types
     if (errors[name]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -33,8 +32,7 @@ export function useAuthForm({ onSubmit, validate }: UseAuthFormOptions) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
-    
-    // Validate
+
     if (validate) {
       const validationErrors = validate(values);
       if (Object.keys(validationErrors).length > 0) {
@@ -86,7 +84,6 @@ export function useAuthForm({ onSubmit, validate }: UseAuthFormOptions) {
   };
 }
 
-// Common validation functions
 export const validators = {
   email: (value: string) => {
     if (!value) return "Email is required";
@@ -94,9 +91,20 @@ export const validators = {
     return "";
   },
 
-  password: (value: string, minLength = 8) => {
+  // Login should validate presence, not impose today's signup policy on an
+  // account that may have been created under an older password policy.
+  password: (value: string) => {
     if (!value) return "Password is required";
-    if (value.length < minLength) return `Password must be at least ${minLength} characters`;
+    return "";
+  },
+
+  strongPassword: (value: string) => {
+    if (!value) return "Password is required";
+    if (value.length < 8) return "Password must be at least 8 characters";
+    if (!/[a-z]/.test(value)) return "Password must contain a lowercase letter";
+    if (!/[A-Z]/.test(value)) return "Password must contain an uppercase letter";
+    if (!/[0-9]/.test(value)) return "Password must contain a number";
+    if (!/[^a-zA-Z0-9]/.test(value)) return "Password must contain a special character";
     return "";
   },
 

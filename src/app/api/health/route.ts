@@ -1,28 +1,14 @@
 /**
  * Health API - GET /api/health
- * Checks connectivity for Postgres, MinIO and Meilisearch.
+ * Checks service connectivity and reports authentication readiness without
+ * exposing secrets.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
+import { checkConnection, getPool, isDatabaseConfigured } from '@/lib/db/pool';
 
-let pool: Pool | null = null;
 let s3Client: S3Client | null = null;
-
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'oxsig',
-      user: process.env.POSTGRES_USER || 'oxsig',
-      password: process.env.POSTGRES_PASSWORD || 'oxsig_secure_password',
-      max: 5,
-    });
-  }
-  return pool;
-}
 
 function getS3Client() {
   if (!s3Client) {
@@ -39,20 +25,63 @@ function getS3Client() {
   return s3Client;
 }
 
+async function checkAuthSchema(): Promise<boolean> {
+  try {
+    const result = await getPool().query(`
+      SELECT
+        to_regclass('public.users') IS NOT NULL AS users_table,
+        to_regclass('public.sessions') IS NOT NULL AS sessions_table,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password_hash'
+        ) AS password_hash_column,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'role'
+        ) AS role_column,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'last_seen_at'
+        ) AS last_seen_column
+    `);
+
+    const schema = result.rows[0];
+    return Boolean(
+      schema?.users_table &&
+      schema?.sessions_table &&
+      schema?.password_hash_column &&
+      schema?.role_column &&
+      schema?.last_seen_column
+    );
+  } catch (error) {
+    console.error('Authentication schema check failed:', error);
+    return false;
+  }
+}
+
 export async function GET(_request: NextRequest) {
+  const databaseConfigured = isDatabaseConfigured();
+  const jwtConfigured = Boolean(process.env.JWT_PRIVATE_KEY && process.env.JWT_PUBLIC_KEY);
+
   const status = {
     postgres: false,
     minio: false,
     meilisearch: false,
+    databaseConfigured,
+    jwtConfigured,
+    authSchemaReady: false,
+    authReady: false,
     timestamp: new Date().toISOString(),
   };
 
-  try {
-    const res = await getPool().query('SELECT 1 AS ok');
-    status.postgres = res.rows?.[0]?.ok === 1;
-  } catch {
-    status.postgres = false;
+  if (databaseConfigured) {
+    status.postgres = await checkConnection();
+    if (status.postgres) {
+      status.authSchemaReady = await checkAuthSchema();
+    }
   }
+
+  status.authReady = status.postgres && status.jwtConfigured && status.authSchemaReady;
 
   try {
     await getS3Client().send(new ListBucketsCommand({}));
@@ -63,8 +92,8 @@ export async function GET(_request: NextRequest) {
 
   try {
     const meiliUrl = process.env.MEILISEARCH_URL || 'http://localhost:7700';
-    const r = await fetch(`${meiliUrl}/health`, { method: 'GET' });
-    status.meilisearch = r.ok;
+    const response = await fetch(`${meiliUrl}/health`, { method: 'GET' });
+    status.meilisearch = response.ok;
   } catch {
     status.meilisearch = false;
   }

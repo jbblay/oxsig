@@ -10,13 +10,21 @@ export default function Home() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const [mode, setMode] = React.useState<"login" | "register">("login");
+  const [redirectTo, setRedirectTo] = React.useState("/home");
+
+  React.useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("redirect");
+    if (requested?.startsWith("/") && !requested.startsWith("//")) {
+      setRedirectTo(requested);
+    }
+  }, []);
 
   // Redirect to /home if already authenticated
   React.useEffect(() => {
     if (user && !authLoading) {
-      router.push("/home");
+      router.push(redirectTo);
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, redirectTo, router]);
 
   if (authLoading) {
     return (
@@ -41,14 +49,14 @@ export default function Home() {
         <div className="flex flex-col space-y-6">
           <div className="flex flex-col space-y-2 text-center">
             <h1 className="text-2xl font-semibold tracking-tight">OxSig</h1>
-            <p className="text-sm text-muted-foreground">Quantum-safe document signing</p>
+            <p className="text-sm text-muted-foreground">Secure files, canvases, and practical cyber labs</p>
           </div>
 
           <div className="flex flex-col space-y-4">
             {mode === "login" ? (
-              <LoginForm redirectTo="/home" />
+              <LoginForm redirectTo={redirectTo} />
             ) : (
-              <RegisterForm redirectTo="/home" />
+              <RegisterForm redirectTo={redirectTo} />
             )}
 
             <div className="text-center text-sm">

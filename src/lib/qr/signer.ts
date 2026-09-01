@@ -236,7 +236,7 @@ export class QRScanner {
  */
 export function generateSigningLink(payload: SigningPayload): string {
   const encoded = btoa(JSON.stringify(payload));
-  return `${window.location.origin}/sign?data=${encoded}`;
+  return `${window.location.origin}/sharedocs?data=${encoded}`;
 }
 
 /**

@@ -275,21 +275,21 @@ export async function handleNotificationAction(
     case 'approve':
       // TODO: Navigate to sign page with pre-filled data
       if (typeof window !== 'undefined') {
-        window.location.href = `/sign?requestId=${requestId}&hash=${documentHash}&action=approve`;
+        window.location.href = `/sharedocs?requestId=${requestId}&hash=${documentHash}&action=approve`;
       }
       break;
 
     case 'reject':
       // TODO: Send rejection response
       if (typeof window !== 'undefined') {
-        window.location.href = `/sign?requestId=${requestId}&hash=${documentHash}&action=reject`;
+        window.location.href = `/sharedocs?requestId=${requestId}&hash=${documentHash}&action=reject`;
       }
       break;
 
     case 'preview':
       // TODO: Open document preview
       if (typeof window !== 'undefined') {
-        window.location.href = `/sign?requestId=${requestId}&hash=${documentHash}&action=preview`;
+        window.location.href = `/sharedocs?requestId=${requestId}&hash=${documentHash}&action=preview`;
       }
       break;
   }

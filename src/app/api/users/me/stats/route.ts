@@ -1,85 +1,39 @@
-/**
- * User Statistics API
- * GET /api/users/me/stats - Get user statistics
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 
 export async function GET(request: NextRequest) {
-  return requireAuth(request, async (req, user) => {
+  return requireAuth(request, async (_req, user) => {
     try {
-      // Get document count
-      const documentsResult = await getPool().query(
-        'SELECT COUNT(*) as count FROM documents WHERE owner_id = $1',
+      const result = await getPool().query(
+        `SELECT
+           (SELECT COUNT(*) FROM storyboard_sessions
+             WHERE owner_id = $1 AND deleted_at IS NULL) AS owned_storyboards,
+           (SELECT COUNT(*) FROM storyboard_shares share
+             JOIN storyboard_sessions session ON session.id = share.session_id
+             WHERE share.user_id = $1 AND share.revoked_at IS NULL
+               AND (share.expires_at IS NULL OR share.expires_at > NOW())
+               AND session.deleted_at IS NULL) AS shared_storyboards,
+           (SELECT COUNT(*) FROM audit_logs WHERE user_id = $1) AS audit_events,
+           (SELECT COUNT(*) FROM sessions
+             WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()) AS active_sessions,
+           email_verified, two_factor_enabled
+         FROM users WHERE id = $1`,
         [user.id]
       );
-      const documentsSigned = documentsResult.rows[0]?.count || 0;
-
-      // Get collaboration count
-      const collabResult = await getPool().query(
-        `SELECT COUNT(DISTINCT c.id) as count 
-         FROM collaborations c 
-         JOIN collaboration_members cm ON c.id = cm.collaboration_id 
-         WHERE cm.user_id = $1`,
-        [user.id]
-      );
-      const collaborations = collabResult.rows[0]?.count || 0;
-
-      // Get signature count
-      const signaturesResult = await getPool().query(
-        'SELECT COUNT(*) as count FROM signatures WHERE signer_id = $1',
-        [user.id]
-      );
-      const signatures = signaturesResult.rows[0]?.count || 0;
-
-      // Calculate security score based on various factors
-      let securityScore = 70; // Base score
-      
-      // Check for 2FA
-      const user2FAResult = await getPool().query(
-        'SELECT totp_secret FROM users WHERE id = $1',
-        [user.id]
-      );
-      const has2FA = user2FAResult.rows[0]?.totp_secret !== null;
-      if (has2FA) securityScore += 10;
-
-      // Check for WebAuthn credentials
-      const webauthnResult = await getPool().query(
-        'SELECT COUNT(*) as count FROM webauthn_credentials WHERE user_id = $1',
-        [user.id]
-      );
-      const hasWebAuthn = (webauthnResult.rows[0]?.count || 0) > 0;
-      if (hasWebAuthn) securityScore += 10;
-
-      // Check for recovery setup
-      const recoveryResult = await getPool().query(
-        'SELECT COUNT(*) as count FROM social_recovery_guardians WHERE user_id = $1',
-        [user.id]
-      );
-      const hasRecovery = (recoveryResult.rows[0]?.count || 0) > 0;
-      if (hasRecovery) securityScore += 10;
-
-      // Uptime calculation (simplified - could be more sophisticated)
-      const uptime = 99.9;
-
+      if (!result.rows[0]) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      const row = result.rows[0];
       return NextResponse.json({
-        documentsSigned: parseInt(documentsSigned),
-        collaborations: parseInt(collaborations),
-        signatures: parseInt(signatures),
-        securityScore: Math.min(securityScore, 100),
-        uptime,
-        has2FA,
-        hasWebAuthn,
-        hasRecovery
+        ownedStoryboards: Number(row.owned_storyboards),
+        sharedStoryboards: Number(row.shared_storyboards),
+        auditEvents: Number(row.audit_events),
+        activeSessions: Number(row.active_sessions),
+        emailVerified: !!row.email_verified,
+        twoFactorEnabled: !!row.two_factor_enabled,
       });
     } catch (error) {
       console.error('Failed to get user stats:', error);
-      return NextResponse.json(
-        { error: 'Failed to retrieve statistics' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to retrieve profile statistics' }, { status: 500 });
     }
   });
 }

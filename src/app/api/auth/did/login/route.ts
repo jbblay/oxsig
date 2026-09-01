@@ -9,8 +9,8 @@ import { generateTokenPair } from '@/lib/auth/jwt';
 import { getPool } from '@/lib/db/pool';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 import * as ed25519 from '@noble/ed25519';
-import { sha256 } from '@noble/hashes/sha256';
-import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
+import { hexToBytes } from '@noble/hashes/utils';
+import { hashRefreshToken } from '@/lib/auth/session';
 
 export async function POST(request: NextRequest) {
   // Rate limit: 5 requests per minute to prevent brute force
@@ -94,6 +94,17 @@ export async function POST(request: NextRequest) {
       user.id,
       user.email
     );
+
+    await pool.query(
+      `INSERT INTO sessions (user_id, refresh_token, device_info, ip_address, expires_at)
+       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '7 days')`,
+      [
+        user.id,
+        hashRefreshToken(refreshToken),
+        request.headers.get('user-agent') || 'unknown',
+        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+      ]
+    );
     
     // Create response with httpOnly cookies
     const response = NextResponse.json({
@@ -111,7 +122,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set('accessToken', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 15 * 60, // 15 minutes
       path: '/'
     });
@@ -119,7 +130,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60, // 7 days
       path: '/'
     });

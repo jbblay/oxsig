@@ -4,53 +4,52 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
 
 jobs:
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         node-version: [20.x]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
-      
+          version: 10.28.0
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
-      
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      
+
       - name: Run TypeScript check
         run: pnpm tsc --noEmit
-      
+
       - name: Run linter
         run: pnpm lint || true
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Run npm audit
         run: npm audit --audit-level=moderate || true
-      
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -58,9 +57,9 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-      
+
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -68,31 +67,31 @@ jobs:
     name: Build Check
     runs-on: ubuntu-latest
     needs: [lint]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
-      
+          version: 10.28.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
-      
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      
+
       - name: Build application
         run: pnpm build
         env:
           NODE_ENV: production
-      
+
       - name: Check build output
         run: |
           if [ ! -d ".next" ]; then
@@ -106,20 +105,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, security]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Build Docker image
         run: docker compose build
         env:
           COMPOSE_DOCKER_CLI_BUILD: 1
           DOCKER_BUILDKIT: 1
-      
+
       - name: Test Docker containers
         run: |
           docker compose up -d
@@ -132,22 +131,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, docker]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Deploy notification
         run: |
-          echo "🚀 Deployment step - configure your deployment here"
+          echo "Deployment step - configure your deployment here"
           echo "This could deploy to Vercel, AWS, or your hosting provider"
-      
-      # Add your deployment steps here
-      # Example: Deploy to Vercel
-      # - name: Deploy to Vercel
-      #   uses: amondnet/vercel-action@v20
-      #   with:
-      #     vercel-token: ${{ secrets.VERCEL_TOKEN }}
-      #     vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-      #     vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-      #     vercel-args: '--prod'

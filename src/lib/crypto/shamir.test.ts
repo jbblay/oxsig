@@ -252,7 +252,7 @@ describe('Shamir Secret Sharing', () => {
 
       const qrFormat = shareToQRFormat(share);
       expect(typeof qrFormat).toBe('string');
-      expect(qrFormat).toContain('"v":1');
+      expect(qrFormat).toContain('"v":2');
 
       const restored = shareFromQRFormat(qrFormat);
       expect(restored.id).toBe(share.id);
@@ -263,7 +263,7 @@ describe('Shamir Secret Sharing', () => {
     });
 
     it('should reject invalid QR format version', () => {
-      const invalidQR = JSON.stringify({ v: 2, i: 1, d: 'test', m: 3, n: 5, t: Date.now() });
+      const invalidQR = JSON.stringify({ v: 3, i: 1, d: 'test', m: 3, n: 5, t: Date.now() });
       expect(() => shareFromQRFormat(invalidQR)).toThrow('Unsupported share version');
     });
 

@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarInset, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Home, Shield, FileSignature, Fingerprint, Brain, Network, Eye, Users, Edit3, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff, HardDrive } from "lucide-react";
+import { Home, Shield, Network, Users, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff, HardDrive } from "lucide-react";
 import MobileNav from "@/components/app/MobileNav";
 import TopNav from "@/components/app/TopNav";
 
@@ -94,22 +94,17 @@ function AppShellContent({ children }: AppShellProps) {
 
   const coreFeatures = [
     { href: "/home", icon: Home, label: "Home", tooltip: "Home", gradient: "from-blue-500 to-cyan-500" },
-    { href: "/sign", icon: FileSignature, label: "Sign Documents", tooltip: "Quantum-Secure Signatures", gradient: "from-indigo-500 to-blue-500" },
     { href: "/vault", icon: Vault, label: "Seed Vault", tooltip: "BIP39 Recovery Phrases", gradient: "from-purple-500 to-violet-500", badge: "New" },
     { href: "/storage", icon: HardDrive, label: "Secure Storage", tooltip: "Encrypted File Storage", gradient: "from-emerald-500 to-green-500", badge: "New" },
-    { href: "/signature-editor", icon: Edit3, label: "Signature Editor", tooltip: "Create & Save Signatures", gradient: "from-violet-500 to-purple-500" },
     { href: "/collab", icon: Users, label: "Collaboration", tooltip: "Secure Chat & Files", gradient: "from-teal-500 to-cyan-500" },
-    { href: "/identity", icon: Fingerprint, label: "Identity", tooltip: "Self-Sovereign DIDs", gradient: "from-blue-500 to-cyan-500" },
-    { href: "/privacy", icon: Eye, label: "Privacy", tooltip: "Zero-Knowledge Proofs", gradient: "from-pink-500 to-rose-500" },
+    { href: "/account", icon: UserCircle, label: "Account", tooltip: "Profile, Identity & Privacy", gradient: "from-blue-500 to-violet-500" },
   ];
 
   const securityFeatures = [
     { href: "/security", icon: Shield, label: "Security Center", tooltip: "Key & Device Management", gradient: "from-emerald-500 to-green-500", badge: "Enhanced" },
-    { href: "/crypto-agility", icon: Shield, label: "Crypto Agility", tooltip: "Algorithm Health & Quantum Readiness", gradient: "from-purple-500 to-blue-500", badge: "New" },
     { href: "/audit", icon: ScrollText, label: "Audit Log", tooltip: "Merkle Tree Audit Trail", gradient: "from-cyan-500 to-blue-500" },
     { href: "/opsec", icon: FileCheck, label: "OPSEC", tooltip: "Security Classification", gradient: "from-red-500 to-orange-500" },
-    { href: "/network", icon: Network, label: "Network", tooltip: "P2P Topology", gradient: "from-orange-500 to-amber-500" },
-    { href: "/ai", icon: Brain, label: "AI Security", tooltip: "Threat Detection", gradient: "from-green-500 to-emerald-500" },
+    { href: "/network", icon: Network, label: "Cyber Lab", tooltip: "Network & Kali Lab", gradient: "from-orange-500 to-amber-500" },
   ];
 
   const devFeatures = [
@@ -243,8 +238,8 @@ function AppShellContent({ children }: AppShellProps) {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip="User Profile">
-                <Link href="/profile" className="group">
+              <SidebarMenuButton asChild tooltip="Account">
+                <Link href="/account" className="group">
                   <motion.div
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
@@ -258,8 +253,8 @@ function AppShellContent({ children }: AppShellProps) {
                     </Avatar>
                   </motion.div>
                   <div className="flex flex-col flex-1 overflow-hidden group-data-[collapsible=icon]:hidden">
-                    <span className="text-sm font-medium truncate">OxSig User</span>
-                    <span className="text-xs text-muted-foreground truncate">did:key:z6Mk...</span>
+                    <span className="text-sm font-medium truncate">Account</span>
+                    <span className="text-xs text-muted-foreground truncate">Profile · Identity · Privacy</span>
                   </div>
                 </Link>
               </SidebarMenuButton>

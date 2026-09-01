@@ -4,10 +4,11 @@ import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import SigningForm from "@/components/app/SigningForm";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { FolderLock, Presentation, Share2 } from "lucide-react";
 import ConsentDashboard from "@/components/app/ConsentDashboard";
 import KeyringViewer from "@/components/app/KeyringViewer";
-import AIAssistChat from "@/components/app/AIAssistChat";
 import StatusPanel from "@/components/app/StatusPanel";
 import ActivityFeed from "@/components/app/ActivityFeed";
 
@@ -35,13 +36,13 @@ export default function Workspace() {
         >
           <ResizablePanel defaultSize={isMobile ? 60 : 55} minSize={isMobile ? 40 : 35} className="min-w-0">
             <div className="h-full p-2 md:p-4 scrollbar-hidden">
-              <Tabs defaultValue="sign" className="h-full flex flex-col">
+              <Tabs defaultValue="share" className="h-full flex flex-col">
                 <TabsList className="w-full rounded-md border bg-card/80 backdrop-blur px-1 h-auto">
                   <TabsTrigger
-                    value="sign"
+                    value="share"
                     className="flex-1 transition-colors data-[state=active]:bg-primary/10 data-[state=active]:text-primary py-2 text-xs md:text-sm"
                   >
-                    Sign
+                    Share
                   </TabsTrigger>
                   <TabsTrigger
                     value="consent"
@@ -55,26 +56,24 @@ export default function Workspace() {
                   >
                     Keys
                   </TabsTrigger>
-                  <TabsTrigger
-                    value="chat"
-                    className="flex-1 transition-colors data-[state=active]:bg-primary/10 data-[state=active]:text-primary py-2 text-xs md:text-sm"
-                  >
-                    Chat
-                  </TabsTrigger>
                 </TabsList>
 
                 <div className="flex-1 overflow-auto scrollbar-hidden">
-                  <TabsContent value="sign" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
-                    <SigningForm />
+                  <TabsContent value="share" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                    <div className="space-y-4 p-4">
+                      <div className="flex items-center gap-2"><Share2 className="h-5 w-5 text-primary" /><h3 className="font-semibold">ShareDocs workflow</h3></div>
+                      <p className="text-sm text-muted-foreground">Store a protected file, grant access through collaboration, then attach a visual explanation when useful.</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Button asChild variant="outline"><Link href="/storage"><FolderLock className="mr-2 h-4 w-4" />Secure Storage</Link></Button>
+                        <Button asChild variant="outline"><Link href="/collab/storyboards"><Presentation className="mr-2 h-4 w-4" />Secure Canvas</Link></Button>
+                      </div>
+                    </div>
                   </TabsContent>
                   <TabsContent value="consent" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
                     <ConsentDashboard />
                   </TabsContent>
                   <TabsContent value="keys" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
                     <KeyringViewer />
-                  </TabsContent>
-                  <TabsContent value="chat" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
-                    <AIAssistChat />
                   </TabsContent>
                 </div>
               </Tabs>

@@ -1,772 +1,129 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  UserCircle, Settings, Shield, Bell, Palette, Key, Fingerprint,
-  Lock, Globe, Edit, Check, X, Camera, Mail, Phone, MapPin,
-  Calendar, Link as LinkIcon, Github, Twitter, Linkedin,
-  Download, Upload, Copy, Eye, EyeOff, Trash2, Plus,
-  Activity, Award, Clock, TrendingUp, Zap, Users, FileSignature,
-  QrCode, Smartphone, Laptop, Monitor, RefreshCw, Loader2
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { formatDistanceToNow } from "date-fns";
+import { Activity, Copy, Loader2, LogIn, MonitorSmartphone, Pencil, Save, ShieldCheck, Trash2, UserCircle, X } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth/use-auth";
 
+type Profile = { id: string; publicKey: string; displayName: string; email: string | null; bio: string; avatarUrl: string; role: string; emailVerified: boolean; twoFactorEnabled: boolean; createdAt: string; lastSeenAt: string | null };
+type Stats = { ownedStoryboards: number; sharedStoryboards: number; auditEvents: number; activeSessions: number };
+type AuditActivity = { id: string; action: string; resourceType: string | null; createdAt: string };
+type AccountSession = { id: string; name: string; ipAddress: string | null; createdAt: string; expiresAt: string };
+
+async function getCsrfToken() {
+  const response = await fetch("/api/csrf-token", { cache: "no-store", credentials: "include" });
+  if (!response.ok) throw new Error("Could not initialize a secure request");
+  return (await response.json()).token as string;
+}
+
+async function readError(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null);
+  return body?.error || body?.message || fallback;
+}
+
+function relativeDate(value: string | null | undefined) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Unknown" : formatDistanceToNow(date, { addSuffix: true });
+}
+
 export default function ProfilePage() {
-  const { user, isLoading: authLoading } = useAuth();
-  const [isEditing, setIsEditing] = React.useState(false);
-  const [showDID, setShowDID] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState("overview");
-  const [isLoadingProfile, setIsLoadingProfile] = React.useState(true);
+  const { user, isLoading: authLoading, fetchUserProfile } = useAuth();
+  const [profile, setProfile] = React.useState<Profile | null>(null);
+  const [stats, setStats] = React.useState<Stats | null>(null);
+  const [activities, setActivities] = React.useState<AuditActivity[]>([]);
+  const [sessions, setSessions] = React.useState<AccountSession[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [editing, setEditing] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [displayName, setDisplayName] = React.useState("");
+  const [bio, setBio] = React.useState("");
+  const [avatarUrl, setAvatarUrl] = React.useState("");
 
-  // User data from API
-  const [userData, setUserData] = React.useState({
-    name: "",
-    username: "",
-    email: "",
-    bio: "",
-    location: "",
-    website: "",
-    did: "",
-    joinDate: "",
-    avatar: "/avatars/user.png"
-  });
+  const loadProfile = React.useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const [profileResponse, statsResponse, activityResponse, sessionsResponse] = await Promise.all([
+        fetch("/api/users/me", { cache: "no-store", credentials: "include" }),
+        fetch("/api/users/me/stats", { cache: "no-store", credentials: "include" }),
+        fetch("/api/users/me/activity?limit=8", { cache: "no-store", credentials: "include" }),
+        fetch("/api/users/me/devices", { cache: "no-store", credentials: "include" }),
+      ]);
+      if (!profileResponse.ok) throw new Error(await readError(profileResponse, "Could not load profile"));
+      const nextProfile = (await profileResponse.json()).user as Profile;
+      setProfile(nextProfile);
+      setDisplayName(nextProfile.displayName || ""); setBio(nextProfile.bio || ""); setAvatarUrl(nextProfile.avatarUrl || "");
+      if (statsResponse.ok) setStats(await statsResponse.json());
+      if (activityResponse.ok) setActivities((await activityResponse.json()).activities || []);
+      if (sessionsResponse.ok) setSessions((await sessionsResponse.json()).devices || []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load profile");
+    } finally { setLoading(false); }
+  }, [user]);
 
-  // Fetch real user data from API
   React.useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const response = await fetch('/api/users/me', {
-          credentials: 'include',
-        });
+    if (!authLoading && user) void loadProfile();
+    if (!authLoading && !user) setLoading(false);
+  }, [authLoading, user, loadProfile]);
 
-        if (response.ok) {
-          const data = await response.json();
-          setUserData({
-            name: data.display_name || data.email || "Anonymous User",
-            username: data.email?.split('@')[0] || "user",
-            email: data.email || "",
-            bio: data.bio || "OxSig user building the decentralized future",
-            location: data.location || "",
-            website: data.website || "",
-            did: data.public_key || `did:oxsig:${data.id}`,
-            joinDate: new Date(data.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) || "Recently",
-            avatar: data.avatar_url || "/avatars/user.png"
-          });
-        }
-      } catch (error) {
-        console.error('Failed to fetch user data:', error);
-      } finally {
-        setIsLoadingProfile(false);
-      }
-    };
-
-    if (!authLoading) {
-      fetchUserData();
-    }
-  }, [authLoading]);
-
-  const [settings, setSettings] = React.useState({
-    twoFactorAuth: true,
-    biometric: true,
-    emailNotifications: true,
-    securityAlerts: true,
-    darkMode: true,
-    autoBackup: true,
-    p2pDiscovery: false,
-    quantumResistant: true
-  });
-
-  // API data states
-  const [stats, setStats] = React.useState<any>(null);
-  const [recentActivity, setRecentActivity] = React.useState<any[]>([]);
-  const [connectedDevices, setConnectedDevices] = React.useState<any[]>([]);
-  const [cryptoKeys, setCryptoKeys] = React.useState<any[]>([]);
-  const [loadingStats, setLoadingStats] = React.useState(true);
-  const [loadingActivity, setLoadingActivity] = React.useState(true);
-  const [loadingDevices, setLoadingDevices] = React.useState(true);
-  const [loadingKeys, setLoadingKeys] = React.useState(true);
-
-  // Fetch stats
-  React.useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await fetch('/api/users/me/stats');
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-      } finally {
-        setLoadingStats(false);
-      }
-    };
-    fetchStats();
-  }, []);
-
-  // Fetch activity
-  React.useEffect(() => {
-    const fetchActivity = async () => {
-      try {
-        const response = await fetch('/api/users/me/activity?limit=5');
-        if (response.ok) {
-          const data = await response.json();
-          setRecentActivity(data.activities || []);
-        }
-      } catch (error) {
-        console.error('Failed to fetch activity:', error);
-      } finally {
-        setLoadingActivity(false);
-      }
-    };
-    fetchActivity();
-  }, []);
-
-  // Fetch devices
-  React.useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        const response = await fetch('/api/users/me/devices');
-        if (response.ok) {
-          const data = await response.json();
-          setConnectedDevices(data.devices || []);
-        }
-      } catch (error) {
-        console.error('Failed to fetch devices:', error);
-      } finally {
-        setLoadingDevices(false);
-      }
-    };
-    fetchDevices();
-  }, []);
-
-  // Fetch keys
-  React.useEffect(() => {
-    const fetchKeys = async () => {
-      try {
-        const response = await fetch('/api/users/me/keys');
-        if (response.ok) {
-          const data = await response.json();
-          setCryptoKeys(data.keys || []);
-        }
-      } catch (error) {
-        console.error('Failed to fetch keys:', error);
-      } finally {
-        setLoadingKeys(false);
-      }
-    };
-    fetchKeys();
-  }, []);
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    // You could add a toast notification here
+  const cancelEditing = () => {
+    setDisplayName(profile?.displayName || ""); setBio(profile?.bio || ""); setAvatarUrl(profile?.avatarUrl || ""); setEditing(false);
   };
 
-  const getDeviceIcon = (deviceType: string) => {
-    switch (deviceType?.toLowerCase()) {
-      case 'mobile':
-      case 'phone':
-        return Smartphone;
-      case 'tablet':
-        return Monitor;
-      case 'desktop':
-      case 'laptop':
-        return Laptop;
-      default:
-        return Monitor;
-    }
+  const saveProfile = async () => {
+    if (!displayName.trim()) return toast.error("Display name is required");
+    setSaving(true);
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch("/api/users/me", { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify({ displayName: displayName.trim(), bio: bio.trim(), avatarUrl: avatarUrl.trim() }) });
+      if (!response.ok) throw new Error(await readError(response, "Could not update profile"));
+      setProfile((await response.json()).user as Profile); setEditing(false); await fetchUserProfile(); toast.success("Profile updated");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not update profile"); }
+    finally { setSaving(false); }
   };
 
-  // Show loading state
-  if (authLoading || isLoadingProfile) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Loading profile...</p>
-        </div>
-      </div>
-    );
-  }
+  const revokeSession = async (sessionId: string) => {
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/users/me/devices?sessionId=${encodeURIComponent(sessionId)}`, { method: "DELETE", credentials: "include", headers: { "x-csrf-token": csrf } });
+      if (!response.ok) throw new Error(await readError(response, "Could not revoke session"));
+      setSessions((current) => current.filter((session) => session.id !== sessionId));
+      setStats((current) => current ? { ...current, activeSessions: Math.max(0, current.activeSessions - 1) } : current);
+      toast.success("Session revoked");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not revoke session"); }
+  };
 
-  // Show login required state
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <UserCircle className="h-16 w-16 mx-auto text-muted-foreground" />
-          <div>
-            <h2 className="text-2xl font-bold">Authentication Required</h2>
-            <p className="text-muted-foreground mt-2">Please log in to view your profile</p>
-          </div>
-          <Button onClick={() => window.location.href = '/auth'}>
-            Go to Login
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  if (authLoading || loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (!user) return <div className="flex min-h-[60vh] items-center justify-center px-4"><Card className="w-full max-w-md text-center"><CardHeader><UserCircle className="mx-auto h-12 w-12 text-muted-foreground" /><CardTitle>Authentication required</CardTitle><CardDescription>Sign in to view and manage your OXSIG account.</CardDescription></CardHeader><CardContent><Button onClick={() => { window.location.href = "/?redirect=/account"; }}><LogIn className="mr-2 h-4 w-4" />Go to sign in</Button></CardContent></Card></div>;
 
-  return (
-    <div className="space-y-6 pb-12">
-      {/* Header with Avatar and Quick Stats */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative"
-      >
-        <Card className="overflow-hidden">
-          <div className="h-32 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 relative">
-            <motion.div
-              className="absolute inset-0 opacity-30"
-              animate={{
-                backgroundPosition: ["0% 0%", "100% 100%"],
-              }}
-              transition={{
-                duration: 20,
-                repeat: Infinity,
-                repeatType: "reverse"
-              }}
-              style={{
-                backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
-                backgroundSize: "60px 60px"
-              }}
-            />
-          </div>
-          <CardContent className="relative pt-0">
-            <div className="flex flex-col md:flex-row md:items-end gap-6 -mt-16 md:-mt-12">
-              <div className="relative group">
-                <Avatar className="h-32 w-32 border-4 border-background shadow-xl">
-                  <AvatarImage src={userData.avatar} alt={userData.name} />
-                  <AvatarFallback className="text-3xl bg-gradient-to-br from-blue-500 to-purple-500 text-white">
-                    {userData.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  className="absolute bottom-0 right-0 h-10 w-10 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Camera className="h-5 w-5" />
-                </Button>
-              </div>
+  const initials = (profile?.displayName || profile?.email || "OX").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const statCards = [["Secure boards", stats?.ownedStoryboards ?? 0], ["Shared with me", stats?.sharedStoryboards ?? 0], ["Audit events", stats?.auditEvents ?? 0], ["Active sessions", stats?.activeSessions ?? sessions.length]] as const;
 
-              <div className="flex-1 space-y-2">
-                <div className="flex items-center gap-3">
-                  {isEditing ? (
-                    <Input
-                      value={userData.name}
-                      onChange={(e) => setUserData({ ...userData, name: e.target.value })}
-                      className="text-2xl font-bold max-w-xs"
-                    />
-                  ) : (
-                    <h1 className="text-2xl md:text-3xl font-bold">{userData.name}</h1>
-                  )}
-                  <Button
-                    variant={isEditing ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setIsEditing(!isEditing)}
-                  >
-                    {isEditing ? <Check className="h-4 w-4" /> : <Edit className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <p className="text-muted-foreground">@{userData.username}</p>
-                <p className="text-sm">{userData.bio}</p>
-                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <MapPin className="h-4 w-4" />
-                    {userData.location}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />
-                    Joined {userData.joinDate}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <LinkIcon className="h-4 w-4" />
-                    <a href={userData.website} className="hover:underline text-blue-500">{userData.website}</a>
-                  </div>
-                </div>
-              </div>
+  return <div className="space-y-6 pb-12">
+    <Card className="overflow-hidden"><div className="h-24 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700" /><CardContent className="relative px-5 pb-6 pt-14 sm:px-8">
+      <Avatar className="absolute -top-12 h-24 w-24 border-4 border-background"><AvatarImage src={profile?.avatarUrl || undefined} alt={profile?.displayName || "Profile"} /><AvatarFallback className="text-xl">{initials}</AvatarFallback></Avatar>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{profile?.displayName || "OXSIG user"}</h1><Badge variant="outline">{profile?.role || "user"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{profile?.email || "DID account"}</p>{profile?.bio && <p className="mt-3 max-w-2xl text-sm">{profile.bio}</p>}</div>
+        <Button variant={editing ? "outline" : "default"} onClick={() => editing ? cancelEditing() : setEditing(true)}>{editing ? <><X className="mr-2 h-4 w-4" />Cancel</> : <><Pencil className="mr-2 h-4 w-4" />Edit profile</>}</Button></div>
+    </CardContent></Card>
 
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm">
-                  <QrCode className="h-4 w-4 mr-2" />
-                  Share Profile
-                </Button>
-                <Button size="sm">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
-                </Button>
-              </div>
-            </div>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{statCards.map(([label, value]) => <Card key={label}><CardContent className="pt-5"><div className="text-2xl font-bold">{value}</div><p className="text-xs text-muted-foreground">{label}</p></CardContent></Card>)}</div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-              {loadingStats ? (
-                <div className="col-span-2 md:col-span-4 flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : stats ? (
-                [
-                  { label: "Documents Signed", value: stats.documentsSigned || 0, icon: FileSignature, color: "text-blue-500" },
-                  { label: "Collaborations", value: stats.collaborations || 0, icon: Users, color: "text-teal-500" },
-                  { label: "Security Score", value: `${stats.securityScore || 0}%`, icon: Shield, color: "text-emerald-500" },
-                  { label: "Uptime", value: `${stats.uptime || 0}%`, icon: TrendingUp, color: "text-purple-500" }
-                ].map((stat, i) => (
-                  <motion.div
-                    key={stat.label}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="text-center p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                  >
-                    <stat.icon className={`h-6 w-6 mx-auto mb-2 ${stat.color}`} />
-                    <div className="text-2xl font-bold">{stat.value}</div>
-                    <div className="text-xs text-muted-foreground">{stat.label}</div>
-                  </motion.div>
-                ))
-              ) : (
-                <div className="col-span-2 md:col-span-4 text-center text-sm text-muted-foreground py-8">
-                  No stats available
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+    {editing && <Card><CardHeader><CardTitle>Edit profile</CardTitle><CardDescription>Your email and account identity cannot be changed from this form.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><div className="space-y-2"><Label htmlFor="display-name">Display name</Label><Input id="display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={100} /></div><div className="space-y-2"><Label htmlFor="avatar-url">Avatar URL</Label><Input id="avatar-url" type="url" placeholder="https://…" value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} maxLength={2000} /></div></div><div className="space-y-2"><Label htmlFor="profile-bio">Bio</Label><textarea id="profile-bio" className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm" value={bio} onChange={(event) => setBio(event.target.value)} maxLength={500} /><p className="text-right text-xs text-muted-foreground">{bio.length}/500</p></div><Button onClick={saveProfile} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save changes</Button></CardContent></Card>}
 
-      {/* Main Content Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 lg:w-auto">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="identity">Identity</TabsTrigger>
-          <TabsTrigger value="devices">Devices</TabsTrigger>
-          <TabsTrigger value="preferences">Preferences</TabsTrigger>
-        </TabsList>
-
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Recent Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {loadingActivity ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : recentActivity.length === 0 ? (
-                    <div className="text-center text-sm text-muted-foreground py-8">
-                      No recent activity
-                    </div>
-                  ) : (
-                    recentActivity.map((activity, i) => {
-                      // Map icon from activity type
-                      let IconComponent = Activity;
-                      if (activity.type === 'SIGNATURE_CREATE') IconComponent = FileSignature;
-                      else if (activity.type === 'COLLABORATION_JOIN') IconComponent = Users;
-                      else if (activity.type === 'DOCUMENT_UPLOAD') IconComponent = Upload;
-                      
-                      return (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.1 }}
-                          className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="p-2 rounded-lg bg-primary/10">
-                            <IconComponent className="h-4 w-4 text-primary" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm">{activity.action}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {activity.file || activity.detail}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">{activity.time}</p>
-                          </div>
-                        </motion.div>
-                      );
-                    })
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Achievements */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Award className="h-5 w-5" />
-                  Achievements
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-4 text-center rounded-lg bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
-                    <Shield className="h-8 w-8 mx-auto mb-2 text-blue-500" />
-                    <p className="font-semibold text-sm">Security Pro</p>
-                    <p className="text-xs text-muted-foreground">100+ secure ops</p>
-                  </div>
-                  <div className="p-4 text-center rounded-lg bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20">
-                    <FileSignature className="h-8 w-8 mx-auto mb-2 text-purple-500" />
-                    <p className="font-semibold text-sm">Signature Master</p>
-                    <p className="text-xs text-muted-foreground">200+ documents</p>
-                  </div>
-                  <div className="p-4 text-center rounded-lg bg-gradient-to-br from-teal-500/10 to-green-500/10 border border-teal-500/20">
-                    <Users className="h-8 w-8 mx-auto mb-2 text-teal-500" />
-                    <p className="font-semibold text-sm">Team Player</p>
-                    <p className="text-xs text-muted-foreground">30+ collabs</p>
-                  </div>
-                  <div className="p-4 text-center rounded-lg bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20">
-                    <Zap className="h-8 w-8 mx-auto mb-2 text-orange-500" />
-                    <p className="font-semibold text-sm">Early Adopter</p>
-                    <p className="text-xs text-muted-foreground">Beta tester</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Security Tab */}
-        <TabsContent value="security" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Security Settings</CardTitle>
-              <CardDescription>Manage your security preferences and authentication methods</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Two-Factor Authentication</Label>
-                  <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
-                </div>
-                <Switch
-                  checked={settings.twoFactorAuth}
-                  onCheckedChange={(checked) => setSettings({ ...settings, twoFactorAuth: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Biometric Authentication</Label>
-                  <p className="text-sm text-muted-foreground">Use fingerprint or face recognition</p>
-                </div>
-                <Switch
-                  checked={settings.biometric}
-                  onCheckedChange={(checked) => setSettings({ ...settings, biometric: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Security Alerts</Label>
-                  <p className="text-sm text-muted-foreground">Notify me of suspicious activity</p>
-                </div>
-                <Switch
-                  checked={settings.securityAlerts}
-                  onCheckedChange={(checked) => setSettings({ ...settings, securityAlerts: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Quantum-Resistant Encryption</Label>
-                  <p className="text-sm text-muted-foreground">Use post-quantum cryptography</p>
-                </div>
-                <Switch
-                  checked={settings.quantumResistant}
-                  onCheckedChange={(checked) => setSettings({ ...settings, quantumResistant: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="space-y-3">
-                <Label className="text-base">Cryptographic Keys</Label>
-                <div className="space-y-2">
-                  {loadingKeys ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : cryptoKeys.length === 0 ? (
-                    <div className="text-center text-sm text-muted-foreground py-8">
-                      No cryptographic keys yet
-                    </div>
-                  ) : (
-                    cryptoKeys.map((key) => (
-                      <div key={key.id} className="flex items-center justify-between p-3 rounded-lg border">
-                        <div className="flex items-center gap-3">
-                          <Key className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium text-sm">{key.name}</p>
-                            <p className="text-xs text-muted-foreground">{key.type} • {key.uses} uses • {key.created}</p>
-                          </div>
-                        </div>
-                        <Badge variant={key.status === "active" ? "default" : key.status === "backup" ? "secondary" : "outline"}>
-                          {key.status}
-                        </Badge>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <Button variant="outline" className="w-full">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Generate New Key Pair
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Identity Tab */}
-        <TabsContent value="identity" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Decentralized Identity (DID)</CardTitle>
-              <CardDescription>Your self-sovereign identity on the OxSig network</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <Label>Your DID</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={userData.did}
-                    readOnly
-                    type={showDID ? "text" : "password"}
-                    className="font-mono text-sm"
-                  />
-                  <Button variant="outline" size="icon" onClick={() => setShowDID(!showDID)}>
-                    {showDID ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(userData.did)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  This is your unique, self-sovereign identifier. Share it with others to receive encrypted messages.
-                </p>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-3">
-                <Label>Verification Methods</Label>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-3 rounded-lg border">
-                    <div className="flex items-center gap-3">
-                      <Mail className="h-5 w-5 text-blue-500" />
-                      <div>
-                        <p className="font-medium text-sm">Email</p>
-                        <p className="text-xs text-muted-foreground">{userData.email}</p>
-                      </div>
-                    </div>
-                    <Badge variant="default" className="bg-green-500">Verified</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg border">
-                    <div className="flex items-center gap-3">
-                      <Fingerprint className="h-5 w-5 text-purple-500" />
-                      <div>
-                        <p className="font-medium text-sm">Biometric</p>
-                        <p className="text-xs text-muted-foreground">Face ID / Touch ID</p>
-                      </div>
-                    </div>
-                    <Badge variant="default" className="bg-green-500">Active</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg border border-dashed">
-                    <div className="flex items-center gap-3">
-                      <Globe className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium text-sm">Social Verification</p>
-                        <p className="text-xs text-muted-foreground">Connect social accounts</p>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm">Add</Button>
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export DID Document
-                </Button>
-                <Button variant="outline" className="flex-1">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Rotate Keys
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Devices Tab */}
-        <TabsContent value="devices" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Connected Devices</CardTitle>
-              <CardDescription>Manage devices that have access to your account</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {loadingDevices ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : connectedDevices.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No connected devices yet
-                  </div>
-                ) : (
-                  connectedDevices.map((device, i) => {
-                    const DeviceIcon = getDeviceIcon(device.device_type);
-                    return (
-                      <motion.div
-                        key={device.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        className="flex items-center justify-between p-4 rounded-lg border"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="p-3 rounded-lg bg-primary/10">
-                            <DeviceIcon className="h-6 w-6 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{device.device_name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Last active: {new Date(device.last_used).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {device.is_trusted && (
-                            <Badge variant="secondary" className="gap-1">
-                              <Shield className="h-3 w-3" />
-                              Trusted
-                            </Badge>
-                          )}
-                          <Button variant="ghost" size="icon">
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </motion.div>
-                    );
-                  })
-                )}
-              </div>
-              <Button variant="outline" className="w-full mt-4">
-                <Plus className="h-4 w-4 mr-2" />
-                Add New Device
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Preferences Tab */}
-        <TabsContent value="preferences" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Preferences</CardTitle>
-              <CardDescription>Customize your experience</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Email Notifications</Label>
-                  <p className="text-sm text-muted-foreground">Receive updates via email</p>
-                </div>
-                <Switch
-                  checked={settings.emailNotifications}
-                  onCheckedChange={(checked) => setSettings({ ...settings, emailNotifications: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Dark Mode</Label>
-                  <p className="text-sm text-muted-foreground">Use dark theme</p>
-                </div>
-                <Switch
-                  checked={settings.darkMode}
-                  onCheckedChange={(checked) => setSettings({ ...settings, darkMode: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">Auto Backup</Label>
-                  <p className="text-sm text-muted-foreground">Automatically backup encrypted data</p>
-                </div>
-                <Switch
-                  checked={settings.autoBackup}
-                  onCheckedChange={(checked) => setSettings({ ...settings, autoBackup: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-base">P2P Discovery</Label>
-                  <p className="text-sm text-muted-foreground">Allow others to discover you on the network</p>
-                </div>
-                <Switch
-                  checked={settings.p2pDiscovery}
-                  onCheckedChange={(checked) => setSettings({ ...settings, p2pDiscovery: checked })}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="space-y-3">
-                <Label>Data & Privacy</Label>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export Data
-                  </Button>
-                  <Button variant="outline" className="flex-1 text-red-500 hover:text-red-600">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Account
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
+    <Tabs defaultValue="overview"><TabsList className="grid w-full max-w-lg grid-cols-3"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="security">Security</TabsTrigger><TabsTrigger value="sessions">Sessions</TabsTrigger></TabsList>
+      <TabsContent value="overview" className="mt-4 grid gap-4 lg:grid-cols-2"><Card><CardHeader><CardTitle className="flex items-center gap-2"><UserCircle className="h-5 w-5" />Account</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><div><p className="text-muted-foreground">Member since</p><p>{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : "Unknown"}</p></div><div><p className="text-muted-foreground">Last seen</p><p>{relativeDate(profile?.lastSeenAt)}</p></div>{profile?.publicKey && <div><p className="text-muted-foreground">Public identity key</p><div className="mt-1 flex items-center gap-2"><code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1">{profile.publicKey}</code><Button size="icon" variant="outline" onClick={() => { void navigator.clipboard.writeText(profile.publicKey); toast.success("Public key copied"); }}><Copy className="h-4 w-4" /></Button></div></div>}</CardContent></Card>
+        <Card><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5" />Recent security activity</CardTitle><CardDescription>Real audit events recorded by the backend.</CardDescription></CardHeader><CardContent className="space-y-3">{activities.length === 0 ? <p className="text-sm text-muted-foreground">No audit events recorded yet.</p> : activities.map((item) => <div key={item.id} className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0"><div><p className="text-sm font-medium">{item.action.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground">{item.resourceType || "account"}</p></div><span className="shrink-0 text-xs text-muted-foreground">{relativeDate(item.createdAt)}</span></div>)}</CardContent></Card></TabsContent>
+      <TabsContent value="security" className="mt-4"><Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Account protections</CardTitle><CardDescription>Only protections backed by current account data are shown as enabled.</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2"><div className="flex items-center justify-between rounded-lg border p-4"><div><p className="font-medium">Email verification</p><p className="text-xs text-muted-foreground">Confirms control of the account email.</p></div><Badge variant={profile?.emailVerified ? "default" : "secondary"}>{profile?.emailVerified ? "Verified" : "Not verified"}</Badge></div><div className="flex items-center justify-between rounded-lg border p-4"><div><p className="font-medium">Two-factor authentication</p><p className="text-xs text-muted-foreground">Additional sign-in verification.</p></div><Badge variant={profile?.twoFactorEnabled ? "default" : "secondary"}>{profile?.twoFactorEnabled ? "Enabled" : "Not enabled"}</Badge></div></CardContent></Card></TabsContent>
+      <TabsContent value="sessions" className="mt-4"><Card><CardHeader><CardTitle className="flex items-center gap-2"><MonitorSmartphone className="h-5 w-5" />Active account sessions</CardTitle><CardDescription>Revoking the current session may sign this browser out when its access token expires.</CardDescription></CardHeader><CardContent className="space-y-3">{sessions.length === 0 ? <p className="text-sm text-muted-foreground">No active sessions found.</p> : sessions.map((session) => <div key={session.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="text-xs text-muted-foreground">{session.ipAddress || "IP unavailable"} · started {relativeDate(session.createdAt)} · expires {relativeDate(session.expiresAt)}</p></div><Button variant="outline" size="sm" onClick={() => void revokeSession(session.id)}><Trash2 className="mr-2 h-4 w-4" />Revoke</Button></div>)}</CardContent></Card></TabsContent>
+    </Tabs>
+  </div>;
 }

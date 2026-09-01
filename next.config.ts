@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 // Use static export only for Tauri builds or when explicitly requested.
 // Avoids Next "export-no-custom-routes" warning during normal web dev.
@@ -11,8 +10,10 @@ const isStaticExport =
 const nextConfig: NextConfig = {
   ...(isStaticExport ? { output: "export" as const } : {}),
 
-  // Set workspace root to silence lockfile warning
-  outputFileTracingRoot: path.join(__dirname, ".."),
+  // This repository is the Next.js project root. Do not point output file
+  // tracing above the project directory: platforms such as Vercel already
+  // resolve traces relative to the project root, and an external tracing root
+  // can produce duplicated paths such as /vercel/path0/path0/.next.
 
   // Disable image optimization for static export only
   ...(isStaticExport
@@ -54,7 +55,7 @@ const nextConfig: NextConfig = {
                 },
                 {
                   key: "Permissions-Policy",
-                  value: "camera=(), microphone=(), geolocation=()",
+                  value: "camera=(), microphone=(self), geolocation=()",
                 },
               ],
             },

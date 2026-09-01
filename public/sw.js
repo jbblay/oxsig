@@ -54,21 +54,13 @@ self.addEventListener("fetch", (event) => {
   // Skip chrome extension requests
   if (url.protocol === "chrome-extension:") return;
 
-  // API requests - Network First, fallback to cache
+  // API requests are never cached by the generic service worker.
+  // Many OXSIG APIs return authenticated/private data, and storing those
+  // responses in Cache Storage would create an unnecessary local disclosure
+  // surface. Endpoints that are intentionally offline-capable should implement
+  // an explicit, data-specific persistence strategy instead.
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const responseClone = response.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => {
-            cache.put(request, responseClone);
-          });
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request);
-        })
-    );
+    event.respondWith(fetch(request));
     return;
   }
 
@@ -91,43 +83,37 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Navigation requests - Network First with fast fallback
-  if (request.mode === "navigate") {
-    event.respondWith(
-      Promise.race([
-        fetch(request)
-          .then((response) => {
-            const responseClone = response.clone();
-            caches.open(RUNTIME_CACHE).then((cache) => {
-              cache.put(request, responseClone);
-            });
-            return response;
-          }),
-        new Promise((resolve) => setTimeout(() => resolve(caches.match(request)), 3000))
-      ])
-      .catch(() => {
-        return caches.match(request)
-          .then((cached) => cached || caches.match('/offline'));
-      })
-    );
-    return;
-  }
-
-  // Static assets - Cache First, update in background
   event.respondWith(
-    caches.match(request)
-      .then((cached) => {
-        const fetchPromise = fetch(request)
-          .then((response) => {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
-            return response;
+    request.mode === "navigate"
+      ? Promise.race([
+          fetch(request)
+            .then((response) => {
+              const responseClone = response.clone();
+              caches.open(RUNTIME_CACHE).then((cache) => {
+                cache.put(request, responseClone);
+              });
+              return response;
+            }),
+          new Promise((resolve) => setTimeout(() => resolve(caches.match(request)), 3000))
+        ])
+        .catch(() => {
+          return caches.match(request)
+            .then((cached) => cached || caches.match('/offline'));
+        })
+      : caches.match(request)
+          .then((cached) => {
+            const fetchPromise = fetch(request)
+              .then((response) => {
+                const responseClone = response.clone();
+                caches.open(CACHE_NAME).then((cache) => {
+                  cache.put(request, responseClone);
+                });
+                return response;
+              })
+              .catch(() => cached);
+
+            return cached || fetchPromise;
           })
-          .catch(() => cached);
-        
-        return cached || fetchPromise;
-      })
   );
 });
 
@@ -142,7 +128,7 @@ self.addEventListener('sync', (event) => {
 // Helper function for background sync
 async function syncOfflineOperations() {
   console.log('[SW] Syncing offline operations...');
-  
+
   try {
     // Notify all clients to start sync
     const clients = await self.clients.matchAll();
@@ -152,7 +138,7 @@ async function syncOfflineOperations() {
         timestamp: Date.now(),
       });
     });
-    
+
     return Promise.resolve();
   } catch (error) {
     console.error('[SW] Sync failed:', error);

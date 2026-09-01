@@ -11,13 +11,12 @@ export async function POST(request: NextRequest) {
       ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
     };
 
-    const [documents, signatures, users] = await Promise.all([
+    const [documents, users] = await Promise.all([
       fetch(`${meiliUrl}/indexes/documents/search`, { method: 'POST', headers, body: JSON.stringify(body) }).then(r => r.json()),
-      fetch(`${meiliUrl}/indexes/signatures/search`, { method: 'POST', headers, body: JSON.stringify(body) }).then(r => r.json()),
       fetch(`${meiliUrl}/indexes/users/search`, { method: 'POST', headers, body: JSON.stringify(body) }).then(r => r.json()),
     ]);
 
-    return NextResponse.json({ documents, signatures, users });
+    return NextResponse.json({ documents, users });
   } catch (error) {
     console.error('All search error:', error);
     return NextResponse.json({ error: 'Failed to search all indexes' }, { status: 500 });

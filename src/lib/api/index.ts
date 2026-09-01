@@ -23,17 +23,6 @@ export type {
   DocumentShare,
 } from './documents';
 
-// Export signature API
-export { signatureApi, signatures } from './signatures';
-export type {
-  Signature,
-  CreateSignatureInput,
-  VerifySignatureInput,
-  SignatureVerificationResult,
-  SignatureCertificate,
-  SignatureRequest,
-} from './signatures';
-
 // Export storage API
 export { storageApi, storage } from './storage';
 export type {
@@ -54,14 +43,12 @@ export type {
 
 // Import for convenience API object
 import { documents } from './documents';
-import { signatures } from './signatures';
 import { storage } from './storage';
 import { search } from './search';
 
 // Convenience combined API object
 export const api = {
   documents,
-  signatures,
   storage,
   search,
 };
