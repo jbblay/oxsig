@@ -182,4 +182,5 @@ INSERT INTO users (public_key, display_name, email)
 VALUES ('test_public_key_123', 'Test User', 'test@oxsig.local')
 ON CONFLICT (public_key) DO NOTHING;
 
-COMMENT ON DATABASE oxsig IS 'OxSig - Quantum-Safe Secure Communications Platform';
+-- Do not COMMENT ON a hard-coded database name here. Hosted PostgreSQL providers
+-- commonly assign their own database name (for example, "neondb").
