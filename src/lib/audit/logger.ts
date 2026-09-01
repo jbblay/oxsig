@@ -44,7 +44,7 @@ export async function logAudit(entry: AuditLogEntry): Promise<void> {
  * Extract IP and user agent from request
  */
 export function getRequestMetadata(request: Request | { headers: { get(name: string): string | null } }): {
-  ipAddress: string;
+  ipAddress?: string;
   userAgent: string;
 } {
   const headers = request.headers;
@@ -52,7 +52,7 @@ export function getRequestMetadata(request: Request | { headers: { get(name: str
   const ipAddress = 
     headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     headers.get('x-real-ip') ||
-    'unknown';
+    undefined;
   
   const userAgent = headers.get('user-agent') || 'unknown';
   

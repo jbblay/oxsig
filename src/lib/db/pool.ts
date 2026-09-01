@@ -9,8 +9,20 @@ import { Pool, PoolConfig } from 'pg';
 
 let pool: Pool | null = null;
 
+/**
+ * Resolve the hosted database URL used by the current deployment.
+ *
+ * DATABASE_URL remains the canonical application setting. Vercel's managed
+ * Neon integration exposes the same pooled connection as
+ * DATABASE_POSTGRES_URL, so accept it as a provider-specific fallback instead
+ * of requiring a duplicate manually managed secret.
+ */
+export function getHostedDatabaseUrl(): string | undefined {
+  return process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
+}
+
 export function isDatabaseConfigured(): boolean {
-  if (process.env.DATABASE_URL) return true;
+  if (getHostedDatabaseUrl()) return true;
   if (process.env.POSTGRES_HOST) return true;
   return process.env.NODE_ENV !== 'production';
 }
@@ -38,10 +50,11 @@ function getSslConfig(): PoolConfig['ssl'] | undefined {
  */
 export function getDatabaseConfig(overrides: PoolConfig = {}): PoolConfig {
   const ssl = getSslConfig();
+  const hostedDatabaseUrl = getHostedDatabaseUrl();
 
-  if (process.env.DATABASE_URL) {
+  if (hostedDatabaseUrl) {
     return {
-      connectionString: process.env.DATABASE_URL,
+      connectionString: hostedDatabaseUrl,
       ...(ssl !== undefined ? { ssl } : {}),
       max: 10,
       idleTimeoutMillis: 30000,
@@ -52,7 +65,7 @@ export function getDatabaseConfig(overrides: PoolConfig = {}): PoolConfig {
 
   if (process.env.NODE_ENV === 'production' && !process.env.POSTGRES_HOST) {
     throw new Error(
-      'Database is not configured. Set DATABASE_URL or POSTGRES_HOST in the production environment.'
+      'Database is not configured. Set DATABASE_URL, DATABASE_POSTGRES_URL, or POSTGRES_HOST in the production environment.'
     );
   }
 

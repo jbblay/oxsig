@@ -1,16 +1,23 @@
 import pg from 'pg';
 
 const { Client } = pg;
-const applicationConnectionString = process.env.DATABASE_URL;
+const applicationConnectionString =
+  process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
 
 if (!applicationConnectionString) {
-  console.error('DATABASE_URL is required for the auth database bootstrap.');
+  console.error(
+    'DATABASE_URL or DATABASE_POSTGRES_URL is required for the auth database bootstrap.'
+  );
   process.exit(1);
 }
 
 function getMigrationConnectionString() {
-  if (process.env.DATABASE_URL_UNPOOLED) {
-    return process.env.DATABASE_URL_UNPOOLED;
+  const directConnectionString =
+    process.env.DATABASE_URL_UNPOOLED ||
+    process.env.DATABASE_POSTGRES_URL_NON_POOLING;
+
+  if (directConnectionString) {
+    return directConnectionString;
   }
 
   // Neon pooled URLs use a hostname containing "-pooler". Schema changes are
@@ -87,6 +94,25 @@ async function main() {
       )
     `);
 
+    await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        action VARCHAR(100) NOT NULL,
+        resource_type VARCHAR(50),
+        resource_id UUID,
+        ip_address INET,
+        user_agent TEXT,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)');
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS oxisg_auth_bootstrap (
         version INTEGER PRIMARY KEY,
@@ -105,6 +131,7 @@ async function main() {
     SELECT
       to_regclass('public.users') IS NOT NULL AS users_table,
       to_regclass('public.sessions') IS NOT NULL AS sessions_table,
+      to_regclass('public.audit_logs') IS NOT NULL AS audit_logs_table,
       EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password_hash'
@@ -116,7 +143,13 @@ async function main() {
   `);
 
   const readiness = verification.rows[0];
-  if (!readiness.users_table || !readiness.sessions_table || !readiness.password_hash_column || !readiness.role_column) {
+  if (
+    !readiness.users_table ||
+    !readiness.sessions_table ||
+    !readiness.audit_logs_table ||
+    !readiness.password_hash_column ||
+    !readiness.role_column
+  ) {
     throw new Error('Authentication schema verification failed after bootstrap.');
   }
 

@@ -110,6 +110,8 @@ export interface ShamirShare {
   total: number;
   /** Creation timestamp */
   created: number;
+  /** Cryptographically random identifier shared by one split operation */
+  setId?: string;
 }
 
 /**
@@ -142,6 +144,7 @@ export function splitSecret(
   const secretBytes = secret instanceof Buffer ? secret : Buffer.from(secret);
   const shares: ShamirShare[] = [];
   const created = Date.now();
+  const setId = randomBytes(16).toString('hex');
 
   // For each byte in the secret
   const shareData: Uint8Array[] = Array.from({ length: totalShares }, () => 
@@ -176,6 +179,7 @@ export function splitSecret(
       threshold,
       total: totalShares,
       created,
+      setId,
     });
   }
 
@@ -197,6 +201,7 @@ export function combineShares(shares: ShamirShare[]): Buffer {
   const threshold = shares[0].threshold;
   const total = shares[0].total;
   const created = shares[0].created;
+  const setId = shares[0].setId;
 
   if (shares.length < threshold) {
     throw new Error(`Need at least ${threshold} shares to reconstruct, got ${shares.length}`);
@@ -220,10 +225,12 @@ export function combineShares(shares: ShamirShare[]): Buffer {
     }
   }
 
-  // Verify shares are from the same split (same creation timestamp)
+  // Timestamps are metadata, not unique identifiers: two splits can happen in
+  // the same millisecond. New shares therefore carry a random set ID. Keep the
+  // timestamp fallback only for importing legacy v1 QR shares.
   for (const share of shares) {
-    if (share.created !== created) {
-      throw new Error('Shares must be from the same split (different creation timestamps)');
+    if (setId ? share.setId !== setId : share.created !== created) {
+      throw new Error('Shares must be from the same split');
     }
   }
 
@@ -255,11 +262,15 @@ export function verifyShares(shares: ShamirShare[]): boolean {
     if (shares.length === 0) return false;
     
     const threshold = shares[0].threshold;
+    const setId = shares[0].setId;
     if (shares.length < threshold) return false;
 
     // Verify parameters match
     for (const share of shares) {
       if (share.threshold !== threshold || share.total !== shares[0].total) {
+        return false;
+      }
+      if (setId ? share.setId !== setId : share.created !== shares[0].created) {
         return false;
       }
     }
@@ -303,12 +314,13 @@ export function refreshShares(
  */
 export function shareToQRFormat(share: ShamirShare): string {
   return JSON.stringify({
-    v: 1, // Version
+    v: 2, // Version
     i: share.id,
     d: share.data,
     m: share.threshold,
     n: share.total,
     t: share.created,
+    s: share.setId,
   });
 }
 
@@ -317,7 +329,7 @@ export function shareToQRFormat(share: ShamirShare): string {
  */
 export function shareFromQRFormat(qrData: string): ShamirShare {
   const parsed = JSON.parse(qrData);
-  if (parsed.v !== 1) {
+  if (parsed.v !== 1 && parsed.v !== 2) {
     throw new Error('Unsupported share version');
   }
   return {
@@ -326,5 +338,6 @@ export function shareFromQRFormat(qrData: string): ShamirShare {
     threshold: parsed.m,
     total: parsed.n,
     created: parsed.t,
+    setId: parsed.v === 2 ? parsed.s : undefined,
   };
 }

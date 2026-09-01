@@ -42,6 +42,9 @@ declare global {
       NEXT_PUBLIC_TURN_CREDENTIAL?: string;
       NODE_ENV?: 'development' | 'production' | 'test';
       DATABASE_URL?: string;
+      DATABASE_URL_UNPOOLED?: string;
+      DATABASE_POSTGRES_URL?: string;
+      DATABASE_POSTGRES_URL_NON_POOLING?: string;
       POSTGRES_HOST?: string;
       POSTGRES_PORT?: string;
       POSTGRES_DB?: string;

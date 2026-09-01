@@ -1,14 +1,16 @@
 import { spawnSync } from 'node:child_process';
 
 // CI and ordinary local builds do not need access to a real database.
-// When Vercel/another deployment environment provides DATABASE_URL, make sure
-// the small authentication schema exists before Next.js builds the app.
-if (!process.env.DATABASE_URL) {
-  console.log('Auth database bootstrap skipped: DATABASE_URL is not configured for this build.');
+// When Vercel/another deployment environment provides a PostgreSQL URL, make
+// sure the small authentication schema exists before Next.js builds the app.
+// Vercel's managed Neon integration calls its pooled URL
+// DATABASE_POSTGRES_URL, so it must not require a duplicate manual secret.
+if (!process.env.DATABASE_URL && !process.env.DATABASE_POSTGRES_URL) {
+  console.log('Auth database bootstrap skipped: no supported database URL is configured.');
   process.exit(0);
 }
 
-console.log('DATABASE_URL detected; verifying OXSIG authentication schema...');
+console.log('Database URL detected; verifying OXSIG authentication schema...');
 
 const result = spawnSync(process.execPath, ['scripts/migrate-auth.mjs'], {
   stdio: 'inherit',

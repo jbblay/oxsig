@@ -5,10 +5,14 @@ import pg from 'pg';
 
 const { Client } = pg;
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString =
+  process.env.DATABASE_URL ||
+  process.env.DATABASE_URL_UNPOOLED ||
+  process.env.DATABASE_POSTGRES_URL_NON_POOLING ||
+  process.env.DATABASE_POSTGRES_URL;
 
 if (!connectionString) {
-  console.error('DATABASE_URL is required.');
+  console.error('A supported PostgreSQL connection URL is required.');
   process.exit(1);
 }
 
