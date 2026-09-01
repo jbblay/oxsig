@@ -15,6 +15,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "auth:generate-keys": "node scripts/generate-jwt-keys.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
