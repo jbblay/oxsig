@@ -2,7 +2,10 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
+      - feature/collaboration-storyboards-lab-foundation
   pull_request:
 
 permissions:
@@ -39,7 +42,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Commit refreshed lockfile
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/collaboration-storyboards-lab-foundation'
+        if: github.ref == 'refs/heads/feature/collaboration-storyboards-lab-foundation'
         run: |
           if git diff --quiet -- pnpm-lock.yaml; then
             echo "Lockfile already current"
@@ -49,7 +52,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pnpm-lock.yaml
           git commit -m "chore: refresh pnpm lockfile for Next.js security update"
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:feature/collaboration-storyboards-lab-foundation
 
       - name: Run TypeScript check
         run: pnpm tsc --noEmit
