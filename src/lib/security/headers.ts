@@ -1,6 +1,6 @@
 /**
  * Security Headers
- * 
+ *
  * Production-grade security headers for Next.js middleware.
  * Protects against XSS, clickjacking, MIME sniffing, and other attacks.
  */
@@ -15,7 +15,7 @@ const isDev = process.env.NODE_ENV === 'development';
 
 export const CSP_HEADER = [
   "default-src 'self'",
-  isDev 
+  isDev
     ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" // unsafe-eval needed for Next.js dev HMR
     : "script-src 'self'",
   isDev
@@ -44,23 +44,19 @@ export const HSTS_HEADER = 'max-age=31536000; includeSubDomains; preload';
 export const SECURITY_HEADERS = {
   // Prevent MIME type sniffing
   'X-Content-Type-Options': 'nosniff',
-  
+
   // Prevent clickjacking
   'X-Frame-Options': 'DENY',
-  
+
   // XSS protection (legacy browsers)
   'X-XSS-Protection': '1; mode=block',
-  
+
   // Referrer policy (privacy)
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  
+
   // Content Security Policy
   'Content-Security-Policy': CSP_HEADER,
-  
-  // Strict Transport Security (HTTPS only)
-  // Only enable in production with HTTPS
-  // 'Strict-Transport-Security': HSTS_HEADER,
-  
+
   // Permissions policy (feature control)
   'Permissions-Policy': [
     'camera=()',
@@ -68,7 +64,7 @@ export const SECURITY_HEADERS = {
     'geolocation=()',
     'interest-cohort=()', // Disable FLoC tracking
   ].join(', '),
-  
+
   // Cross-Origin policies
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -76,44 +72,31 @@ export const SECURITY_HEADERS = {
 } as const;
 
 /**
- * Apply security headers to response
+ * Apply security headers to an existing response without changing its status,
+ * body, cookies, redirect target, or other response semantics.
  */
 export function applySecurityHeaders(response: NextResponse): NextResponse {
-  const headers = new Headers(response.headers);
-  
-  // Apply all security headers
   Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
-    headers.set(key, value);
+    response.headers.set(key, value);
   });
-  
+
   // Only add HSTS in production with HTTPS
   if (process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true') {
-    headers.set('Strict-Transport-Security', HSTS_HEADER);
+    response.headers.set('Strict-Transport-Security', HSTS_HEADER);
   }
-  
-  return NextResponse.next({ request: { headers } });
+
+  return response;
 }
 
 /**
- * Create response with security headers
+ * Create JSON response with security headers
  */
 export function createSecureResponse(
   body?: BodyInit | null,
   init?: ResponseInit
 ): NextResponse {
-  const headers = new Headers(init?.headers);
-  
-  // Apply security headers
-  Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
-    headers.set(key, value);
-  });
-  
-  // Only add HSTS in production with HTTPS
-  if (process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true') {
-    headers.set('Strict-Transport-Security', HSTS_HEADER);
-  }
-  
-  return NextResponse.json(body, { ...init, headers });
+  const response = NextResponse.json(body, init);
+  return applySecurityHeaders(response);
 }
 
 /**
@@ -128,27 +111,20 @@ export const CORS_HEADERS = {
 } as const;
 
 /**
- * Apply CORS headers to response
+ * Apply CORS headers to an existing response without replacing it.
  */
 export function applyCorsHeaders(response: NextResponse): NextResponse {
-  const headers = new Headers(response.headers);
-  
   Object.entries(CORS_HEADERS).forEach(([key, value]) => {
-    headers.set(key, value);
+    response.headers.set(key, value);
   });
-  
-  return NextResponse.next({ request: { headers } });
+
+  return response;
 }
 
 /**
  * Handle OPTIONS preflight request
  */
 export function handleCorsPreFlight(): NextResponse {
-  const headers = new Headers();
-  
-  Object.entries(CORS_HEADERS).forEach(([key, value]) => {
-    headers.set(key, value);
-  });
-  
-  return NextResponse.json(null, { status: 204, headers });
+  const response = new NextResponse(null, { status: 204 });
+  return applyCorsHeaders(response);
 }
