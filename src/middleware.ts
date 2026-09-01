@@ -19,6 +19,7 @@ const PROTECTED_ROUTES = [
   '/vault',
   '/sign',
   '/signature-editor',
+  '/labs',
 ];
 
 // Routes that should be accessible without auth
@@ -83,6 +84,7 @@ export async function middleware(request: NextRequest) {
   // Verify token (we'll add actual verification in the API routes)
   // For now, just check if token exists
   // Note: Full verification happens in API routes using verifyJWT
+  // Lab Socket.io actions perform full Ed25519 verification in lab-engine/auth.js.
   
   const response = NextResponse.next();
   return applySecurityHeaders(response);
@@ -93,9 +95,9 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * - _next/static
+     * - _next/image
+     * - favicon.ico
      * - public folder
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
