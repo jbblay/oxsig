@@ -1,2 +1,0 @@
-Temporary trigger for CI lockfile regeneration. Remove after pnpm-lock.yaml is refreshed.
-trigger=2
