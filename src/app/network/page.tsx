@@ -14,6 +14,7 @@ import { P2PNode, type PeerId } from "@/lib/network/p2p";
 import { generatePairingQR, SimpleBarcodeScanner } from "@/lib/qr/pairing";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import LabRuntimePanel from "@/components/labs/LabRuntimePanel";
 
 export default function NetworkPage() {
   const nodeRef = React.useRef<P2PNode | null>(null);
@@ -102,9 +103,10 @@ export default function NetworkPage() {
     ? Math.round(peerIds.reduce((acc, id) => acc + (peers[id]?.rttMs ?? 150), 0) / peerIds.length)
     : 0;
   const networkHealth = React.useMemo(() => {
+    if (peerIds.length === 0) return 0;
     const score = Math.max(0, 100 - Math.min(80, Math.floor(avgRtt / 3)));
     return score;
-  }, [avgRtt]);
+  }, [avgRtt, peerIds.length]);
 
   async function handleCreateOffer() {
     if (!nodeRef.current) return;
@@ -187,8 +189,8 @@ export default function NetworkPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Network Topology</h1>
-          <p className="text-sm text-muted-foreground">P2P connections, neighbor discovery, and network health</p>
+          <h1 className="text-2xl md:text-3xl font-bold">Cyber Lab</h1>
+          <p className="text-sm text-muted-foreground">Network topology, peer testing, and isolated Kali lab environments</p>
           <p className="text-xs text-muted-foreground mt-1">Your ID: <span className="font-mono">{myId}</span></p>
         </div>
         <Badge variant="default" className="gap-1 bg-cyan-600">
@@ -463,11 +465,11 @@ export default function NetworkPage() {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Active</span>
-                <span className="font-semibold text-green-600">42</span>
+                <span className="font-semibold text-green-600">{peerIds.filter((peerId) => statusForPeer(peerId) === 'active').length}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Syncing</span>
-                <span className="font-semibold text-yellow-600">5</span>
+                <span className="font-semibold text-yellow-600">{peerIds.filter((peerId) => statusForPeer(peerId) === 'syncing').length}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Offline</span>
@@ -600,19 +602,22 @@ export default function NetworkPage() {
             <CardContent className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                <span className="text-muted-foreground">End-to-end encryption</span>
+                <span className="text-muted-foreground">WebRTC transport encryption</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                <span className="text-muted-foreground">Peer authentication</span>
+                <span className="text-muted-foreground">Verified peers: {peerIds.filter((peerId) => peers[peerId]?.verified).length}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                <span className="text-muted-foreground">Traffic obfuscation</span>
+                <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="text-muted-foreground">Traffic obfuscation: not implemented</span>
               </div>
             </CardContent>
           </Card>
         </div>
+      </div>
+      <div className="border-t pt-6">
+        <LabRuntimePanel embedded />
       </div>
     </div>
   );

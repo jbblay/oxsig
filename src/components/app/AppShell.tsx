@@ -105,7 +105,7 @@ function AppShellContent({ children }: AppShellProps) {
     { href: "/security", icon: Shield, label: "Security Center", tooltip: "Key & Device Management", gradient: "from-emerald-500 to-green-500", badge: "Enhanced" },
     { href: "/audit", icon: ScrollText, label: "Audit Log", tooltip: "Merkle Tree Audit Trail", gradient: "from-cyan-500 to-blue-500" },
     { href: "/opsec", icon: FileCheck, label: "OPSEC", tooltip: "Security Classification", gradient: "from-red-500 to-orange-500" },
-    { href: "/network", icon: Network, label: "Network", tooltip: "P2P Topology", gradient: "from-orange-500 to-amber-500" },
+    { href: "/network", icon: Network, label: "Cyber Lab", tooltip: "Network & Kali Lab", gradient: "from-orange-500 to-amber-500" },
   ];
 
   const devFeatures = [

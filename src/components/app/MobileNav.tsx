@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Boxes,
+  Network,
   Share2,
   HardDrive,
   Home,
@@ -77,10 +77,10 @@ export default function MobileNav() {
           active={pathname?.startsWith("/collab/storyboards")}
         />
         <Item
-          href="/labs"
-          label="Labs"
-          icon={Boxes}
-          active={pathname?.startsWith("/labs")}
+          href="/network"
+          label="Cyber Lab"
+          icon={Network}
+          active={pathname?.startsWith("/network")}
         />
         <Item
           href="/security"

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Apple,
-  Boxes,
+  Network,
   Download,
   FileCheck,
   Share2,
@@ -54,7 +54,7 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
     { label: "Audit", href: "/audit", icon: FileCheck },
     { label: "Rooms", href: "/collab", icon: Users },
     { label: "Boards", href: "/collab/storyboards", icon: Presentation },
-    { label: "Labs", href: "/labs", icon: Boxes },
+    { label: "Cyber Lab", href: "/network", icon: Network },
   ];
 
   const isDev = process.env.NODE_ENV === 'development';
