@@ -24,6 +24,7 @@ const PROTECTED_ROUTES = [
   '/api/recovery',
   '/api/webauthn',
   '/home',
+  '/account',
   '/profile',
   '/vault',
   '/storage',

@@ -103,7 +103,7 @@ export default function ProfilePage() {
   };
 
   if (authLoading || loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  if (!user) return <div className="flex min-h-[60vh] items-center justify-center px-4"><Card className="w-full max-w-md text-center"><CardHeader><UserCircle className="mx-auto h-12 w-12 text-muted-foreground" /><CardTitle>Authentication required</CardTitle><CardDescription>Sign in to view and manage your OXSIG profile.</CardDescription></CardHeader><CardContent><Button onClick={() => { window.location.href = "/?redirect=/profile"; }}><LogIn className="mr-2 h-4 w-4" />Go to sign in</Button></CardContent></Card></div>;
+  if (!user) return <div className="flex min-h-[60vh] items-center justify-center px-4"><Card className="w-full max-w-md text-center"><CardHeader><UserCircle className="mx-auto h-12 w-12 text-muted-foreground" /><CardTitle>Authentication required</CardTitle><CardDescription>Sign in to view and manage your OXSIG account.</CardDescription></CardHeader><CardContent><Button onClick={() => { window.location.href = "/?redirect=/account"; }}><LogIn className="mr-2 h-4 w-4" />Go to sign in</Button></CardContent></Card></div>;
 
   const initials = (profile?.displayName || profile?.email || "OX").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const statCards = [["Secure boards", stats?.ownedStoryboards ?? 0], ["Shared with me", stats?.sharedStoryboards ?? 0], ["Audit events", stats?.auditEvents ?? 0], ["Active sessions", stats?.activeSessions ?? sessions.length]] as const;

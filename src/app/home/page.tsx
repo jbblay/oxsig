@@ -161,7 +161,7 @@ export default function HomePage() {
             <Button variant="outline" size="icon">
               <Bell className="h-5 w-5" />
             </Button>
-            <Button variant="outline" size="icon" onClick={() => router.push('/profile')}>
+            <Button variant="outline" size="icon" onClick={() => router.push('/account')}>
               <Settings className="h-5 w-5" />
             </Button>
           </div>
@@ -325,7 +325,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <Button className="w-full mt-4" onClick={() => router.push('/profile')}>
+                <Button className="w-full mt-4" onClick={() => router.push('/account')}>
                   Complete Profile
                 </Button>
               </div>

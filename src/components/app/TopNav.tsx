@@ -180,9 +180,9 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/profile" className="cursor-pointer">
+                <Link href="/account" className="cursor-pointer">
                   <User className="w-4 h-4 mr-2" />
-                  Profile
+                  Account
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
