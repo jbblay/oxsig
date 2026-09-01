@@ -5,7 +5,9 @@ import Link from "next/link";
 import {
   ArrowLeft,
   CircleStop,
+  Cloud,
   Eraser,
+  Loader2,
   Mic,
   Pause,
   Pencil,
@@ -14,8 +16,10 @@ import {
   Radio,
   Redo2,
   Save,
+  Share2,
   Trash2,
   Undo2,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +33,15 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import {
+  deleteServerStoryboard,
+  getServerStoryboard,
+  listServerStoryboards,
+  listStoryboardShares,
+  revokeStoryboardShare,
+  saveServerStoryboard,
+  shareStoryboard,
+} from "@/lib/storyboards/api";
 import {
   deleteStoryboardDraft,
   listStoryboardDrafts,
@@ -46,6 +59,8 @@ import type {
   StoryboardDrawEvent,
   StoryboardEvent,
   StoryboardPoint,
+  StoryboardServerSession,
+  StoryboardShare,
   StoryboardTool,
 } from "@/lib/storyboards/types";
 
@@ -110,6 +125,14 @@ export default function StoryboardsPage() {
   const [playbackMs, setPlaybackMs] = React.useState(0);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [historyRevision, setHistoryRevision] = React.useState(0);
+  const [serverSessions, setServerSessions] = React.useState<StoryboardServerSession[]>([]);
+  const [activeServerSession, setActiveServerSession] = React.useState<StoryboardServerSession | null>(null);
+  const [serverLoading, setServerLoading] = React.useState(true);
+  const [serverSaving, setServerSaving] = React.useState(false);
+  const [shares, setShares] = React.useState<StoryboardShare[]>([]);
+  const [shareEmail, setShareEmail] = React.useState("");
+  const [sharePermission, setSharePermission] = React.useState<"viewer" | "editor">("viewer");
+  const [shareBusy, setShareBusy] = React.useState(false);
 
   const isCapturing = recordingState === "recording" || recordingState === "paused";
   const isBusy = recordingState === "saving";
@@ -119,6 +142,7 @@ export default function StoryboardsPage() {
     !isBusy &&
     !isPlaying &&
     recordingState !== "paused" &&
+    activeDraft?.serverPermission !== "viewer" &&
     !isReviewingEarlierFrame;
 
   const loadDrafts = React.useCallback(async () => {
@@ -127,6 +151,30 @@ export default function StoryboardsPage() {
     } catch (error) {
       console.error("Failed to load storyboard drafts:", error);
       toast.error("This browser could not open local storyboard storage.");
+    }
+  }, []);
+
+  const loadServerSessions = React.useCallback(async () => {
+    try {
+      setServerSessions(await listServerStoryboards());
+    } catch (error) {
+      console.error("Failed to load secure storyboards:", error);
+      toast.error("Secure Storyboards could not be loaded. Local recovery drafts are still available.");
+    } finally {
+      setServerLoading(false);
+    }
+  }, []);
+
+  const refreshShares = React.useCallback(async (session: StoryboardServerSession | null) => {
+    if (!session || session.permission !== "owner") {
+      setShares([]);
+      return;
+    }
+    try {
+      setShares(await listStoryboardShares(session.id));
+    } catch (error) {
+      console.error("Failed to load storyboard shares:", error);
+      toast.error("The access list could not be loaded.");
     }
   }, []);
 
@@ -248,6 +296,7 @@ export default function StoryboardsPage() {
         !!navigator.mediaDevices?.getUserMedia
     );
     void loadDrafts();
+    void loadServerSessions();
 
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -257,7 +306,7 @@ export default function StoryboardsPage() {
       audioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
-  }, [loadDrafts]);
+  }, [loadDrafts, loadServerSessions]);
 
   const getRecordingElapsed = React.useCallback((now = performance.now()) => {
     if (!recordingStartedAtRef.current) return 0;
@@ -391,6 +440,31 @@ export default function StoryboardsPage() {
     appendTimelineCommand({ id: eventId(), type: "clear", t: eventTime() });
   };
 
+  const syncDraftToServer = React.useCallback(
+    async (draft: StoryboardDraft) => {
+      setServerSaving(true);
+      try {
+        const session = await saveServerStoryboard(draft, draft.serverId);
+        const securedDraft: StoryboardDraft = {
+          ...draft,
+          serverId: session.id,
+          serverPermission: session.permission,
+          updatedAt: Date.now(),
+        };
+        await saveStoryboardDraft(securedDraft);
+        setActiveDraft(securedDraft);
+        setActiveServerSession(session);
+        await Promise.all([loadDrafts(), loadServerSessions()]);
+        await refreshShares(session);
+        toast.success(draft.serverId ? "Secure storyboard updated." : "Storyboard secured on the server.");
+        return securedDraft;
+      } finally {
+        setServerSaving(false);
+      }
+    },
+    [loadDrafts, loadServerSessions, refreshShares]
+  );
+
   const startRecording = async () => {
     if (!recordingSupported) {
       toast.error("Audio recording is not supported in this browser.");
@@ -462,7 +536,16 @@ export default function StoryboardsPage() {
         try {
           await saveStoryboardDraft(draft);
           await loadDrafts();
-          toast.success("Storyboard saved on this device.");
+          try {
+            await syncDraftToServer(draft);
+          } catch (serverError) {
+            console.error("Failed to secure storyboard:", serverError);
+            toast.error(
+              serverError instanceof Error
+                ? `${serverError.message}. A local recovery copy was kept.`
+                : "Server save failed. A local recovery copy was kept."
+            );
+          }
         } catch (error) {
           console.error("Failed to save storyboard:", error);
           toast.error("The recording is still open, but it could not be saved locally.");
@@ -537,6 +620,8 @@ export default function StoryboardsPage() {
       audio: activeDraft?.audio,
       audioMimeType: activeDraft?.audioMimeType,
       status: "local-draft",
+      serverId: activeDraft?.serverId,
+      serverPermission: activeDraft?.serverPermission,
     };
 
     try {
@@ -545,7 +630,16 @@ export default function StoryboardsPage() {
       setTimelineDurationMs(durationMs);
       setPlaybackMs(durationMs);
       await loadDrafts();
-      toast.success("Board saved on this device.");
+      try {
+        await syncDraftToServer(draft);
+      } catch (serverError) {
+        console.error("Failed to secure board:", serverError);
+        toast.error(
+          serverError instanceof Error
+            ? `${serverError.message}. A local recovery copy was kept.`
+            : "Server save failed. A local recovery copy was kept."
+        );
+      }
     } catch (error) {
       console.error("Failed to save board:", error);
       toast.error("This board could not be saved in the browser.");
@@ -564,9 +658,52 @@ export default function StoryboardsPage() {
       playbackEventCountRef.current = draft.events.length;
       replaceAudioSource(draft.audio);
       renderBoardAtTime(Number.POSITIVE_INFINITY, draft.events);
+      const linkedSession = draft.serverId
+        ? serverSessions.find((session) => session.id === draft.serverId) || null
+        : null;
+      setActiveServerSession(linkedSession);
+      void refreshShares(linkedSession);
     },
-    [renderBoardAtTime, replaceAudioSource, stopPlayback]
+    [refreshShares, renderBoardAtTime, replaceAudioSource, serverSessions, stopPlayback]
   );
+
+  const openServerSession = async (session: StoryboardServerSession, autoplay = false) => {
+    setServerLoading(true);
+    try {
+      const loaded = await getServerStoryboard(session.id);
+      const now = Date.now();
+      const draft: StoryboardDraft = {
+        version: 1,
+        id: `server-${loaded.session.id}`,
+        title: loaded.session.title,
+        createdAt: new Date(loaded.session.createdAt).getTime() || now,
+        updatedAt: new Date(loaded.session.updatedAt).getTime() || now,
+        durationMs: loaded.session.durationMs,
+        events: loaded.session.events || [],
+        audio: loaded.audio,
+        audioMimeType: loaded.session.audioMimeType || loaded.audio?.type,
+        status: "local-draft",
+        serverId: loaded.session.id,
+        serverPermission: loaded.session.permission,
+      };
+      openDraft(draft);
+      setActiveServerSession(loaded.session);
+      await refreshShares(loaded.session);
+
+      if (autoplay && loaded.audio && audioRef.current) {
+        audioRef.current.currentTime = 0;
+        setPlaybackMs(0);
+        playbackEventCountRef.current = -1;
+        renderBoardAtTime(0, draft.events);
+        await audioRef.current.play();
+      }
+    } catch (error) {
+      console.error("Failed to open secure storyboard:", error);
+      toast.error(error instanceof Error ? error.message : "Secure storyboard could not be opened.");
+    } finally {
+      setServerLoading(false);
+    }
+  };
 
   const playDraft = (draft: StoryboardDraft) => {
     openDraft(draft);
@@ -627,12 +764,73 @@ export default function StoryboardsPage() {
     eventsRef.current = [];
     setHistoryRevision((revision) => revision + 1);
     setActiveDraft(null);
+    setActiveServerSession(null);
+    setShares([]);
     setTitle("Untitled storyboard");
     setTimelineDurationMs(0);
     setPlaybackMs(0);
     setRecordingElapsedMs(0);
     replaceAudioSource();
     clearCanvas();
+  };
+
+  const removeServerSession = async (session: StoryboardServerSession) => {
+    if (!window.confirm(`Delete secure storyboard “${session.title}”?`)) return;
+    setServerSaving(true);
+    try {
+      await deleteServerStoryboard(session.id);
+      if (activeServerSession?.id === session.id) {
+        stopPlayback();
+        eventsRef.current = [];
+        setHistoryRevision((revision) => revision + 1);
+        setActiveDraft(null);
+        setActiveServerSession(null);
+        setShares([]);
+        setTitle("Untitled storyboard");
+        setTimelineDurationMs(0);
+        setPlaybackMs(0);
+        replaceAudioSource();
+        clearCanvas();
+      }
+      await loadServerSessions();
+      toast.success("Secure storyboard deleted.");
+    } catch (error) {
+      console.error("Failed to delete secure storyboard:", error);
+      toast.error(error instanceof Error ? error.message : "Secure storyboard could not be deleted.");
+    } finally {
+      setServerSaving(false);
+    }
+  };
+
+  const addShare = async () => {
+    if (!activeServerSession || !shareEmail.trim()) return;
+    setShareBusy(true);
+    try {
+      await shareStoryboard(activeServerSession.id, shareEmail.trim(), sharePermission);
+      setShareEmail("");
+      await refreshShares(activeServerSession);
+      toast.success("Storyboard access granted.");
+    } catch (error) {
+      console.error("Failed to share storyboard:", error);
+      toast.error(error instanceof Error ? error.message : "Storyboard could not be shared.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const revokeShare = async (share: StoryboardShare) => {
+    if (!activeServerSession) return;
+    setShareBusy(true);
+    try {
+      await revokeStoryboardShare(activeServerSession.id, share.userId);
+      await refreshShares(activeServerSession);
+      toast.success("Storyboard access revoked.");
+    } catch (error) {
+      console.error("Failed to revoke storyboard access:", error);
+      toast.error(error instanceof Error ? error.message : "Access could not be revoked.");
+    } finally {
+      setShareBusy(false);
+    }
   };
 
   const removeDraft = async (draft: StoryboardDraft) => {
@@ -698,7 +896,7 @@ export default function StoryboardsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">Browser-local MVP</Badge>
+          <Badge variant="outline">Secure server MVP</Badge>
           {recordingState !== "idle" && (
             <Badge variant={recordingState === "recording" ? "destructive" : "secondary"}>
               {recordingState === "recording"
@@ -851,7 +1049,7 @@ export default function StoryboardsPage() {
                   <Button
                     type="button"
                     onClick={startRecording}
-                    disabled={!recordingSupported}
+                  disabled={!recordingSupported || activeDraft?.serverPermission === "viewer" || serverSaving}
                     className="gap-2"
                   >
                     <Mic className="h-4 w-4" />
@@ -886,10 +1084,10 @@ export default function StoryboardsPage() {
                   type="button"
                   onClick={saveCurrentBoard}
                   variant="outline"
-                  disabled={isCapturing || isBusy || eventsRef.current.length === 0}
+                  disabled={isCapturing || isBusy || serverSaving || activeDraft?.serverPermission === "viewer" || eventsRef.current.length === 0}
                 >
-                  <Save className="h-4 w-4" />
-                  Save board
+                  {serverSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />}
+                  {serverSaving ? "Securing…" : activeDraft?.serverId ? "Update securely" : "Save securely"}
                 </Button>
               </div>
 
@@ -935,6 +1133,79 @@ export default function StoryboardsPage() {
                   <p className="text-xs text-muted-foreground">
                     Seeking rebuilds the canvas at that exact point in the audio timeline.
                   </p>
+                  {activeServerSession && (
+                    <div className="space-y-3 border-t pt-3">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <Badge variant="outline" className="gap-1">
+                          <Cloud className="h-3 w-3" />
+                          Server protected
+                        </Badge>
+                        <Badge variant="secondary">{activeServerSession.permission}</Badge>
+                        <span className="text-muted-foreground">
+                          Owner: {activeServerSession.ownerName}
+                        </span>
+                      </div>
+
+                      {activeServerSession.permission === "owner" && (
+                        <div className="space-y-3 rounded-md border bg-background p-3">
+                          <div className="flex items-center gap-2 font-medium text-sm">
+                            <Share2 className="h-4 w-4" />
+                            Share with an OXSIG user
+                          </div>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                              type="email"
+                              value={shareEmail}
+                              onChange={(event) => setShareEmail(event.target.value)}
+                              placeholder="user@example.com"
+                              disabled={shareBusy}
+                            />
+                            <select
+                              value={sharePermission}
+                              onChange={(event) => setSharePermission(event.target.value as "viewer" | "editor")}
+                              className="h-9 rounded-md border bg-background px-3 text-sm"
+                              disabled={shareBusy}
+                              aria-label="Storyboard share permission"
+                            >
+                              <option value="viewer">Viewer</option>
+                              <option value="editor">Editor</option>
+                            </select>
+                            <Button
+                              type="button"
+                              onClick={addShare}
+                              disabled={shareBusy || !shareEmail.trim()}
+                            >
+                              {shareBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+                              Share
+                            </Button>
+                          </div>
+                          {shares.length > 0 && (
+                            <div className="space-y-2">
+                              {shares.map((share) => (
+                                <div key={share.userId} className="flex items-center justify-between gap-3 rounded-md border p-2 text-xs">
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium">{share.displayName}</p>
+                                    <p className="truncate text-muted-foreground">{share.email} · {share.permission}</p>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => revokeShare(share)}
+                                    disabled={shareBusy}
+                                    aria-label={`Revoke ${share.displayName}`}
+                                  >
+                                    <UserX className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -942,24 +1213,103 @@ export default function StoryboardsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Current storage boundary</CardTitle>
+              <CardTitle className="text-base">Storage model</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Boards and audio are real, but this first slice stores them only in this browser using IndexedDB.
-              They are not yet uploaded, shared, or represented as encrypted server resources. That boundary is
-              explicit until backend ownership and authorization are connected.
+              Secure saves are authenticated server resources with owner, editor, and viewer permissions.
+              The browser also keeps a local recovery draft so a failed upload does not destroy a recording.
+              Audio is private, access-controlled, and capped at 4 MiB during this PostgreSQL-backed MVP.
             </CardContent>
           </Card>
         </div>
 
-        <Card className="h-fit">
+        <div className="space-y-4">
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Cloud className="h-4 w-4" />
+                Secure sessions
+              </CardTitle>
+              <CardDescription>
+                Owned by you or shared with your account. Permissions are enforced by the API.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {serverLoading && serverSessions.length === 0 ? (
+                <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading secure sessions…
+                </div>
+              ) : serverSessions.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">
+                  Your first secure save will appear here.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {serverSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className={`space-y-2 rounded-lg border p-3 ${activeServerSession?.id === session.id ? "border-primary/60 bg-primary/5" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{session.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {session.hasAudio ? formatDuration(session.durationMs) : "Board only"} · {session.ownerName}
+                          </p>
+                        </div>
+                        <Badge variant={session.permission === "owner" ? "default" : "secondary"} className="shrink-0">
+                          {session.permission}
+                        </Badge>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => openServerSession(session)}
+                          disabled={isCapturing || isBusy || serverLoading}
+                        >
+                          Open
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => openServerSession(session, true)}
+                          disabled={!session.hasAudio || isCapturing || isBusy || serverLoading}
+                        >
+                          <Play className="h-3.5 w-3.5" /> Play
+                        </Button>
+                        {session.permission === "owner" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeServerSession(session)}
+                            disabled={isCapturing || isBusy || serverSaving}
+                            aria-label={`Delete secure storyboard ${session.title}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Save className="h-4 w-4" />
-              My local boards
+              Recovery drafts
             </CardTitle>
             <CardDescription>
-              Open a finished board or replay its synchronized recording on this device.
+              Browser-local safety copies. A cloud badge means the draft is linked to a secure session.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -985,7 +1335,7 @@ export default function StoryboardsPage() {
                         </p>
                       </div>
                       <Badge variant="secondary" className="shrink-0">
-                        Local
+                        {draft.serverId ? "Cloud + local" : "Local"}
                       </Badge>
                     </div>
                     <div className="flex gap-2">
@@ -1026,7 +1376,8 @@ export default function StoryboardsPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );

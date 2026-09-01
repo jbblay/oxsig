@@ -19,7 +19,8 @@ interface AuthContextType {
     publicKey: string;
     displayName?: string;
     email?: string;
-    signature?: string;
+    signature: string;
+    challenge: string;
   }) => Promise<User>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   registerWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;

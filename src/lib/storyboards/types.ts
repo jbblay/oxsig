@@ -56,4 +56,36 @@ export type StoryboardDraft = {
   audio?: Blob;
   audioMimeType?: string;
   status: 'local-draft';
+  serverId?: string;
+  serverPermission?: StoryboardPermission;
+};
+
+export type StoryboardPermission = 'owner' | 'editor' | 'viewer';
+
+export type StoryboardServerSession = {
+  id: string;
+  title: string;
+  description?: string | null;
+  status: 'draft' | 'ready' | 'archived';
+  durationMs: number;
+  events?: StoryboardEvent[];
+  hasAudio: boolean;
+  audioMimeType?: string | null;
+  audioSize?: number | null;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail?: string | null;
+  permission: StoryboardPermission;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StoryboardShare = {
+  userId: string;
+  displayName: string;
+  email: string;
+  permission: Exclude<StoryboardPermission, 'owner'>;
+  expiresAt?: string | null;
+  createdAt: string;
 };

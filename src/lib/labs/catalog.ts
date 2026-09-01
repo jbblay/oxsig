@@ -2,10 +2,10 @@ import type { LabDefinition } from './types';
 
 export const LAB_CATALOG: LabDefinition[] = [
   {
-    slug: 'linux-security-foundations',
-    name: 'Linux Security Foundations',
+    slug: 'kali-linux-foundations',
+    name: 'Kali Linux Foundations',
     category: 'Linux Security',
-    description: 'A disposable Linux target for permissions, processes, services, logs, and introductory privilege-boundary exercises.',
+    description: 'A disposable Kali Linux shell for permissions, processes, system inspection, and introductory security exercises.',
     difficulty: 'beginner',
     runtime: 'container',
     estimatedMemoryMb: 256,
@@ -16,8 +16,8 @@ export const LAB_CATALOG: LabDefinition[] = [
       'Generate and inspect security-relevant events',
       'Reset the environment to a known state',
     ],
-    available: false,
-    availabilityReason: 'Waiting for the isolated container runtime and browser terminal adapter.',
+    available: true,
+    availabilityReason: 'Available on a self-hosted OXSIG server with its isolated Docker runtime enabled.',
   },
   {
     slug: 'network-two-host-foundations',

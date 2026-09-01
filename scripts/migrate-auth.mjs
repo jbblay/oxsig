@@ -1,4 +1,5 @@
 import pg from 'pg';
+import fs from 'node:fs/promises';
 
 const { Client } = pg;
 const applicationConnectionString =
@@ -38,8 +39,9 @@ const client = new Client({
 async function main() {
   await client.connect();
 
-  // Keep this bootstrap intentionally small and idempotent. It creates only the
-  // schema required by signup/login/session handling.
+  // Keep the deployment bootstrap idempotent. Besides authentication, it
+  // installs the small schema required by deployable vertical slices that must
+  // exist before the first request reaches a fresh preview database.
   await client.query('BEGIN');
   try {
     await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
@@ -130,6 +132,18 @@ async function main() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)');
 
+    const labsSchema = await fs.readFile(
+      new URL('../migrations/010_cyber_labs_foundation.sql', import.meta.url),
+      'utf8'
+    );
+    await client.query(labsSchema);
+
+    const storyboardSchema = await fs.readFile(
+      new URL('../migrations/011_secure_storyboards.sql', import.meta.url),
+      'utf8'
+    );
+    await client.query(storyboardSchema);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS oxisg_auth_bootstrap (
         version INTEGER PRIMARY KEY,
@@ -149,6 +163,9 @@ async function main() {
       to_regclass('public.users') IS NOT NULL AS users_table,
       to_regclass('public.sessions') IS NOT NULL AS sessions_table,
       to_regclass('public.audit_logs') IS NOT NULL AS audit_logs_table,
+      to_regclass('public.lab_instances') IS NOT NULL AS lab_instances_table,
+      to_regclass('public.storyboard_sessions') IS NOT NULL AS storyboard_sessions_table,
+      to_regclass('public.storyboard_shares') IS NOT NULL AS storyboard_shares_table,
       EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password_hash'
@@ -164,6 +181,9 @@ async function main() {
     !readiness.users_table ||
     !readiness.sessions_table ||
     !readiness.audit_logs_table ||
+    !readiness.lab_instances_table ||
+    !readiness.storyboard_sessions_table ||
+    !readiness.storyboard_shares_table ||
     !readiness.password_hash_column ||
     !readiness.role_column
   ) {

@@ -70,6 +70,7 @@ export const AUDIT_ACTIONS = {
   REGISTER: 'auth.register',
   PASSWORD_CHANGE: 'auth.password.change',
   PASSWORD_RESET: 'auth.password.reset',
+  PROFILE_UPDATE: 'profile.update',
   
   // Documents
   DOCUMENT_CREATE: 'document.create',
@@ -77,6 +78,24 @@ export const AUDIT_ACTIONS = {
   DOCUMENT_UPDATE: 'document.update',
   DOCUMENT_DELETE: 'document.delete',
   DOCUMENT_DOWNLOAD: 'document.download',
+
+  // Secure Canvas / Storyboards
+  STORYBOARD_CREATE: 'storyboard.create',
+  STORYBOARD_OPEN: 'storyboard.open',
+  STORYBOARD_UPDATE: 'storyboard.update',
+  STORYBOARD_DELETE: 'storyboard.delete',
+  STORYBOARD_AUDIO_OPEN: 'storyboard.audio.open',
+  STORYBOARD_SHARE: 'storyboard.share',
+  STORYBOARD_REVOKE: 'storyboard.share.revoke',
+  STORYBOARD_RECORDING_SAVED: 'storyboard.recording.saved',
+
+  // Isolated cyber labs
+  LAB_CREATE: 'lab.create',
+  LAB_START: 'lab.start',
+  LAB_STOP: 'lab.stop',
+  LAB_RESET: 'lab.reset',
+  LAB_DESTROY: 'lab.destroy',
+  LAB_COMMAND: 'lab.command',
   
   // Signatures
   SIGNATURE_CREATE: 'signature.create',
