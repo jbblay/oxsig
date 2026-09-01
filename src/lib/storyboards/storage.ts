@@ -20,8 +20,10 @@ interface StoryboardDB extends DBSchema {
 async function getDB() {
   return openDB<StoryboardDB>(DB_NAME, DB_VERSION, {
     upgrade(db) {
-      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      store.createIndex('by-updated', 'updatedAt');
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        store.createIndex('by-updated', 'updatedAt');
+      }
     },
   });
 }

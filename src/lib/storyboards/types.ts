@@ -3,14 +3,20 @@ export type StoryboardPoint = {
   y: number;
 };
 
+export type StoryboardTool = 'pen' | 'eraser';
+
 export type StoryboardDrawEvent = {
   id: string;
   type: 'draw';
   t: number;
+  /** Groups the small drawing segments that make up one pointer stroke. */
+  strokeId?: string;
   from: StoryboardPoint;
   to: StoryboardPoint;
   width: number;
   color: string;
+  /** Missing on version-one drafts, where every segment was a pen mark. */
+  tool?: StoryboardTool;
 };
 
 export type StoryboardClearEvent = {
@@ -19,9 +25,28 @@ export type StoryboardClearEvent = {
   t: number;
 };
 
-export type StoryboardEvent = StoryboardDrawEvent | StoryboardClearEvent;
+export type StoryboardUndoEvent = {
+  id: string;
+  type: 'undo';
+  t: number;
+  targetId: string;
+};
+
+export type StoryboardRedoEvent = {
+  id: string;
+  type: 'redo';
+  t: number;
+  targetId: string;
+};
+
+export type StoryboardEvent =
+  | StoryboardDrawEvent
+  | StoryboardClearEvent
+  | StoryboardUndoEvent
+  | StoryboardRedoEvent;
 
 export type StoryboardDraft = {
+  version?: 1;
   id: string;
   title: string;
   createdAt: number;
