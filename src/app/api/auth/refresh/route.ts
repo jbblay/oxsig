@@ -4,12 +4,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { generateTokenPair, TOKEN_EXPIRY, verifyJWT } from '@/lib/auth/jwt';
 import { hashRefreshToken } from '@/lib/auth/session';
 import { getPool } from '@/lib/db/pool';
 
 async function getRefreshToken(request: NextRequest): Promise<string | null> {
-  const cookieToken = request.cookies.get('refreshToken')?.value;
+  const cookieStore = await cookies();
+  const cookieToken = cookieStore.get('refreshToken')?.value;
   if (cookieToken) return cookieToken;
 
   // Optional body fallback for non-browser API clients. Browser email auth uses
