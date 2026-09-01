@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "dev:next": "next dev",
+    "prebuild": "node scripts/prebuild.mjs",
     "build": "next build",
     "start": "NODE_ENV=production node server.js",
     "start:next": "next start",
