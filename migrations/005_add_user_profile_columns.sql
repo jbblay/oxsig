@@ -26,9 +26,20 @@ ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_email_verified ON users(email_verified) WHERE email_verified = true;
 
--- Add check constraint for role
-ALTER TABLE users
-ADD CONSTRAINT IF NOT EXISTS check_user_role CHECK (role IN ('user', 'admin', 'moderator'));
+-- PostgreSQL does not support ALTER TABLE ... ADD CONSTRAINT IF NOT EXISTS.
+-- Check pg_constraint explicitly so the migration remains safe to re-run.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'check_user_role'
+          AND conrelid = 'users'::regclass
+    ) THEN
+        ALTER TABLE users
+        ADD CONSTRAINT check_user_role CHECK (role IN ('user', 'admin', 'moderator'));
+    END IF;
+END $$;
 
 -- Add comments
 COMMENT ON COLUMN users.bio IS 'User biography/description (max 500 characters)';
