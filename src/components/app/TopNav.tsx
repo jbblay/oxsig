@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Apple,
   Boxes,
   Download,
   FileCheck,
-  FileSignature,
+  Share2,
   Lock,
   LogOut,
   Monitor,
@@ -34,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useAuth } from "@/lib/auth/use-auth";
 
 interface TopNavProps {
   onMenuClick?: () => void;
@@ -42,9 +43,12 @@ interface TopNavProps {
 export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
+  const router = useRouter();
+  const { logout } = useAuth();
+  const [signingOut, setSigningOut] = React.useState(false);
 
   const navLinks = [
-    { label: "Sign", href: "/sign", icon: FileSignature },
+    { label: "ShareDocs", href: "/sharedocs", icon: Share2 },
     { label: "Vault", href: "/vault", icon: Lock },
     { label: "Security", href: "/security", icon: Shield },
     { label: "Audit", href: "/audit", icon: FileCheck },
@@ -244,9 +248,23 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
                 </>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => toast("Sign out clicked")}>
+              <DropdownMenuItem
+                disabled={signingOut}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  setSigningOut(true);
+                  void logout()
+                    .then(() => {
+                      toast.success("Signed out");
+                      router.replace('/');
+                      router.refresh();
+                    })
+                    .catch(() => toast.error("Sign out failed"))
+                    .finally(() => setSigningOut(false));
+                }}
+              >
                 <LogOut className="w-4 h-4 mr-2" />
-                Sign out
+                {signingOut ? 'Signing out…' : 'Sign out'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

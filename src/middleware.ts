@@ -38,8 +38,7 @@ const PROTECTED_ROUTES = [
   '/privacy',
   '/architecture',
   '/offline',
-  '/sign',
-  '/signature-editor',
+  '/sharedocs',
 ];
 
 const PUBLIC_ROUTES = [

@@ -33,7 +33,7 @@ export default function ArchitecturePage() {
       <div className="container mx-auto px-2 sm:px-4 md:px-6 py-2 sm:py-4 md:py-6 space-y-2 sm:space-y-4 md:space-y-6 max-w-6xl overflow-x-hidden">
         <AppHero
           title="Decentralized Secure Comms & Signing"
-          subtitle="A dApp-style workspace for secure messaging and smart-signing"
+          subtitle="A secure workspace for storage, sharing, collaboration, and visual explanations"
         />
 
         <Tabs defaultValue="workspace" className="w-full overflow-hidden">

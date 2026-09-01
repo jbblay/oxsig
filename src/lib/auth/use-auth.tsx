@@ -242,17 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
-      if (authMethod === 'email') {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          credentials: 'include',
-        });
-      }
-
-      if (authMethod === 'did') {
-        await authService.logout();
-      }
-
+      await authService.logout();
       setUser(null);
       setAuthMethod(null);
     } finally {

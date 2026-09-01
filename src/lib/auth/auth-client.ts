@@ -140,14 +140,13 @@ export class AuthService {
    * Logout
    */
   async logout(): Promise<void> {
-    if (this.refreshToken) {
-      try {
-        await apiClient.post('/api/auth/logout', {
-          refreshToken: this.refreshToken,
-        });
-      } catch (error) {
-        console.error('Logout error:', error);
-      }
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
     }
 
     this.clearAuth();

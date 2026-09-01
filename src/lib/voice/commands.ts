@@ -137,9 +137,9 @@ export class VoiceCommandSystem {
       window.location.href = '/';
     }, 'Navigate to home page');
 
-    this.registerCommand(/sign document/, () => {
-      window.location.href = '/sign';
-    }, 'Open document signing');
+    this.registerCommand(/share document/, () => {
+      window.location.href = '/sharedocs';
+    }, 'Open ShareDocs');
 
     this.registerCommand(/open (my )?profile/, () => {
       window.location.href = '/profile';

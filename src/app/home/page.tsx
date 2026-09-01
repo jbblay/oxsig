@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  FileSignature, Users, Shield, TrendingUp, Activity,
+  Share2, Users, Shield, TrendingUp, Activity,
   Lock, Eye, ArrowRight, Zap, Bell, Settings, Loader2,
   CheckCircle2, AlertCircle
 } from "lucide-react";
@@ -55,10 +55,10 @@ export default function HomePage() {
 
   const stats = [
     {
-      label: "Documents Signed",
+      label: "Shared Documents",
       value: "0",
       change: "+0%",
-      icon: FileSignature,
+      icon: Share2,
       color: "text-blue-500",
       bgColor: "bg-blue-500/10"
     },
@@ -100,11 +100,11 @@ export default function HomePage() {
 
   const quickActions = [
     {
-      title: "Sign Document",
-      description: "Upload and sign a new document",
-      icon: FileSignature,
+      title: "Share Document",
+      description: "Store, share, and explain a document",
+      icon: Share2,
       color: "bg-blue-500",
-      href: "/sign"
+      href: "/sharedocs"
     },
     {
       title: "Start Collaboration",
@@ -122,7 +122,7 @@ export default function HomePage() {
     },
     {
       title: "View Documents",
-      description: "Browse signed documents",
+      description: "Browse stored documents",
       icon: Eye,
       color: "bg-pink-500",
       href: "/downloads"
@@ -320,8 +320,8 @@ export default function HomePage() {
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 opacity-50">
                   <AlertCircle className="h-5 w-5 text-muted-foreground" />
                   <div className="flex-1">
-                    <p className="font-medium text-sm">Sign Your First Document</p>
-                    <p className="text-xs text-muted-foreground">Try signing a document</p>
+                    <p className="font-medium text-sm">Share Your First Document</p>
+                    <p className="text-xs text-muted-foreground">Store a file and grant access deliberately</p>
                   </div>
                 </div>
 

@@ -32,7 +32,7 @@ export async function POST(_request: NextRequest) {
     revocationFailed
       ? { message: 'Local logout completed; server session revocation could not be confirmed' }
       : { message: 'Logged out successfully' },
-    { status: revocationFailed ? 503 : 200 }
+    { status: 200 }
   );
 
   response.cookies.set('accessToken', '', {
