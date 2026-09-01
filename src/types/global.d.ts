@@ -41,11 +41,16 @@ declare global {
       NEXT_PUBLIC_TURN_USERNAME?: string;
       NEXT_PUBLIC_TURN_CREDENTIAL?: string;
       NODE_ENV?: 'development' | 'production' | 'test';
+      DATABASE_URL?: string;
       POSTGRES_HOST?: string;
       POSTGRES_PORT?: string;
       POSTGRES_DB?: string;
       POSTGRES_USER?: string;
       POSTGRES_PASSWORD?: string;
+      POSTGRES_SSL?: string;
+      POSTGRES_SSL_REJECT_UNAUTHORIZED?: string;
+      JWT_PRIVATE_KEY?: string;
+      JWT_PUBLIC_KEY?: string;
     }
     
     interface Process {
