@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 // Use static export only for Tauri builds or when explicitly requested.
 // Avoids Next "export-no-custom-routes" warning during normal web dev.
@@ -11,8 +10,10 @@ const isStaticExport =
 const nextConfig: NextConfig = {
   ...(isStaticExport ? { output: "export" as const } : {}),
 
-  // Set workspace root to silence lockfile warning
-  outputFileTracingRoot: path.join(__dirname, ".."),
+  // Do not override outputFileTracingRoot for the normal single-package web app.
+  // Vercel builds the repository at /vercel/path0. Pointing tracing one level above
+  // the app causes Vercel's post-build packaging step to resolve `.next` as
+  // /vercel/path0/path0/.next and fail to find routes-manifest.json.
 
   // Disable image optimization for static export only
   ...(isStaticExport
