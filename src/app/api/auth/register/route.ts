@@ -28,18 +28,19 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
-    console.log('📝 Register request body:', body);
     const { email, password } = body;
-    
+
+    // Never log registration request bodies: they contain credentials.
+
     // Validate input
     if (!email || !password) {
-      console.log('❌ Missing fields - email:', email, 'password:', password ? '[PRESENT]' : '[MISSING]');
+      console.log('❌ Missing registration fields - email:', email ? '[PRESENT]' : '[MISSING]', 'password:', password ? '[PRESENT]' : '[MISSING]');
       return NextResponse.json(
         { error: 'Missing fields', message: 'Email and password are required' },
         { status: 400 }
       );
     }
-    
+
     // Validate email format
     const emailValidation = emailSchema.safeParse(email);
     if (!emailValidation.success) {
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     // Validate password strength
     const passwordValidation = passwordSchema.safeParse(password);
     if (!passwordValidation.success) {
@@ -57,24 +58,24 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     // Check if user already exists
     const pool = getPool();
     const existingUser = await pool.query(
       'SELECT id FROM users WHERE email = $1',
       [email]
     );
-    
+
     if (existingUser.rows.length > 0) {
       return NextResponse.json(
         { error: 'User exists', message: 'An account with this email already exists' },
         { status: 409 }
       );
     }
-    
+
     // Hash password with bcrypt
     const passwordHash = await hashPassword(password);
-    
+
     // Create user in database with default role
     const result = await pool.query(
       `INSERT INTO users (email, password_hash, is_active, role)
@@ -82,24 +83,24 @@ export async function POST(request: NextRequest) {
        RETURNING id, email, role`,
       [email, passwordHash]
     );
-    
+
     const user = result.rows[0];
-    
+
     // Generate Ed25519 signed tokens with role
     const { accessToken, refreshToken } = await generateTokenPair(user.id, user.email, user.role);
 
     // Store refresh token in sessions table
     const userAgent = request.headers.get('user-agent') || 'unknown';
-    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] || 
-                      request.headers.get('x-real-ip') || 
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] ||
+                      request.headers.get('x-real-ip') ||
                       'unknown';
-    
+
     await pool.query(
       `INSERT INTO sessions (user_id, refresh_token, device_info, ip_address, expires_at)
        VALUES ($1, $2, $3, $4, NOW() + INTERVAL '7 days')`,
       [user.id, refreshToken, userAgent, ipAddress]
     );
-    
+
     // Create response with httpOnly cookies
     const response = NextResponse.json({
       success: true,
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
       },
     }, { status: 201 });
-    
+
     // Set httpOnly cookies for security
     response.cookies.set('accessToken', accessToken, {
       httpOnly: true,
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
       maxAge: 15 * 60, // 15 minutes
       path: '/',
     });
-    
+
     response.cookies.set('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
       maxAge: 7 * 24 * 60 * 60, // 7 days
       path: '/',
     });
-    
+
     return response;
   } catch (error) {
     console.error('Registration error:', error);
