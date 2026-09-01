@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
 import {
   applySecurityHeaders,
   buildContentSecurityPolicy,
@@ -60,7 +61,8 @@ export async function middleware(request: NextRequest) {
     return applySecurityHeaders(nextResponse(), contentSecurityPolicy);
   }
 
-  const token = request.cookies.get('accessToken')?.value;
+  const cookieStore = await cookies();
+  const token = cookieStore.get('accessToken')?.value;
 
   if (!token) {
     if (pathname.startsWith('/api/')) {
