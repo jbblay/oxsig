@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { FolderLock, Presentation, Share2 } from "lucide-react";
 import ConsentDashboard from "@/components/app/ConsentDashboard";
 import KeyringViewer from "@/components/app/KeyringViewer";
-import AIAssistChat from "@/components/app/AIAssistChat";
 import StatusPanel from "@/components/app/StatusPanel";
 import ActivityFeed from "@/components/app/ActivityFeed";
 
@@ -57,12 +56,6 @@ export default function Workspace() {
                   >
                     Keys
                   </TabsTrigger>
-                  <TabsTrigger
-                    value="chat"
-                    className="flex-1 transition-colors data-[state=active]:bg-primary/10 data-[state=active]:text-primary py-2 text-xs md:text-sm"
-                  >
-                    Chat
-                  </TabsTrigger>
                 </TabsList>
 
                 <div className="flex-1 overflow-auto scrollbar-hidden">
@@ -81,9 +74,6 @@ export default function Workspace() {
                   </TabsContent>
                   <TabsContent value="keys" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
                     <KeyringViewer />
-                  </TabsContent>
-                  <TabsContent value="chat" className="h-full animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
-                    <AIAssistChat />
                   </TabsContent>
                 </div>
               </Tabs>

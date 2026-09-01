@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarInset, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Home, Shield, Share2, Brain, Network, Users, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff, HardDrive } from "lucide-react";
+import { Home, Shield, Share2, Network, Users, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff, HardDrive } from "lucide-react";
 import MobileNav from "@/components/app/MobileNav";
 import TopNav from "@/components/app/TopNav";
 
@@ -103,11 +103,9 @@ function AppShellContent({ children }: AppShellProps) {
 
   const securityFeatures = [
     { href: "/security", icon: Shield, label: "Security Center", tooltip: "Key & Device Management", gradient: "from-emerald-500 to-green-500", badge: "Enhanced" },
-    { href: "/crypto-agility", icon: Shield, label: "Crypto Agility", tooltip: "Algorithm Health & Quantum Readiness", gradient: "from-purple-500 to-blue-500", badge: "New" },
     { href: "/audit", icon: ScrollText, label: "Audit Log", tooltip: "Merkle Tree Audit Trail", gradient: "from-cyan-500 to-blue-500" },
     { href: "/opsec", icon: FileCheck, label: "OPSEC", tooltip: "Security Classification", gradient: "from-red-500 to-orange-500" },
     { href: "/network", icon: Network, label: "Network", tooltip: "P2P Topology", gradient: "from-orange-500 to-amber-500" },
-    { href: "/ai", icon: Brain, label: "AI Security", tooltip: "Threat Detection", gradient: "from-green-500 to-emerald-500" },
   ];
 
   const devFeatures = [

@@ -15,7 +15,6 @@ import {
 
 const PROTECTED_ROUTES = [
   '/api/documents',
-  '/api/signatures',
   '/api/users',
   '/api/storyboards',
   '/api/labs',
@@ -34,7 +33,6 @@ const PROTECTED_ROUTES = [
   '/audit',
   '/opsec',
   '/network',
-  '/ai',
   '/identity',
   '/privacy',
   '/architecture',

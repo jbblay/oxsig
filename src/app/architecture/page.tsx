@@ -18,7 +18,6 @@ import StatusPanel from "@/components/app/StatusPanel";
 import ActivityFeed from "@/components/app/ActivityFeed";
 import ConsentDashboard from "@/components/app/ConsentDashboard";
 import KeyringViewer from "@/components/app/KeyringViewer";
-import AIAssistChat from "@/components/app/AIAssistChat";
 import Workspace from "@/components/app/Workspace";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AppHero from "@/components/app/AppHero";
