@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 // sure the small authentication schema exists before Next.js builds the app.
 // Vercel's managed Neon integration calls its pooled URL
 // DATABASE_POSTGRES_URL, so it must not require a duplicate manual secret.
-if (!process.env.DATABASE_URL && !process.env.DATABASE_POSTGRES_URL) {
+if (!process.env.DATABASE_URL && !process.env.DATABASE_POSTGRES_URL && !process.env.POSTGRES_URL && !process.env.NEON_DATABASE_URL) {
   console.log('Auth database bootstrap skipped: no supported database URL is configured.');
   process.exit(0);
 }

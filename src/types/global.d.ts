@@ -45,6 +45,13 @@ declare global {
       DATABASE_URL_UNPOOLED?: string;
       DATABASE_POSTGRES_URL?: string;
       DATABASE_POSTGRES_URL_NON_POOLING?: string;
+      POSTGRES_URL?: string;
+      POSTGRES_URL_NON_POOLING?: string;
+      NEON_DATABASE_URL?: string;
+      GOOGLE_CLIENT_ID?: string;
+      GOOGLE_CLIENT_SECRET?: string;
+      GITHUB_CLIENT_ID?: string;
+      GITHUB_CLIENT_SECRET?: string;
       POSTGRES_HOST?: string;
       POSTGRES_PORT?: string;
       POSTGRES_DB?: string;

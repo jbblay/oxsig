@@ -7,9 +7,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { User } from "lucide-react";
 import { useAuth } from "@/lib/auth/use-auth";
-import { EmailInput, PasswordInput, TextInput } from "./auth-input";
+import { EmailInput, PasswordInput } from "./auth-input";
 import { AuthButton } from "./auth-button";
 import { AuthMessage } from "./auth-message";
 import { useAuthForm, validators } from "./use-auth-form";
@@ -17,13 +16,11 @@ import { useAuthForm, validators } from "./use-auth-form";
 interface RegisterFormProps {
   onSuccess?: () => void;
   redirectTo?: string;
-  requireDisplayName?: boolean;
 }
 
 export function RegisterForm({
   onSuccess,
   redirectTo = "/",
-  requireDisplayName = false,
 }: RegisterFormProps): React.JSX.Element {
   const router = useRouter();
   const { registerWithEmail } = useAuth();
@@ -39,11 +36,7 @@ export function RegisterForm({
   } = useAuthForm({
     onSubmit: async (data) => {
       try {
-        await registerWithEmail(
-          data.email,
-          data.password,
-          data.displayName || undefined
-        );
+        await registerWithEmail(data.email, data.password);
         setSuccess("Account created successfully! Redirecting...");
         setTimeout(() => {
           if (onSuccess) onSuccess();
@@ -55,11 +48,6 @@ export function RegisterForm({
     },
     validate: (data) => {
       const newErrors: Record<string, string> = {};
-
-      if (requireDisplayName) {
-        const nameError = validators.required(data.displayName, "Display name");
-        if (nameError) newErrors.displayName = nameError;
-      }
 
       const emailError = validators.email(data.email);
       if (emailError) newErrors.email = emailError;
@@ -81,25 +69,13 @@ export function RegisterForm({
       )}
 
       <div className="space-y-3">
-        <TextInput
-          id="displayName"
-          label={`Display Name ${requireDisplayName ? "" : "(Optional)"}`}
-          placeholder="John Doe"
-          icon={<User className="h-4 w-4" />}
-          value={values.displayName || ""}
-          onChange={(e) => handleChange("displayName", e.target.value)}
-          error={errors.displayName}
-          disabled={loading}
-          autoComplete="name"
-          autoFocus
-        />
-
         <EmailInput
           value={values.email || ""}
           onChange={(e) => handleChange("email", e.target.value)}
           error={errors.email}
           disabled={loading}
           autoComplete="email"
+          autoFocus
         />
 
         <PasswordInput

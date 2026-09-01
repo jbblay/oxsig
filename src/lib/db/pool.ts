@@ -18,7 +18,7 @@ let pool: Pool | null = null;
  * of requiring a duplicate manually managed secret.
  */
 export function getHostedDatabaseUrl(): string | undefined {
-  return process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
+  return process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
 }
 
 export function isDatabaseConfigured(): boolean {
@@ -65,7 +65,7 @@ export function getDatabaseConfig(overrides: PoolConfig = {}): PoolConfig {
 
   if (process.env.NODE_ENV === 'production' && !process.env.POSTGRES_HOST) {
     throw new Error(
-      'Database is not configured. Set DATABASE_URL, DATABASE_POSTGRES_URL, or POSTGRES_HOST in the production environment.'
+      'Database is not configured. Set DATABASE_URL, POSTGRES_URL, NEON_DATABASE_URL, or POSTGRES_HOST in production.'
     );
   }
 

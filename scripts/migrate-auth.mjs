@@ -3,11 +3,11 @@ import fs from 'node:fs/promises';
 
 const { Client } = pg;
 const applicationConnectionString =
-  process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
+  process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
 
 if (!applicationConnectionString) {
   console.error(
-    'DATABASE_URL or DATABASE_POSTGRES_URL is required for the auth database bootstrap.'
+    'A supported PostgreSQL URL is required for the auth database bootstrap.'
   );
   process.exit(1);
 }
@@ -15,7 +15,8 @@ if (!applicationConnectionString) {
 function getMigrationConnectionString() {
   const directConnectionString =
     process.env.DATABASE_URL_UNPOOLED ||
-    process.env.DATABASE_POSTGRES_URL_NON_POOLING;
+    process.env.DATABASE_POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_URL_NON_POOLING;
 
   if (directConnectionString) {
     return directConnectionString;
@@ -115,6 +116,18 @@ async function main() {
 
     await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS oauth_accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider VARCHAR(32) NOT NULL,
+        provider_account_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(provider, provider_account_id)
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id)');
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (

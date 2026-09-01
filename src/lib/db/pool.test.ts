@@ -14,6 +14,16 @@ describe('hosted database configuration', () => {
     expect(getHostedDatabaseUrl()).toBe('postgresql://canonical');
   });
 
+  it('accepts Vercel Postgres and Neon URL aliases', () => {
+    vi.stubEnv('DATABASE_URL', '');
+    vi.stubEnv('DATABASE_POSTGRES_URL', '');
+    vi.stubEnv('POSTGRES_URL', 'postgresql://vercel-postgres');
+    expect(getHostedDatabaseUrl()).toBe('postgresql://vercel-postgres');
+    vi.stubEnv('POSTGRES_URL', '');
+    vi.stubEnv('NEON_DATABASE_URL', 'postgresql://neon');
+    expect(getHostedDatabaseUrl()).toBe('postgresql://neon');
+  });
+
   it('accepts the Vercel Neon pooled URL without a duplicate secret', () => {
     vi.stubEnv('DATABASE_URL', '');
     vi.stubEnv('DATABASE_POSTGRES_URL', 'postgresql://vercel-neon');
