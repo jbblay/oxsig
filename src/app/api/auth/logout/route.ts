@@ -4,11 +4,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getPool } from '@/lib/db/pool';
 import { hashRefreshToken } from '@/lib/auth/session';
 
-export async function POST(request: NextRequest) {
-  const refreshToken = request.cookies.get('refreshToken')?.value;
+export async function POST(_request: NextRequest) {
+  const cookieStore = await cookies();
+  const refreshToken = cookieStore.get('refreshToken')?.value;
   let revocationFailed = false;
 
   if (refreshToken) {
