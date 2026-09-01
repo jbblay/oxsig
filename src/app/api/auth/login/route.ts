@@ -78,25 +78,26 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       null;
 
-    await pool.query('BEGIN');
+    const client = await pool.connect();
     try {
-      await pool.query(
+      await client.query('BEGIN');
+      await client.query(
         `UPDATE users
          SET last_seen_at = NOW(), last_login_at = NOW()
          WHERE id = $1`,
         [user.id]
       );
-
-      await pool.query(
+      await client.query(
         `INSERT INTO sessions (user_id, refresh_token, device_info, ip_address, expires_at)
          VALUES ($1, $2, $3, $4, NOW() + INTERVAL '7 days')`,
         [user.id, hashRefreshToken(refreshToken), userAgent, ipAddress]
       );
-
-      await pool.query('COMMIT');
+      await client.query('COMMIT');
     } catch (error) {
-      await pool.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw error;
+    } finally {
+      client.release();
     }
 
     await logAuthEvent(AUDIT_ACTIONS.LOGIN_SUCCESS, user.id, request, true);
