@@ -1,21 +1,38 @@
 import pg from 'pg';
 
 const { Client } = pg;
-const connectionString = process.env.DATABASE_URL;
+const applicationConnectionString = process.env.DATABASE_URL;
 
-if (!connectionString) {
+if (!applicationConnectionString) {
   console.error('DATABASE_URL is required for the auth database bootstrap.');
   process.exit(1);
 }
 
-const client = new Client({ connectionString });
+function getMigrationConnectionString() {
+  if (process.env.DATABASE_URL_UNPOOLED) {
+    return process.env.DATABASE_URL_UNPOOLED;
+  }
+
+  // Neon pooled URLs use a hostname containing "-pooler". Schema changes are
+  // safer over the matching direct endpoint, while the application should keep
+  // using the pooled DATABASE_URL for normal serverless traffic.
+  const url = new URL(applicationConnectionString);
+  if (url.hostname.includes('-pooler.')) {
+    url.hostname = url.hostname.replace('-pooler.', '.');
+  }
+  return url.toString();
+}
+
+const client = new Client({
+  connectionString: getMigrationConnectionString(),
+  enableChannelBinding: true,
+});
 
 async function main() {
   await client.connect();
 
   // Keep this bootstrap intentionally small and idempotent. It creates only the
-  // schema required by signup/login/session handling and is safe with hosted
-  // PostgreSQL poolers such as Neon pooled connections.
+  // schema required by signup/login/session handling.
   await client.query('BEGIN');
   try {
     await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
