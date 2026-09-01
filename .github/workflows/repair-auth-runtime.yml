@@ -1,0 +1,66 @@
+name: Repair Auth Runtime
+
+on:
+  push:
+    branches:
+      - feature/labs-mvp
+    paths:
+      - .github/workflows/repair-auth-runtime.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/labs-mvp
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Replace native bcrypt runtime
+        shell: bash
+        run: |
+          pnpm remove bcrypt argon2
+          pnpm remove -D @types/bcrypt
+          pnpm add bcryptjs@^3.0.2
+          node <<'NODE'
+          const fs = require('fs');
+
+          const jwtPath = 'src/lib/auth/jwt.ts';
+          let jwt = fs.readFileSync(jwtPath, 'utf8');
+          jwt = jwt.replace("import bcrypt from 'bcrypt';", "import bcrypt from 'bcryptjs';");
+          fs.writeFileSync(jwtPath, jwt);
+
+          const registerPath = 'src/app/api/auth/register/route.ts';
+          let register = fs.readFileSync(registerPath, 'utf8');
+          register = register.replace("    console.log('📝 Register request body:', body);\n", '');
+          register = register.replace("      console.log('❌ Missing fields - email:', email, 'password:', password ? '[PRESENT]' : '[MISSING]');\n", '');
+          fs.writeFileSync(registerPath, register);
+          NODE
+
+      - name: Verify install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm tsc --noEmit
+          pnpm build
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml src/lib/auth/jwt.ts src/app/api/auth/register/route.ts
+          git commit -m "fix: make password auth Vercel-safe"
+          git push origin HEAD:feature/labs-mvp
