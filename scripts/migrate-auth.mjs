@@ -66,14 +66,31 @@ async function main() {
     `);
 
     // Upgrade an older users table without assuming which migration created it.
+    // CREATE TABLE IF NOT EXISTS does not add columns to a pre-existing table,
+    // so establish the full contract used by login, registration, profiles,
+    // DID identity, and audit logging before changing constraints or indexes.
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS public_key TEXT');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255)');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT');
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'");
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT false');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()');
+    await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ');
     await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ');
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb");
     await client.query('ALTER TABLE users ALTER COLUMN public_key DROP NOT NULL');
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_key_auth_unique
+      ON users (public_key)
+      WHERE public_key IS NOT NULL
+    `);
 
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_auth_unique
