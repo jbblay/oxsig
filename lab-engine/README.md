@@ -64,7 +64,18 @@ Learner containers are launched with:
 - random container/network names;
 - automatic TTL destruction.
 
-The Kali container can reach the target container only through its private lab network. The target is not exposed publicly.
+The Kali and target containers share only their per-session internal bridge. Docker blocks routing from an internal network to other Docker/external networks, so the learner cannot use that network for normal Internet or cloud-metadata access and cannot reach another learner's separately created lab network.
+
+### Host gateway boundary
+
+Docker internal networks still permit communication with the bridge gateway IP. Therefore `--internal` by itself must **not** be treated as a complete host firewall.
+
+Production lab workers must additionally satisfy both of these requirements:
+
+1. Run labs on dedicated worker hosts/nodes that do not expose OxSig application, database, storage, Docker API, SSH administration, cloud metadata proxy, or other sensitive services on lab bridge interfaces.
+2. Apply host firewall policy that rejects learner-network traffic destined for the worker host/gateway while still permitting container-to-container traffic inside each lab network.
+
+The target has no published host port and remains reachable only from its lab network unless an operator deliberately changes the Docker configuration.
 
 ## Important production boundary
 
