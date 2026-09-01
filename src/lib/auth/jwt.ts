@@ -1,11 +1,11 @@
 /**
  * JWT Authentication with Ed25519 Signatures
- * 
+ *
  * Implements secure JWT token generation and verification using
  * Ed25519 cryptographic signatures instead of HMAC.
  */
 
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import { hexToBytes } from '@noble/hashes/utils';
 import bcrypt from 'bcrypt';
 
 const BCRYPT_ROUNDS = 10;
@@ -31,22 +31,24 @@ export interface JWTPayload {
 let signingKeyPair: CryptoKeyPair | null = null;
 
 /**
- * Initialize JWT signing keys from environment or generate new ones
- * Keys are persisted in environment variables to survive server restarts
+ * Initialize JWT signing keys.
+ *
+ * Production must provide persistent keys through environment variables.
+ * Development may use an ephemeral key pair, but private key material is
+ * never written to logs.
  */
 export async function initializeJWTKeys(): Promise<void> {
   if (signingKeyPair) return;
 
   const privateKeyEnv = process.env.JWT_PRIVATE_KEY;
   const publicKeyEnv = process.env.JWT_PUBLIC_KEY;
+  const isProduction = process.env.NODE_ENV === 'production';
 
   if (privateKeyEnv && publicKeyEnv) {
-    // Load existing keys from environment
     try {
       const privateKeyBytes = hexToBytes(privateKeyEnv);
       const publicKeyBytes = hexToBytes(publicKeyEnv);
 
-      // Convert to proper ArrayBuffer type
       const privateKeyBuffer = new Uint8Array(privateKeyBytes).buffer as ArrayBuffer;
       const publicKeyBuffer = new Uint8Array(publicKeyBytes).buffer as ArrayBuffer;
 
@@ -67,40 +69,38 @@ export async function initializeJWTKeys(): Promise<void> {
       );
 
       signingKeyPair = { privateKey, publicKey };
-      console.log('✅ JWT signing keys loaded from environment');
+      console.log('JWT signing keys loaded');
+      return;
     } catch (error) {
-      console.error('Failed to load JWT keys from environment, generating new ones:', error);
-      await generateNewKeys();
+      if (isProduction) {
+        console.error('Failed to load configured JWT signing keys');
+        throw new Error('Invalid JWT signing key configuration');
+      }
+
+      console.warn('Configured JWT keys are invalid; using an ephemeral development key pair');
+      await generateEphemeralKeys();
+      return;
     }
-  } else {
-    // Generate new keys and display them for environment configuration
-    await generateNewKeys();
   }
+
+  if (isProduction) {
+    throw new Error(
+      'JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required in production. Refusing to start with ephemeral signing keys.'
+    );
+  }
+
+  console.warn('JWT signing keys are not configured; using an ephemeral development key pair');
+  await generateEphemeralKeys();
 }
 
-async function generateNewKeys(): Promise<void> {
+async function generateEphemeralKeys(): Promise<void> {
   signingKeyPair = await crypto.subtle.generateKey(
     'Ed25519',
     true,
     ['sign', 'verify']
   );
 
-  // Export keys to display for environment configuration
-  const privateKeyBytes = new Uint8Array(
-    await crypto.subtle.exportKey('pkcs8', signingKeyPair.privateKey)
-  );
-  const publicKeyBytes = new Uint8Array(
-    await crypto.subtle.exportKey('spki', signingKeyPair.publicKey)
-  );
-
-  const privateKeyHex = bytesToHex(privateKeyBytes);
-  const publicKeyHex = bytesToHex(publicKeyBytes);
-
-  console.log('⚠️  NEW JWT SIGNING KEYS GENERATED');
-  console.log('⚠️  Add these to your .env.local to persist across restarts:');
-  console.log(`JWT_PRIVATE_KEY=${privateKeyHex}`);
-  console.log(`JWT_PUBLIC_KEY=${publicKeyHex}`);
-  console.log('⚠️  All existing tokens will be invalid after restart unless you save these keys!');
+  console.warn('Ephemeral JWT signing keys generated for development. Existing tokens will be invalid after restart.');
 }
 
 /**
@@ -128,12 +128,11 @@ function base64URLEncode(data: Uint8Array): string {
  * Base64URL decode
  */
 function base64URLDecode(str: string): Uint8Array {
-  // Add padding back
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) {
     base64 += '=';
   }
-  
+
   const binaryString = atob(base64);
   const buffer = new ArrayBuffer(binaryString.length);
   const bytes = new Uint8Array(buffer);
@@ -150,7 +149,6 @@ function ensureArrayBuffer(data: Uint8Array): ArrayBuffer {
   if (data.buffer.byteLength === data.byteLength) {
     return data.buffer as ArrayBuffer;
   }
-  // If the Uint8Array is a view on a larger buffer, create a copy
   return data.slice().buffer as ArrayBuffer;
 }
 
@@ -162,7 +160,7 @@ function createJWTHeader(): string {
     alg: 'EdDSA',
     typ: 'JWT',
   };
-  
+
   const headerJSON = JSON.stringify(header);
   const headerBytes = new TextEncoder().encode(headerJSON);
   return base64URLEncode(headerBytes);
@@ -179,7 +177,7 @@ function createJWTPayload(
 ): string {
   const now = Math.floor(Date.now() / 1000);
   const expiry = type === 'access' ? TOKEN_EXPIRY.ACCESS : TOKEN_EXPIRY.REFRESH;
-  
+
   const payload: JWTPayload = {
     sub: userId,
     ...(email && { email }),
@@ -188,7 +186,7 @@ function createJWTPayload(
     exp: now + expiry,
     type,
   };
-  
+
   const payloadJSON = JSON.stringify(payload);
   const payloadBytes = new TextEncoder().encode(payloadJSON);
   return base64URLEncode(payloadBytes);
@@ -204,26 +202,22 @@ export async function signJWT(
   role?: string
 ): Promise<string> {
   const keys = await getSigningKeys();
-  
-  // Create header and payload
+
   const header = createJWTHeader();
   const payload = createJWTPayload(userId, type, email, role);
-  
-  // Create signing input
+
   const signingInput = `${header}.${payload}`;
   const signingInputBytes = new TextEncoder().encode(signingInput);
-  
-  // Sign with Ed25519
+
   const signatureBuffer = await crypto.subtle.sign(
     'Ed25519',
     keys.privateKey,
     signingInputBytes
   );
-  
+
   const signature = new Uint8Array(signatureBuffer);
   const signatureB64 = base64URLEncode(signature);
-  
-  // Return complete JWT
+
   return `${signingInput}.${signatureB64}`;
 }
 
@@ -233,42 +227,38 @@ export async function signJWT(
 export async function verifyJWT(token: string): Promise<JWTPayload | null> {
   try {
     const keys = await getSigningKeys();
-    
-    // Split token into parts
+
     const parts = token.split('.');
     if (parts.length !== 3) {
       return null;
     }
-    
+
     const [headerB64, payloadB64, signatureB64] = parts;
-    
-    // Verify signature
+
     const signingInput = `${headerB64}.${payloadB64}`;
     const signingInputBytes = new TextEncoder().encode(signingInput);
     const signatureBytes = base64URLDecode(signatureB64);
-    
+
     const isValid = await crypto.subtle.verify(
       'Ed25519',
       keys.publicKey,
       signatureBytes as BufferSource,
       ensureArrayBuffer(signingInputBytes)
     );
-    
+
     if (!isValid) {
       return null;
     }
-    
-    // Decode payload
+
     const payloadBytes = base64URLDecode(payloadB64);
     const payloadJSON = new TextDecoder().decode(payloadBytes);
     const payload: JWTPayload = JSON.parse(payloadJSON);
-    
-    // Check expiration
+
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
-      return null; // Token expired
+      return null;
     }
-    
+
     return payload;
   } catch (error) {
     console.error('JWT verification error:', error);
@@ -288,7 +278,7 @@ export async function generateTokenPair(
     signJWT(userId, 'access', email, role),
     signJWT(userId, 'refresh', email, role),
   ]);
-  
+
   return { accessToken, refreshToken };
 }
 
@@ -299,12 +289,11 @@ export async function refreshAccessToken(
   refreshToken: string
 ): Promise<string | null> {
   const payload = await verifyJWT(refreshToken);
-  
+
   if (!payload || payload.type !== 'refresh') {
     return null;
   }
-  
-  // Generate new access token
+
   return signJWT(payload.sub, 'access', payload.email, payload.role);
 }
 
@@ -315,12 +304,12 @@ export function extractBearerToken(authHeader?: string | null): string | null {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }
-  
+
   return authHeader.substring(7);
 }
 
 /**
- * Hash password with bcrypt (production-grade)
+ * Hash password with bcrypt
  */
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_ROUNDS);
