@@ -144,13 +144,22 @@ async function main() {
     );
     await client.query(storyboardSchema);
 
+    // Clerk is an external identity provider only; migration 012 adds the
+    // external Clerk identifier without replacing the UUID primary key used by
+    // every OxSig relationship.
+    const clerkIdentitySchema = await fs.readFile(
+      new URL('../migrations/012_clerk_identity.sql', import.meta.url),
+      'utf8'
+    );
+    await client.query(clerkIdentitySchema);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS oxisg_auth_bootstrap (
         version INTEGER PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await client.query('INSERT INTO oxisg_auth_bootstrap (version) VALUES (1) ON CONFLICT (version) DO NOTHING');
+    await client.query('INSERT INTO oxisg_auth_bootstrap (version) VALUES (2) ON CONFLICT (version) DO NOTHING');
 
     await client.query('COMMIT');
   } catch (error) {
@@ -173,7 +182,15 @@ async function main() {
       EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'role'
-      ) AS role_column
+      ) AS role_column,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'clerk_user_id'
+      ) AS clerk_user_id_column,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'auth_provider'
+      ) AS auth_provider_column
   `);
 
   const readiness = verification.rows[0];
@@ -185,12 +202,14 @@ async function main() {
     !readiness.storyboard_sessions_table ||
     !readiness.storyboard_shares_table ||
     !readiness.password_hash_column ||
-    !readiness.role_column
+    !readiness.role_column ||
+    !readiness.clerk_user_id_column ||
+    !readiness.auth_provider_column
   ) {
-    throw new Error('Authentication schema verification failed after bootstrap.');
+    throw new Error('Authentication/Clerk schema verification failed after bootstrap.');
   }
 
-  console.log('Authentication database bootstrap complete and verified.');
+  console.log('Authentication and Clerk identity database bootstrap complete and verified.');
 }
 
 main()
