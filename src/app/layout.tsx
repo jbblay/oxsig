@@ -14,9 +14,8 @@ import { AuthProvider } from "@/lib/auth/use-auth";
 
 const inter = Inter({ subsets: ["latin"] });
 
-// A fresh CSP nonce is attached by middleware for every request. Dynamic
-// rendering lets Next.js apply that nonce to its bootstrap scripts instead of
-// serving build-time HTML whose inline scripts would be blocked by the CSP.
+// Clerk strict CSP and OxSig's legacy CSP both rely on a fresh per-request
+// nonce, so the root layout must remain dynamically rendered.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
@@ -89,7 +88,7 @@ export default async function RootLayout({
         {clerkEnabled ? (
           <ClerkProvider
             publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-            afterSignOutUrl="/sign-in"
+            dynamic
           >
             {app}
           </ClerkProvider>
