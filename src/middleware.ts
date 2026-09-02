@@ -9,7 +9,8 @@
 
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import type { NextFetchEvent, NextRequest } from 'next/server';
+import type { NextFetchEvent } from 'next/server';
+import type { NextRequest } from 'next/dist/server/web/spec-extension/request';
 import {
   applySecurityHeaders,
   buildContentSecurityPolicy,
