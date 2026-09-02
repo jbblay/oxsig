@@ -1,61 +1,55 @@
-/**
- * Storage List API - GET /api/storage/list?bucket=&prefix=&maxKeys=
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
-
-let s3Client: S3Client | null = null;
-function getS3Client() {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
-      region: process.env.MINIO_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-      },
-      forcePathStyle: true,
-    });
-  }
-  return s3Client;
-}
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { requireAuth } from '@/lib/auth/middleware';
+import {
+  getStorageBucket,
+  getStorageClient,
+  getUserStoragePrefix,
+  storageDownloadPath,
+  storageErrorResponse,
+  toUserStorageKey,
+} from '@/lib/storage/server';
 
 export async function GET(request: NextRequest) {
-  try {
-    const url = new URL(request.url);
-    const bucket = url.searchParams.get('bucket') || process.env.MINIO_BUCKET || 'oxsig-documents';
-    const prefix = url.searchParams.get('prefix') || undefined;
-    const maxKeys = url.searchParams.get('maxKeys')
-      ? parseInt(url.searchParams.get('maxKeys') as string)
-      : undefined;
+  return requireAuth(request, async (req, user) => {
+    try {
+      const url = new URL(req.url);
+      const requestedPrefix = url.searchParams.get('prefix')?.trim() || '';
+      const rawMaxKeys = Number(url.searchParams.get('maxKeys') || 100);
+      const maxKeys = Number.isFinite(rawMaxKeys)
+        ? Math.min(Math.max(Math.trunc(rawMaxKeys), 1), 1000)
+        : 100;
 
-    const cmd = new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, MaxKeys: maxKeys });
-    const res = await getS3Client().send(cmd);
+      const bucket = getStorageBucket();
+      const prefix = requestedPrefix
+        ? toUserStorageKey(user.id, requestedPrefix)
+        : getUserStoragePrefix(user.id);
 
-    const minioEndpoint = process.env.MINIO_ENDPOINT || 'http://localhost:9000';
-    const objects =
-      res.Contents?.map((obj) => ({
-        id: obj.Key!,
-        key: obj.Key!,
-        bucket,
-        filename: obj.Key?.split('/').pop(),
-        size: obj.Size || 0,
-        mimeType: 'application/octet-stream',
-        url: `${minioEndpoint}/${bucket}/${obj.Key}`,
-        metadata: {},
-        encrypted: false,
-        checksum: obj.ETag || '',
-        uploadedBy: '',
-        createdAt: (obj.LastModified && obj.LastModified.toISOString()) || '',
-      })) || [];
+      const result = await getStorageClient().send(
+        new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, MaxKeys: maxKeys })
+      );
 
-    return NextResponse.json(objects);
-  } catch (error) {
-    console.error('Storage list error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list objects', details: String(error) },
-      { status: 500 }
-    );
-  }
+      const objects =
+        result.Contents?.map((object) => ({
+          id: object.Key || '',
+          key: object.Key || '',
+          bucket,
+          filename: object.Key?.split('/').pop() || '',
+          size: object.Size || 0,
+          mimeType: 'application/octet-stream',
+          url: object.Key ? storageDownloadPath(object.Key) : '',
+          metadata: {},
+          encrypted: false,
+          checksum: object.ETag || '',
+          uploadedBy: user.id,
+          createdAt: object.LastModified?.toISOString() || '',
+        })) || [];
+
+      return NextResponse.json(objects);
+    } catch (error) {
+      console.error('Storage list error:', error);
+      const failure = storageErrorResponse(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }
