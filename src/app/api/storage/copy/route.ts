@@ -1,57 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, CopyObjectCommand } from '@aws-sdk/client-s3';
-
-let s3Client: S3Client | null = null;
-function getS3Client() {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
-      region: process.env.MINIO_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-      },
-      forcePathStyle: true,
-    });
-  }
-  return s3Client;
-}
+import { CopyObjectCommand } from '@aws-sdk/client-s3';
+import { requireAuth } from '@/lib/auth/middleware';
+import { validateCsrfToken } from '@/lib/security/csrf';
+import {
+  assertUserStorageKey,
+  getStorageBucket,
+  getStorageClient,
+  storageDownloadPath,
+  storageErrorResponse,
+  toUserStorageKey,
+} from '@/lib/storage/server';
 
 export async function POST(request: NextRequest) {
-  try {
-    const { sourceKey, destKey, sourceBucket, destBucket } = await request.json();
-    const bucketFrom = sourceBucket || process.env.MINIO_BUCKET || 'oxsig-documents';
-    const bucketTo = destBucket || process.env.MINIO_BUCKET || 'oxsig-documents';
-
-    if (!sourceKey || !destKey) {
-      return NextResponse.json({ error: 'Missing sourceKey or destKey' }, { status: 400 });
+  return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) {
+      return NextResponse.json(
+        { error: 'Invalid or missing CSRF token' },
+        { status: 403 }
+      );
     }
 
-    await getS3Client().send(
-      new CopyObjectCommand({
-        Bucket: bucketTo,
-        CopySource: `/${bucketFrom}/${sourceKey}`,
-        Key: destKey,
-      })
-    );
+    try {
+      const body = await req.json().catch(() => null);
+      const sourceKey = typeof body?.sourceKey === 'string' ? body.sourceKey : '';
+      const destKey = typeof body?.destKey === 'string' ? body.destKey : '';
 
-    const minioEndpoint = process.env.MINIO_ENDPOINT || 'http://localhost:9000';
-    return NextResponse.json({
-      id: destKey,
-      key: destKey,
-      bucket: bucketTo,
-      filename: destKey.split('/').pop(),
-      size: 0,
-      mimeType: 'application/octet-stream',
-      url: `${minioEndpoint}/${bucketTo}/${destKey}`,
-      metadata: {},
-      encrypted: false,
-      checksum: '',
-      uploadedBy: '',
-      createdAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Copy error:', error);
-    return NextResponse.json({ error: 'Failed to copy object' }, { status: 500 });
-  }
+      if (!sourceKey || !destKey) {
+        return NextResponse.json(
+          { error: 'Missing sourceKey or destKey' },
+          { status: 400 }
+        );
+      }
+
+      const source = assertUserStorageKey(user.id, sourceKey);
+      const destination = toUserStorageKey(user.id, destKey);
+      const bucket = getStorageBucket();
+      const encodedSource = `${bucket}/${source
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/')}`;
+
+      await getStorageClient().send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          CopySource: encodedSource,
+          Key: destination,
+        })
+      );
+
+      return NextResponse.json({
+        id: destination,
+        key: destination,
+        bucket,
+        filename: destination.split('/').pop() || '',
+        size: 0,
+        mimeType: 'application/octet-stream',
+        url: storageDownloadPath(destination),
+        metadata: {},
+        encrypted: false,
+        checksum: '',
+        uploadedBy: user.id,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Storage copy error:', error);
+      const failure = storageErrorResponse(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }
