@@ -1,11 +1,17 @@
 /**
- * Authentication Middleware
- * JWT-based authentication for API routes with Ed25519 signatures
+ * Authentication boundary for API routes.
+ *
+ * Clerk is the preferred interactive identity provider when configured. OxSig
+ * resolves Clerk's external user ID to the existing internal UUID user record.
+ * Legacy Ed25519 JWT authentication remains available during the migration so
+ * existing sessions and DID flows can be retired deliberately rather than in
+ * one breaking cutover.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyJWT } from './jwt';
 import { cookies } from 'next/headers';
+import { getClerkAuthenticatedUser, isClerkConfigured } from './clerk-user';
 
 export interface AuthenticatedUser {
   id: string;
@@ -15,52 +21,62 @@ export interface AuthenticatedUser {
   role: 'user' | 'admin';
 }
 
+async function getLegacyUserFromRequest(
+  request: NextRequest
+): Promise<AuthenticatedUser | null> {
+  const cookieStore = await cookies();
+  let token = cookieStore.get('accessToken')?.value;
+
+  if (!token) {
+    const authHeader = request.headers.get('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+  }
+
+  if (!token) return null;
+
+  const payload = await verifyJWT(token);
+  if (!payload || payload.type !== 'access') return null;
+
+  return {
+    id: payload.sub,
+    did: payload.did,
+    email: payload.email,
+    name: payload.email?.split('@')[0],
+    role: (payload.role as 'user' | 'admin') || 'user',
+  };
+}
+
 /**
- * Get user from request with Ed25519 JWT validation
+ * Resolve the authenticated request to OxSig's internal UUID user.
  */
 export async function getUserFromRequest(
   request: NextRequest
 ): Promise<AuthenticatedUser | null> {
   try {
-    // Try to get token from httpOnly cookie first
-    const cookieStore = await cookies();
-    let token = cookieStore.get('accessToken')?.value;
-
-    // Fallback to Authorization header for API clients
-    if (!token) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
+    if (isClerkConfigured()) {
+      const clerkUser = await getClerkAuthenticatedUser();
+      if (clerkUser) {
+        return {
+          id: clerkUser.id,
+          did: clerkUser.did,
+          email: clerkUser.email,
+          name: clerkUser.name,
+          role: clerkUser.role,
+        };
       }
     }
 
-    if (!token) {
-      return null;
-    }
-
-    // Verify Ed25519-signed JWT token
-    const payload = await verifyJWT(token);
-    
-    if (!payload || payload.type !== 'access') {
-      return null;
-    }
-    
-    return {
-      id: payload.sub,
-      did: payload.did,
-      email: payload.email,
-      name: payload.email?.split('@')[0],
-      role: (payload.role as 'user' | 'admin') || 'user',
-    };
+    // Transitional fallback. Remove after Clerk migration is complete and all
+    // legacy sessions/DID login flows have a defined replacement.
+    return await getLegacyUserFromRequest(request);
   } catch (error) {
     console.error('Auth error:', error);
     return null;
   }
 }
 
-/**
- * Require authentication middleware
- */
 export async function requireAuth(
   request: NextRequest,
   handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>
@@ -77,9 +93,6 @@ export async function requireAuth(
   return handler(request, user);
 }
 
-/**
- * Require admin role
- */
 export async function requireAdmin(
   request: NextRequest,
   handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>
@@ -93,6 +106,8 @@ export async function requireAdmin(
     );
   }
 
+  // Authorization stays in OxSig/Neon. A Clerk session never grants an OxSig
+  // admin role by itself.
   if (user.role !== 'admin') {
     return NextResponse.json(
       { error: 'Forbidden', message: 'Admin access required' },
@@ -103,9 +118,6 @@ export async function requireAdmin(
   return handler(request, user);
 }
 
-/**
- * Optional auth - provides user if authenticated, but doesn't require it
- */
 export async function optionalAuth(
   request: NextRequest,
   handler: (request: NextRequest, user: AuthenticatedUser | null) => Promise<NextResponse>
