@@ -3,10 +3,7 @@
  */
 
 import { apiClient, unwrap, type ApiResponse } from './client';
-
-// ============================================================================
-// Types
-// ============================================================================
+import { withClientCsrf } from '@/lib/security/csrf-client';
 
 export interface SearchResult<T = any> {
   hits: T[];
@@ -46,111 +43,79 @@ export interface SearchStats {
   fieldDistribution: Record<string, number>;
 }
 
-// ============================================================================
-// Search API
-// ============================================================================
-
 export const searchApi = {
-  /**
-   * Search documents
-   */
   async searchDocuments(options: SearchOptions): Promise<ApiResponse<SearchResult>> {
     return apiClient.post<SearchResult>('/api/search/documents', options);
   },
 
-  /**
-   * Search users
-   */
   async searchUsers(options: SearchOptions): Promise<ApiResponse<SearchResult>> {
     return apiClient.post<SearchResult>('/api/search/users', options);
   },
 
-  /**
-   * Search across all indexes
-   */
   async searchAll(options: SearchOptions): Promise<ApiResponse<{ [index: string]: SearchResult }>> {
     return apiClient.post<{ [index: string]: SearchResult }>('/api/search/all', options);
   },
 
-  /**
-   * Get search suggestions/autocomplete
-   */
   async suggest(
     query: string,
     index: 'documents' | 'users',
     limit?: number
   ): Promise<ApiResponse<string[]>> {
-    return apiClient.post<string[]>('/api/search/suggest', {
-      query,
-      index,
-      limit,
-    });
+    return apiClient.post<string[]>('/api/search/suggest', { query, index, limit });
   },
 
-  /**
-   * Get faceted search results
-   */
   async facetedSearch(
-    index: string,
+    index: 'documents' | 'users',
     options: SearchOptions & { facets: string[] }
   ): Promise<ApiResponse<SearchResult & { facetDistribution: FacetDistribution }>> {
     return apiClient.post<SearchResult & { facetDistribution: FacetDistribution }>(
-      `/api/search/${index}/faceted`,
+      `/api/search/index/${index}/faceted`,
       options
     );
   },
 
-  /**
-   * Index a document
-   */
+  // Administrative index-management methods. Server-side authorization is
+  // authoritative; these CSRF headers allow a legitimate admin UI to call them.
   async indexDocument(document: any): Promise<ApiResponse<{ taskUid: number }>> {
-    return apiClient.post<{ taskUid: number }>('/api/search/index/documents', document);
+    return apiClient.post<{ taskUid: number }>(
+      '/api/search/index/documents',
+      document,
+      { headers: await withClientCsrf() }
+    );
   },
 
-  /**
-   * Index multiple documents
-   */
   async indexDocuments(documents: any[]): Promise<ApiResponse<{ taskUid: number }>> {
-    return apiClient.post<{ taskUid: number }>('/api/search/index/documents/batch', {
-      documents,
+    return apiClient.post<{ taskUid: number }>(
+      '/api/search/index/documents/batch',
+      { documents },
+      { headers: await withClientCsrf() }
+    );
+  },
+
+  async deleteFromIndex(
+    index: 'documents' | 'users',
+    documentId: string
+  ): Promise<ApiResponse<{ taskUid: number }>> {
+    return apiClient.delete<{ taskUid: number }>(
+      `/api/search/index/${index}/${encodeURIComponent(documentId)}`,
+      { headers: await withClientCsrf() }
+    );
+  },
+
+  async clearIndex(index: 'documents' | 'users'): Promise<ApiResponse<{ taskUid: number }>> {
+    return apiClient.delete<{ taskUid: number }>(`/api/search/index/${index}`, {
+      headers: await withClientCsrf(),
     });
   },
 
-  /**
-   * Delete document from index
-   */
-  async deleteFromIndex(
-    index: string,
-    documentId: string
-  ): Promise<ApiResponse<{ taskUid: number }>> {
-    return apiClient.delete<{ taskUid: number }>(`/api/search/index/${index}/${documentId}`);
-  },
-
-  /**
-   * Clear an index
-   */
-  async clearIndex(index: string): Promise<ApiResponse<{ taskUid: number }>> {
-    return apiClient.delete<{ taskUid: number }>(`/api/search/index/${index}`);
-  },
-
-  /**
-   * Get index stats
-   */
-  async getIndexStats(index: string): Promise<ApiResponse<SearchStats>> {
+  async getIndexStats(index: 'documents' | 'users'): Promise<ApiResponse<SearchStats>> {
     return apiClient.get<SearchStats>(`/api/search/index/${index}/stats`);
   },
 
-  /**
-   * Get search task status
-   */
   async getTaskStatus(taskUid: number): Promise<ApiResponse<any>> {
     return apiClient.get(`/api/search/tasks/${taskUid}`);
   },
 };
-
-// ============================================================================
-// Convenience Functions with unwrap
-// ============================================================================
 
 export const search = {
   documents: (options: SearchOptions) => unwrap(searchApi.searchDocuments(options)),
@@ -158,13 +123,13 @@ export const search = {
   all: (options: SearchOptions) => unwrap(searchApi.searchAll(options)),
   suggest: (query: string, index: 'documents' | 'users', limit?: number) =>
     unwrap(searchApi.suggest(query, index, limit)),
-  faceted: (index: string, options: SearchOptions & { facets: string[] }) =>
+  faceted: (index: 'documents' | 'users', options: SearchOptions & { facets: string[] }) =>
     unwrap(searchApi.facetedSearch(index, options)),
   indexDocument: (document: any) => unwrap(searchApi.indexDocument(document)),
   indexDocuments: (documents: any[]) => unwrap(searchApi.indexDocuments(documents)),
-  deleteFromIndex: (index: string, documentId: string) =>
+  deleteFromIndex: (index: 'documents' | 'users', documentId: string) =>
     unwrap(searchApi.deleteFromIndex(index, documentId)),
-  clearIndex: (index: string) => unwrap(searchApi.clearIndex(index)),
-  getIndexStats: (index: string) => unwrap(searchApi.getIndexStats(index)),
+  clearIndex: (index: 'documents' | 'users') => unwrap(searchApi.clearIndex(index)),
+  getIndexStats: (index: 'documents' | 'users') => unwrap(searchApi.getIndexStats(index)),
   getTaskStatus: (taskUid: number) => unwrap(searchApi.getTaskStatus(taskUid)),
 };
