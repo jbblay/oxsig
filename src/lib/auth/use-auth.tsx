@@ -44,6 +44,7 @@ function normalizeUser(data: any): User {
     publicKey: data.publicKey ?? data.public_key ?? '',
     email: data.email,
     displayName: data.displayName ?? data.display_name ?? data.email,
+    avatarUrl: data.avatarUrl ?? data.avatar_url ?? '',
     role: data.role ?? 'user',
   };
 }

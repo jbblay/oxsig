@@ -10,6 +10,7 @@ import {
   FileCheck,
   HardDrive,
   Lock,
+  LogIn,
   LogOut,
   Monitor,
   Moon,
@@ -19,6 +20,7 @@ import {
   Smartphone,
   Sun,
   User,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -44,7 +46,7 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
   const router = useRouter();
-  const { logout } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const [signingOut, setSigningOut] = React.useState(false);
 
   const navLinks = [
@@ -177,26 +179,35 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuLabel>{isAuthenticated ? user?.displayName || user?.email || 'My Account' : 'Guest session'}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/account" className="cursor-pointer">
-                  <User className="w-4 h-4 mr-2" />
-                  Account
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/security" className="cursor-pointer">
-                  <Smartphone className="w-4 h-4 mr-2" />
-                  Devices
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/audit" className="cursor-pointer">
-                  <FileCheck className="w-4 h-4 mr-2" />
-                  Audit Log
-                </Link>
-              </DropdownMenuItem>
+              {isAuthenticated ? <>
+                <DropdownMenuItem asChild>
+                  <Link href="/account" className="cursor-pointer">
+                    <User className="w-4 h-4 mr-2" />
+                    Account
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/security" className="cursor-pointer">
+                    <Smartphone className="w-4 h-4 mr-2" />
+                    Devices
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/audit" className="cursor-pointer">
+                    <FileCheck className="w-4 h-4 mr-2" />
+                    Audit Log
+                  </Link>
+                </DropdownMenuItem>
+              </> : <>
+                <DropdownMenuItem asChild>
+                  <Link href="/sign-in" className="cursor-pointer"><LogIn className="w-4 h-4 mr-2" />Log in</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/sign-up" className="cursor-pointer"><UserPlus className="w-4 h-4 mr-2" />Create account</Link>
+                </DropdownMenuItem>
+              </>}
               <DropdownMenuSeparator />
 
               <DropdownMenuLabel className="md:hidden">Downloads</DropdownMenuLabel>
@@ -247,25 +258,26 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
                   </DropdownMenuItem>
                 </>
               )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={signingOut}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  setSigningOut(true);
-                  void logout()
-                    .then(() => {
-                      toast.success("Signed out");
-                      router.replace('/');
-                      router.refresh();
-                    })
-                    .catch(() => toast.error("Sign out failed"))
-                    .finally(() => setSigningOut(false));
-                }}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                {signingOut ? 'Signing out…' : 'Sign out'}
-              </DropdownMenuItem>
+              {isAuthenticated && <><DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={signingOut}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setSigningOut(true);
+                    void logout()
+                      .then(() => {
+                        toast.success("Signed out");
+                        router.replace('/');
+                        router.refresh();
+                      })
+                      .catch(() => toast.error("Sign out failed"))
+                      .finally(() => setSigningOut(false));
+                  }}
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  {signingOut ? 'Signing out…' : 'Sign out'}
+                </DropdownMenuItem>
+              </>}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

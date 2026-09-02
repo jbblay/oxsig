@@ -10,6 +10,7 @@ export interface User {
   publicKey: string;
   displayName?: string;
   email?: string;
+  avatarUrl?: string;
   role?: string;
 }
 

@@ -1,17 +1,21 @@
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
+import ClerkEntry from '@/components/auth/clerk-entry';
 import LegacyAuthEntry from '@/components/auth/legacy-entry';
+import { isClerkConfigured } from '@/lib/auth/clerk-config';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const clerkEnabled = Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY
-  );
+  const clerkEnabled = isClerkConfigured();
 
   if (clerkEnabled) {
     const { isAuthenticated } = await auth();
-    redirect(isAuthenticated ? '/home' : '/sign-in');
+    if (isAuthenticated) {
+      redirect('/home');
+    }
+
+    return <ClerkEntry />;
   }
 
   return <LegacyAuthEntry />;

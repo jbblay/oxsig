@@ -18,13 +18,6 @@ export default function HomePage() {
   const { user, isLoading, authMethod } = useAuth();
   const [userData, setUserData] = React.useState<any>(null);
 
-  // Redirect if not authenticated
-  React.useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/');
-    }
-  }, [user, isLoading, router]);
-
   // Fetch user data
   React.useEffect(() => {
     const fetchUserData = async () => {
@@ -129,7 +122,7 @@ export default function HomePage() {
     }
   ];
 
-  if (isLoading || !userData) {
+  if (isLoading || (user && !userData)) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4">
@@ -151,10 +144,10 @@ export default function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              Welcome back, {userData.displayName || userData.display_name || userData.email?.split('@')[0] || 'User'}! 👋
+              {user ? `Welcome back, ${userData?.displayName || userData?.display_name || userData?.email?.split('@')[0] || 'User'}!` : 'Explore OxSig'}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Here's what's happening with your documents today
+              {user ? "Here's what's happening with your documents today" : 'Browse the workspace. Create an account when you are ready to save work.'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -167,25 +160,26 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Auth Method Badge */}
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="gap-1">
-            {authMethod === 'email' ? (
-              <>
-                <Shield className="h-3 w-3" />
-                Authenticated with Email
-              </>
-            ) : (
-              <>
-                <Zap className="h-3 w-3" />
-                Authenticated with DID
-              </>
+        {user && (
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="gap-1">
+              {authMethod === 'email' ? (
+                <>
+                  <Shield className="h-3 w-3" />
+                  Authenticated with Email
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3 w-3" />
+                  Authenticated with Clerk
+                </>
+              )}
+            </Badge>
+            {userData?.role === 'admin' && (
+              <Badge variant="default">Admin</Badge>
             )}
-          </Badge>
-          {userData.role === 'admin' && (
-            <Badge variant="default">Admin</Badge>
-          )}
-        </div>
+          </div>
+        )}
       </motion.div>
 
       {/* Stats Grid */}

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getPool } from '@/lib/db/pool';
+import { isClerkConfigured } from './clerk-config';
 
 export interface ClerkMappedUser {
   id: string;
@@ -21,12 +22,6 @@ export interface ClerkUserSnapshot {
 }
 
 const USER_COLUMNS = `id, public_key, email, display_name, role, clerk_user_id`;
-
-export function isClerkConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY
-  );
-}
 
 function mapRow(row: Record<string, any>): ClerkMappedUser {
   return {

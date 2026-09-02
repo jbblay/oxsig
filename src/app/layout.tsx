@@ -11,6 +11,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PerformanceMonitor } from "@/components/PerformanceMonitor";
 import { AuthProvider } from "@/lib/auth/use-auth";
+import { isClerkConfigured } from "@/lib/auth/clerk-config";
+import GuestAuthGate from "@/components/auth/guest-auth-gate";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -64,19 +66,19 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
-  const clerkEnabled = Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY
-  );
+  const clerkEnabled = isClerkConfigured();
 
   const app = (
     <ErrorBoundary>
       <ThemeProvider nonce={nonce}>
         <AuthProvider clerkEnabled={clerkEnabled}>
-          <PerformanceMonitor />
-          <BackgroundController />
-          <PWARegister />
-          <AppShell>{children}</AppShell>
-          <Toaster richColors />
+          <GuestAuthGate>
+            <PerformanceMonitor />
+            <BackgroundController />
+            <PWARegister />
+            <AppShell>{children}</AppShell>
+            <Toaster richColors />
+          </GuestAuthGate>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

@@ -15,6 +15,7 @@ import {
   applySecurityHeaders,
   buildContentSecurityPolicy,
 } from '@/lib/security/headers';
+import { isClerkConfigured } from '@/lib/auth/clerk-config';
 
 const PROTECTED_ROUTES = [
   '/api/documents',
@@ -63,12 +64,6 @@ function isProtectedRoute(pathname: string): boolean {
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.some((route) => pathname.startsWith(route));
-}
-
-function clerkIsConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY
-  );
 }
 
 function legacySecurityContext(request: NextRequest) {
@@ -120,15 +115,8 @@ const clerkRequestMiddleware = clerkMiddleware(
   async (auth, request) => {
     const { pathname } = request.nextUrl;
 
-    // Protect browser pages here for navigation UX. APIs are intentionally
-    // enforced again at the data boundary by requireAuth()/requireAdmin().
-    if (!pathname.startsWith('/api/') && isProtectedRoute(pathname) && !isPublicRoute(pathname)) {
-      const { isAuthenticated, redirectToSignIn } = await auth();
-      if (!isAuthenticated) {
-        const redirect = redirectToSignIn({ returnBackUrl: request.url });
-        return applySecurityHeaders(redirect, undefined, false);
-      }
-    }
+    // Clerk guests may browse the application. Sensitive API operations remain
+    // authorized by requireAuth()/requireAdmin() at the data boundary.
 
     return applySecurityHeaders(NextResponse.next(), undefined, false);
   },
@@ -149,7 +137,7 @@ const clerkRequestMiddleware = clerkMiddleware(
 );
 
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
-  if (clerkIsConfigured()) {
+  if (isClerkConfigured()) {
     return clerkRequestMiddleware(request, event);
   }
 

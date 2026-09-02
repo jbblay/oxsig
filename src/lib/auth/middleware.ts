@@ -11,7 +11,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyJWT } from './jwt';
 import { cookies } from 'next/headers';
-import { getClerkAuthenticatedUser, isClerkConfigured } from './clerk-user';
+import { getClerkAuthenticatedUser } from './clerk-user';
+import { isClerkConfigured } from './clerk-config';
 
 export interface AuthenticatedUser {
   id: string;

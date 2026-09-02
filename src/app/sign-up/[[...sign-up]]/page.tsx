@@ -1,10 +1,11 @@
 import { SignUp } from '@clerk/nextjs';
 import { redirect } from 'next/navigation';
+import { isClerkConfigured } from '@/lib/auth/clerk-config';
 
 export const dynamic = 'force-dynamic';
 
 export default function SignUpPage() {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
+  if (!isClerkConfigured()) {
     redirect('/');
   }
 

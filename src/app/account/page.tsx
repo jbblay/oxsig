@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/lib/auth/use-auth";
 
 type IdentityProfile = {
   publicKey: string;
@@ -83,6 +84,14 @@ function PrivacyPanel() {
 }
 
 export default function AccountPage() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  if (!user) {
+    return <div className="flex min-h-[60vh] items-center justify-center px-4"><Card className="w-full max-w-md text-center"><CardHeader><UserCircle className="mx-auto h-12 w-12 text-muted-foreground" /><CardTitle>Sign in to manage your account</CardTitle><CardDescription>Your profile and account settings are available after you authenticate.</CardDescription></CardHeader><CardContent className="flex justify-center gap-3"><Button asChild variant="outline"><Link href="/sign-in">Log in</Link></Button><Button asChild><Link href="/sign-up">Create account</Link></Button></CardContent></Card></div>;
+  }
+
   return (
     <div className="space-y-6">
       <div><div className="flex items-center gap-2"><UserCircle className="h-7 w-7 text-primary" /><h1 className="text-2xl font-bold md:text-3xl">Account</h1></div><p className="mt-1 text-sm text-muted-foreground">Your profile, verified access methods, sessions, and privacy controls in one place.</p></div>

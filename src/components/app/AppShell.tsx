@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Home, Shield, Network, Users, FileCheck, UserCircle, Sparkles, Vault, ScrollText, GitBranch, WifiOff, HardDrive } from "lucide-react";
 import MobileNav from "@/components/app/MobileNav";
 import TopNav from "@/components/app/TopNav";
+import { useAuth } from "@/lib/auth/use-auth";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -88,9 +89,14 @@ const AnimatedMenuItem = ({
 function AppShellContent({ children }: AppShellProps) {
   const pathname = usePathname();
   const { toggleSidebar } = useSidebar();
+  const { user, isAuthenticated } = useAuth();
 
   // Hide sidebar and nav on login/auth pages
-  const isAuthPage = pathname === '/' || pathname === '/auth';
+  const isAuthPage =
+    pathname === '/' ||
+    pathname === '/auth' ||
+    pathname.startsWith('/sign-in') ||
+    pathname.startsWith('/sign-up');
 
   const coreFeatures = [
     { href: "/home", icon: Home, label: "Home", tooltip: "Home", gradient: "from-blue-500 to-cyan-500" },
@@ -246,15 +252,15 @@ function AppShellContent({ children }: AppShellProps) {
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
                   >
                     <Avatar className="h-8 w-8 border-2 border-primary/20">
-                      <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=oxsig" alt="User" />
+                      <AvatarImage src={user?.avatarUrl || undefined} alt={user?.displayName || 'Account'} />
                       <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-xs font-semibold">
-                        OX
+                        {user?.displayName?.slice(0, 2).toUpperCase() || 'OX'}
                       </AvatarFallback>
                     </Avatar>
                   </motion.div>
                   <div className="flex flex-col flex-1 overflow-hidden group-data-[collapsible=icon]:hidden">
-                    <span className="text-sm font-medium truncate">Account</span>
-                    <span className="text-xs text-muted-foreground truncate">Profile · Identity · Privacy</span>
+                    <span className="text-sm font-medium truncate">{isAuthenticated ? user?.displayName || user?.email || 'Account' : 'Guest session'}</span>
+                    <span className="text-xs text-muted-foreground truncate">{isAuthenticated ? user?.email || 'Profile · Identity · Privacy' : 'Explore without saving'}</span>
                   </div>
                 </Link>
               </SidebarMenuButton>
