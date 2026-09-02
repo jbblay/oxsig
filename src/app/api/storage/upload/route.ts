@@ -1,90 +1,104 @@
-/**
- * Storage Upload API Route - POST /api/storage/upload
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
+import { requireAuth } from '@/lib/auth/middleware';
+import { validateCsrfToken } from '@/lib/security/csrf';
+import {
+  getStorageBucket,
+  getStorageClient,
+  sanitizeStorageFilename,
+  storageDownloadPath,
+  storageErrorResponse,
+  toUserStorageKey,
+} from '@/lib/storage/server';
 
-let s3Client: S3Client | null = null;
-
-function getS3Client() {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
-      region: process.env.MINIO_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-      },
-      forcePathStyle: true,
-    });
-  }
-  return s3Client;
-}
+const MAX_UPLOAD_BYTES = Number(
+  process.env.STORAGE_MAX_SERVER_UPLOAD_BYTES || 100 * 1024 * 1024
+);
 
 export async function POST(request: NextRequest) {
-  try {
-    // @ts-ignore - formData exists on NextRequest at runtime
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const optionsStr = formData.get('options') as string;
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+  return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) {
+      return NextResponse.json(
+        { error: 'Invalid or missing CSRF token' },
+        { status: 403 }
+      );
     }
 
-    const options = optionsStr ? JSON.parse(optionsStr) : {};
-    const bucket = options.bucket || process.env.MINIO_BUCKET || 'oxsig-documents';
-    const filename = options.filename || file.name;
-    const fileExtension = filename.split('.').pop();
-    const uniqueFilename = `${uuidv4()}.${fileExtension}`;
-    const key = `uploads/${uniqueFilename}`;
+    try {
+      const formData = await req.formData();
+      const file = formData.get('file');
+      const optionsStr = formData.get('options');
 
-    // Upload to MinIO
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+      if (!(file instanceof File)) {
+        return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      }
 
-    await getS3Client().send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: buffer,
-        ContentType: options.contentType || file.type,
-        Metadata: {
-          originalName: filename,
-          uploadedBy: 'temp-user-id',
-          uploadedAt: new Date().toISOString(),
-          ...options.metadata,
+      if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
+        return NextResponse.json(
+          { error: `File size must be between 1 byte and ${MAX_UPLOAD_BYTES} bytes` },
+          { status: 400 }
+        );
+      }
+
+      let options: Record<string, unknown> = {};
+      if (typeof optionsStr === 'string' && optionsStr) {
+        const parsed = JSON.parse(optionsStr);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          options = parsed as Record<string, unknown>;
+        }
+      }
+
+      const requestedName =
+        typeof options.filename === 'string' ? options.filename : file.name;
+      const filename = sanitizeStorageFilename(requestedName || 'file');
+      const key = toUserStorageKey(user.id, `uploads/${uuidv4()}-${filename}`);
+      const bucket = getStorageBucket();
+      const contentType =
+        typeof options.contentType === 'string' && options.contentType
+          ? options.contentType
+          : file.type || 'application/octet-stream';
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+
+      await getStorageClient().send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: contentType,
+          Metadata: {
+            originalname: filename,
+            uploadedby: user.id,
+            uploadedat: new Date().toISOString(),
+          },
+        })
+      );
+
+      return NextResponse.json(
+        {
+          id: key,
+          key,
+          bucket,
+          filename,
+          size: file.size,
+          mimeType: contentType,
+          url: storageDownloadPath(key),
+          metadata:
+            options.metadata && typeof options.metadata === 'object'
+              ? options.metadata
+              : {},
+          encrypted: Boolean(options.encrypted),
+          checksum: '',
+          uploadedBy: user.id,
+          createdAt: new Date().toISOString(),
         },
-      })
-    );
-
-    const minioEndpoint = process.env.MINIO_ENDPOINT || 'http://localhost:9000';
-    const url = `${minioEndpoint}/${bucket}/${key}`;
-
-    const storageObject = {
-      id: uuidv4(),
-      key,
-      bucket,
-      filename,
-      size: file.size,
-      mimeType: file.type,
-      url,
-      publicUrl: options.publicRead ? url : undefined,
-      metadata: options.metadata || {},
-      encrypted: options.encrypted || false,
-      checksum: '', // TODO: Calculate checksum
-      uploadedBy: 'temp-user-id',
-      createdAt: new Date().toISOString(),
-    };
-
-    return NextResponse.json(storageObject, { status: 201 });
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload file', details: String(error) },
-      { status: 500 }
-    );
-  }
+        { status: 201 }
+      );
+    } catch (error) {
+      console.error('Storage upload error:', error);
+      const failure = storageErrorResponse(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }
