@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { headers } from "next/headers";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import AppShell from "@/components/app/AppShell";
 import PWARegister from "@/components/app/PWARegister";
@@ -64,21 +65,37 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
+  const clerkEnabled = Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY
+  );
+
+  const app = (
+    <ErrorBoundary>
+      <ThemeProvider nonce={nonce}>
+        <AuthProvider clerkEnabled={clerkEnabled}>
+          <PerformanceMonitor />
+          <BackgroundController />
+          <PWARegister />
+          <AppShell>{children}</AppShell>
+          <Toaster richColors />
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
 
   return (
     <html lang="en">
       <body className={`${inter.className} flex flex-col min-h-screen`}>
-        <ErrorBoundary>
-          <ThemeProvider nonce={nonce}>
-            <AuthProvider>
-              <PerformanceMonitor />
-              <BackgroundController />
-              <PWARegister />
-              <AppShell>{children}</AppShell>
-              <Toaster richColors />
-            </AuthProvider>
-          </ThemeProvider>
-        </ErrorBoundary>
+        {clerkEnabled ? (
+          <ClerkProvider
+            publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+            afterSignOutUrl="/sign-in"
+          >
+            {app}
+          </ClerkProvider>
+        ) : (
+          app
+        )}
       </body>
     </html>
   );
