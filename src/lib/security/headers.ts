@@ -9,22 +9,17 @@ import { NextResponse } from 'next/server';
 
 /**
  * Content Security Policy (CSP)
- * Prevents XSS attacks by controlling allowed resource sources
+ * Prevents XSS attacks by controlling allowed resource sources.
+ *
+ * This policy remains the fallback for legacy/local mode. When Clerk is
+ * configured, Clerk's strict CSP middleware owns the CSP header and nonce so
+ * it can safely include the instance-specific Clerk/FAPI protection domains.
  */
 const isDev = process.env.NODE_ENV === 'development';
 
-/**
- * Build the CSP for a response.
- *
- * In production, Next.js needs a fresh nonce on its bootstrap scripts. A
- * static `script-src 'self'` policy blocks those inline scripts and leaves the
- * application as an unhydrated blank page. Middleware supplies the per-request
- * nonce; keeping this builder here makes the same policy available to every
- * response without enabling arbitrary inline JavaScript.
- */
 export function buildContentSecurityPolicy(nonce?: string): string {
   const scriptSource = isDev
-    ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" // unsafe-eval needed for Next.js dev HMR
+    ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
     : nonce
       ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
       : "script-src 'self'";
@@ -32,15 +27,13 @@ export function buildContentSecurityPolicy(nonce?: string): string {
   return [
     "default-src 'self'",
     scriptSource,
-    isDev
-      ? "style-src 'self' 'unsafe-inline'" // unsafe-inline needed for styled-components in dev
-      : "style-src 'self' 'unsafe-inline'", // React and animation components currently emit inline styles
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' ws: wss:", // ws/wss for WebSocket and Socket.io
+    "connect-src 'self' ws: wss:",
     "media-src 'self' blob:",
     "worker-src 'self' blob:",
-    "frame-ancestors 'none'", // Prevent embedding in iframes
+    "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     isDev ? "" : "upgrade-insecure-requests",
@@ -48,61 +41,42 @@ export function buildContentSecurityPolicy(nonce?: string): string {
 }
 
 export const CSP_HEADER = buildContentSecurityPolicy();
-
-/**
- * Strict Transport Security (HSTS)
- * Forces HTTPS connections
- */
 export const HSTS_HEADER = 'max-age=31536000; includeSubDomains; preload';
 
-/**
- * Security headers configuration
- */
 export const SECURITY_HEADERS = {
-  // Prevent MIME type sniffing
   'X-Content-Type-Options': 'nosniff',
-
-  // Prevent clickjacking
   'X-Frame-Options': 'DENY',
-
-  // XSS protection (legacy browsers)
   'X-XSS-Protection': '1; mode=block',
-
-  // Referrer policy (privacy)
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-
-  // Content Security Policy
-  'Content-Security-Policy': CSP_HEADER,
-
-  // Permissions policy (feature control)
   'Permissions-Policy': [
     'camera=()',
-    'microphone=(self)', // Allow microphone for voice features
+    'microphone=(self)',
     'geolocation=()',
-    'interest-cohort=()', // Disable FLoC tracking
+    'interest-cohort=()',
   ].join(', '),
-
-  // Cross-Origin policies
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
   'Cross-Origin-Resource-Policy': 'same-origin',
 } as const;
 
 /**
- * Apply security headers to an existing response without changing its status,
- * body, cookies, redirect target, or other response semantics.
+ * Apply OxSig's non-CSP security headers to an existing response. CSP is
+ * optionally applied because Clerk's strict CSP integration must be allowed to
+ * generate and own its instance-aware policy when Clerk is enabled.
  */
 export function applySecurityHeaders(
   response: NextResponse,
-  contentSecurityPolicy = CSP_HEADER
+  contentSecurityPolicy = CSP_HEADER,
+  includeContentSecurityPolicy = true
 ): NextResponse {
   Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
     response.headers.set(key, value);
   });
 
-  response.headers.set('Content-Security-Policy', contentSecurityPolicy);
+  if (includeContentSecurityPolicy) {
+    response.headers.set('Content-Security-Policy', contentSecurityPolicy);
+  }
 
-  // Only add HSTS in production with HTTPS
   if (process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true') {
     response.headers.set('Strict-Transport-Security', HSTS_HEADER);
   }
@@ -110,9 +84,6 @@ export function applySecurityHeaders(
   return response;
 }
 
-/**
- * Create JSON response with security headers
- */
 export function createSecureResponse(
   body?: BodyInit | null,
   init?: ResponseInit
@@ -121,20 +92,14 @@ export function createSecureResponse(
   return applySecurityHeaders(response);
 }
 
-/**
- * CORS configuration for API routes
- */
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Credentials': 'true',
-  'Access-Control-Max-Age': '86400', // 24 hours
+  'Access-Control-Max-Age': '86400',
 } as const;
 
-/**
- * Apply CORS headers to an existing response without replacing it.
- */
 export function applyCorsHeaders(response: NextResponse): NextResponse {
   Object.entries(CORS_HEADERS).forEach(([key, value]) => {
     response.headers.set(key, value);
@@ -143,9 +108,6 @@ export function applyCorsHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-/**
- * Handle OPTIONS preflight request
- */
 export function handleCorsPreFlight(): NextResponse {
   const response = new NextResponse(null, { status: 204 });
   return applyCorsHeaders(response);
