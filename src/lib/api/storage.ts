@@ -1,12 +1,9 @@
 /**
- * Storage API - File storage and retrieval (MinIO/S3)
+ * Storage API - File storage and retrieval (S3-compatible)
  */
 
 import { apiClient, unwrap, type ApiResponse } from './client';
-
-// ============================================================================
-// Types
-// ============================================================================
+import { withClientCsrf } from '@/lib/security/csrf-client';
 
 export interface StorageObject {
   id: string;
@@ -25,6 +22,8 @@ export interface StorageObject {
 }
 
 export interface UploadOptions {
+  // Kept for backwards compatibility. Production routes choose the bucket
+  // server-side and ignore caller-supplied bucket/public-read overrides.
   bucket?: string;
   filename?: string;
   metadata?: Record<string, unknown>;
@@ -47,14 +46,7 @@ export interface PresignedUrl {
   headers?: Record<string, string>;
 }
 
-// ============================================================================
-// Storage API
-// ============================================================================
-
 export const storageApi = {
-  /**
-   * Upload a file
-   */
   async upload(file: File, options: UploadOptions = {}): Promise<ApiResponse<StorageObject>> {
     const formData = new FormData();
     formData.append('file', file);
@@ -63,13 +55,10 @@ export const storageApi = {
     return apiClient.request<StorageObject>('/api/storage/upload', {
       method: 'POST',
       body: formData,
-      headers: {},
+      headers: await withClientCsrf(),
     });
   },
 
-  /**
-   * Upload multiple files
-   */
   async uploadMultiple(
     files: File[],
     options: UploadOptions = {}
@@ -81,28 +70,22 @@ export const storageApi = {
     return apiClient.request<StorageObject[]>('/api/storage/upload-multiple', {
       method: 'POST',
       body: formData,
-      headers: {},
+      headers: await withClientCsrf(),
     });
   },
 
-  /**
-   * Start multipart upload (for large files)
-   */
   async startMultipartUpload(
     filename: string,
     size: number,
     options: UploadOptions = {}
   ): Promise<ApiResponse<MultipartUploadSession>> {
-    return apiClient.post<MultipartUploadSession>('/api/storage/multipart/start', {
-      filename,
-      size,
-      ...options,
-    });
+    return apiClient.post<MultipartUploadSession>(
+      '/api/storage/multipart/start',
+      { filename, size, ...options },
+      { headers: await withClientCsrf() }
+    );
   },
 
-  /**
-   * Upload a part of multipart upload
-   */
   async uploadPart(
     uploadId: string,
     partNumber: number,
@@ -116,88 +99,69 @@ export const storageApi = {
     return apiClient.request<{ etag: string }>('/api/storage/multipart/part', {
       method: 'POST',
       body: formData,
-      headers: {},
+      headers: await withClientCsrf(),
     });
   },
 
-  /**
-   * Complete multipart upload
-   */
   async completeMultipartUpload(
     uploadId: string,
     parts: { partNumber: number; etag: string }[]
   ): Promise<ApiResponse<StorageObject>> {
-    return apiClient.post<StorageObject>('/api/storage/multipart/complete', {
-      uploadId,
-      parts,
-    });
+    return apiClient.post<StorageObject>(
+      '/api/storage/multipart/complete',
+      { uploadId, parts },
+      { headers: await withClientCsrf() }
+    );
   },
 
-  /**
-   * Abort multipart upload
-   */
   async abortMultipartUpload(uploadId: string): Promise<ApiResponse<void>> {
-    return apiClient.post('/api/storage/multipart/abort', { uploadId });
+    return apiClient.post(
+      '/api/storage/multipart/abort',
+      { uploadId },
+      { headers: await withClientCsrf() }
+    );
   },
 
-  /**
-   * Get presigned download URL
-   */
   async getPresignedUrl(
     key: string,
     bucket?: string,
     expiresIn?: number
   ): Promise<ApiResponse<PresignedUrl>> {
-    return apiClient.post<PresignedUrl>('/api/storage/presigned-url', {
-      key,
-      bucket,
-      expiresIn,
-    });
+    return apiClient.post<PresignedUrl>(
+      '/api/storage/presigned-url',
+      { key, bucket, expiresIn },
+      { headers: await withClientCsrf() }
+    );
   },
 
-  /**
-   * Download a file
-   */
   async download(key: string, bucket?: string): Promise<ApiResponse<Blob>> {
     const params = new URLSearchParams({ key });
     if (bucket) params.append('bucket', bucket);
-
     return apiClient.get<Blob>(`/api/storage/download?${params.toString()}`);
   },
 
-  /**
-   * Get file metadata
-   */
   async getMetadata(key: string, bucket?: string): Promise<ApiResponse<StorageObject>> {
     const params = new URLSearchParams({ key });
     if (bucket) params.append('bucket', bucket);
-
     return apiClient.get<StorageObject>(`/api/storage/metadata?${params.toString()}`);
   },
 
-  /**
-   * Delete a file
-   */
   async delete(key: string, bucket?: string): Promise<ApiResponse<void>> {
     const params = new URLSearchParams({ key });
     if (bucket) params.append('bucket', bucket);
-
-    return apiClient.delete(`/api/storage?${params.toString()}`);
+    return apiClient.delete(`/api/storage?${params.toString()}`, {
+      headers: await withClientCsrf(),
+    });
   },
 
-  /**
-   * Delete multiple files
-   */
   async deleteMultiple(keys: string[], bucket?: string): Promise<ApiResponse<void>> {
     return apiClient.request('/api/storage/delete-multiple', {
       method: 'DELETE',
       body: JSON.stringify({ keys, bucket }),
+      headers: await withClientCsrf(),
     });
   },
 
-  /**
-   * List files in bucket
-   */
   async list(
     bucket?: string,
     prefix?: string,
@@ -212,44 +176,32 @@ export const storageApi = {
     return apiClient.get<StorageObject[]>(`/api/storage/list${query ? `?${query}` : ''}`);
   },
 
-  /**
-   * Copy a file
-   */
   async copy(
     sourceKey: string,
     destKey: string,
     sourceBucket?: string,
     destBucket?: string
   ): Promise<ApiResponse<StorageObject>> {
-    return apiClient.post<StorageObject>('/api/storage/copy', {
-      sourceKey,
-      destKey,
-      sourceBucket,
-      destBucket,
-    });
+    return apiClient.post<StorageObject>(
+      '/api/storage/copy',
+      { sourceKey, destKey, sourceBucket, destBucket },
+      { headers: await withClientCsrf() }
+    );
   },
 
-  /**
-   * Generate thumbnail
-   */
   async generateThumbnail(
     key: string,
     width: number,
     height: number,
     bucket?: string
   ): Promise<ApiResponse<StorageObject>> {
-    return apiClient.post<StorageObject>('/api/storage/thumbnail', {
-      key,
-      width,
-      height,
-      bucket,
-    });
+    return apiClient.post<StorageObject>(
+      '/api/storage/thumbnail',
+      { key, width, height, bucket },
+      { headers: await withClientCsrf() }
+    );
   },
 };
-
-// ============================================================================
-// Convenience Functions with unwrap
-// ============================================================================
 
 export const storage = {
   upload: (file: File, options?: UploadOptions) => unwrap(storageApi.upload(file, options)),
