@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const formData = await req.formData();
+      // NextRequest is a Web Request at runtime, but this project's Next.js
+      // type surface does not currently expose formData() on NextRequest.
+      const formData = await (req as Request).formData();
       const file = formData.get('file');
       const optionsStr = formData.get('options');
 
