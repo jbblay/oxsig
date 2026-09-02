@@ -32,6 +32,7 @@ const orderedMigrations = [
   '009_user_keys_and_devices.sql',
   '010_cyber_labs_foundation.sql',
   '011_secure_storyboards.sql',
+  '012_clerk_identity.sql',
 ];
 
 const client = new Client({
