@@ -133,7 +133,7 @@ const clerkRequestMiddleware = clerkMiddleware(
     return applySecurityHeaders(NextResponse.next(), undefined, false);
   },
   (request) => ({
-    authorizedParties: [request.nextUrl.origin],
+    authorizedParties: [new URL(request.url).origin],
     contentSecurityPolicy: {
       strict: true,
       directives: {
