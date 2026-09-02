@@ -1,43 +1,43 @@
-/**
- * Storage API - DELETE /api/storage?key=...&bucket=...
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-
-let s3Client: S3Client | null = null;
-function getS3Client() {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
-      region: process.env.MINIO_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-      },
-      forcePathStyle: true,
-    });
-  }
-  return s3Client;
-}
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { requireAuth } from '@/lib/auth/middleware';
+import { validateCsrfToken } from '@/lib/security/csrf';
+import {
+  assertUserStorageKey,
+  getStorageBucket,
+  getStorageClient,
+  storageErrorResponse,
+} from '@/lib/storage/server';
 
 export async function DELETE(request: NextRequest) {
-  try {
-    const url = new URL(request.url);
-    const key = url.searchParams.get('key');
-    const bucket = url.searchParams.get('bucket') || process.env.MINIO_BUCKET || 'oxsig-documents';
-
-    if (!key) {
-      return NextResponse.json({ error: 'Missing key' }, { status: 400 });
+  return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) {
+      return NextResponse.json(
+        { error: 'Invalid or missing CSRF token' },
+        { status: 403 }
+      );
     }
 
-    await getS3Client().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Storage delete error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete object', details: String(error) },
-      { status: 500 }
-    );
-  }
+    try {
+      const url = new URL(req.url);
+      const rawKey = url.searchParams.get('key');
+
+      if (!rawKey) {
+        return NextResponse.json({ error: 'Missing key' }, { status: 400 });
+      }
+
+      const key = assertUserStorageKey(user.id, rawKey);
+      const bucket = getStorageBucket();
+
+      await getStorageClient().send(
+        new DeleteObjectCommand({ Bucket: bucket, Key: key })
+      );
+
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      console.error('Storage delete error:', error);
+      const failure = storageErrorResponse(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }
