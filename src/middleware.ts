@@ -2,9 +2,9 @@
  * Next.js middleware for Clerk integration and security headers.
  *
  * Resource-level API authorization remains inside route handlers. Middleware
- * supplies Clerk request context, protects browser pages, and preserves the
- * existing CSP/security headers. Legacy cookie gating remains only as a
- * migration fallback when Clerk is not configured.
+ * supplies Clerk request context, protects browser pages, and preserves OxSig's
+ * non-CSP security headers. Clerk owns the CSP/nonce when configured so its
+ * instance-specific FAPI and fraud-protection domains remain correct.
  */
 
 import { clerkMiddleware } from '@clerk/nextjs/server';
@@ -70,7 +70,7 @@ function clerkIsConfigured(): boolean {
   );
 }
 
-function securityContext(request: NextRequest) {
+function legacySecurityContext(request: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
   const requestHeaders = new Headers(request.headers);
@@ -89,7 +89,7 @@ function securityContext(request: NextRequest) {
 
 async function legacyMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const { contentSecurityPolicy, nextResponse } = securityContext(request);
+  const { contentSecurityPolicy, nextResponse } = legacySecurityContext(request);
 
   if (isPublicRoute(pathname) || !isProtectedRoute(pathname)) {
     return applySecurityHeaders(nextResponse(), contentSecurityPolicy);
@@ -118,22 +118,32 @@ async function legacyMiddleware(request: NextRequest) {
 const clerkRequestMiddleware = clerkMiddleware(
   async (auth, request) => {
     const { pathname } = request.nextUrl;
-    const { contentSecurityPolicy, nextResponse } = securityContext(request);
 
-    // API routes enforce authentication at the resource itself through
-    // requireAuth()/requireAdmin(). The Clerk webhook must remain public.
+    // Protect browser pages here for navigation UX. APIs are intentionally
+    // enforced again at the data boundary by requireAuth()/requireAdmin().
     if (!pathname.startsWith('/api/') && isProtectedRoute(pathname) && !isPublicRoute(pathname)) {
       const { isAuthenticated, redirectToSignIn } = await auth();
       if (!isAuthenticated) {
         const redirect = redirectToSignIn({ returnBackUrl: request.url });
-        return applySecurityHeaders(redirect, contentSecurityPolicy);
+        return applySecurityHeaders(redirect, undefined, false);
       }
     }
 
-    return applySecurityHeaders(nextResponse(), contentSecurityPolicy);
+    return applySecurityHeaders(NextResponse.next(), undefined, false);
   },
   (request) => ({
     authorizedParties: [request.nextUrl.origin],
+    contentSecurityPolicy: {
+      strict: true,
+      directives: {
+        'connect-src': ['ws:', 'wss:'],
+        'img-src': ['data:', 'blob:', 'https:'],
+        'font-src': ["'self'", 'data:'],
+        'media-src': ["'self'", 'blob:'],
+        'frame-ancestors': ["'none'"],
+        'base-uri': ["'self'"],
+      },
+    },
   })
 );
 
