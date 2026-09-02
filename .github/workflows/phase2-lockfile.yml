@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: phase-2-lockfile
+  cancel-in-progress: true
+
 jobs:
   lockfile:
     if: github.actor != 'github-actions[bot]'
