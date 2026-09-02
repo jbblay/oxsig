@@ -1,19 +1,26 @@
 /**
- * React Authentication Hook
- * Provides authentication state and methods to React components.
+ * React authentication compatibility layer.
+ *
+ * When Clerk is configured, Clerk owns interactive authentication and session
+ * lifecycle while OxSig continues exposing its internal UUID user to the app.
+ * The legacy provider remains available for local migration/testing until the
+ * old password/JWT flows are formally retired.
  */
 
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useClerk, useUser as useClerkUser } from '@clerk/nextjs';
 import { authService, type User } from './auth-client';
 import { wsManager } from '@/lib/websocket';
+
+export type AuthMethod = 'clerk' | 'email' | 'did' | null;
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  authMethod: 'email' | 'did' | null;
+  authMethod: AuthMethod;
   login: (publicKey: string, signature: string, challenge?: string) => Promise<void>;
   register: (data: {
     publicKey: string;
@@ -41,14 +48,14 @@ function normalizeUser(data: any): User {
   };
 }
 
-async function requestEmailProfile(allowRefresh = true): Promise<User | null> {
+async function requestOxsigProfile(allowLegacyRefresh = false): Promise<User | null> {
   try {
     let response = await fetch('/api/users/me', {
       credentials: 'include',
       cache: 'no-store',
     });
 
-    if (response.status === 401 && allowRefresh) {
+    if (response.status === 401 && allowLegacyRefresh) {
       const refreshResponse = await fetch('/api/auth/refresh', {
         method: 'POST',
         credentials: 'include',
@@ -62,31 +69,117 @@ async function requestEmailProfile(allowRefresh = true): Promise<User | null> {
       }
     }
 
-    if (!response.ok) {
-      return null;
-    }
+    if (!response.ok) return null;
 
     const payload = await response.json();
     const profile = payload.user ?? payload;
-
-    if (!profile?.id) {
-      return null;
-    }
-
-    return normalizeUser(profile);
+    return profile?.id ? normalizeUser(profile) : null;
   } catch (error) {
-    console.error('Failed to fetch user profile:', error);
+    console.error('Failed to fetch OxSig user profile:', error);
     return null;
   }
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+function useWebSocketForUser(user: User | null) {
+  useEffect(() => {
+    if (user?.id) {
+      wsManager.connect(user.id).catch((error) => {
+        console.error('Failed to connect WebSocket:', error);
+      });
+    } else {
+      wsManager.disconnect();
+    }
+  }, [user]);
+}
+
+function ClerkBackedAuthProvider({ children }: { children: ReactNode }) {
+  const { user: clerkUser, isLoaded, isSignedIn } = useClerkUser();
+  const { signOut } = useClerk();
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [authMethod, setAuthMethod] = useState<'email' | 'did' | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   const fetchUserProfile = async () => {
-    const profile = await requestEmailProfile();
+    if (!isSignedIn) {
+      setUser(null);
+      return;
+    }
+
+    const profile = await requestOxsigProfile(false);
+    setUser(profile);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncProfile = async () => {
+      if (!isLoaded) return;
+
+      if (!isSignedIn) {
+        if (!cancelled) {
+          setUser(null);
+          setProfileLoading(false);
+        }
+        return;
+      }
+
+      const profile = await requestOxsigProfile(false);
+      if (!cancelled) {
+        setUser(profile);
+        setProfileLoading(false);
+      }
+    };
+
+    void syncProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
+
+  useWebSocketForUser(user);
+
+  const clerkOnly = async (): Promise<never> => {
+    throw new Error('Interactive authentication is managed by Clerk.');
+  };
+
+  const logout = async () => {
+    setProfileLoading(true);
+    try {
+      wsManager.disconnect();
+      setUser(null);
+      await signOut({ redirectUrl: '/sign-in' });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const refresh = async () => {
+    await fetchUserProfile();
+  };
+
+  const value: AuthContextType = {
+    user,
+    isAuthenticated: !!isSignedIn && !!user,
+    isLoading: !isLoaded || profileLoading,
+    authMethod: isSignedIn ? 'clerk' : null,
+    login: clerkOnly,
+    register: clerkOnly,
+    loginWithEmail: clerkOnly,
+    registerWithEmail: clerkOnly,
+    logout,
+    refresh,
+    fetchUserProfile,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function LegacyAuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
+
+  const fetchUserProfile = async () => {
+    const profile = await requestOxsigProfile(true);
     if (profile) {
       setUser(profile);
       setAuthMethod('email');
@@ -97,8 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     const initAuth = async () => {
-      const emailUser = await requestEmailProfile();
-
+      const emailUser = await requestOxsigProfile(true);
       if (cancelled) return;
 
       if (emailUser) {
@@ -116,13 +208,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     void initAuth();
-
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Keep short-lived email access cookies renewed while the user is active.
   useEffect(() => {
     if (authMethod !== 'email') return;
 
@@ -132,7 +222,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           credentials: 'include',
         });
-
         if (!response.ok) {
           setUser(null);
           setAuthMethod(null);
@@ -145,7 +234,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(refreshInterval);
   }, [authMethod]);
 
-  // Preserve the existing local-token refresh behavior for DID auth.
   useEffect(() => {
     if (authMethod !== 'did') return;
 
@@ -162,15 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(refreshInterval);
   }, [authMethod]);
 
-  useEffect(() => {
-    if (user?.id) {
-      wsManager.connect(user.id).catch((error) => {
-        console.error('Failed to connect WebSocket:', error);
-      });
-    } else {
-      wsManager.disconnect();
-    }
-  }, [user]);
+  useWebSocketForUser(user);
 
   const loginWithEmail = async (email: string, password: string) => {
     setIsLoading(true);
@@ -181,12 +261,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
         credentials: 'include',
       });
-
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Login failed');
-      }
-
+      if (!response.ok) throw new Error(data.message || data.error || 'Login failed');
       setUser(normalizeUser(data.user));
       setAuthMethod('email');
     } finally {
@@ -203,12 +279,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password, displayName }),
         credentials: 'include',
       });
-
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Registration failed');
-      }
-
+      if (!response.ok) throw new Error(data.message || data.error || 'Registration failed');
       setUser(normalizeUser(data.user));
       setAuthMethod('email');
     } finally {
@@ -257,16 +329,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           credentials: 'include',
         });
-
-        if (!response.ok) {
-          throw new Error('Email session refresh failed');
-        }
-
-        const profile = await requestEmailProfile(false);
-        if (!profile) {
-          throw new Error('Failed to restore user profile after refresh');
-        }
-
+        if (!response.ok) throw new Error('Email session refresh failed');
+        const profile = await requestOxsigProfile(false);
+        if (!profile) throw new Error('Failed to restore user profile after refresh');
         setUser(profile);
       } else if (authMethod === 'did') {
         await authService.refresh();
@@ -279,13 +344,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const isAuthenticated = user !== null;
-
   return (
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated,
+        isAuthenticated: user !== null,
         isLoading,
         authMethod,
         login,
@@ -299,6 +362,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     >
       {children}
     </AuthContext.Provider>
+  );
+}
+
+export function AuthProvider({
+  children,
+  clerkEnabled = false,
+}: {
+  children: ReactNode;
+  clerkEnabled?: boolean;
+}) {
+  return clerkEnabled ? (
+    <ClerkBackedAuthProvider>{children}</ClerkBackedAuthProvider>
+  ) : (
+    <LegacyAuthProvider>{children}</LegacyAuthProvider>
   );
 }
 
