@@ -30,8 +30,10 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const formData = await req.formData();
-      const files = formData.getAll('files').filter((entry): entry is File => entry instanceof File);
+      const formData = await (req as Request).formData();
+      const files: File[] = formData
+        .getAll('files')
+        .filter((entry: FormDataEntryValue): entry is File => entry instanceof File);
       const optionsStr = formData.get('options');
 
       if (files.length === 0) {
@@ -45,9 +47,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+      const totalSize = files.reduce((sum: number, file: File) => sum + file.size, 0);
       if (
-        files.some((file) => file.size <= 0 || file.size > MAX_UPLOAD_BYTES) ||
+        files.some((file: File) => file.size <= 0 || file.size > MAX_UPLOAD_BYTES) ||
         totalSize > MAX_BATCH_BYTES
       ) {
         return NextResponse.json(
