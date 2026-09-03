@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       `SELECT COUNT(*)::int AS count
        FROM lab_instances
        WHERE owner_id=$1
-         AND status NOT IN ('destroyed','failed')
+         AND status NOT IN ('destroying','destroyed','failed')
          AND (expires_at IS NULL OR expires_at > NOW())`,
       [user.id]
     );
