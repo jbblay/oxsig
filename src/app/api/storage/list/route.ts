@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { requireAuth } from '@/lib/auth/middleware';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   getStorageBucket,
   getStorageClient,
   getUserStoragePrefix,
+  storageDisplayFilename,
   storageDownloadPath,
   storageErrorResponse,
   toUserStorageKey,
@@ -12,6 +14,13 @@ import {
 
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 120, windowMs: 60_000 },
+      user.id
+    );
+    if (rateLimit) return rateLimit;
+
     try {
       const url = new URL(req.url);
       const requestedPrefix = url.searchParams.get('prefix')?.trim() || '';
@@ -34,7 +43,7 @@ export async function GET(request: NextRequest) {
           id: object.Key || '',
           key: object.Key || '',
           bucket,
-          filename: object.Key?.split('/').pop() || '',
+          filename: object.Key ? storageDisplayFilename(object.Key) : '',
           size: object.Size || 0,
           mimeType: 'application/octet-stream',
           url: object.Key ? storageDownloadPath(object.Key) : '',
