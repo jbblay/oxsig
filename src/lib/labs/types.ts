@@ -24,22 +24,13 @@ export type LabDefinition = {
   estimatedCpu: number;
   objectives: string[];
   available: boolean;
-  availabilityReason?: string;
 };
 
 export type LabRuntimeCapabilities = {
-  provider: 'unconfigured' | 'docker' | 'vm';
+  provider: 'unconfigured' | 'docker' | 'vm' | 'aws-ec2';
   configured: boolean;
   supportsContainers: boolean;
   supportsVMs: boolean;
   supportsTerminal: boolean;
   supportsReset: boolean;
 };
-
-export interface LabRuntimeAdapter {
-  capabilities(): Promise<LabRuntimeCapabilities>;
-  start(instanceId: string): Promise<void>;
-  stop(instanceId: string): Promise<void>;
-  reset(instanceId: string): Promise<void>;
-  destroy(instanceId: string): Promise<void>;
-}
