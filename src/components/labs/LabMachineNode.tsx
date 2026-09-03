@@ -67,9 +67,9 @@ export default function LabMachineNode({ data, selected }: NodeProps<LabMachineF
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="truncate text-sm font-semibold">{data.shortName}</p>
-              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.category}</p>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{data.label}</p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.shortName} · {data.category}</p>
             </div>
             {data.live ? <Cloud className="h-4 w-4 shrink-0 text-primary" aria-label="Live AWS machine" /> : null}
           </div>
