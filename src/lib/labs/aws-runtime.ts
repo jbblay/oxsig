@@ -121,7 +121,11 @@ export async function createLabVm(instanceId: string, ownerId: string, expiresAt
   }
 
   const imageId = await resolveUbuntuAmi();
-  const userData = `#!/bin/bash\nset -e\nif command -v snap >/dev/null 2>&1; then\n  snap list amazon-ssm-agent >/dev/null 2>&1 || snap install amazon-ssm-agent --classic || true\n  systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || true\nfi\n`;
+  const expiryCalendar = new Date(expiresAt)
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\.\d{3}Z$/, ' UTC');
+  const userData = `#!/bin/bash\nset -e\nif command -v snap >/dev/null 2>&1; then\n  snap list amazon-ssm-agent >/dev/null 2>&1 || snap install amazon-ssm-agent --classic || true\n  systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || true\nfi\ncat >/etc/systemd/system/oxsig-expiry.service <<'EOF'\n[Unit]\nDescription=Terminate expired Oxsig cyber lab\n\n[Service]\nType=oneshot\nExecStart=/sbin/shutdown -h now\nEOF\ncat >/etc/systemd/system/oxsig-expiry.timer <<'EOF'\n[Unit]\nDescription=Oxsig cyber lab expiry timer\n\n[Timer]\nOnCalendar=${expiryCalendar}\nPersistent=true\nAccuracySec=1min\n\n[Install]\nWantedBy=timers.target\nEOF\nsystemctl daemon-reload\nsystemctl enable --now oxisg-expiry.timer\n`;
   const tags = [
     { Key: 'Name', Value: `oxsig-lab-${instanceId.slice(0, 8)}` },
     { Key: 'App', Value: 'Oxsig' },
@@ -145,6 +149,7 @@ export async function createLabVm(instanceId: string, ownerId: string, expiresAt
     }],
     IamInstanceProfile: INSTANCE_PROFILE ? { Name: INSTANCE_PROFILE } : undefined,
     MetadataOptions: { HttpEndpoint: 'enabled', HttpTokens: 'required' },
+    InstanceInitiatedShutdownBehavior: 'terminate',
     UserData: Buffer.from(userData, 'utf8').toString('base64'),
     TagSpecifications: [
       { ResourceType: 'instance', Tags: tags },
@@ -155,6 +160,47 @@ export async function createLabVm(instanceId: string, ownerId: string, expiresAt
   const externalId = response.Instances?.[0]?.InstanceId;
   if (!externalId) throw new Error('AWS did not return an EC2 instance identifier');
   return { externalId, imageId, region: REGION, instanceType: INSTANCE_TYPE };
+}
+
+export async function listExpiredTaggedLabVms(now = new Date()) {
+  const expired: Array<{
+    externalId: string;
+    labInstanceId?: string;
+    ownerId?: string;
+    expiresAt: string;
+  }> = [];
+  let nextToken: string | undefined;
+
+  do {
+    const response = await ec2.send(new DescribeInstancesCommand({
+      Filters: [
+        { Name: 'tag:App', Values: ['Oxsig'] },
+        { Name: 'tag:Purpose', Values: ['CyberLab'] },
+        { Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] },
+      ],
+      NextToken: nextToken,
+    }));
+
+    for (const reservation of response.Reservations || []) {
+      for (const instance of reservation.Instances || []) {
+        if (!instance.InstanceId) continue;
+        const tags = Object.fromEntries((instance.Tags || []).map((tag) => [tag.Key || '', tag.Value || '']));
+        const expiresAt = tags.ExpiresAt;
+        const expiresTime = Date.parse(expiresAt || '');
+        if (!expiresAt || !Number.isFinite(expiresTime) || expiresTime > now.getTime()) continue;
+        expired.push({
+          externalId: instance.InstanceId,
+          labInstanceId: tags.LabInstanceId || undefined,
+          ownerId: tags.OwnerId || undefined,
+          expiresAt,
+        });
+      }
+    }
+
+    nextToken = response.NextToken;
+  } while (nextToken);
+
+  return expired;
 }
 
 export async function describeLabVmStates(instanceIds: string[]) {
