@@ -1,0 +1,28 @@
+.react-flow {
+  height: 650px;
+  min-height: 650px;
+}
+
+.react-flow__controls-button {
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border-color: hsl(var(--border));
+}
+
+.react-flow__controls-button:hover {
+  background: hsl(var(--muted));
+}
+
+.react-flow__edge-path,
+.react-flow__connection-path {
+  stroke: hsl(var(--primary));
+  stroke-opacity: 0.55;
+  stroke-width: 2;
+}
+
+.react-flow__minimap {
+  background: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
