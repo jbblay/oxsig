@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   assertUserStorageKey,
   getStorageBucket,
@@ -19,6 +20,13 @@ export async function DELETE(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 30, windowMs: 60_000 },
+      user.id
+    );
+    if (rateLimit) return rateLimit;
 
     try {
       const body = await req.json().catch(() => null);
