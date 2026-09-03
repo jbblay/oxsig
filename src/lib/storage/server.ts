@@ -63,6 +63,15 @@ export function sanitizeStorageFilename(filename: string): string {
   return safe || 'file';
 }
 
+export function storageDisplayFilename(key: string): string {
+  const leaf = key.split('/').pop() || 'file';
+  const withoutUploadId = leaf.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-/i,
+    ''
+  );
+  return sanitizeStorageFilename(withoutUploadId || leaf);
+}
+
 export function storageDownloadPath(key: string): string {
   return `/api/storage/download?key=${encodeURIComponent(key)}`;
 }
