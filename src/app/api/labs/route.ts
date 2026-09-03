@@ -24,6 +24,7 @@ function mapInstance(row: Record<string, any>) {
     createdAt: row.created_at,
     startedAt: row.started_at,
     expiresAt: row.expires_at,
+    metadata: row.metadata || {},
   };
 }
 
@@ -117,8 +118,18 @@ export async function POST(request: NextRequest) {
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid lab request' }, { status: 400 });
 
-    const lab = LAB_CATALOG.find((item) => item.slug === parsed.data.slug && item.runtime === 'vm' && item.available);
+    const lab = LAB_CATALOG.find((item) => item.slug === parsed.data.slug && item.runtime === 'vm');
     if (!lab) return NextResponse.json({ error: 'This lab runtime is not available' }, { status: 400 });
+    if (!lab.available) {
+      return NextResponse.json(
+        {
+          error: lab.availabilityNote || `${lab.name} is not enabled yet`,
+          code: lab.marketplaceProductCode ? 'MARKETPLACE_ACTIVATION_REQUIRED' : 'LAB_UNAVAILABLE',
+          marketplaceProductCode: lab.marketplaceProductCode,
+        },
+        { status: 409 }
+      );
+    }
 
     const capabilities = await labCapabilities();
     if (!capabilities.configured) {
@@ -151,7 +162,21 @@ export async function POST(request: NextRequest) {
              enabled=true,
              updated_at=NOW()
        RETURNING id`,
-      [lab.slug, lab.name, lab.category, lab.description, lab.difficulty, lab.runtime, JSON.stringify({ objectives: lab.objectives })]
+      [
+        lab.slug,
+        lab.name,
+        lab.category,
+        lab.description,
+        lab.difficulty,
+        lab.runtime,
+        JSON.stringify({
+          objectives: lab.objectives,
+          osFamily: lab.osFamily,
+          platform: lab.platform,
+          shell: lab.shell,
+          recommendedInstanceType: lab.recommendedInstanceType,
+        }),
+      ]
     );
 
     let created;
@@ -177,7 +202,7 @@ export async function POST(request: NextRequest) {
     let externalId: string | undefined;
 
     try {
-      const provisioned = await createLabVm(instanceId, user.id, expiresAt);
+      const provisioned = await createLabVm(instanceId, user.id, expiresAt, lab);
       externalId = provisioned.externalId;
 
       const result = await pool.query(
@@ -190,7 +215,14 @@ export async function POST(request: NextRequest) {
          RETURNING *`,
         [
           provisioned.externalId,
-          JSON.stringify({ region: provisioned.region, imageId: provisioned.imageId, instanceType: provisioned.instanceType }),
+          JSON.stringify({
+            region: provisioned.region,
+            imageId: provisioned.imageId,
+            instanceType: provisioned.instanceType,
+            osFamily: provisioned.osFamily,
+            platform: provisioned.platform,
+            shell: lab.shell,
+          }),
           instanceId,
         ]
       );
@@ -198,7 +230,15 @@ export async function POST(request: NextRequest) {
       await pool.query(
         `INSERT INTO lab_events (lab_instance_id,event_type,payload)
          VALUES ($1,'provisioned',$2)`,
-        [instanceId, JSON.stringify({ provider: 'aws-ec2', externalId: provisioned.externalId })]
+        [
+          instanceId,
+          JSON.stringify({
+            provider: 'aws-ec2',
+            externalId: provisioned.externalId,
+            osFamily: provisioned.osFamily,
+            imageId: provisioned.imageId,
+          }),
+        ]
       );
 
       await logAudit({
@@ -207,7 +247,7 @@ export async function POST(request: NextRequest) {
         resourceType: 'lab',
         resourceId: instanceId,
         ...getRequestMetadata(req),
-        metadata: { definition: lab.slug, provider: 'aws-ec2' },
+        metadata: { definition: lab.slug, provider: 'aws-ec2', osFamily: lab.osFamily },
       });
 
       return NextResponse.json(
@@ -228,7 +268,7 @@ export async function POST(request: NextRequest) {
         `UPDATE lab_instances SET status='failed', last_error=$1, updated_at=NOW() WHERE id=$2`,
         [message, instanceId]
       );
-      return NextResponse.json({ error: 'Lab provisioning failed', instanceId }, { status: 500 });
+      return NextResponse.json({ error: message, instanceId }, { status: 500 });
     }
   });
 }
