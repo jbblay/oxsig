@@ -142,6 +142,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [catalog, setCatalog] = React.useState<LabDefinition[]>([]);
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(null);
   const [instances, setInstances] = React.useState<Instance[]>([]);
+  const [reconciliationWarning, setReconciliationWarning] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
 
@@ -162,9 +163,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
   const instance = instances[0];
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
+  const liveNode = nodes.find((node) => node.id === liveNodeId) || null;
   const selectedLab = selectedNode ? catalog.find((item) => item.slug === selectedNode.data.slug) || null : null;
   const activeLab = instance ? catalog.find((item) => item.slug === instance.slug) || null : null;
   const selectedIsLive = Boolean(instance && selectedNode && selectedNode.id === liveNodeId);
+  const liveNodeLabel = liveNode?.data.label || activeLab?.shortName || instance?.name || "Live machine";
 
   const load = React.useCallback(async (silent = false) => {
     try {
@@ -176,6 +179,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       setCatalog(nextCatalog);
       setCapabilities(body.capabilities || null);
       setInstances(nextInstances);
+      setReconciliationWarning(body.reconciliationWarning || null);
 
       const current = nextInstances[0];
       if (current && typeof window !== "undefined") {
@@ -185,6 +189,14 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         } catch {
           // Ignore stale local UI metadata.
         }
+      } else if (!current) {
+        setLiveNodeId(null);
+        setTerminalId(null);
+        setDockOpen(false);
+        setTerminalDiagnostics(null);
+        setTerminalFailure(null);
+        setHistory([]);
+        if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
       }
     } catch (error) {
       if (!silent) toast.error(error instanceof Error ? error.message : "Could not load the Cyber Lab");
@@ -192,6 +204,12 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       if (!silent) setLoading(false);
     }
   }, []);
+
+  const refreshCloudState = React.useCallback(async () => {
+    setBusy("reconcile");
+    await load(true);
+    setBusy(null);
+  }, [load]);
 
   const refreshTerminal = React.useCallback(async (id: string, silent = false) => {
     if (!silent) setBusy("diagnostics");
@@ -383,7 +401,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         setTerminalDiagnostics(null);
         setTerminalFailure(null);
         setHistory([]);
-        setLiveNodeId(null);
         if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
       }
       toast.success(action === "destroy" ? "VM termination requested" : `VM ${action} requested`);
@@ -483,6 +500,20 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
       {!capabilities?.configured && (
         <Card className="border-amber-500/40"><CardContent className="pt-6"><p className="font-medium">Cloud runtime is not ready on this deployment</p><p className="mt-1 text-sm text-muted-foreground">{capabilities?.reason}</p></CardContent></Card>
+      )}
+
+      {reconciliationWarning && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">AWS state needs another check</p>
+              <p className="mt-1 text-xs text-muted-foreground">{reconciliationWarning}</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile"}>
+              <RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid min-h-[650px] gap-3 xl:grid-cols-[260px_minmax(0,1fr)_300px]">
@@ -585,7 +616,14 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             <div className="space-y-4 p-4">
               <div>
                 <div className="flex items-start justify-between gap-2">
-                  <div><p className="font-semibold">{selectedNode.data.label}</p><p className="text-xs text-muted-foreground">{selectedLab.name}</p></div>
+                  <div>
+                    <p className="font-semibold">{selectedNode.data.label}</p>
+                    <p className="text-xs text-muted-foreground">{selectedLab.name}</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">Selected</Badge>
+                      {selectedIsLive && <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>}
+                    </div>
+                  </div>
                   <Badge variant="outline" className="capitalize">{selectedIsLive ? instance?.status : "planned"}</Badge>
                 </div>
                 <p className="mt-3 text-xs leading-5 text-muted-foreground">{selectedLab.description}</p>
@@ -603,28 +641,35 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               )}
 
               {selectedIsLive && instance?.expiresAt && <p className="text-[11px] text-muted-foreground">Expires {new Date(instance.expiresAt).toLocaleString()}</p>}
-              {selectedIsLive && instance?.lastError && <div className="rounded-lg bg-destructive/10 p-3 text-[11px] text-destructive">The last cloud operation failed. Open Diagnostics for the exact AWS/SSM state.</div>}
+              {selectedIsLive && instance?.lastError && <div className="rounded-lg bg-destructive/10 p-3 text-[11px] text-destructive">The last cloud operation failed. Refresh AWS state or open Diagnostics for the exact AWS/SSM state.</div>}
 
-              <div className="space-y-2">
+              <div className="space-y-2 rounded-xl border p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Actions for {selectedNode.data.label}</p>
                 {!instance && (
                   <Button className="w-full" onClick={() => void createLab()} disabled={!capabilities?.configured || !selectedLab.available || busy === "create"}>
                     {busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                     {selectedLab.available ? "Provision in AWS" : "Activation required"}
                   </Button>
                 )}
-                {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">Another node is currently live. You can continue designing this node, but provisioning remains limited to one EC2 machine for now.</div>}
-                {selectedIsLive && instance?.status === "stopped" && <Button className="w-full" onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}><Play className="mr-2 h-4 w-4" />Start VM</Button>}
+                {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">{liveNodeLabel} is currently the live AWS machine. This selected node remains design-only until that runtime is destroyed.</div>}
+                {selectedIsLive && instance?.status === "stopped" && <Button className="w-full" onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}><Play className="mr-2 h-4 w-4" />Start {selectedNode.data.label}</Button>}
                 {selectedIsLive && instance?.status === "running" && (
                   <>
-                    {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open terminal</Button>}
-                    <Button className="w-full" variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop VM</Button>
+                    {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open terminal — {selectedNode.data.label}</Button>}
+                    <Button className="w-full" variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button>
                   </>
                 )}
-                {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className="w-full" variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}><Trash2 className="mr-2 h-4 w-4" />Destroy VM</Button>}
-                <Button className="w-full" variant="ghost" onClick={removeSelectedNode} disabled={selectedIsLive}><X className="mr-2 h-4 w-4" />Remove from canvas</Button>
+                {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className="w-full" variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}><Trash2 className="mr-2 h-4 w-4" />Destroy {selectedNode.data.label}</Button>}
+                {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && (
+                  <Button className="w-full" variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile"}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state
+                  </Button>
+                )}
+                <Button className="w-full" variant="ghost" onClick={removeSelectedNode} disabled={selectedIsLive}><X className="mr-2 h-4 w-4" />Remove {selectedNode.data.label} from canvas</Button>
+                {selectedIsLive && <p className="text-[10px] leading-4 text-muted-foreground">A live AWS node stays on the canvas until AWS reconciliation confirms that its runtime is gone.</p>}
               </div>
 
-              {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />AWS is updating this machine.</div>}
+              {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />AWS is updating {selectedNode.data.label}. Use Refresh AWS state if this does not clear.</div>}
             </div>
           )}
         </aside>
@@ -646,8 +691,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               ))}
             </div>
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              <span>{activeLab?.shortName || instance.name}</span>
-              <span>·</span><span className="capitalize">{instance.status}</span>
+              <span className="font-medium text-foreground">Lab dock — {liveNodeLabel}</span>
+              <Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDockOpen(false)}><X className="h-4 w-4" /></Button>
             </div>
           </div>
@@ -655,8 +700,13 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
           {dockTab === "terminal" && (
             <div className="grid gap-3 p-3 lg:grid-cols-[1fr_260px]">
               <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold">Terminal — {liveNodeLabel}</span>
+                  <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>
+                  <span className="text-[10px] text-muted-foreground">Commands below always target this machine.</span>
+                </div>
                 <div className="min-h-60 max-h-[440px] overflow-auto rounded-xl bg-black p-4 font-mono text-xs text-emerald-400">
-                  {history.length === 0 ? <div className="text-emerald-300/70">{terminalDiagnostics?.ready ? "Terminal path ready. Run a command." : "Waiting for EC2 and SSM terminal readiness…"}</div> : history.map((entry) => (
+                  {history.length === 0 ? <div className="text-emerald-300/70">{terminalDiagnostics?.ready ? `Terminal path ready for ${liveNodeLabel}. Run a command.` : `Waiting for ${liveNodeLabel} EC2 and SSM terminal readiness…`}</div> : history.map((entry) => (
                     <div key={entry.id} className="mb-5 last:mb-0">
                       <div><span className="text-cyan-300">{terminalPrompt(activeLab)}</span> {entry.command}</div>
                       {entry.status === "running" && <div className="mt-1 text-yellow-300">executing through AWS Systems Manager…</div>}
@@ -668,13 +718,14 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                   ))}
                 </div>
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                  <Input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void runCommand(); }} placeholder={activeLab?.defaultCommand || "Enter a command"} aria-label="Lab command" className="font-mono" />
-                  <Button onClick={() => void runCommand()} disabled={busy === "command" || !command.trim() || terminalDiagnostics?.ready !== true}>{busy === "command" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Run</Button>
+                  <Input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void runCommand(); }} placeholder={activeLab?.defaultCommand || "Enter a command"} aria-label={`Command for ${liveNodeLabel}`} className="font-mono" />
+                  <Button onClick={() => void runCommand()} disabled={busy === "command" || !command.trim() || terminalDiagnostics?.ready !== true}>{busy === "command" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Run on {liveNodeLabel}</Button>
                 </div>
               </div>
               <div className="space-y-2 text-xs">
                 <p className="font-medium">Live path</p>
                 <div className="space-y-1 rounded-xl border p-3 text-[11px] text-muted-foreground">
+                  <div>Machine <span className="float-right font-medium text-foreground">{liveNodeLabel}</span></div>
                   <div>Oxsig <span className="float-right font-mono">{short(instance.id)}</span></div>
                   <div>EC2 <span className="float-right font-mono">{short(terminalDiagnostics?.instanceId, 18)}</span></div>
                   <div>State <span className="float-right">{terminalDiagnostics?.ec2State || instance.status}</span></div>
@@ -689,9 +740,10 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
           {dockTab === "events" && (
             <div className="grid gap-3 p-4 sm:grid-cols-3">
+              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Current lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Commands this session</p><p className="mt-1 text-sm">{history.length}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div>
               <p className="sm:col-span-3 text-xs text-muted-foreground">A full server-side lab event stream is a later step. This panel intentionally shows only state the current UI can verify.</p>
             </div>
           )}
@@ -709,6 +761,10 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
           {dockTab === "diagnostics" && (
             <div className="p-4 text-xs">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="font-semibold">Diagnostics — {liveNodeLabel}</span>
+                <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>
+              </div>
               <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
                 <span className="rounded bg-muted px-2 py-1">Oxsig {short(instance.id)}</span><span>›</span>
                 <span className="rounded bg-muted px-2 py-1">EC2 {short(terminalDiagnostics?.instanceId, 18)}</span><span>›</span>
@@ -733,7 +789,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
       {!dockOpen && instance && (
         <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setDockOpen(true); setDockTab(terminalId ? "terminal" : "diagnostics"); if (!terminalId) void refreshTerminal(instance.id); }}>
-          <PanelBottom className="mr-2 h-4 w-4" />Open lab dock
+          <PanelBottom className="mr-2 h-4 w-4" />Open {liveNodeLabel} lab dock
         </Button>
       )}
     </div>
