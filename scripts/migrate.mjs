@@ -27,6 +27,7 @@ const orderedMigrations = [
   '013_add_user_role.sql',
   '014_clean_foundation.sql',
   '015_lab_lifecycle_guardrails.sql',
+  '016_shared_rate_limits.sql',
 ];
 
 const client = new Client({ connectionString });
