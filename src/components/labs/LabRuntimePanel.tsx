@@ -8,6 +8,7 @@ import {
   Loader2,
   Play,
   Plus,
+  RefreshCw,
   Server,
   Terminal,
   Trash2,
@@ -30,6 +31,40 @@ type Instance = {
   expiresAt: string;
 };
 
+type TerminalDiagnostics = {
+  region: string;
+  instanceId: string;
+  ec2State: string;
+  instanceProfileConfigured: boolean;
+  ssmRegistered: boolean;
+  ssmPingStatus: string | null;
+  ssmAgentVersion: string | null;
+  platformName: string | null;
+  platformVersion: string | null;
+  ready: boolean;
+};
+
+type TerminalFailure = {
+  error: string;
+  code?: string;
+  stage?: string;
+};
+
+type TerminalEntry = {
+  id: string;
+  command: string;
+  status: "running" | "success" | "error";
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+  commandId?: string;
+  durationMs?: number;
+  ssmStatus?: string;
+  error?: string;
+  code?: string;
+  stage?: string;
+};
+
 const TRANSITIONAL: LabInstanceStatus[] = ["created", "provisioning", "stopping", "destroying"];
 
 async function csrfToken() {
@@ -43,6 +78,11 @@ async function errorMessage(response: Response, fallback: string) {
   return body?.error || fallback;
 }
 
+function short(value?: string | null, size = 12) {
+  if (!value) return "—";
+  return value.length <= size ? value : `${value.slice(0, size)}…`;
+}
+
 export default function LabRuntimePanel({ embedded = false }: { embedded?: boolean }) {
   const [catalog, setCatalog] = React.useState<LabDefinition[]>([]);
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(null);
@@ -52,7 +92,9 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [placed, setPlaced] = React.useState(false);
   const [terminalId, setTerminalId] = React.useState<string | null>(null);
   const [command, setCommand] = React.useState("whoami && hostname && uname -a");
-  const [output, setOutput] = React.useState("");
+  const [terminalDiagnostics, setTerminalDiagnostics] = React.useState<TerminalDiagnostics | null>(null);
+  const [terminalFailure, setTerminalFailure] = React.useState<TerminalFailure | null>(null);
+  const [history, setHistory] = React.useState<TerminalEntry[]>([]);
 
   const load = React.useCallback(async (silent = false) => {
     try {
@@ -70,6 +112,32 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     }
   }, []);
 
+  const refreshTerminal = React.useCallback(async (id: string, silent = false) => {
+    if (!silent) setBusy("diagnostics");
+    try {
+      const response = await fetch(`/api/labs/instances/${id}/terminal`, { cache: "no-store" });
+      const body = await response.json().catch(() => ({}));
+      setTerminalDiagnostics(body.diagnostics || null);
+      if (!response.ok) {
+        const failure = {
+          error: body.error || "Could not inspect the terminal path",
+          code: body.code,
+          stage: body.stage,
+        };
+        setTerminalFailure(failure);
+        if (!silent) toast.error(failure.error);
+      } else {
+        setTerminalFailure(null);
+      }
+    } catch (error) {
+      const failure = { error: error instanceof Error ? error.message : "Could not inspect the terminal path", stage: "network" };
+      setTerminalFailure(failure);
+      if (!silent) toast.error(failure.error);
+    } finally {
+      if (!silent) setBusy(null);
+    }
+  }, []);
+
   React.useEffect(() => {
     void load();
   }, [load]);
@@ -79,6 +147,12 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     const timer = window.setInterval(() => void load(true), 4000);
     return () => window.clearInterval(timer);
   }, [instances, load]);
+
+  React.useEffect(() => {
+    if (!terminalId) return;
+    const timer = window.setInterval(() => void refreshTerminal(terminalId, true), 8000);
+    return () => window.clearInterval(timer);
+  }, [terminalId, refreshTerminal]);
 
   const lab = catalog[0];
   const instance = instances[0];
@@ -115,7 +189,9 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       if (!response.ok) throw new Error(await errorMessage(response, `Could not ${action} the lab`));
       if (action === "destroy") {
         setTerminalId(null);
-        setOutput("");
+        setTerminalDiagnostics(null);
+        setTerminalFailure(null);
+        setHistory([]);
       }
       toast.success(action === "destroy" ? "VM termination requested" : `VM ${action} requested`);
       await load(true);
@@ -126,21 +202,73 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     }
   };
 
+  const toggleTerminal = async (id: string) => {
+    if (terminalId === id) {
+      setTerminalId(null);
+      return;
+    }
+    setTerminalId(id);
+    setTerminalDiagnostics(null);
+    setTerminalFailure(null);
+    setHistory([]);
+    await refreshTerminal(id);
+  };
+
   const runCommand = async () => {
     if (!terminalId || !command.trim()) return;
+    const submitted = command.trim();
+    const entryId = `${Date.now()}-${Math.random()}`;
+    setHistory((current) => [...current, { id: entryId, command: submitted, status: "running" }]);
     setBusy("command");
+
     try {
       const csrf = await csrfToken();
       const response = await fetch(`/api/labs/instances/${terminalId}/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({ command: submitted }),
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Command failed"));
-      const body = await response.json();
-      setOutput(`${body.stdout || ""}${body.stderr ? `\n${body.stderr}` : ""}`.trim() || "(no output)");
+      const body = await response.json().catch(() => ({}));
+      if (body.diagnostics) setTerminalDiagnostics(body.diagnostics);
+
+      if (!response.ok) {
+        const failure = {
+          error: body.error || "Command failed",
+          code: body.code,
+          stage: body.stage,
+        };
+        setTerminalFailure(failure);
+        setHistory((current) => current.map((entry) => entry.id === entryId ? {
+          ...entry,
+          status: "error",
+          error: failure.error,
+          code: failure.code,
+          stage: failure.stage,
+        } : entry));
+        return;
+      }
+
+      setTerminalFailure(null);
+      setHistory((current) => current.map((entry) => entry.id === entryId ? {
+        ...entry,
+        status: "success",
+        stdout: body.stdout || "",
+        stderr: body.stderr || "",
+        exitCode: body.exitCode,
+        commandId: body.commandId,
+        durationMs: body.durationMs,
+        ssmStatus: body.status,
+      } : entry));
+      setCommand("");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Command failed");
+      const message = error instanceof Error ? error.message : "Command failed";
+      setTerminalFailure({ error: message, stage: "network" });
+      setHistory((current) => current.map((entry) => entry.id === entryId ? {
+        ...entry,
+        status: "error",
+        error: message,
+        stage: "network",
+      } : entry));
     } finally {
       setBusy(null);
     }
@@ -238,7 +366,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                   <p className="mt-1 text-xs">Or use Add to canvas from a phone.</p>
                 </div>
               ) : (
-                <div className="w-full max-w-md rounded-2xl border bg-background p-5 shadow-sm">
+                <div className="w-full max-w-3xl rounded-2xl border bg-background p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
@@ -254,7 +382,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
                   {instance?.lastError && (
                     <p className="mt-4 rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
-                      The last cloud operation failed. You can retry the lifecycle action or destroy the lab.
+                      The last cloud operation failed. Open the terminal diagnostics or retry the lifecycle action for details.
                     </p>
                   )}
 
@@ -281,11 +409,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                     {instance?.status === "running" && (
                       <>
                         {capabilities?.supportsTerminal && (
-                          <Button
-                            variant="outline"
-                            onClick={() => setTerminalId(terminalId === instance.id ? null : instance.id)}
-                          >
-                            <Terminal className="mr-2 h-4 w-4" />Command
+                          <Button variant="outline" onClick={() => void toggleTerminal(instance.id)}>
+                            <Terminal className="mr-2 h-4 w-4" />{terminalId === instance.id ? "Close terminal" : "Terminal"}
                           </Button>
                         )}
                         <Button variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}>
@@ -308,19 +433,88 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                   )}
 
                   {terminalId === instance?.id && instance.status === "running" && (
-                    <div className="mt-5 space-y-2 border-t pt-5">
+                    <div className="mt-5 space-y-3 border-t pt-5">
+                      <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                        <span className="rounded bg-muted px-2 py-1">Oxsig {short(instance.id)}</span>
+                        <span>›</span>
+                        <span className="rounded bg-muted px-2 py-1">EC2 {short(terminalDiagnostics?.instanceId, 18)}</span>
+                        <span>›</span>
+                        <span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.ec2State || "checking EC2"}</span>
+                        <span>›</span>
+                        <span className="rounded bg-muted px-2 py-1">SSM {terminalDiagnostics?.ssmPingStatus || (terminalDiagnostics?.ssmRegistered ? "registered" : "checking")}</span>
+                        <span>›</span>
+                        <span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.region || capabilities?.region || "region"}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          onClick={() => void refreshTerminal(instance.id)}
+                          disabled={busy === "diagnostics"}
+                        >
+                          <RefreshCw className={`mr-1 h-3 w-3 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh
+                        </Button>
+                      </div>
+
+                      {terminalDiagnostics && (
+                        <div className={`rounded-lg border p-3 text-xs ${terminalDiagnostics.ready ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            <span>EC2: <strong>{terminalDiagnostics.ec2State}</strong></span>
+                            <span>SSM registered: <strong>{terminalDiagnostics.ssmRegistered ? "yes" : "no"}</strong></span>
+                            <span>Ping: <strong>{terminalDiagnostics.ssmPingStatus || "—"}</strong></span>
+                            <span>Agent: <strong>{terminalDiagnostics.ssmAgentVersion || "—"}</strong></span>
+                            <span>OS: <strong>{[terminalDiagnostics.platformName, terminalDiagnostics.platformVersion].filter(Boolean).join(" ") || "—"}</strong></span>
+                          </div>
+                        </div>
+                      )}
+
+                      {terminalFailure && (
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                          <div className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</div>
+                          <div className="mt-1">{terminalFailure.error}</div>
+                        </div>
+                      )}
+
+                      <div className="min-h-56 max-h-[520px] overflow-auto rounded-lg bg-black p-4 font-mono text-xs text-emerald-400">
+                        {history.length === 0 ? (
+                          <div className="text-emerald-300/70">
+                            Terminal path diagnostics are visible above. Run a command when EC2 is running and SSM is Online.
+                          </div>
+                        ) : history.map((entry) => (
+                          <div key={entry.id} className="mb-5 last:mb-0">
+                            <div><span className="text-cyan-300">ubuntu@oxsig</span>:<span className="text-blue-300">~</span>$ {entry.command}</div>
+                            {entry.status === "running" && <div className="mt-1 text-yellow-300">executing through AWS Systems Manager…</div>}
+                            {entry.stdout && <pre className="mt-1 whitespace-pre-wrap text-emerald-300">{entry.stdout}</pre>}
+                            {entry.stderr && <pre className="mt-1 whitespace-pre-wrap text-red-300">{entry.stderr}</pre>}
+                            {entry.status === "error" && (
+                              <div className="mt-1 text-red-300">
+                                [{entry.stage || "unknown"}/{entry.code || "ERROR"}] {entry.error}
+                              </div>
+                            )}
+                            {entry.status === "success" && (
+                              <div className="mt-1 text-emerald-300/60">
+                                [exit {entry.exitCode ?? "?"} · {entry.ssmStatus || "done"} · {entry.durationMs ?? "?"}ms · command {short(entry.commandId, 18)}]
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
                           value={command}
                           onChange={(event) => setCommand(event.target.value)}
                           onKeyDown={(event) => { if (event.key === "Enter") void runCommand(); }}
+                          placeholder="Enter a shell command"
                           aria-label="Lab command"
+                          className="font-mono"
                         />
-                        <Button onClick={() => void runCommand()} disabled={busy === "command"}>Run</Button>
+                        <Button
+                          onClick={() => void runCommand()}
+                          disabled={busy === "command" || !command.trim() || terminalDiagnostics?.ready !== true}
+                        >
+                          {busy === "command" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Run
+                        </Button>
                       </div>
-                      <pre className="min-h-32 overflow-auto rounded-lg bg-black p-3 text-xs text-emerald-400">
-                        {output || "Run a command on the temporary Ubuntu VM."}
-                      </pre>
                     </div>
                   )}
                 </div>
