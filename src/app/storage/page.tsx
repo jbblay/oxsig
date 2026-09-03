@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/lib/auth/use-auth';
 
 type StoredFile = { key: string; filename: string; size: number; url: string; createdAt?: string };
+type UploadGrant = { upload: { url: string; fields: Record<string, string>; expiresIn: number } };
 
 function size(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -46,10 +47,30 @@ export default function StoragePage() {
     if (!file) return;
     setBusy(true);
     try {
+      const grantResponse = await fetch('/api/storage/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': await csrfToken(),
+        },
+        body: JSON.stringify({
+          filename: file.name,
+          size: file.size,
+          contentType: file.type || 'application/octet-stream',
+        }),
+      });
+      if (!grantResponse.ok) {
+        throw new Error((await grantResponse.json().catch(() => ({}))).error || 'Upload could not be prepared');
+      }
+
+      const grant = await grantResponse.json() as UploadGrant;
       const form = new FormData();
-      form.set('file', file);
-      const response = await fetch('/api/storage/upload', { method: 'POST', headers: { 'x-csrf-token': await csrfToken() }, body: form });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Upload failed');
+      Object.entries(grant.upload.fields).forEach(([key, value]) => form.append(key, value));
+      form.append('file', file);
+
+      const uploadResponse = await fetch(grant.upload.url, { method: 'POST', body: form });
+      if (!uploadResponse.ok) throw new Error(`S3 upload failed (${uploadResponse.status})`);
+
       toast.success('File uploaded');
       await load();
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Upload failed'); }
