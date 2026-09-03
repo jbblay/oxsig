@@ -10,7 +10,7 @@ import {
   StartInstancesCommand,
   StopInstancesCommand,
   TerminateInstancesCommand,
-  type InstanceType,
+  type _InstanceType,
 } from '@aws-sdk/client-ec2';
 import {
   GetCommandInvocationCommand,
@@ -133,7 +133,7 @@ export async function createLabVm(instanceId: string, ownerId: string, expiresAt
 
   const response = await ec2.send(new RunInstancesCommand({
     ImageId: imageId,
-    InstanceType: INSTANCE_TYPE as InstanceType,
+    InstanceType: INSTANCE_TYPE as _InstanceType,
     MinCount: 1,
     MaxCount: 1,
     NetworkInterfaces: [{
@@ -217,13 +217,18 @@ export async function executeLabCommand(instanceId: string, command: string) {
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 750));
-    const result = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }));
-    if (['Pending', 'InProgress', 'Delayed'].includes(result.Status || '')) continue;
-    return {
-      stdout: result.StandardOutputContent || '',
-      stderr: result.StandardErrorContent || '',
-      exitCode: result.ResponseCode ?? (result.Status === 'Success' ? 0 : 1),
-    };
+    try {
+      const result = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }));
+      if (['Pending', 'InProgress', 'Delayed'].includes(result.Status || '')) continue;
+      return {
+        stdout: result.StandardOutputContent || '',
+        stderr: result.StandardErrorContent || '',
+        exitCode: result.ResponseCode ?? (result.Status === 'Success' ? 0 : 1),
+      };
+    } catch (error: any) {
+      if (error?.name === 'InvocationDoesNotExist') continue;
+      throw error;
+    }
   }
 
   throw new Error('The lab command did not finish before the request timeout');
