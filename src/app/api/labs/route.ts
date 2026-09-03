@@ -67,15 +67,20 @@ async function syncAwsInstances(rows: Record<string, any>[]) {
 
     row.status = status;
     if (status === 'destroyed') row.last_error = null;
+
+    const isDestroyed = status === 'destroyed';
+    const isRunning = status === 'running';
+    const isStopped = status === 'stopped';
+
     await pool.query(
       `UPDATE lab_instances
-       SET status=$1,
-           last_error=CASE WHEN $1='destroyed' THEN NULL ELSE last_error END,
-           started_at=CASE WHEN $1='running' AND started_at IS NULL THEN NOW() ELSE started_at END,
-           stopped_at=CASE WHEN $1='stopped' THEN NOW() ELSE stopped_at END,
+       SET status=$1::varchar(32),
+           last_error=CASE WHEN $2::boolean THEN NULL ELSE last_error END,
+           started_at=CASE WHEN $3::boolean AND started_at IS NULL THEN NOW() ELSE started_at END,
+           stopped_at=CASE WHEN $4::boolean THEN NOW() ELSE stopped_at END,
            updated_at=NOW()
-       WHERE id=$2`,
-      [status, row.id]
+       WHERE id=$5`,
+      [status, isDestroyed, isRunning, isStopped, row.id]
     );
   }
 
@@ -96,16 +101,23 @@ export async function GET(request: NextRequest) {
     );
 
     let rows = instances.rows;
+    let reconciliationWarning: string | null = null;
     if (capabilities.configured) {
       try {
         rows = await syncAwsInstances(rows);
-      } catch {
-        // A temporary AWS read failure should not hide the user's stored lab state.
+      } catch (error) {
+        console.error('Cyber Lab AWS reconciliation failed', error);
+        reconciliationWarning = 'Cloud state could not be reconciled. Refresh after AWS access is available.';
       }
     }
 
     const visibleRows = rows.filter((row) => row.status !== 'destroyed');
-    return NextResponse.json({ catalog: LAB_CATALOG, capabilities, instances: visibleRows.map(mapInstance) });
+    return NextResponse.json({
+      catalog: LAB_CATALOG,
+      capabilities,
+      instances: visibleRows.map(mapInstance),
+      reconciliationWarning,
+    });
   });
 }
 
