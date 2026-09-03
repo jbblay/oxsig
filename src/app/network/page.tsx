@@ -1,5 +1,5 @@
-import LabRuntimePanel from "@/components/labs/LabRuntimePanel";
+import { redirect } from 'next/navigation';
 
-export default function CyberLabPage() {
-  return <LabRuntimePanel />;
+export default function LegacyNetworkPage() {
+  redirect('/labs');
 }
