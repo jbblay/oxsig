@@ -53,7 +53,7 @@ async function syncAwsInstances(rows: Record<string, any>[]) {
   }
 
   const externalIds = rows
-    .filter((row) => row.runtime_provider === 'aws-ec2' && row.runtime_external_id && row.status !== 'failed')
+    .filter((row) => row.runtime_provider === 'aws-ec2' && row.runtime_external_id)
     .map((row) => row.runtime_external_id as string);
 
   if (externalIds.length === 0) return rows;
@@ -65,9 +65,11 @@ async function syncAwsInstances(rows: Record<string, any>[]) {
     if (!status || status === row.status) continue;
 
     row.status = status;
+    if (status === 'destroyed') row.last_error = null;
     await pool.query(
       `UPDATE lab_instances
        SET status=$1,
+           last_error=CASE WHEN $1='destroyed' THEN NULL ELSE last_error END,
            started_at=CASE WHEN $1='running' AND started_at IS NULL THEN NOW() ELSE started_at END,
            stopped_at=CASE WHEN $1='stopped' THEN NOW() ELSE stopped_at END,
            updated_at=NOW()
@@ -101,7 +103,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ catalog: LAB_CATALOG, capabilities, instances: rows.map(mapInstance) });
+    const visibleRows = rows.filter((row) => row.status !== 'destroyed');
+    return NextResponse.json({ catalog: LAB_CATALOG, capabilities, instances: visibleRows.map(mapInstance) });
   });
 }
 
