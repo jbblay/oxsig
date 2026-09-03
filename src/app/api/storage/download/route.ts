@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '@/lib/auth/middleware';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   assertUserStorageKey,
   getStorageBucket,
   getStorageClient,
-  sanitizeStorageFilename,
+  storageDisplayFilename,
   storageErrorResponse,
 } from '@/lib/storage/server';
 
+const DOWNLOAD_URL_TTL_SECONDS = 60;
+
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 60, windowMs: 60_000 },
+      user.id
+    );
+    if (rateLimit) return rateLimit;
+
     try {
       const url = new URL(req.url);
       const rawKey = url.searchParams.get('key');
@@ -21,31 +32,21 @@ export async function GET(request: NextRequest) {
 
       const key = assertUserStorageKey(user.id, rawKey);
       const bucket = getStorageBucket();
-      const response = await getStorageClient().send(
-        new GetObjectCommand({ Bucket: bucket, Key: key })
+      const filename = storageDisplayFilename(key);
+      const signedUrl = await getSignedUrl(
+        getStorageClient(),
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          ResponseContentDisposition: `attachment; filename="${filename}"`,
+          ResponseCacheControl: 'private, no-store',
+        }),
+        { expiresIn: DOWNLOAD_URL_TTL_SECONDS }
       );
 
-      if (!response.Body) {
-        return NextResponse.json({ error: 'File not found' }, { status: 404 });
-      }
-
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk);
-      }
-      const buffer = Buffer.concat(chunks);
-      const filename = sanitizeStorageFilename(key.split('/').pop() || 'file');
-
-      return new NextResponse(buffer, {
-        headers: {
-          'Content-Type': response.ContentType || 'application/octet-stream',
-          'Content-Length': buffer.length.toString(),
-          'Content-Disposition': `attachment; filename="${filename}"`,
-          'Cache-Control': 'private, no-store',
-        },
-      });
+      return NextResponse.redirect(signedUrl, 302);
     } catch (error) {
-      console.error('Storage download error:', error);
+      console.error('Storage download presign error:', error);
       const failure = storageErrorResponse(error);
       return NextResponse.json(failure.body, { status: failure.status });
     }
