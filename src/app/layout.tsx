@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
+import '@xyflow/react/dist/style.css';
 import './globals.css';
 import AppShell from '@/components/app/AppShell';
 import GuestAuthGate from '@/components/auth/guest-auth-gate';
