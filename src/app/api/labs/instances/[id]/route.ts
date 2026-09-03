@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { destroyLabVm, startLabVm, stopLabVm } from '@/lib/labs/aws-runtime';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
@@ -14,6 +15,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!(await validateCsrfToken(req))) {
       return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
     }
+
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 30, windowMs: 60_000 },
+      user.id
+    );
+    if (rateLimit) return rateLimit;
 
     const parsed = actionSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid lab action' }, { status: 400 });
