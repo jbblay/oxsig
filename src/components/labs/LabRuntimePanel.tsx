@@ -109,7 +109,7 @@ function short(value?: string | null, size = 12) {
   return value.length <= size ? value : `${value.slice(0, size)}…`;
 }
 
-function terminalPrompt(lab?: LabDefinition) {
+function terminalPrompt(lab?: LabDefinition | null) {
   if (lab?.shell === "powershell") return "PS C:\\>";
   if (lab?.osFamily === "kali") return "kali@oxsig:~$";
   if (lab?.osFamily === "rocky") return "rocky@oxsig:~$";
