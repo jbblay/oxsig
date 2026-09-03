@@ -208,28 +208,31 @@ export async function describeLabVmStates(instanceIds: string[]) {
   if (ids.length === 0) return new Map<string, LabInstanceStatus>();
   ids.forEach(assertAwsInstanceId);
 
-  try {
-    const response = await ec2.send(new DescribeInstancesCommand({ InstanceIds: ids }));
-    const states = new Map<string, LabInstanceStatus>();
-    for (const reservation of response.Reservations || []) {
-      for (const instance of reservation.Instances || []) {
-        if (!instance.InstanceId) continue;
-        const status: LabInstanceStatus = instance.State?.Name === 'running' ? 'running'
-          : instance.State?.Name === 'stopped' ? 'stopped'
-          : instance.State?.Name === 'stopping' ? 'stopping'
-          : instance.State?.Name === 'shutting-down' ? 'destroying'
-          : instance.State?.Name === 'terminated' ? 'destroyed'
-          : 'provisioning';
-        states.set(instance.InstanceId, status);
-      }
+  // Filtering by instance-id safely omits IDs that AWS no longer returns,
+  // whereas supplying a mixed InstanceIds list can fail the whole request when
+  // only one stale identifier has disappeared. Omitted IDs are treated as
+  // destroyed while returned instances override that default with live state.
+  const response = await ec2.send(new DescribeInstancesCommand({
+    Filters: [{ Name: 'instance-id', Values: ids }],
+  }));
+  const states = new Map<string, LabInstanceStatus>(
+    ids.map((id) => [id, 'destroyed' as LabInstanceStatus])
+  );
+
+  for (const reservation of response.Reservations || []) {
+    for (const instance of reservation.Instances || []) {
+      if (!instance.InstanceId) continue;
+      const status: LabInstanceStatus = instance.State?.Name === 'running' ? 'running'
+        : instance.State?.Name === 'stopped' ? 'stopped'
+        : instance.State?.Name === 'stopping' ? 'stopping'
+        : instance.State?.Name === 'shutting-down' ? 'destroying'
+        : instance.State?.Name === 'terminated' ? 'destroyed'
+        : 'provisioning';
+      states.set(instance.InstanceId, status);
     }
-    return states;
-  } catch (error: any) {
-    if (error?.name === 'InvalidInstanceID.NotFound') {
-      return new Map(ids.map((id) => [id, 'destroyed' as LabInstanceStatus]));
-    }
-    throw error;
   }
+
+  return states;
 }
 
 export async function startLabVm(instanceId: string) {
