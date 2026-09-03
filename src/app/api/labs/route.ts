@@ -12,6 +12,7 @@ const createSchema = z.object({ slug: z.string().max(120) }).strict();
 
 const configuredTtl = Number.parseInt(process.env.LAB_AWS_TTL_MINUTES || '60', 10);
 const LAB_TTL_MINUTES = Number.isFinite(configuredTtl) ? Math.min(120, Math.max(15, configuredTtl)) : 60;
+const ONE_LAB_INDEX = 'idx_lab_instances_one_nonterminal_per_owner';
 
 function mapInstance(row: Record<string, any>) {
   return {
@@ -46,7 +47,7 @@ async function syncAwsInstances(rows: Record<string, any>[]) {
           [row.id]
         );
       } catch {
-        // The runtime-state reconciliation below will still determine whether the VM exists.
+        // The scheduled cleanup endpoint will retry expired instances independently.
       }
     }
   }
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
       `SELECT COUNT(*)::int AS count
        FROM lab_instances
        WHERE owner_id=$1
-         AND status NOT IN ('destroyed','failed')
+         AND status NOT IN ('destroying','destroyed','failed')
          AND (expires_at IS NULL OR expires_at > NOW())`,
       [user.id]
     );
@@ -150,12 +151,23 @@ export async function POST(request: NextRequest) {
       [lab.slug, lab.name, lab.category, lab.description, lab.difficulty, lab.runtime, JSON.stringify({ objectives: lab.objectives })]
     );
 
-    const created = await pool.query(
-      `INSERT INTO lab_instances (definition_id, owner_id, status, runtime_provider, expires_at)
-       VALUES ($1,$2,'provisioning','aws-ec2',NOW() + ($3 * INTERVAL '1 minute'))
-       RETURNING id, expires_at`,
-      [definition.rows[0].id, user.id, LAB_TTL_MINUTES]
-    );
+    let created;
+    try {
+      created = await pool.query(
+        `INSERT INTO lab_instances (definition_id, owner_id, status, runtime_provider, expires_at)
+         VALUES ($1,$2,'provisioning','aws-ec2',NOW() + ($3 * INTERVAL '1 minute'))
+         RETURNING id, expires_at`,
+        [definition.rows[0].id, user.id, LAB_TTL_MINUTES]
+      );
+    } catch (error: any) {
+      if (error?.code === '23505' && error?.constraint === ONE_LAB_INDEX) {
+        return NextResponse.json(
+          { error: 'A cloud lab allocation already exists for this account. Wait for cleanup or destroy it before creating another.' },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
     const instanceId = created.rows[0].id as string;
     const expiresAt = new Date(created.rows[0].expires_at).toISOString();
@@ -204,7 +216,7 @@ export async function POST(request: NextRequest) {
         try {
           await destroyLabVm(externalId);
         } catch {
-          // The instance remains tagged for administrative cleanup if AWS cleanup itself fails.
+          // The instance remains tagged for scheduled administrative cleanup if AWS cleanup itself fails.
         }
       }
 
