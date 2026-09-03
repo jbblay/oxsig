@@ -37,18 +37,23 @@ async function getOwnedLab(id: string, ownerId: string): Promise<LabRow | null> 
 async function reconcileObservedState(instance: LabRow, diagnostics: LabTerminalDiagnostics) {
   if (instance.status === diagnostics.ec2State) return;
 
+  const observedStatus = diagnostics.ec2State;
+  const isDestroyed = observedStatus === 'destroyed';
+  const isRunning = observedStatus === 'running';
+  const isStopped = observedStatus === 'stopped';
+
   await getPool().query(
     `UPDATE lab_instances
-     SET status=$1,
-         last_error=CASE WHEN $1='destroyed' THEN NULL ELSE last_error END,
-         started_at=CASE WHEN $1='running' AND started_at IS NULL THEN NOW() ELSE started_at END,
-         stopped_at=CASE WHEN $1='stopped' THEN NOW() ELSE stopped_at END,
+     SET status=$1::varchar,
+         last_error=CASE WHEN $2::boolean THEN NULL ELSE last_error END,
+         started_at=CASE WHEN $3::boolean AND started_at IS NULL THEN NOW() ELSE started_at END,
+         stopped_at=CASE WHEN $4::boolean THEN NOW() ELSE stopped_at END,
          updated_at=NOW()
-     WHERE id=$2`,
-    [diagnostics.ec2State, instance.id]
+     WHERE id=$5`,
+    [observedStatus, isDestroyed, isRunning, isStopped, instance.id]
   );
-  instance.status = diagnostics.ec2State;
-  if (diagnostics.ec2State === 'destroyed') instance.last_error = null;
+  instance.status = observedStatus;
+  if (isDestroyed) instance.last_error = null;
 }
 
 function labSnapshot(instance: LabRow) {
