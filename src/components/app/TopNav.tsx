@@ -56,7 +56,7 @@ export default function TopNav({ onMenuClick: _onMenuClick }: TopNavProps) {
     { label: "Audit", href: "/audit", icon: FileCheck },
     { label: "Rooms", href: "/collab", icon: Users },
     { label: "Boards", href: "/collab/storyboards", icon: Presentation },
-    { label: "Cyber Lab", href: "/network", icon: Network },
+    { label: "Cyber Lab", href: "/labs", icon: Network },
   ];
 
   const isDev = process.env.NODE_ENV === 'development';
