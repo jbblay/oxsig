@@ -4,7 +4,6 @@
  */
 
 const { createServer } = require('http');
-const { parse } = require('url');
 const next = require('next');
 const { Server } = require('socket.io');
 
@@ -22,7 +21,22 @@ const userSockets = new Map();
 app.prepare().then(() => {
   const httpServer = createServer(async (req, res) => {
     try {
-      const parsedUrl = parse(req.url, true);
+      const requestUrl = new URL(
+        req.url || '/',
+        `http://${req.headers.host || `${hostname}:${port}`}`
+      );
+      const query = {};
+      for (const [key, value] of requestUrl.searchParams) {
+        query[key] = query[key] === undefined
+          ? value
+          : Array.isArray(query[key])
+            ? [...query[key], value]
+            : [query[key], value];
+      }
+      const parsedUrl = {
+        pathname: requestUrl.pathname,
+        query,
+      };
       await handle(req, res, parsedUrl);
     } catch (err) {
       console.error('Error occurred handling', req.url, err);

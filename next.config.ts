@@ -7,8 +7,13 @@ const isStaticExport =
   process.env.TAURI === "1" ||
   process.env.TAURI_BUILD === "1";
 
+const devHostname = process.env.HOSTNAME || "localhost";
+
 const nextConfig: NextConfig = {
   ...(isStaticExport ? { output: "export" as const } : {}),
+  ...(process.env.NODE_ENV === "development"
+    ? { allowedDevOrigins: [devHostname] }
+    : {}),
 
   // This repository is the Next.js project root. Do not point output file
   // tracing above the project directory: platforms such as Vercel already
