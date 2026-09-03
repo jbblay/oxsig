@@ -1,6 +1,9 @@
 export type LabDifficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 
 export type LabRuntimeKind = 'container' | 'vm';
+export type LabOsFamily = 'ubuntu' | 'amazon-linux' | 'rocky' | 'kali' | 'windows';
+export type LabPlatform = 'linux' | 'windows';
+export type LabShell = 'bash' | 'powershell';
 
 export type LabInstanceStatus =
   | 'created'
@@ -16,14 +19,22 @@ export type LabInstanceStatus =
 export type LabDefinition = {
   slug: string;
   name: string;
+  shortName: string;
   category: string;
   description: string;
   difficulty: LabDifficulty;
   runtime: LabRuntimeKind;
+  osFamily: LabOsFamily;
+  platform: LabPlatform;
+  shell: LabShell;
+  recommendedInstanceType: string;
+  defaultCommand: string;
   estimatedMemoryMb: number;
   estimatedCpu: number;
   objectives: string[];
   available: boolean;
+  availabilityNote?: string;
+  marketplaceProductCode?: string;
 };
 
 export type LabRuntimeCapabilities = {

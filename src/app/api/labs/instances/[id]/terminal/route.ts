@@ -169,7 +169,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     }
 
     try {
-      const output = await executeObservedLabCommand(instance.runtime_external_id, parsed.data.command);
+      const output = await executeObservedLabCommand(
+        instance.runtime_external_id,
+        parsed.data.command,
+        diagnostics.platformType
+      );
       await logAudit({
         userId: user.id,
         action: AUDIT_ACTIONS.LAB_COMMAND,
@@ -179,6 +183,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         metadata: {
           length: parsed.data.command.length,
           provider: 'aws-ssm',
+          platformType: diagnostics.platformType,
+          documentName: output.documentName,
           commandId: output.commandId,
           exitCode: output.exitCode,
           durationMs: output.durationMs,
