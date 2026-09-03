@@ -4,9 +4,39 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const { Client } = pg;
+
+async function loadEnvValue(filename, key) {
+  try {
+    const text = await fs.readFile(path.resolve(process.cwd(), filename), 'utf8');
+    for (const line of text.split(/\r?\n/)) {
+      const match = line.match(new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=\\s*(.*)\\s*$`));
+      if (!match) continue;
+
+      let value = match[1].trim();
+      if (
+        value.length >= 2 &&
+        ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'")))
+      ) {
+        value = value.slice(1, -1);
+      }
+      return value;
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return undefined;
+}
+
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL =
+    (await loadEnvValue('.env.local', 'DATABASE_URL')) ||
+    (await loadEnvValue('.env', 'DATABASE_URL'));
+}
+
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error('DATABASE_URL is required.');
+  console.error('DATABASE_URL is required. Add it to .env.local or export it in the shell.');
   process.exit(1);
 }
 
@@ -48,7 +78,8 @@ async function main() {
       console.log(`applied ${filename}`);
     } catch (error) {
       await client.query('ROLLBACK');
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${filename}: ${message}`);
     }
   }
 }
