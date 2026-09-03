@@ -96,7 +96,20 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
              audio_mime_type = CASE WHEN $6::bytea IS NULL THEN audio_mime_type ELSE $7 END,
              audio_size = CASE WHEN $6::bytea IS NULL THEN audio_size ELSE $8 END,
              version = version + 1, updated_at = NOW()
-         WHERE id = $9 AND deleted_at IS NULL
+         WHERE id = $9
+           AND deleted_at IS NULL
+           AND (
+             owner_id = $13::uuid
+             OR EXISTS (
+               SELECT 1
+               FROM storyboard_shares share
+               WHERE share.session_id = storyboard_sessions.id
+                 AND share.user_id = $13::uuid
+                 AND share.permission = 'editor'
+                 AND share.revoked_at IS NULL
+                 AND (share.expires_at IS NULL OR share.expires_at > NOW())
+             )
+           )
          RETURNING id, owner_id, title, description, status, duration_ms, events,
            audio_data IS NOT NULL AS has_audio, audio_mime_type, audio_size,
            version, created_at, updated_at,
@@ -109,6 +122,13 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           access.permission === 'owner' ? null : access.permission, user.id,
         ]
       );
+
+      if (!result.rows[0]) {
+        return NextResponse.json(
+          { error: 'Storyboard edit permission changed; reload and try again' },
+          { status: 403 }
+        );
+      }
 
       const session = mapStoryboardRow(result.rows[0]);
       await logAudit({
