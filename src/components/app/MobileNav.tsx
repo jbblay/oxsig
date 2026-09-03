@@ -1,86 +1,28 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
-  Network,
-  HardDrive,
-  Home,
-  Lock,
-  Presentation,
-  Shield,
-  Users,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { BookOpen, Box, HardDrive, Home, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-const Item = ({
-  href,
-  label,
-  icon: Icon,
-  active,
-}: {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  active?: boolean;
-}) => {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex min-w-[72px] flex-col items-center justify-center px-2 py-2 text-[11px]",
-        active ? "text-foreground" : "text-muted-foreground"
-      )}
-    >
-      <Icon size={20} className="mb-0.5" />
-      <span className="whitespace-nowrap">{label}</span>
-    </Link>
-  );
-};
+const items = [
+  { href: '/home', label: 'Home', icon: Home },
+  { href: '/collab/storyboards', label: 'Boards', icon: BookOpen },
+  { href: '/storage', label: 'Storage', icon: HardDrive },
+  { href: '/labs', label: 'Lab', icon: Box },
+  { href: '/account', label: 'Account', icon: User },
+];
 
 export default function MobileNav() {
   const pathname = usePathname();
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="flex overflow-x-auto overscroll-x-contain">
-        <Item href="/home" label="Home" icon={Home} active={pathname === "/home"} />
-        <Item
-          href="/storage"
-          label="Storage"
-          icon={HardDrive}
-          active={pathname?.startsWith("/storage")}
-        />
-        <Item
-          href="/vault"
-          label="Vault"
-          icon={Lock}
-          active={pathname?.startsWith("/vault")}
-        />
-        <Item
-          href="/collab"
-          label="Rooms"
-          icon={Users}
-          active={pathname === "/collab"}
-        />
-        <Item
-          href="/collab/storyboards"
-          label="Boards"
-          icon={Presentation}
-          active={pathname?.startsWith("/collab/storyboards")}
-        />
-        <Item
-          href="/labs"
-          label="Cyber Lab"
-          icon={Network}
-          active={pathname?.startsWith("/labs")}
-        />
-        <Item
-          href="/security"
-          label="Security"
-          icon={Shield}
-          active={pathname?.startsWith("/security")}
-        />
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur md:hidden">
+      <div className="grid grid-cols-5">
+        {items.map(({ href, label, icon: Icon }) => (
+          <Link key={href} href={href} className={cn('flex flex-col items-center gap-1 px-1 py-2 text-[11px]', pathname.startsWith(href) ? 'text-foreground' : 'text-muted-foreground')}>
+            <Icon className="h-5 w-5" />{label}
+          </Link>
+        ))}
       </div>
     </nav>
   );

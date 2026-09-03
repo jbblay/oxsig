@@ -1,51 +1,30 @@
-#  OxSig
+# Oxsig
 
-> **Quantum-Safe Security Platform** - Document signing, identity management, and encrypted communications
+Oxsig is a learning and collaboration workspace that connects visual explanation, shared resources, and practical cloud labs.
 
-##  Quick Start
+## Core architecture
 
-### 1. Start Infrastructure
-```bash
-# Start Docker services (PostgreSQL, MinIO, etc.)
-docker-compose up -d
-```
+- **Vercel** — Next.js web application
+- **Clerk** — user identity and sessions
+- **Neon** — PostgreSQL application data
+- **AWS S3** — workspace files
+- **AWS EC2 + SSM** — temporary lab machines
 
-### 2. Install & Run Frontend
-```bash
-cd oxsig
-pnpm install
-pnpm dev
-```
+## Current product surface
 
-**Server starts at**: http://localhost:3000
+- Home workspace
+- Account/profile
+- Storyboards: drawing, voice recording, replay, and sharing
+- Cloud storage
+- AWS Cyber Lab
 
-### 3. Access Services
+## Local development
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| **App** | http://localhost:3000 | Register new user |
-| **MinIO Console** | http://localhost:9001 | minioadmin / minioadmin |
-| **pgAdmin** | http://localhost:5050 | admin@oxsig.local / admin |
-| **MeiliSearch** | http://localhost:7700 | - |
+1. Install dependencies: `pnpm install`
+2. Copy `.env.example` to `.env.local` and add development values.
+3. Apply database migrations: `pnpm db:migrate`
+4. Start Next.js: `pnpm dev`
 
-##  Structure
+`.env.local` is the development configuration source. Production uses the same application variable names in Vercel, except local AWS authentication (`AWS_PROFILE`) is replaced by a production IAM/OIDC role.
 
-```
-oxsig/
-├── src/               # Next.js 15 PWA application
-├── src-tauri/        # Tauri desktop app
-├── backend/          # Infrastructure configs (Caddy, TURN, monitoring)
-├── migrations/       # Database migrations
-└── scripts/          # Service initialization scripts
-```
-
-##  Deployment
-
-**Frontend (Vercel/Netlify)**:
-- Auto-detects Next.js
-- Build command: `pnpm build`
-- Output directory: `.next`
-
-##  License
-
-MIT
+Historical experiments and removed features remain available through Git history and older branches.
