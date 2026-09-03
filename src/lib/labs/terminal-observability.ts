@@ -26,6 +26,7 @@ export type LabTerminalDiagnostics = {
   ssmRegistered: boolean;
   ssmPingStatus: string | null;
   ssmAgentVersion: string | null;
+  platformType: string | null;
   platformName: string | null;
   platformVersion: string | null;
   ready: boolean;
@@ -39,6 +40,7 @@ export async function getLabTerminalDiagnostics(instanceId: string): Promise<Lab
   let ssmRegistered = false;
   let ssmPingStatus: string | null = null;
   let ssmAgentVersion: string | null = null;
+  let platformType: string | null = null;
   let platformName: string | null = null;
   let platformVersion: string | null = null;
 
@@ -51,6 +53,7 @@ export async function getLabTerminalDiagnostics(instanceId: string): Promise<Lab
       ssmRegistered = true;
       ssmPingStatus = info.PingStatus || null;
       ssmAgentVersion = info.AgentVersion || null;
+      platformType = info.PlatformType || null;
       platformName = info.PlatformName || null;
       platformVersion = info.PlatformVersion || null;
     }
@@ -64,23 +67,30 @@ export async function getLabTerminalDiagnostics(instanceId: string): Promise<Lab
     ssmRegistered,
     ssmPingStatus,
     ssmAgentVersion,
+    platformType,
     platformName,
     platformVersion,
     ready: ec2State === 'running' && Boolean(INSTANCE_PROFILE) && ssmPingStatus === 'Online',
   };
 }
 
-export async function executeObservedLabCommand(instanceId: string, command: string) {
+export async function executeObservedLabCommand(
+  instanceId: string,
+  command: string,
+  platformType?: string | null
+) {
   assertAwsInstanceId(instanceId);
   if (!INSTANCE_PROFILE) throw new Error('SSM terminal support is not configured for this deployment');
   if (!command.trim() || command.length > 1000 || command.includes('\0')) {
     throw new Error('Command must contain 1 to 1000 characters');
   }
 
+  const isWindows = platformType === 'Windows';
+  const documentName = isWindows ? 'AWS-RunPowerShellScript' : 'AWS-RunShellScript';
   const startedAt = Date.now();
   const sent = await ssm.send(new SendCommandCommand({
     InstanceIds: [instanceId],
-    DocumentName: 'AWS-RunShellScript',
+    DocumentName: documentName,
     Parameters: { commands: [command] },
     TimeoutSeconds: 30,
   }));
@@ -97,6 +107,7 @@ export async function executeObservedLabCommand(instanceId: string, command: str
       if (['Pending', 'InProgress', 'Delayed'].includes(result.Status || '')) continue;
       return {
         commandId,
+        documentName,
         status: result.Status || 'Unknown',
         stdout: result.StandardOutputContent || '',
         stderr: result.StandardErrorContent || '',
