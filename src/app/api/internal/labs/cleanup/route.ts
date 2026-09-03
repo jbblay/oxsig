@@ -1,7 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db/pool';
-import { destroyLabVm, listExpiredTaggedLabVms } from '@/lib/labs/aws-runtime';
+import {
+  describeLabVmStates,
+  destroyLabVm,
+  listExpiredTaggedLabVms,
+} from '@/lib/labs/aws-runtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,6 +68,7 @@ export async function GET(request: NextRequest) {
   }
 
   let terminationAccepted = 0;
+  let destroyedConfirmed = 0;
   let alreadyGone = 0;
   const failures: Array<{ externalId: string; error: string }> = [];
 
@@ -72,23 +77,31 @@ export async function GET(request: NextRequest) {
       await destroyLabVm(candidate.externalId);
       terminationAccepted += 1;
 
+      const states = await describeLabVmStates([candidate.externalId]);
+      const status = states.get(candidate.externalId) === 'destroyed' ? 'destroyed' : 'destroying';
+      if (status === 'destroyed') destroyedConfirmed += 1;
+
       const updated = await pool.query(
         `UPDATE lab_instances
-         SET status='destroying',
-             runtime_external_id=COALESCE(runtime_external_id,$1),
+         SET status=$1,
+             runtime_external_id=COALESCE(runtime_external_id,$2),
              last_error=NULL,
              updated_at=NOW()
-         WHERE (runtime_external_id=$1 OR id::text=$2)
+         WHERE (runtime_external_id=$2 OR id::text=$3)
            AND status NOT IN ('destroyed','failed')
          RETURNING id`,
-        [candidate.externalId, candidate.labInstanceId || '']
+        [status, candidate.externalId, candidate.labInstanceId || '']
       );
 
       for (const row of updated.rows) {
         await pool.query(
           `INSERT INTO lab_events (lab_instance_id,event_type,source,payload)
            VALUES ($1,'expired_cleanup','scheduler',$2)`,
-          [row.id, JSON.stringify({ provider: 'aws-ec2', externalId: candidate.externalId })]
+          [row.id, JSON.stringify({
+            provider: 'aws-ec2',
+            externalId: candidate.externalId,
+            status,
+          })]
         );
       }
     } catch (error) {
@@ -142,6 +155,7 @@ export async function GET(request: NextRequest) {
     databaseExpired: dbExpired.rowCount || 0,
     awsTaggedExpired: awsExpired.length,
     terminationAccepted,
+    destroyedConfirmed,
     alreadyGone,
     expiredWithoutRuntime,
     failures,
