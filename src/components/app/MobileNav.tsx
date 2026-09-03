@@ -70,10 +70,10 @@ export default function MobileNav() {
           active={pathname?.startsWith("/collab/storyboards")}
         />
         <Item
-          href="/network"
+          href="/labs"
           label="Cyber Lab"
           icon={Network}
-          active={pathname?.startsWith("/network")}
+          active={pathname?.startsWith("/labs")}
         />
         <Item
           href="/security"
