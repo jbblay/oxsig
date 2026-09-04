@@ -52,6 +52,27 @@ function rawDataLength(data) {
   return data?.byteLength ?? data?.length ?? 0;
 }
 
+function rawDataText(data) {
+  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8');
+  if (Buffer.isBuffer(data)) return data.toString('utf8');
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
+  return String(data);
+}
+
+function isBrowserOpenDataChannelMessage(data, isBinary) {
+  if (isBinary) return false;
+  try {
+    const body = JSON.parse(rawDataText(data));
+    return (
+      body?.MessageSchemaVersion === '1.0' &&
+      typeof body?.RequestId === 'string' &&
+      typeof body?.TokenValue === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function closeReason(reason) {
   return String(reason || '').slice(0, 120);
 }
@@ -66,6 +87,7 @@ async function openSsmUpstream(client, ticket) {
   let upstream = null;
   let pingTimer = null;
   let ended = false;
+  let browserOpenMessageConsumed = false;
   let pendingBytes = 0;
   const pendingClientMessages = [];
 
@@ -86,6 +108,15 @@ async function openSsmUpstream(client, ticket) {
 
   client.on('message', (data, isBinary) => {
     if (ended) return;
+
+    // The existing browser protocol sends an OpenDataChannel JSON message as
+    // soon as its local socket opens. Consume that compatibility message here;
+    // the bridge sends the real AWS token itself and never exposes it upstream.
+    if (!browserOpenMessageConsumed && isBrowserOpenDataChannelMessage(data, isBinary)) {
+      browserOpenMessageConsumed = true;
+      return;
+    }
+
     if (upstream?.readyState === WebSocket.OPEN) {
       upstream.send(data, { binary: isBinary });
       return;
@@ -136,8 +167,9 @@ async function openSsmUpstream(client, ticket) {
         return;
       }
 
-      // Keep the AWS Session Manager token and AWS credentials entirely on the
-      // server. The browser only sees a one-time Oxsig bridge ticket.
+      // Match Session Manager's OpenDataChannel handshake, but perform it on
+      // the trusted server side so neither AWS credentials nor TokenValue are
+      // exposed to the browser.
       upstream.send(JSON.stringify({
         MessageSchemaVersion: '1.0',
         RequestId: randomUUID(),
