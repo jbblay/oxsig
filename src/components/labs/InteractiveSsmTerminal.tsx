@@ -83,6 +83,7 @@ export default function InteractiveSsmTerminal({
   const intentionalCloseRef = React.useRef(false);
   const handshakeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeAiRunRef = React.useRef<ActiveAiRun | null>(null);
+  const outputDecoderRef = React.useRef(new TextDecoder());
   const [terminalReady, setTerminalReady] = React.useState(false);
   const [state, setState] = React.useState<ConnectionState>("connecting");
   const [error, setError] = React.useState<string | null>(null);
@@ -129,14 +130,15 @@ export default function InteractiveSsmTerminal({
     });
   }, [finishAiRun, labInstanceId]);
 
-  const handleChannelOutput = React.useCallback((data: string) => {
+  const handleChannelOutput = React.useCallback((data: Uint8Array) => {
     const active = activeAiRunRef.current;
     if (!active) {
       terminalRef.current?.write(data);
       return;
     }
 
-    active.buffer += data;
+    const text = outputDecoderRef.current.decode(data, { stream: true });
+    active.buffer += text;
 
     if (!active.started) {
       const startIndex = active.buffer.indexOf(active.startMarker);
