@@ -5,6 +5,7 @@ import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   academyRequestSchema,
   answerAcademyQuestion,
+  evaluateAcademyPractice,
   generateAcademyCourse,
 } from '@/lib/academy/server';
 
@@ -30,13 +31,27 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ course });
       }
 
-      const answer = await answerAcademyQuestion({
-        question: parsed.data.question,
+      if (parsed.data.action === 'ask') {
+        const answer = await answerAcademyQuestion({
+          question: parsed.data.question,
+          courseTitle: parsed.data.courseTitle,
+          lessonTitle: parsed.data.lessonTitle,
+          lessonContext: parsed.data.lessonContext,
+        });
+        return NextResponse.json({ answer });
+      }
+
+      const evaluation = await evaluateAcademyPractice({
         courseTitle: parsed.data.courseTitle,
         lessonTitle: parsed.data.lessonTitle,
-        lessonContext: parsed.data.lessonContext,
+        instruction: parsed.data.instruction,
+        command: parsed.data.command,
+        expected: parsed.data.expected,
+        stdout: parsed.data.stdout,
+        stderr: parsed.data.stderr,
+        exitCode: parsed.data.exitCode,
       });
-      return NextResponse.json({ answer });
+      return NextResponse.json({ evaluation });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI Academy request failed';
       return NextResponse.json({ error: message.slice(0, 500) }, { status: 502 });
