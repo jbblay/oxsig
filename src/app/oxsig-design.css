@@ -1,0 +1,73 @@
+.oxsig-app-background {
+  background:
+    radial-gradient(circle at 18% 0%, hsl(var(--primary) / 0.08), transparent 30rem),
+    radial-gradient(circle at 88% 12%, rgba(147, 51, 234, 0.07), transparent 28rem),
+    hsl(var(--background));
+}
+
+.dark .oxsig-app-background {
+  background:
+    radial-gradient(circle at 18% 0%, hsl(var(--primary) / 0.10), transparent 32rem),
+    radial-gradient(circle at 88% 12%, rgba(147, 51, 234, 0.08), transparent 30rem),
+    hsl(var(--background));
+}
+
+.oxsig-gradient-text {
+  background: linear-gradient(90deg, rgb(37 99 235), rgb(147 51 234));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.oxsig-glass {
+  background: hsl(var(--background) / 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsl(var(--border) / 0.75);
+}
+
+.oxsig-card-hover {
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .oxsig-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 30px -18px rgb(15 23 42 / 0.35);
+  }
+}
+
+.oxsig-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
+}
+
+.oxsig-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.oxsig-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.oxsig-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 999px;
+}
+
+.oxsig-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.42);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxsig-card-hover,
+  .oxsig-motion,
+  .oxsig-motion * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
