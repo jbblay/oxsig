@@ -129,6 +129,8 @@ export default function AiPractitionerDock() {
   }, [busy, entries, history, open]);
 
   const running = instance?.status === 'running';
+  const planning = !!busy && !busy.startsWith('run:') && !busy.startsWith('save:');
+  const pendingQuestion = planning && history.at(-1)?.role === 'user' ? history.at(-1)?.content : null;
 
   async function ask(value = prompt) {
     const question = value.trim();
@@ -317,69 +319,75 @@ export default function AiPractitionerDock() {
               </div>
             )}
 
-            {history.filter((line) => line.role === 'user').map((line) => (
-              <div key={line.id} className="ml-8 rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm text-primary-foreground">
-                {line.content}
-              </div>
-            ))}
-
             {entries.map((entry) => (
-              <div key={entry.id} className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><p className="font-semibold">{entry.plan.title}</p></div>
-                  {entry.plan.command && <Badge variant={entry.plan.risk === 'changes-system' ? 'outline' : 'secondary'} className="text-[10px]">{entry.plan.risk}</Badge>}
+              <div key={entry.id} className="space-y-3">
+                <div className="ml-8 rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm text-primary-foreground">
+                  {entry.prompt}
                 </div>
-                <p className="text-sm leading-6">{entry.plan.explanation}</p>
 
-                {entry.plan.command && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-medium"><Terminal className="h-3.5 w-3.5" /> Proposed command</div>
-                    <pre className="oxsig-scrollbar overflow-x-auto rounded-xl border bg-black/90 p-3 text-xs text-white"><code>{entry.plan.command}</code></pre>
-                    <p className="text-xs text-muted-foreground">Expected: {entry.plan.expected}</p>
-                    {!entry.execution && (
-                      <Button className="w-full" disabled={!!busy || !running} onClick={() => void run(entry)}>
-                        {busy === `run:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                        {running ? 'Approve & run in my lab' : 'Start a lab to run this command'}
+                <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><p className="font-semibold">{entry.plan.title}</p></div>
+                    {entry.plan.command && <Badge variant={entry.plan.risk === 'changes-system' ? 'outline' : 'secondary'} className="text-[10px]">{entry.plan.risk}</Badge>}
+                  </div>
+                  <p className="text-sm leading-6">{entry.plan.explanation}</p>
+
+                  {entry.plan.command && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-medium"><Terminal className="h-3.5 w-3.5" /> Proposed command</div>
+                      <pre className="oxsig-scrollbar overflow-x-auto rounded-xl border bg-black/90 p-3 text-xs text-white"><code>{entry.plan.command}</code></pre>
+                      <p className="text-xs text-muted-foreground">Expected: {entry.plan.expected}</p>
+                      {!entry.execution && (
+                        <Button className="w-full" disabled={!!busy || !running} onClick={() => void run(entry)}>
+                          {busy === `run:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                          {running ? 'Approve & run in my lab' : 'Start a lab to run this command'}
+                        </Button>
+                      )}
+                      {entry.plan.risk === 'changes-system' && !entry.execution && (
+                        <div className="flex items-start gap-2 text-xs text-amber-600"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{entry.plan.approvalReason}</span></div>
+                      )}
+                    </div>
+                  )}
+
+                  {entry.execution && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between"><p className="text-xs font-medium">Real lab evidence</p><Badge variant="outline" className="text-[10px]">exit {entry.execution.exitCode}</Badge></div>
+                      <pre className="oxsig-scrollbar max-h-52 overflow-auto rounded-xl border bg-muted/50 p-3 text-xs"><code>{outputText(entry.execution)}</code></pre>
+                    </div>
+                  )}
+
+                  {entry.execution && !entry.analysis && busy === `run:${entry.id}` && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the evidence…</div>
+                  )}
+
+                  {entry.analysis && (
+                    <div className="space-y-3 border-t pt-3">
+                      <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" /><p className="text-sm font-medium">What actually happened</p></div>
+                      <p className="text-sm leading-6">{entry.analysis.summary}</p>
+                      {entry.analysis.observations.length > 0 && (
+                        <ul className="space-y-1.5 text-xs text-muted-foreground">
+                          {entry.analysis.observations.map((item, index) => <li key={`${entry.id}-obs-${index}`}>• {item}</li>)}
+                        </ul>
+                      )}
+                      <div className="rounded-xl bg-muted/50 p-3 text-xs leading-5"><span className="font-medium">Interpretation:</span> {entry.analysis.interpretation}</div>
+                      <p className="text-xs"><span className="font-medium">Next:</span> {entry.analysis.nextStep}</p>
+                      <Button variant="outline" className="w-full" disabled={!!busy || savedIds.has(entry.id)} onClick={() => void saveToVault(entry)}>
+                        {busy === `save:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : savedIds.has(entry.id) ? <BookOpenCheck className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+                        {savedIds.has(entry.id) ? 'Saved to Vault' : 'Capture this evidence in Vault'}
                       </Button>
-                    )}
-                    {entry.plan.risk === 'changes-system' && !entry.execution && (
-                      <div className="flex items-start gap-2 text-xs text-amber-600"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{entry.plan.approvalReason}</span></div>
-                    )}
-                  </div>
-                )}
-
-                {entry.execution && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between"><p className="text-xs font-medium">Real lab evidence</p><Badge variant="outline" className="text-[10px]">exit {entry.execution.exitCode}</Badge></div>
-                    <pre className="oxsig-scrollbar max-h-52 overflow-auto rounded-xl border bg-muted/50 p-3 text-xs"><code>{outputText(entry.execution)}</code></pre>
-                  </div>
-                )}
-
-                {entry.execution && !entry.analysis && busy === `run:${entry.id}` && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the evidence…</div>
-                )}
-
-                {entry.analysis && (
-                  <div className="space-y-3 border-t pt-3">
-                    <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" /><p className="text-sm font-medium">What actually happened</p></div>
-                    <p className="text-sm leading-6">{entry.analysis.summary}</p>
-                    {entry.analysis.observations.length > 0 && (
-                      <ul className="space-y-1.5 text-xs text-muted-foreground">
-                        {entry.analysis.observations.map((item, index) => <li key={`${entry.id}-obs-${index}`}>• {item}</li>)}
-                      </ul>
-                    )}
-                    <div className="rounded-xl bg-muted/50 p-3 text-xs leading-5"><span className="font-medium">Interpretation:</span> {entry.analysis.interpretation}</div>
-                    <p className="text-xs"><span className="font-medium">Next:</span> {entry.analysis.nextStep}</p>
-                    <Button variant="outline" className="w-full" disabled={!!busy || savedIds.has(entry.id)} onClick={() => void saveToVault(entry)}>
-                      {busy === `save:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : savedIds.has(entry.id) ? <BookOpenCheck className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                      {savedIds.has(entry.id) ? 'Saved to Vault' : 'Capture this evidence in Vault'}
-                    </Button>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
 
-            {busy && !busy.startsWith('run:') && !busy.startsWith('save:') && (
+            {pendingQuestion && (
+              <div className="ml-8 rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm text-primary-foreground">
+                {pendingQuestion}
+              </div>
+            )}
+
+            {planning && (
               <div className="flex items-center gap-2 rounded-xl border p-3 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> AI Practitioner is thinking…</div>
             )}
           </div>
