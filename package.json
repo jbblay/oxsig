@@ -8,6 +8,7 @@
     "dev:up": "bash scripts/dev-up.sh",
     "build": "next build",
     "start": "node server.mjs --prod",
+    "server:check": "node --check server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
