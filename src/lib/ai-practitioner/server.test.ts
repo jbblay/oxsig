@@ -18,7 +18,8 @@ describe('AI Practitioner command policy', () => {
     expect(validatePractitionerCommand('sudo systemctl restart nginx')).toEqual({ ok: true, risk: 'changes-system' });
   });
 
-  it('blocks destructive disk and lifecycle commands', () => {
+  it('blocks destructive disk, root filesystem and lifecycle commands', () => {
+    expect(validatePractitionerCommand('sudo rm -rf /').ok).toBe(false);
     expect(validatePractitionerCommand('sudo mkfs.ext4 /dev/xvda1').ok).toBe(false);
     expect(validatePractitionerCommand('sudo reboot').ok).toBe(false);
     expect(validatePractitionerCommand('dd if=/tmp/image of=/dev/xvda').ok).toBe(false);
