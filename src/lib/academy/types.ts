@@ -37,3 +37,10 @@ export type AcademyQuestionAnswer = {
   answer: string;
   suggestedAction: string | null;
 };
+
+export type AcademyPracticeEvaluation = {
+  status: 'passed' | 'needs-attention';
+  summary: string;
+  feedback: string;
+  nextStep: string | null;
+};
