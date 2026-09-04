@@ -35,9 +35,11 @@ function bridgeWebSocketUrl(path: string) {
 export default function InteractiveSsmTerminal({
   labInstanceId,
   machineLabel,
+  focusMode = false,
 }: {
   labInstanceId: string;
   machineLabel: string;
+  focusMode?: boolean;
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
@@ -312,7 +314,11 @@ export default function InteractiveSsmTerminal({
         </div>
       )}
       <div className="overflow-hidden rounded-xl bg-black p-2">
-        <div ref={hostRef} className="h-[420px] min-h-[280px] w-full" aria-label={`Interactive terminal for ${machineLabel}`} />
+        <div
+          ref={hostRef}
+          className={focusMode ? "h-[calc(100vh-235px)] min-h-[420px] w-full transition-[height] duration-300 ease-in-out" : "h-[420px] min-h-[280px] w-full transition-[height] duration-300 ease-in-out"}
+          aria-label={`Interactive terminal for ${machineLabel}`}
+        />
       </div>
       <p className="text-[10px] text-muted-foreground">
         This is one persistent shell session: directories, environment changes, interactive programs, Ctrl+C, and command history remain in the same terminal until you disconnect or the VM ends.
