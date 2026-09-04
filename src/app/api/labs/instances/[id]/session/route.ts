@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SSMClient } from '@aws-sdk/client-ssm';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { startInteractiveLabSession, terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
+import { presignSsmBrowserStreamUrl } from '@/lib/labs/ssm-websocket-presign';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
@@ -128,6 +130,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     try {
       const session = await startInteractiveLabSession(ready.externalId!);
+      const signingClient = new SSMClient({ region: session.region });
+      const browserStreamUrl = await presignSsmBrowserStreamUrl(
+        session.streamUrl,
+        session.region,
+        signingClient.config.credentials,
+        60
+      );
+
       await logAudit({
         userId: user.id,
         action: AUDIT_ACTIONS.LAB_SESSION_START,
@@ -139,13 +149,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
           sessionId: session.sessionId,
           target: ready.externalId,
           region: session.region,
+          websocketAuth: 'sigv4-query',
         },
       });
 
-      // TokenValue is intentionally short-lived, returned once, never persisted or logged.
+      // TokenValue and the SigV4 query URL are short-lived capabilities. They are
+      // returned once with no-store headers and are never persisted or logged.
       return json({
         sessionId: session.sessionId,
-        streamUrl: session.streamUrl,
+        streamUrl: browserStreamUrl,
         tokenValue: session.tokenValue,
         region: session.region,
         target: ready.externalId,
