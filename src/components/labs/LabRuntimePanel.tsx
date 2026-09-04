@@ -41,7 +41,7 @@ import {
 } from "@xyflow/react";
 import { toast } from "sonner";
 import InteractiveSsmTerminal from "@/components/labs/InteractiveSsmTerminal";
-import LabMachineNode, { type LabMachineFlowNode, type LabMachineNodeData } from "@/components/labs/LabMachineNode";
+import LabMachineNode, { LabOsIcon, type LabMachineFlowNode, type LabMachineNodeData } from "@/components/labs/LabMachineNode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -606,6 +606,9 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                     >
                       <div className="flex items-start gap-2.5">
                         <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 ring-1 ring-border">
+                          <LabOsIcon osFamily={lab.osFamily} className="h-6 w-6" />
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <p className="truncate text-sm font-medium">{lab.shortName}</p>
