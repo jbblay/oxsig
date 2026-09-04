@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-BRANCH="${OXSIG_DEV_BRANCH:-}"
+BRANCH="${OXSIG_DEV_BRANCH:-refactor/clean-foundation}"
 PROFILE="${OXSIG_AWS_PROFILE:-oxsig-dev}"
 EXPECTED_ACCOUNT="094525993701"
 
@@ -25,12 +25,6 @@ need aws
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "Run this from inside the Oxsig Git repository."
 cd "$ROOT"
-
-if [[ -z "$BRANCH" ]]; then
-  BRANCH="$(git branch --show-current)"
-fi
-
-[[ -n "$BRANCH" ]] || fail "Could not determine target branch. Set OXSIG_DEV_BRANCH to the branch you want to run."
 
 if [[ ! -f package.json ]]; then
   fail "package.json was not found at the repository root."
