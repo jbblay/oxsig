@@ -153,9 +153,18 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (accessMode === 'desktop' && !lab.desktopInstanceType) {
+      return NextResponse.json(
+        {
+          error: `${lab.shortName} desktop access is not configured on this deployment`,
+          code: 'DESKTOP_PROFILE_UNAVAILABLE',
+        },
+        { status: 409 }
+      );
+    }
 
-    const provisionLab = accessMode === 'desktop' && lab.desktopInstanceType
-      ? { ...lab, recommendedInstanceType: lab.desktopInstanceType }
+    const provisionLab = accessMode === 'desktop'
+      ? { ...lab, recommendedInstanceType: lab.desktopInstanceType! }
       : lab;
 
     const capabilities = await labCapabilities();
@@ -203,8 +212,8 @@ export async function POST(request: NextRequest) {
           shell: lab.shell,
           accessModes: lab.accessModes,
           defaultAccessMode: lab.defaultAccessMode,
-          selectedAccessMode: accessMode,
-          recommendedInstanceType: provisionLab.recommendedInstanceType,
+          recommendedInstanceType: lab.recommendedInstanceType,
+          desktopInstanceType: lab.desktopInstanceType,
         }),
       ]
     );
