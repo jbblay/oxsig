@@ -140,6 +140,10 @@ export default function InteractiveSsmTerminal({
           setState("error");
           setError(message);
           terminalRef.current?.writeln(`\r\n[Oxsig terminal error: ${message}]\r\n`);
+          // A browser upgrade failure may not produce a reliable WebSocket close
+          // event on every client. End the AWS session immediately instead of
+          // leaving a failed Session Manager session active until timeout.
+          void endServerSession(true);
         },
         onClose: (reason) => {
           if (generation !== generationRef.current || intentionalCloseRef.current) return;
