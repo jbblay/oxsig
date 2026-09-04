@@ -5,7 +5,7 @@ import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { startInteractiveLabSession, terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
-import { issueSsmBridgeTicket } from '@/lib/labs/ssm-bridge-ticket';
+import { assertSsmBridgeAvailable, issueSsmBridgeTicket } from '@/lib/labs/ssm-bridge-ticket';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
@@ -128,8 +128,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (ready.failure) return ready.failure;
 
     try {
+      // Refuse before StartSession if Oxsig was launched without the WebSocket
+      // bridge, so we do not create an AWS session that cannot be consumed.
+      assertSsmBridgeAvailable();
       const session = await startInteractiveLabSession(ready.externalId!);
-      const bridgeUrl = issueSsmBridgeTicket({
+      const bridgeUrl = await issueSsmBridgeTicket({
         streamUrl: session.streamUrl,
         tokenValue: session.tokenValue,
         region: session.region,
