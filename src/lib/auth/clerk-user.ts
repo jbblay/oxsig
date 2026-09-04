@@ -66,7 +66,10 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
     const updated = await pool.query(
       `UPDATE users
        SET email = COALESCE($2, email),
-           email_verified = CASE WHEN $3::boolean THEN true ELSE email_verified END,
+           email_verified = CASE
+             WHEN $2::text IS NULL THEN email_verified
+             ELSE $3::boolean
+           END,
            display_name = COALESCE(display_name, $4),
            avatar_url = COALESCE(avatar_url, $5),
            auth_provider = 'clerk',
