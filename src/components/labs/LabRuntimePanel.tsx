@@ -32,11 +32,11 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import { toast } from "sonner";
+import InteractiveSsmTerminal from "@/components/labs/InteractiveSsmTerminal";
 import LabMachineNode, { type LabMachineFlowNode, type LabMachineNodeData } from "@/components/labs/LabMachineNode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import type { LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
 
 type Capabilities = LabRuntimeCapabilities & { reason?: string; region?: string };
@@ -66,21 +66,6 @@ type TerminalDiagnostics = {
 };
 
 type TerminalFailure = { error: string; code?: string; stage?: string };
-type TerminalEntry = {
-  id: string;
-  command: string;
-  status: "running" | "success" | "error";
-  stdout?: string;
-  stderr?: string;
-  exitCode?: number;
-  commandId?: string;
-  durationMs?: number;
-  ssmStatus?: string;
-  error?: string;
-  code?: string;
-  stage?: string;
-};
-
 type DockTab = "terminal" | "events" | "network" | "diagnostics";
 
 type PersistedTopology = {
@@ -107,14 +92,6 @@ async function errorMessage(response: Response, fallback: string) {
 function short(value?: string | null, size = 12) {
   if (!value) return "—";
   return value.length <= size ? value : `${value.slice(0, size)}…`;
-}
-
-function terminalPrompt(lab?: LabDefinition | null) {
-  if (lab?.shell === "powershell") return "PS C:\\>";
-  if (lab?.osFamily === "kali") return "kali@oxsig:~$";
-  if (lab?.osFamily === "rocky") return "rocky@oxsig:~$";
-  if (lab?.osFamily === "amazon-linux") return "ec2-user@oxsig:~$";
-  return "ubuntu@oxsig:~$";
 }
 
 function nodeData(lab: LabDefinition, label: string, status: LabMachineNodeData["status"] = "planned", live = false): LabMachineNodeData {
@@ -156,18 +133,15 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [dockOpen, setDockOpen] = React.useState(false);
   const [dockTab, setDockTab] = React.useState<DockTab>("terminal");
   const [terminalId, setTerminalId] = React.useState<string | null>(null);
-  const [command, setCommand] = React.useState("");
   const [terminalDiagnostics, setTerminalDiagnostics] = React.useState<TerminalDiagnostics | null>(null);
   const [terminalFailure, setTerminalFailure] = React.useState<TerminalFailure | null>(null);
-  const [history, setHistory] = React.useState<TerminalEntry[]>([]);
 
   const instance = instances[0];
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
   const liveNode = nodes.find((node) => node.id === liveNodeId) || null;
   const selectedLab = selectedNode ? catalog.find((item) => item.slug === selectedNode.data.slug) || null : null;
-  const activeLab = instance ? catalog.find((item) => item.slug === instance.slug) || null : null;
   const selectedIsLive = Boolean(instance && selectedNode && selectedNode.id === liveNodeId);
-  const liveNodeLabel = liveNode?.data.label || activeLab?.shortName || instance?.name || "Live machine";
+  const liveNodeLabel = liveNode?.data.label || instance?.name || "Live machine";
 
   const load = React.useCallback(async (silent = false) => {
     try {
@@ -195,7 +169,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         setDockOpen(false);
         setTerminalDiagnostics(null);
         setTerminalFailure(null);
-        setHistory([]);
         if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
       }
     } catch (error) {
@@ -387,6 +360,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
   const act = async (id: string, action: "start" | "stop" | "destroy") => {
     setBusy(action);
+    if (action === "stop" || action === "destroy") setTerminalId(null);
     try {
       const csrf = await csrfToken();
       const response = await fetch(`/api/labs/instances/${id}`, {
@@ -396,13 +370,12 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       });
       if (!response.ok) throw new Error(await errorMessage(response, `Could not ${action} the lab`));
       if (action === "destroy") {
-        setTerminalId(null);
         setDockOpen(false);
         setTerminalDiagnostics(null);
         setTerminalFailure(null);
-        setHistory([]);
         if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
       }
+      if (action === "stop") setDockTab("diagnostics");
       toast.success(action === "destroy" ? "VM termination requested" : `VM ${action} requested`);
       await load(true);
     } catch (error) {
@@ -419,53 +392,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     setDockTab("terminal");
     setTerminalDiagnostics(null);
     setTerminalFailure(null);
-    if (!command.trim() && activeLab) setCommand(activeLab.defaultCommand);
     await refreshTerminal(instance.id);
-  };
-
-  const runCommand = async () => {
-    if (!terminalId || !command.trim()) return;
-    const submitted = command.trim();
-    const entryId = `${Date.now()}-${Math.random()}`;
-    setHistory((current) => [...current, { id: entryId, command: submitted, status: "running" }]);
-    setBusy("command");
-
-    try {
-      const csrf = await csrfToken();
-      const response = await fetch(`/api/labs/instances/${terminalId}/terminal`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
-        body: JSON.stringify({ command: submitted }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (body.diagnostics) setTerminalDiagnostics(body.diagnostics);
-
-      if (!response.ok) {
-        const failure = { error: body.error || "Command failed", code: body.code, stage: body.stage };
-        setTerminalFailure(failure);
-        setHistory((current) => current.map((entry) => entry.id === entryId ? { ...entry, status: "error", error: failure.error, code: failure.code, stage: failure.stage } : entry));
-        return;
-      }
-
-      setTerminalFailure(null);
-      setHistory((current) => current.map((entry) => entry.id === entryId ? {
-        ...entry,
-        status: "success",
-        stdout: body.stdout || "",
-        stderr: body.stderr || "",
-        exitCode: body.exitCode,
-        commandId: body.commandId,
-        durationMs: body.durationMs,
-        ssmStatus: body.status,
-      } : entry));
-      setCommand("");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Command failed";
-      setTerminalFailure({ error: message, stage: "network" });
-      setHistory((current) => current.map((entry) => entry.id === entryId ? { ...entry, status: "error", error: message, stage: "network" } : entry));
-    } finally {
-      setBusy(null);
-    }
   };
 
   const removeSelectedNode = () => {
@@ -655,7 +582,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 {selectedIsLive && instance?.status === "stopped" && <Button className="w-full" onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}><Play className="mr-2 h-4 w-4" />Start {selectedNode.data.label}</Button>}
                 {selectedIsLive && instance?.status === "running" && (
                   <>
-                    {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open terminal — {selectedNode.data.label}</Button>}
+                    {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open interactive terminal — {selectedNode.data.label}</Button>}
                     <Button className="w-full" variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button>
                   </>
                 )}
@@ -693,34 +620,25 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
               <span className="font-medium text-foreground">Lab dock — {liveNodeLabel}</span>
               <Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDockOpen(false)}><X className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setTerminalId(null); setDockOpen(false); }}><X className="h-4 w-4" /></Button>
             </div>
           </div>
 
-          {dockTab === "terminal" && (
+          {terminalId && terminalDiagnostics?.ready && (
+            <div className={dockTab === "terminal" ? "p-3" : "hidden"}>
+              <InteractiveSsmTerminal labInstanceId={terminalId} machineLabel={liveNodeLabel} />
+            </div>
+          )}
+
+          {dockTab === "terminal" && (!terminalId || !terminalDiagnostics?.ready) && (
             <div className="grid gap-3 p-3 lg:grid-cols-[1fr_260px]">
-              <div>
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-semibold">Terminal — {liveNodeLabel}</span>
-                  <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>
-                  <span className="text-[10px] text-muted-foreground">Commands below always target this machine.</span>
-                </div>
-                <div className="min-h-60 max-h-[440px] overflow-auto rounded-xl bg-black p-4 font-mono text-xs text-emerald-400">
-                  {history.length === 0 ? <div className="text-emerald-300/70">{terminalDiagnostics?.ready ? `Terminal path ready for ${liveNodeLabel}. Run a command.` : `Waiting for ${liveNodeLabel} EC2 and SSM terminal readiness…`}</div> : history.map((entry) => (
-                    <div key={entry.id} className="mb-5 last:mb-0">
-                      <div><span className="text-cyan-300">{terminalPrompt(activeLab)}</span> {entry.command}</div>
-                      {entry.status === "running" && <div className="mt-1 text-yellow-300">executing through AWS Systems Manager…</div>}
-                      {entry.stdout && <pre className="mt-1 whitespace-pre-wrap text-emerald-300">{entry.stdout}</pre>}
-                      {entry.stderr && <pre className="mt-1 whitespace-pre-wrap text-red-300">{entry.stderr}</pre>}
-                      {entry.status === "error" && <div className="mt-1 text-red-300">[{entry.stage || "unknown"}/{entry.code || "ERROR"}] {entry.error}</div>}
-                      {entry.status === "success" && <div className="mt-1 text-emerald-300/60">[exit {entry.exitCode ?? "?"} · {entry.ssmStatus || "done"} · {entry.durationMs ?? "?"}ms · command {short(entry.commandId, 18)}]</div>}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                  <Input value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void runCommand(); }} placeholder={activeLab?.defaultCommand || "Enter a command"} aria-label={`Command for ${liveNodeLabel}`} className="font-mono" />
-                  <Button onClick={() => void runCommand()} disabled={busy === "command" || !command.trim() || terminalDiagnostics?.ready !== true}>{busy === "command" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Run on {liveNodeLabel}</Button>
-                </div>
+              <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center">
+                <Terminal className="h-9 w-9 text-muted-foreground/50" />
+                <p className="mt-3 text-sm font-medium">{terminalId ? `Waiting for ${liveNodeLabel} terminal readiness` : `Interactive terminal is not open`}</p>
+                <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                  {terminalId ? "EC2 must be running and Systems Manager must report Online before the persistent shell can start." : `Select ${liveNodeLabel} and use Open interactive terminal to create a persistent Session Manager shell.`}
+                </p>
+                {terminalId && <Button className="mt-4" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh terminal readiness</Button>}
               </div>
               <div className="space-y-2 text-xs">
                 <p className="font-medium">Live path</p>
@@ -733,7 +651,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                   <div>Region <span className="float-right">{terminalDiagnostics?.region || capabilities?.region || "—"}</span></div>
                 </div>
                 {terminalFailure && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive"><div className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</div><div className="mt-1">{terminalFailure.error}</div></div>}
-                <Button size="sm" variant="outline" className="w-full" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh path</Button>
               </div>
             </div>
           )}
@@ -742,7 +659,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             <div className="grid gap-3 p-4 sm:grid-cols-3">
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Current lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Commands this session</p><p className="mt-1 text-sm">{history.length}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Terminal mode</p><p className="mt-1 text-sm">Persistent SSM shell</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div>
               <p className="sm:col-span-3 text-xs text-muted-foreground">A full server-side lab event stream is a later step. This panel intentionally shows only state the current UI can verify.</p>
             </div>

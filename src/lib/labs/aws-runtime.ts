@@ -13,9 +13,12 @@ import {
   type _InstanceType,
 } from '@aws-sdk/client-ec2';
 import {
+  DescribeSessionsCommand,
   GetCommandInvocationCommand,
   SendCommandCommand,
   SSMClient,
+  StartSessionCommand,
+  TerminateSessionCommand,
 } from '@aws-sdk/client-ssm';
 import type { LabDefinition, LabInstanceStatus, LabOsFamily, LabRuntimeCapabilities } from './types';
 
@@ -392,6 +395,43 @@ export async function stopLabVm(instanceId: string) {
 export async function destroyLabVm(instanceId: string) {
   assertAwsInstanceId(instanceId);
   await ec2.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
+}
+
+export async function startInteractiveLabSession(instanceId: string) {
+  assertAwsInstanceId(instanceId);
+  if (!INSTANCE_PROFILE) throw new Error('SSM terminal support is not configured for this deployment');
+
+  const result = await ssm.send(new StartSessionCommand({
+    Target: instanceId,
+    Reason: 'Oxsig interactive browser terminal',
+  }));
+  if (!result.SessionId || !result.StreamUrl || !result.TokenValue) {
+    throw new Error('AWS Session Manager did not return a complete interactive session');
+  }
+
+  return {
+    sessionId: result.SessionId,
+    streamUrl: result.StreamUrl,
+    tokenValue: result.TokenValue,
+    region: REGION,
+  };
+}
+
+export async function terminateInteractiveLabSession(instanceId: string, sessionId: string) {
+  assertAwsInstanceId(instanceId);
+  if (!sessionId || sessionId.length > 128) throw new Error('Invalid Session Manager session identifier');
+
+  const described = await ssm.send(new DescribeSessionsCommand({
+    State: 'Active',
+    Filters: [{ key: 'SessionId', value: sessionId }],
+    MaxResults: 10,
+  }));
+  const session = described.Sessions?.find((item) => item.SessionId === sessionId);
+  if (!session) return { terminated: false, alreadyEnded: true };
+  if (session.Target !== instanceId) throw new Error('Session Manager session does not belong to this lab runtime');
+
+  await ssm.send(new TerminateSessionCommand({ SessionId: sessionId }));
+  return { terminated: true, alreadyEnded: false };
 }
 
 export async function executeLabCommand(instanceId: string, command: string, platform: 'linux' | 'windows' = 'linux') {

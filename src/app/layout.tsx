@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
+import '@xterm/xterm/css/xterm.css';
 import '@xyflow/react/dist/style.css';
 import './globals.css';
 import './lab-flow.css';
