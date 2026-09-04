@@ -14,6 +14,8 @@ type SessionResponse = {
   sessionId: string;
   bridgePath: string;
   tokenValue: string;
+  bridgeTicketTtlMs?: number;
+  bridgeTicketExpiresAt?: string;
   region: string;
   target: string;
 };
@@ -50,6 +52,15 @@ export default function InteractiveSsmTerminal({
   const [state, setState] = React.useState<ConnectionState>("connecting");
   const [error, setError] = React.useState<string | null>(null);
   const [sessionId, setSessionId] = React.useState<string | null>(null);
+  const [statusDetail, setStatusDetail] = React.useState<string | null>(null);
+  const [bridgeTicketExpiresAt, setBridgeTicketExpiresAt] = React.useState<string | null>(null);
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (!bridgeTicketExpiresAt || state !== "connecting") return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [bridgeTicketExpiresAt, state]);
 
   const clearHandshakeTimer = React.useCallback(() => {
     if (handshakeTimerRef.current) clearTimeout(handshakeTimerRef.current);
@@ -84,6 +95,8 @@ export default function InteractiveSsmTerminal({
     await endServerSession(false);
     setState("disconnected");
     setError(null);
+    setStatusDetail("Disconnected from the AWS Systems Manager shell.");
+    setBridgeTicketExpiresAt(null);
     if (writeMessage) terminalRef.current?.writeln("\r\n[Oxsig terminal disconnected]\r\n");
     intentionalCloseRef.current = false;
   }, [clearHandshakeTimer, endServerSession]);
@@ -101,6 +114,8 @@ export default function InteractiveSsmTerminal({
 
     setState("connecting");
     setError(null);
+    setStatusDetail("Requesting an interactive Session Manager shell.");
+    setBridgeTicketExpiresAt(null);
     const terminal = terminalRef.current;
     terminal.writeln(`\r\n[Connecting ${machineLabel} through AWS Systems Manager…]`);
 
@@ -124,6 +139,10 @@ export default function InteractiveSsmTerminal({
       const session = body as SessionResponse;
       sessionIdRef.current = session.sessionId;
       setSessionId(session.sessionId);
+      setBridgeTicketExpiresAt(session.bridgeTicketExpiresAt || null);
+      if (session.bridgeTicketTtlMs) {
+        setStatusDetail(`Session created. Bridge ticket valid for about ${Math.max(1, Math.ceil(session.bridgeTicketTtlMs / 1000))}s while connecting.`);
+      }
 
       const channel = new SsmBrowserDataChannel({
         onOutput: (data) => terminalRef.current?.write(data),
@@ -132,6 +151,8 @@ export default function InteractiveSsmTerminal({
           clearHandshakeTimer();
           setState("connected");
           setError(null);
+          setBridgeTicketExpiresAt(null);
+          setStatusDetail("Connected to the persistent shell session.");
           if (customerMessage) terminalRef.current?.writeln(`\r\n${customerMessage}`);
           requestAnimationFrame(() => {
             fitRef.current?.fit();
@@ -145,6 +166,8 @@ export default function InteractiveSsmTerminal({
           clearHandshakeTimer();
           setState("error");
           setError(message);
+          setStatusDetail("Connection failed before the interactive shell became ready.");
+          setBridgeTicketExpiresAt(null);
           terminalRef.current?.writeln(`\r\n[Oxsig terminal error: ${message}]\r\n`);
           void endServerSession(true);
         },
@@ -152,6 +175,8 @@ export default function InteractiveSsmTerminal({
           if (generation !== generationRef.current || intentionalCloseRef.current) return;
           clearHandshakeTimer();
           setState("disconnected");
+          setStatusDetail(reason ? `Session closed: ${reason}` : "Session closed.");
+          setBridgeTicketExpiresAt(null);
           if (reason) terminalRef.current?.writeln(`\r\n[Session closed: ${reason}]\r\n`);
           void endServerSession(true);
         },
@@ -167,6 +192,8 @@ export default function InteractiveSsmTerminal({
         if (generation !== generationRef.current || channel.isReady()) return;
         setState("error");
         setError("AWS Session Manager connected, but the interactive shell handshake did not finish in time.");
+        setStatusDetail("AWS accepted the session, but the shell handshake timed out.");
+        setBridgeTicketExpiresAt(null);
         terminalRef.current?.writeln("\r\n[Interactive shell handshake timed out]\r\n");
         channel.close();
         void endServerSession(true);
@@ -177,6 +204,8 @@ export default function InteractiveSsmTerminal({
       clearHandshakeTimer();
       setState("error");
       setError(message);
+      setStatusDetail("Connection attempt failed.");
+      setBridgeTicketExpiresAt(null);
       terminal.writeln(`\r\n[Oxsig terminal error: ${message}]\r\n`);
       await endServerSession(false);
     }
@@ -248,6 +277,7 @@ export default function InteractiveSsmTerminal({
     : state === "connecting" ? "Connecting"
     : state === "error" ? "Error"
     : "Disconnected";
+  const ticketSecondsLeft = bridgeTicketExpiresAt ? Math.max(0, Math.ceil((new Date(bridgeTicketExpiresAt).getTime() - nowMs) / 1000)) : null;
 
   return (
     <div className="space-y-2">
@@ -275,6 +305,12 @@ export default function InteractiveSsmTerminal({
       </div>
 
       {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">{error}</div>}
+      {(statusDetail || ticketSecondsLeft !== null) && (
+        <div className="rounded-lg border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+          {statusDetail}
+          {ticketSecondsLeft !== null && state === "connecting" ? ` ${ticketSecondsLeft > 0 ? `(${ticketSecondsLeft}s bridge ticket window left)` : "(bridge ticket window expired; reconnect to retry)"}` : ""}
+        </div>
+      )}
       <div className="overflow-hidden rounded-xl bg-black p-2">
         <div ref={hostRef} className="h-[420px] min-h-[280px] w-full" aria-label={`Interactive terminal for ${machineLabel}`} />
       </div>

@@ -94,6 +94,23 @@ function short(value?: string | null, size = 12) {
   return value.length <= size ? value : `${value.slice(0, size)}…`;
 }
 
+function minutesUntil(value?: string | null) {
+  if (!value) return null;
+  const ms = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return null;
+  return Math.round(ms / 60_000);
+}
+
+function relativeExpiry(value?: string | null) {
+  const mins = minutesUntil(value);
+  if (mins === null) return "—";
+  if (mins <= 0) return "Expired";
+  if (mins < 60) return `${mins}m left`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem === 0 ? `${hours}h left` : `${hours}h ${rem}m left`;
+}
+
 function nodeData(lab: LabDefinition, label: string, status: LabMachineNodeData["status"] = "planned", live = false): LabMachineNodeData {
   return {
     slug: lab.slug,
@@ -142,6 +159,9 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const selectedLab = selectedNode ? catalog.find((item) => item.slug === selectedNode.data.slug) || null : null;
   const selectedIsLive = Boolean(instance && selectedNode && selectedNode.id === liveNodeId);
   const liveNodeLabel = liveNode?.data.label || instance?.name || "Live machine";
+  const liveMinutesLeft = minutesUntil(instance?.expiresAt);
+  const liveExpiringSoon = liveMinutesLeft !== null && liveMinutesLeft > 0 && liveMinutesLeft <= 10;
+  const liveExpired = liveMinutesLeft !== null && liveMinutesLeft <= 0;
 
   const load = React.useCallback(async (silent = false) => {
     try {
@@ -567,7 +587,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{selectedLab.availabilityNote}</div>
               )}
 
-              {selectedIsLive && instance?.expiresAt && <p className="text-[11px] text-muted-foreground">Expires {new Date(instance.expiresAt).toLocaleString()}</p>}
+              {selectedIsLive && instance?.expiresAt && (
+                <p className={`text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                  Expires {new Date(instance.expiresAt).toLocaleString()} ({relativeExpiry(instance.expiresAt)})
+                </p>
+              )}
               {selectedIsLive && instance?.lastError && <div className="rounded-lg bg-destructive/10 p-3 text-[11px] text-destructive">The last cloud operation failed. Refresh AWS state or open Diagnostics for the exact AWS/SSM state.</div>}
 
               <div className="space-y-2 rounded-xl border p-3">
@@ -620,6 +644,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
               <span className="font-medium text-foreground">Lab dock — {liveNodeLabel}</span>
               <Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge>
+              {instance.expiresAt && (
+                <Badge variant={liveExpired ? "destructive" : liveExpiringSoon ? "secondary" : "outline"} className="h-5">
+                  {relativeExpiry(instance.expiresAt)}
+                </Badge>
+              )}
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setTerminalId(null); setDockOpen(false); }}><X className="h-4 w-4" /></Button>
             </div>
           </div>
@@ -638,6 +667,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 <p className="mt-1 max-w-md text-xs text-muted-foreground">
                   {terminalId ? "EC2 must be running and Systems Manager must report Online before the persistent shell can start." : `Select ${liveNodeLabel} and use Open interactive terminal to create a persistent Session Manager shell.`}
                 </p>
+                {instance.expiresAt && (
+                  <p className={`mt-2 text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                    Lab lease: {relativeExpiry(instance.expiresAt)}
+                  </p>
+                )}
                 {terminalId && <Button className="mt-4" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh terminal readiness</Button>}
               </div>
               <div className="space-y-2 text-xs">

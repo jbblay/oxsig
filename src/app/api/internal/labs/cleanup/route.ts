@@ -70,6 +70,8 @@ export async function GET(request: NextRequest) {
   let terminationAccepted = 0;
   let destroyedConfirmed = 0;
   let alreadyGone = 0;
+  let labsReconciled = 0;
+  let eventsWritten = 0;
   const failures: Array<{ externalId: string; error: string }> = [];
 
   for (const candidate of candidates.values()) {
@@ -92,6 +94,7 @@ export async function GET(request: NextRequest) {
          RETURNING id`,
         [status, candidate.externalId, candidate.labInstanceId || '']
       );
+      labsReconciled += updated.rowCount || 0;
 
       for (const row of updated.rows) {
         await pool.query(
@@ -103,17 +106,33 @@ export async function GET(request: NextRequest) {
             status,
           })]
         );
+        eventsWritten += 1;
       }
     } catch (error) {
       if (isMissingInstance(error)) {
         alreadyGone += 1;
-        await pool.query(
+        const updated = await pool.query(
           `UPDATE lab_instances
            SET status='destroyed', last_error=NULL, updated_at=NOW()
            WHERE (runtime_external_id=$1 OR id::text=$2)
-             AND status NOT IN ('destroyed','failed')`,
+             AND status NOT IN ('destroyed','failed')
+           RETURNING id`,
           [candidate.externalId, candidate.labInstanceId || '']
         );
+        labsReconciled += updated.rowCount || 0;
+        for (const row of updated.rows) {
+          await pool.query(
+           `INSERT INTO lab_events (lab_instance_id,event_type,source,payload)
+            VALUES ($1,'expired_cleanup_missing_instance','scheduler',$2)`,
+           [row.id, JSON.stringify({
+             provider: 'aws-ec2',
+             externalId: candidate.externalId,
+             status: 'destroyed',
+             reason: 'missing_instance',
+           })]
+          );
+          eventsWritten += 1;
+        }
         continue;
       }
 
@@ -143,10 +162,24 @@ export async function GET(request: NextRequest) {
            updated_at=NOW()
        WHERE id::text=$1
          AND runtime_external_id IS NULL
-         AND status NOT IN ('destroyed','failed')`,
+         AND status NOT IN ('destroyed','failed')
+       RETURNING id`,
       [row.id]
     );
     expiredWithoutRuntime += result.rowCount || 0;
+    labsReconciled += result.rowCount || 0;
+    for (const updated of result.rows) {
+      await pool.query(
+       `INSERT INTO lab_events (lab_instance_id,event_type,source,payload)
+        VALUES ($1,'expired_cleanup_runtime_missing','scheduler',$2)`,
+       [updated.id, JSON.stringify({
+         provider: 'aws-ec2',
+         status: 'failed',
+         reason: 'runtime_external_id_missing',
+       })]
+      );
+      eventsWritten += 1;
+    }
   }
 
   return NextResponse.json({
@@ -157,6 +190,9 @@ export async function GET(request: NextRequest) {
     terminationAccepted,
     destroyedConfirmed,
     alreadyGone,
+    candidateCount: candidates.size,
+    labsReconciled,
+    eventsWritten,
     expiredWithoutRuntime,
     failures,
   }, { status: failures.length === 0 ? 200 : 207 });

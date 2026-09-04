@@ -54,6 +54,8 @@ export const AUDIT_ACTIONS = {
   LAB_STOP: 'lab.stop',
   LAB_DESTROY: 'lab.destroy',
   LAB_COMMAND: 'lab.command',
+  LAB_COMMAND_FAILED: 'lab.command.failed',
   LAB_SESSION_START: 'lab.session.start',
+  LAB_SESSION_START_FAILED: 'lab.session.start.failed',
   LAB_SESSION_END: 'lab.session.end',
 } as const;

@@ -4,6 +4,7 @@ const VERSION = 1;
 const DEFAULT_TTL_MS = 30_000;
 const MAX_TTL_MS = 60_000;
 const AAD = Buffer.from('oxsig-terminal-bridge-v1', 'utf8');
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
 function bridgeKey() {
   const secret = process.env.OXSIG_TERMINAL_BRIDGE_SECRET;
@@ -13,12 +14,31 @@ function bridgeKey() {
   return createHash('sha256').update(secret, 'utf8').digest();
 }
 
+function resolveTicketTtlMs(ttlMs = DEFAULT_TTL_MS) {
+  return Math.max(1_000, Math.min(Number(ttlMs) || DEFAULT_TTL_MS, MAX_TTL_MS));
+}
+
+function decodeBase64UrlStrict(part, label) {
+  if (typeof part !== 'string' || part.length === 0 || !BASE64URL.test(part)) {
+    throw new Error(`Malformed ${label}.`);
+  }
+  const decoded = Buffer.from(part, 'base64url');
+  if (decoded.toString('base64url') !== part) {
+    throw new Error(`Malformed ${label}.`);
+  }
+  return decoded;
+}
+
+export function terminalBridgeTicketTtlMs(ttlMs = DEFAULT_TTL_MS) {
+  return resolveTicketTtlMs(ttlMs);
+}
+
 export function createTerminalBridgeTicket({ streamUrl, region, sessionId, target, ttlMs = DEFAULT_TTL_MS }) {
   if (!streamUrl || !region || !sessionId || !target) {
     throw new Error('A complete Session Manager session is required for a terminal bridge ticket.');
   }
 
-  const ttl = Math.max(1_000, Math.min(Number(ttlMs) || DEFAULT_TTL_MS, MAX_TTL_MS));
+  const ttl = resolveTicketTtlMs(ttlMs);
   const payload = Buffer.from(JSON.stringify({
     v: VERSION,
     streamUrl,
@@ -49,9 +69,9 @@ export function verifyTerminalBridgeTicket(ticket) {
 
   let payload;
   try {
-    const iv = Buffer.from(parts[1], 'base64url');
-    const ciphertext = Buffer.from(parts[2], 'base64url');
-    const tag = Buffer.from(parts[3], 'base64url');
+    const iv = decodeBase64UrlStrict(parts[1], 'ticket iv');
+    const ciphertext = decodeBase64UrlStrict(parts[2], 'ticket ciphertext');
+    const tag = decodeBase64UrlStrict(parts[3], 'ticket auth tag');
     if (iv.length !== 12 || tag.length !== 16 || ciphertext.length < 1) {
       throw new Error('Malformed encrypted ticket.');
     }
