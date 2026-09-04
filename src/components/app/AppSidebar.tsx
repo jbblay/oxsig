@@ -6,8 +6,8 @@ import { usePathname } from 'next/navigation';
 import {
   BookOpen,
   Box,
-  HardDrive,
   Home,
+  LibraryBig,
   LogOut,
   MessageCircle,
   Moon,
@@ -34,7 +34,7 @@ const groups = [
   {
     label: 'Build & practice',
     items: [
-      { href: '/storage', label: 'Storage', icon: HardDrive },
+      { href: '/vault', label: 'Vault', icon: LibraryBig },
       { href: '/labs', label: 'Cyber Lab', icon: Box },
     ],
   },
