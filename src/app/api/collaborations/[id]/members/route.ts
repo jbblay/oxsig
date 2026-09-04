@@ -1,161 +1,159 @@
-/**
- * Collaboration Members API
- * POST /api/collaborations/[id]/members - Add member to collaboration
- * PATCH /api/collaborations/[id]/members/[userId] - Update member role/permissions
- * DELETE /api/collaborations/[id]/members/[userId] - Remove member from collaboration
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth/middleware';
-import { getPool } from '@/lib/db/postgres';
 import { z } from 'zod';
+import { requireAuth } from '@/lib/auth/middleware';
+import { getPool } from '@/lib/db/pool';
+import { getCollaborationAccess } from '@/lib/collab/server';
+import { validateCsrfToken } from '@/lib/security/csrf';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
-const addMemberSchema = z.object({
-  userId: z.string().uuid(),
-  role: z.enum(['owner', 'admin', 'member', 'viewer']).default('member'),
-  permissions: z.object({
-    read: z.boolean().default(true),
-    write: z.boolean().default(false),
-    admin: z.boolean().default(false),
-    manage: z.boolean().default(false),
-  }).optional(),
-});
+export const runtime = 'nodejs';
 
-/**
- * POST /api/collaborations/[id]/members
- * Add member to collaboration (owner or admin only)
- */
+const idSchema = z.string().uuid();
+const inviteSchema = z.object({
+  email: z.string().trim().email().max(320),
+}).strict();
+
+function mapMember(row: Record<string, any>) {
+  return {
+    id: row.id,
+    displayName: row.display_name || row.email?.split('@')[0] || 'Member',
+    email: row.email || null,
+    avatarUrl: row.avatar_url || null,
+    role: row.role,
+    isOwner: row.role === 'owner',
+  };
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  return requireAuth(request, async (_req, user) => {
+    const { id } = await params;
+    if (!idSchema.safeParse(id).success) {
+      return NextResponse.json({ error: 'Invalid collaboration session' }, { status: 400 });
+    }
+
+    const pool = getPool();
+    const access = await getCollaborationAccess(pool, id, user.id);
+    if (!access) {
+      return NextResponse.json({ error: 'Collaboration not found or access denied' }, { status: 404 });
+    }
+
+    try {
+      const result = await pool.query(
+        `SELECT owner.id,
+                owner.display_name,
+                owner.email,
+                owner.avatar_url,
+                'owner'::text AS role,
+                0 AS sort_order
+         FROM collaborations c
+         JOIN users owner ON owner.id = c.owner_id
+         WHERE c.id = $1
+         UNION ALL
+         SELECT member.id,
+                member.display_name,
+                member.email,
+                member.avatar_url,
+                cm.role::text AS role,
+                1 AS sort_order
+         FROM collaboration_members cm
+         JOIN collaborations c ON c.id = cm.collaboration_id
+         JOIN users member ON member.id = cm.user_id
+         WHERE cm.collaboration_id = $1
+           AND cm.status = 'active'
+           AND cm.user_id <> c.owner_id
+         ORDER BY sort_order, display_name NULLS LAST, email NULLS LAST`,
+        [id]
+      );
+
+      return NextResponse.json({
+        members: result.rows.map(mapMember),
+        canInvite: access.isOwner || access.role === 'admin',
+      });
+    } catch (error) {
+      console.error('Collaboration members load failed:', error);
+      return NextResponse.json({ error: 'Could not load session members' }, { status: 500 });
+    }
+  });
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) {
+      return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
+    }
+
+    const { id } = await params;
+    if (!idSchema.safeParse(id).success) {
+      return NextResponse.json({ error: 'Invalid collaboration session' }, { status: 400 });
+    }
+
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 20, windowMs: 60 * 60_000 },
+      `${user.id}:${id}`
+    );
+    if (rateLimit) return rateLimit;
+
+    const parsed = inviteSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 });
+    }
+
+    const pool = getPool();
+    const access = await getCollaborationAccess(pool, id, user.id);
+    if (!access) {
+      return NextResponse.json({ error: 'Collaboration not found or access denied' }, { status: 404 });
+    }
+    if (!access.isOwner && access.role !== 'admin') {
+      return NextResponse.json({ error: 'Only session owners and admins can add members' }, { status: 403 });
+    }
+
+    const candidate = await pool.query(
+      `SELECT id, display_name, email, avatar_url
+       FROM users
+       WHERE is_active = true AND LOWER(email) = LOWER($1)
+       LIMIT 1`,
+      [parsed.data.email]
+    );
+    const member = candidate.rows[0];
+    if (!member) {
+      return NextResponse.json(
+        { error: 'That person must sign in to Oxsig once before they can be added.' },
+        { status: 404 }
+      );
+    }
+
+    if (member.id === access.ownerId) {
+      return NextResponse.json({ member: mapMember({ ...member, role: 'owner' }) });
+    }
+
     try {
-      const { id: collaborationId } = await params;
-      const body = await req.json();
-
-      // Validate input
-      const validation = addMemberSchema.safeParse(body);
-      if (!validation.success) {
-        return NextResponse.json(
-          { error: 'Validation failed', errors: validation.error.errors },
-          { status: 400 }
-        );
-      }
-
-      const { userId, role, permissions } = validation.data;
-      const pool = getPool();
-
-      // Check if requester has admin permissions
-      const accessCheck = await pool.query(
-        `SELECT c.*, cm.role, cm.permissions
-         FROM collaborations c
-         LEFT JOIN collaboration_members cm ON c.id = cm.collaboration_id AND cm.user_id = $1
-         WHERE c.id = $2`,
-        [user.id, collaborationId]
-      );
-
-      if (accessCheck.rows.length === 0) {
-        return NextResponse.json(
-          { error: 'Collaboration not found' },
-          { status: 404 }
-        );
-      }
-
-      const collaboration = accessCheck.rows[0];
-      const isOwner = collaboration.owner_id === user.id;
-      const isAdmin = collaboration.permissions?.admin === true;
-
-      if (!isOwner && !isAdmin) {
-        return NextResponse.json(
-          { error: 'Insufficient permissions' },
-          { status: 403 }
-        );
-      }
-
-      // Check if user exists
-      const userCheck = await pool.query(
-        `SELECT id, email, display_name FROM users WHERE id = $1`,
-        [userId]
-      );
-
-      if (userCheck.rows.length === 0) {
-        return NextResponse.json(
-          { error: 'User not found' },
-          { status: 404 }
-        );
-      }
-
-      const newMember = userCheck.rows[0];
-
-      // Check if user is already a member
-      const memberCheck = await pool.query(
-        `SELECT * FROM collaboration_members 
-         WHERE collaboration_id = $1 AND user_id = $2`,
-        [collaborationId, userId]
-      );
-
-      if (memberCheck.rows.length > 0) {
-        return NextResponse.json(
-          { error: 'User is already a member of this collaboration' },
-          { status: 409 }
-        );
-      }
-
-      // Set default permissions based on role
-      const defaultPermissions = {
-        owner: { read: true, write: true, admin: true, manage: true },
-        admin: { read: true, write: true, admin: true, manage: false },
-        member: { read: true, write: true, admin: false, manage: false },
-        viewer: { read: true, write: false, admin: false, manage: false },
-      };
-
-      const memberPermissions = permissions || defaultPermissions[role];
-
-      // Add member
-      const result = await pool.query(
-        `INSERT INTO collaboration_members 
-         (collaboration_id, user_id, role, permissions, invited_by, status)
-         VALUES ($1, $2, $3, $4, $5, 'active')
-         RETURNING *`,
-        [collaborationId, userId, role, JSON.stringify(memberPermissions), user.id]
-      );
-
-      const member = result.rows[0];
-
-      // Log activity
       await pool.query(
-        `INSERT INTO activity_log (user_id, action, entity_type, entity_id, metadata)
-         VALUES ($1, 'ADD_COLLABORATION_MEMBER', 'collaboration', $2, $3)`,
+        `INSERT INTO collaboration_members (collaboration_id, user_id, role, permissions, status, invited_by)
+         VALUES ($1, $2, 'member', $3::jsonb, 'active', $4)
+         ON CONFLICT (collaboration_id, user_id)
+         DO UPDATE SET status='active', role='member', permissions=EXCLUDED.permissions, invited_by=EXCLUDED.invited_by`,
         [
+          id,
+          member.id,
+          JSON.stringify({ read: true, write: true, admin: false }),
           user.id,
-          collaborationId,
-          JSON.stringify({
-            addedUserId: userId,
-            addedUserEmail: newMember.email,
-            role,
-          }),
         ]
       );
+      await pool.query(`UPDATE collaborations SET updated_at = NOW() WHERE id = $1`, [id]);
 
       return NextResponse.json({
-        member: {
-          id: member.id,
-          userId: member.user_id,
-          email: newMember.email,
-          displayName: newMember.display_name,
-          role: member.role,
-          permissions: member.permissions,
-          status: member.status,
-          joinedAt: member.joined_at,
-        },
+        member: mapMember({ ...member, role: 'member' }),
       }, { status: 201 });
     } catch (error) {
-      console.error('Failed to add member:', error);
-      return NextResponse.json(
-        { error: 'Failed to add member' },
-        { status: 500 }
-      );
+      console.error('Collaboration invite failed:', error);
+      return NextResponse.json({ error: 'Could not add member' }, { status: 500 });
     }
   });
 }

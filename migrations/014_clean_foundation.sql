@@ -1,0 +1,2 @@
+-- Clean-foundation identity alignment.
+-- Keep existing auth_provider defaults stable; Clerk write paths set auth_provider explicitly.

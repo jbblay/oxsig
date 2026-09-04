@@ -1,5 +1,11 @@
-import { redirect } from 'next/navigation';
+import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
+import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 
-export default function LegacyLabsPage() {
-  redirect('/network');
+export default function CyberLabPage() {
+  return (
+    <>
+      <LabRuntimePanel />
+      <AiPractitionerDock />
+    </>
+  );
 }

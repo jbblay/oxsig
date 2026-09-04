@@ -1,49 +1,63 @@
-/**
- * Storage Delete Multiple API - DELETE /api/storage/delete-multiple
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, DeleteObjectsCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
+import { requireAuth } from '@/lib/auth/middleware';
+import { validateCsrfToken } from '@/lib/security/csrf';
+import { checkRateLimit } from '@/lib/security/rate-limit';
+import {
+  assertUserStorageKey,
+  getStorageBucket,
+  getStorageClient,
+  storageErrorResponse,
+} from '@/lib/storage/server';
 
-let s3Client: S3Client | null = null;
-function getS3Client() {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
-      region: process.env.MINIO_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-      },
-      forcePathStyle: true,
-    });
-  }
-  return s3Client;
-}
+const MAX_DELETE_KEYS = 100;
 
 export async function DELETE(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const keys: string[] = body?.keys || [];
-    const bucket = body?.bucket || process.env.MINIO_BUCKET || 'oxsig-documents';
-
-    if (!Array.isArray(keys) || keys.length === 0) {
-      return NextResponse.json({ error: 'No keys provided' }, { status: 400 });
+  return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) {
+      return NextResponse.json(
+        { error: 'Invalid or missing CSRF token' },
+        { status: 403 }
+      );
     }
 
-    await getS3Client().send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: { Objects: keys.map((k) => ({ Key: k })) },
-      })
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 30, windowMs: 60_000 },
+      user.id
     );
+    if (rateLimit) return rateLimit;
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Storage delete-multiple error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete objects', details: String(error) },
-      { status: 500 }
-    );
-  }
+    try {
+      const body = await req.json().catch(() => null);
+      const rawKeys = body?.keys;
+
+      if (!Array.isArray(rawKeys) || rawKeys.length === 0) {
+        return NextResponse.json({ error: 'No keys provided' }, { status: 400 });
+      }
+
+      if (rawKeys.length > MAX_DELETE_KEYS || rawKeys.some((key) => typeof key !== 'string')) {
+        return NextResponse.json(
+          { error: `Provide between 1 and ${MAX_DELETE_KEYS} valid object keys` },
+          { status: 400 }
+        );
+      }
+
+      const keys = rawKeys.map((key) => assertUserStorageKey(user.id, key));
+      const bucket = getStorageBucket();
+
+      await getStorageClient().send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+        })
+      );
+
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      console.error('Storage delete-multiple error:', error);
+      const failure = storageErrorResponse(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }

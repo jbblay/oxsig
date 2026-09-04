@@ -1,11 +1,5 @@
-/**
- * Authentication Middleware
- * JWT-based authentication for API routes with Ed25519 signatures
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyJWT } from './jwt';
-import { cookies } from 'next/headers';
+import { getClerkAuthenticatedUser } from './clerk-user';
 
 export interface AuthenticatedUser {
   id: string;
@@ -15,101 +9,53 @@ export interface AuthenticatedUser {
   role: 'user' | 'admin';
 }
 
-/**
- * Get user from request with Ed25519 JWT validation
- */
-export async function getUserFromRequest(
-  request: NextRequest
-): Promise<AuthenticatedUser | null> {
+export async function getUserFromRequest(_request: NextRequest): Promise<AuthenticatedUser | null> {
+  const clerkUser = await getClerkAuthenticatedUser();
+  if (!clerkUser) return null;
+  return {
+    id: clerkUser.id,
+    did: clerkUser.did,
+    email: clerkUser.email,
+    name: clerkUser.name,
+    role: clerkUser.role,
+  };
+}
+
+async function resolveUser(request: NextRequest): Promise<{ user: AuthenticatedUser | null; error?: NextResponse }> {
   try {
-    // Try to get token from httpOnly cookie first
-    const cookieStore = await cookies();
-    let token = cookieStore.get('accessToken')?.value;
-
-    // Fallback to Authorization header for API clients
-    if (!token) {
-      const authHeader = request.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
-    }
-
-    if (!token) {
-      return null;
-    }
-
-    // Verify Ed25519-signed JWT token
-    const payload = await verifyJWT(token);
-    
-    if (!payload || payload.type !== 'access') {
-      return null;
-    }
-    
-    return {
-      id: payload.sub,
-      did: payload.did,
-      email: payload.email,
-      name: payload.email?.split('@')[0],
-      role: (payload.role as 'user' | 'admin') || 'user',
-    };
+    return { user: await getUserFromRequest(request) };
   } catch (error) {
-    console.error('Auth error:', error);
-    return null;
+    console.error('Authenticated user resolution failed:', error);
+    return { user: null, error: NextResponse.json({ error: 'Account service unavailable' }, { status: 503 }) };
   }
 }
 
-/**
- * Require authentication middleware
- */
 export async function requireAuth(
   request: NextRequest,
   handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>
 ): Promise<NextResponse> {
-  const user = await getUserFromRequest(request);
-
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      { status: 401 }
-    );
-  }
-
-  return handler(request, user);
+  const resolved = await resolveUser(request);
+  if (resolved.error) return resolved.error;
+  if (!resolved.user) return NextResponse.json({ error: 'Unauthorized', message: 'Authentication required' }, { status: 401 });
+  return handler(request, resolved.user);
 }
 
-/**
- * Require admin role
- */
 export async function requireAdmin(
   request: NextRequest,
   handler: (request: NextRequest, user: AuthenticatedUser) => Promise<NextResponse>
 ): Promise<NextResponse> {
-  const user = await getUserFromRequest(request);
-
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      { status: 401 }
-    );
-  }
-
-  if (user.role !== 'admin') {
-    return NextResponse.json(
-      { error: 'Forbidden', message: 'Admin access required' },
-      { status: 403 }
-    );
-  }
-
-  return handler(request, user);
+  const resolved = await resolveUser(request);
+  if (resolved.error) return resolved.error;
+  if (!resolved.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (resolved.user.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  return handler(request, resolved.user);
 }
 
-/**
- * Optional auth - provides user if authenticated, but doesn't require it
- */
 export async function optionalAuth(
   request: NextRequest,
   handler: (request: NextRequest, user: AuthenticatedUser | null) => Promise<NextResponse>
 ): Promise<NextResponse> {
-  const user = await getUserFromRequest(request);
-  return handler(request, user);
+  const resolved = await resolveUser(request);
+  if (resolved.error) return resolved.error;
+  return handler(request, resolved.user);
 }

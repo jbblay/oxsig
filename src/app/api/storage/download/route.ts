@@ -1,61 +1,54 @@
-/**
- * Storage Download API - GET /api/storage/download?key=...&bucket=...
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { requireAuth } from '@/lib/auth/middleware';
+import { checkRateLimit } from '@/lib/security/rate-limit';
+import {
+  assertUserStorageKey,
+  getStorageBucket,
+  getStorageClient,
+  storageDisplayFilename,
+  storageErrorResponse,
+} from '@/lib/storage/server';
 
-let s3Client: S3Client | null = null;
-function getS3Client() {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
-      region: process.env.MINIO_REGION || 'us-east-1',
-      credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-        secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-      },
-      forcePathStyle: true,
-    });
-  }
-  return s3Client;
-}
+const DOWNLOAD_URL_TTL_SECONDS = 60;
 
 export async function GET(request: NextRequest) {
-  try {
-    const url = new URL(request.url);
-    const key = url.searchParams.get('key');
-    const bucket = url.searchParams.get('bucket') || process.env.MINIO_BUCKET || 'oxsig-documents';
-
-    if (!key) {
-      return NextResponse.json({ error: 'Missing key' }, { status: 400 });
-    }
-
-    const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-    const response = await getS3Client().send(cmd);
-
-    if (!response.Body) {
-      return NextResponse.json({ error: 'File not found' }, { status: 404 });
-    }
-
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of response.Body as any) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
-
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': response.ContentType || 'application/octet-stream',
-        'Content-Length': buffer.length.toString(),
-        'Content-Disposition': `attachment; filename="${key.split('/').pop() || 'file'}"`,
-      },
-    });
-  } catch (error) {
-    console.error('Storage download error:', error);
-    return NextResponse.json(
-      { error: 'Failed to download', details: String(error) },
-      { status: 500 }
+  return requireAuth(request, async (req, user) => {
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 60, windowMs: 60_000 },
+      user.id
     );
-  }
+    if (rateLimit) return rateLimit;
+
+    try {
+      const url = new URL(req.url);
+      const rawKey = url.searchParams.get('key');
+
+      if (!rawKey) {
+        return NextResponse.json({ error: 'Missing key' }, { status: 400 });
+      }
+
+      const key = assertUserStorageKey(user.id, rawKey);
+      const bucket = getStorageBucket();
+      const filename = storageDisplayFilename(key);
+      const signedUrl = await getSignedUrl(
+        getStorageClient(),
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          ResponseContentDisposition: `attachment; filename="${filename}"`,
+          ResponseCacheControl: 'private, no-store',
+        }),
+        { expiresIn: DOWNLOAD_URL_TTL_SECONDS }
+      );
+
+      return NextResponse.redirect(signedUrl, 302);
+    } catch (error) {
+      console.error('Storage download presign error:', error);
+      const failure = storageErrorResponse(error);
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+  });
 }

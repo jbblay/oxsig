@@ -1,25 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getDatabaseConfig, isDatabaseConfigured } from './pool';
 
-import { getHostedDatabaseUrl, isDatabaseConfigured } from './pool';
+afterEach(() => vi.unstubAllEnvs());
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe('hosted database configuration', () => {
-  it('prefers the canonical DATABASE_URL', () => {
+describe('database configuration', () => {
+  it('uses DATABASE_URL as the single application database setting', () => {
     vi.stubEnv('DATABASE_URL', 'postgresql://canonical');
-    vi.stubEnv('DATABASE_POSTGRES_URL', 'postgresql://vercel-neon');
-
-    expect(getHostedDatabaseUrl()).toBe('postgresql://canonical');
+    expect(getDatabaseConfig().connectionString).toBe('postgresql://canonical');
+    expect(isDatabaseConfigured()).toBe(true);
   });
 
-  it('accepts the Vercel Neon pooled URL without a duplicate secret', () => {
+  it('reports an unconfigured database when DATABASE_URL is absent', () => {
     vi.stubEnv('DATABASE_URL', '');
-    vi.stubEnv('DATABASE_POSTGRES_URL', 'postgresql://vercel-neon');
-    vi.stubEnv('NODE_ENV', 'production');
-
-    expect(getHostedDatabaseUrl()).toBe('postgresql://vercel-neon');
-    expect(isDatabaseConfigured()).toBe(true);
+    expect(isDatabaseConfigured()).toBe(false);
+    expect(() => getDatabaseConfig()).toThrow('DATABASE_URL is required.');
   });
 });
