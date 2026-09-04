@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
-import next from 'next';
 import { WebSocket, WebSocketServer } from 'ws';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { Sha256 } from '@aws-crypto/sha256-js';
@@ -9,11 +8,15 @@ import { SignatureV4 } from '@smithy/signature-v4';
 import { verifyTerminalBridgeTicket } from './src/lib/labs/terminal-bridge-ticket.js';
 
 const dev = !process.argv.includes('--prod');
+process.env.NODE_ENV = dev ? 'development' : 'production';
+const { default: next } = await import('next');
+
 const hostname = process.env.OXSIG_HOST || '0.0.0.0';
 const port = Number(process.env.PORT || 3000);
 const BRIDGE_PATH = '/__oxsig/terminal-bridge';
 const MAX_PENDING_BYTES = 1024 * 1024;
 const TICKET_RETENTION_MS = 90_000;
+const AWS_PING_INTERVAL_MS = 5 * 60_000;
 
 if (!process.env.OXSIG_TERMINAL_BRIDGE_SECRET) {
   process.env.OXSIG_TERMINAL_BRIDGE_SECRET = randomBytes(48).toString('base64url');
@@ -114,10 +117,17 @@ function closeQuietly(socket, code = 1000, reason = '') {
 
 async function bridgeConnection(browserSocket, payload) {
   let awsSocket;
+  let pingTimer;
   let pendingBytes = 0;
   const pending = [];
 
+  const stopPings = () => {
+    if (pingTimer) clearInterval(pingTimer);
+    pingTimer = undefined;
+  };
+
   const fail = (message) => {
+    stopPings();
     console.error(`[oxsig] Terminal bridge failed for ${payload.sessionId}: ${message}`);
     closeQuietly(browserSocket, 1011, 'AWS Session Manager bridge failed');
     if (awsSocket) closeQuietly(awsSocket, 1011, 'Bridge failed');
@@ -138,9 +148,11 @@ async function bridgeConnection(browserSocket, payload) {
   });
 
   browserSocket.on('close', () => {
+    stopPings();
     if (awsSocket) closeQuietly(awsSocket, 1000, 'Browser disconnected');
   });
   browserSocket.on('error', () => {
+    stopPings();
     if (awsSocket) closeQuietly(awsSocket, 1011, 'Browser connection error');
   });
 
@@ -156,6 +168,11 @@ async function bridgeConnection(browserSocket, payload) {
     });
 
     awsSocket.on('open', () => {
+      pingTimer = setInterval(() => {
+        if (awsSocket?.readyState === WebSocket.OPEN) awsSocket.ping('keepalive');
+      }, AWS_PING_INTERVAL_MS);
+      pingTimer.unref?.();
+
       for (const item of pending.splice(0)) {
         if (awsSocket.readyState !== WebSocket.OPEN) break;
         awsSocket.send(item.data, { binary: item.isBinary });
@@ -168,6 +185,7 @@ async function bridgeConnection(browserSocket, payload) {
       }
     });
     awsSocket.on('close', (code, reason) => {
+      stopPings();
       closeQuietly(browserSocket, code === 1000 ? 1000 : 1011, reason.toString() || 'AWS channel closed');
     });
     awsSocket.on('error', (error) => {
