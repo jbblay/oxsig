@@ -16,15 +16,20 @@ export const runtime = 'nodejs';
 
 async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
   const result = await getPool().query(
-    `SELECT id, slug, status, runtime_provider, runtime_external_id
-     FROM lab_instances
-     WHERE id = $1 AND owner_id = $2 AND status <> 'destroyed'
+    `SELECT instance.id,
+            definition.slug,
+            instance.status,
+            instance.runtime_provider,
+            instance.runtime_external_id
+     FROM lab_instances instance
+     JOIN lab_definitions definition ON definition.id = instance.definition_id
+     WHERE instance.id = $1 AND instance.owner_id = $2 AND instance.status <> 'destroyed'
      LIMIT 1`,
     [labInstanceId, ownerId]
   );
   const instance = result.rows[0];
   if (!instance) return { error: 'Lab instance not found', status: 404 as const };
-  if (instance.status !== 'running') return { error: 'AI Practitioner requires a running Cyber Lab machine', status: 409 as const };
+  if (instance.status !== 'running') return { error: 'AI Practitioner requires a running Cyber Lab machine for command execution', status: 409 as const };
 
   const lab = LAB_CATALOG.find((item) => item.slug === instance.slug);
   if (!lab) return { error: 'Lab definition is unavailable', status: 409 as const };
@@ -52,35 +57,45 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
-    const resolved = await resolveOwnedRunningLab(user.id, parsed.data.labInstanceId);
-    if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
-
-    const { instance, lab } = resolved;
     const model = aiPractitionerModel();
 
     try {
       if (parsed.data.action === 'plan') {
+        let instance: any = null;
+        let lab: (typeof LAB_CATALOG)[number] | null = null;
+
+        if (parsed.data.labInstanceId) {
+          const resolved = await resolveOwnedRunningLab(user.id, parsed.data.labInstanceId);
+          if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+          instance = resolved.instance;
+          lab = resolved.lab;
+        }
+
         const plan = await planPractitionerStep({
           prompt: parsed.data.prompt,
           history: parsed.data.history,
-          labName: lab.name,
-          platform: lab.platform,
-          shell: lab.shell,
+          lab: lab ? { name: lab.name, platform: lab.platform, shell: lab.shell } : null,
         });
 
         await getPool().query(
           `INSERT INTO ai_practitioner_events (
              owner_id, lab_instance_id, event_type, prompt, command, model, metadata
            ) VALUES ($1,$2,'plan',$3,$4,$5,$6::jsonb)`,
-          [user.id, instance.id, parsed.data.prompt, plan.command, model, JSON.stringify({ plan })]
+          [user.id, instance?.id ?? null, parsed.data.prompt, plan.command, model, JSON.stringify({ plan })]
         );
 
         return NextResponse.json({
           plan,
           model,
-          lab: { id: instance.id, name: lab.name, platform: lab.platform, shell: lab.shell },
+          lab: instance && lab
+            ? { id: instance.id, name: lab.name, platform: lab.platform, shell: lab.shell }
+            : null,
         });
       }
+
+      const resolved = await resolveOwnedRunningLab(user.id, parsed.data.labInstanceId);
+      if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+      const { instance, lab } = resolved;
 
       const analysis = await explainPractitionerEvidence({
         prompt: parsed.data.prompt,

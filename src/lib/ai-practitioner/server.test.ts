@@ -4,9 +4,31 @@ vi.mock('server-only', () => ({}));
 
 import {
   classifyPractitionerCommand,
+  practitionerRequestSchema,
   truncatePractitionerEvidence,
   validatePractitionerCommand,
 } from './server';
+
+describe('AI Practitioner conversation contract', () => {
+  it('accepts a normal question without a running lab', () => {
+    const parsed = practitionerRequestSchema.safeParse({
+      action: 'plan',
+      prompt: 'What is a Linux process?',
+      history: [],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('still accepts a running lab id when execution context is available', () => {
+    const parsed = practitionerRequestSchema.safeParse({
+      action: 'plan',
+      labInstanceId: '11111111-1111-4111-8111-111111111111',
+      prompt: 'Inspect the network interfaces in my lab.',
+      history: [],
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
 
 describe('AI Practitioner command policy', () => {
   it('allows read-only learning commands such as nmap against loopback', () => {

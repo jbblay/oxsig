@@ -11,7 +11,7 @@ import type {
 export const practitionerRequestSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('plan'),
-    labInstanceId: z.string().uuid(),
+    labInstanceId: z.string().uuid().optional().nullable(),
     prompt: z.string().trim().min(1).max(4000),
     history: z.array(z.object({
       role: z.enum(['user', 'assistant']),
@@ -158,38 +158,46 @@ function historyText(history: AiPractitionerHistoryItem[]) {
   return history.slice(-8).map((item) => `${item.role.toUpperCase()}: ${item.content}`).join('\n');
 }
 
+type PractitionerLabContext = {
+  name: string;
+  platform: 'linux' | 'windows';
+  shell: string;
+};
+
 export async function planPractitionerStep(args: {
   prompt: string;
   history: AiPractitionerHistoryItem[];
-  labName: string;
-  platform: 'linux' | 'windows';
-  shell: string;
+  lab?: PractitionerLabContext | null;
 }): Promise<AiPractitionerPlan> {
-  const instructions = `You are Oxsig AI Practitioner: a practical technical instructor working inside an authenticated, temporary Cyber Lab owned by the learner.
+  const instructions = `You are Oxsig AI Practitioner, a practical technical teacher and assistant.
 
-Your job is to EXPLAIN BEFORE ACTION and propose at most one next command. The Oxsig application, not you, executes commands only after explicit user approval.
+Conversation comes first. Answer ordinary technical and general learning questions directly and clearly. A Cyber Lab is optional for conversation.
 
-Rules:
-- Teach Linux, Windows, networking, DevOps, cloud, forensics, defensive security, and authorized cybersecurity practice.
-- Keep every action scoped to the active Oxsig lab. Never direct attacks at public/external systems. For network-security examples, use localhost, loopback, or private lab addresses explicitly supplied by the learner. If a required target/topology is missing, set command to null and explain what the learner needs first.
+When a running authenticated learner-owned Cyber Lab is supplied, you may also propose ONE command, but only when the learner explicitly asks to run, inspect, test, practice, verify, troubleshoot, or otherwise perform something in the lab, or when live evidence is genuinely necessary to answer the request. Never invent execution results.
+
+If no running lab is supplied, command MUST be null. Explain that a running lab is needed only if the learner asks for real execution. Do not refuse ordinary questions just because there is no lab.
+
+Execution rules when a lab is available:
+- Explain before action. Oxsig, not you, executes the command and only after explicit user approval.
+- Keep every action scoped to the active Oxsig lab. Never direct attacks at public/external systems. For network-security examples, use localhost, loopback, or private lab addresses explicitly supplied by the learner.
 - Prefer read-only inspection and discovery. If a legitimate learning step changes packages, services, users, permissions, files, or firewall state, mark risk as changes-system and explain why approval matters.
 - Do not propose destructive disk/boot operations, persistence mechanisms, credential theft/exfiltration, malware deployment, stealth/evasion, denial-of-service, or remote-shell payloads.
-- Produce a concrete teaching explanation, not just a command dump.
 - The command must be valid for the supplied shell and no longer than 1000 characters.
-`;
 
-  const input = `ACTIVE LAB
-Name: ${args.labName}
-Platform: ${args.platform}
-Shell: ${args.shell}
+For a pure question, put the useful answer in explanation, set command to null, use read-only risk, and use approvalReason to say no execution is required.`;
 
-RECENT LEARNING CONTEXT
-${historyText(args.history) || '(none)'}
+  const labText = args.lab
+    ? `RUNNING LAB AVAILABLE\nName: ${args.lab.name}\nPlatform: ${args.lab.platform}\nShell: ${args.lab.shell}`
+    : 'RUNNING LAB AVAILABLE\nNo. Conversation and teaching are still available; real command execution is not.';
 
-LEARNER REQUEST
-${args.prompt}`;
+  const input = `${labText}\n\nRECENT CONVERSATION\n${historyText(args.history) || '(none)'}\n\nLEARNER REQUEST\n${args.prompt}`;
 
   const plan = await callStructured<AiPractitionerPlan>('oxsig_practitioner_plan', instructions, input, PLAN_SCHEMA);
+  if (!args.lab) {
+    plan.command = null;
+    plan.risk = 'read-only';
+    return plan;
+  }
   if (plan.command) {
     const validated = validatePractitionerCommand(plan.command);
     if (!validated.ok) {
@@ -218,12 +226,7 @@ export async function explainPractitionerEvidence(args: {
 
 Explain what the evidence means. Do not pretend a command succeeded when the exit code or stderr says otherwise. Separate direct observations from interpretation. Keep the explanation practical and educational. Recommend only the next learning step; do not silently execute anything. For security topics, keep recommendations inside the authorized lab context.`;
 
-  const input = `LAB: ${args.labName} (${args.platform})
-LEARNER GOAL: ${args.prompt}
-COMMAND: ${args.command}
-EXIT CODE: ${args.exitCode}
-STDOUT:\n${args.stdout.slice(0, 12000) || '(empty)'}
-STDERR:\n${args.stderr.slice(0, 12000) || '(empty)'}`;
+  const input = `LAB: ${args.labName} (${args.platform})\nLEARNER GOAL: ${args.prompt}\nCOMMAND: ${args.command}\nEXIT CODE: ${args.exitCode}\nSTDOUT:\n${args.stdout.slice(0, 12000) || '(empty)'}\nSTDERR:\n${args.stderr.slice(0, 12000) || '(empty)'}`;
 
   return callStructured<AiPractitionerAnalysis>('oxsig_practitioner_analysis', instructions, input, ANALYSIS_SCHEMA);
 }

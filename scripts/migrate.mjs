@@ -42,24 +42,14 @@ if (!connectionString) {
 
 const __filename = fileURLToPath(import.meta.url);
 const migrationsDir = path.resolve(path.dirname(__filename), '..', 'migrations');
-const orderedMigrations = [
-  '001_initial_schema.sql',
-  '002_add_password_auth.sql',
-  '004_collaboration_system.sql',
-  '005_add_user_profile_columns.sql',
-  '006_add_missing_indexes.sql',
-  '007_social_recovery.sql',
-  '008_webauthn_credentials.sql',
-  '009_user_keys_and_devices.sql',
-  '010_cyber_labs_foundation.sql',
-  '011_secure_storyboards.sql',
-  '012_clerk_identity.sql',
-  '013_add_user_role.sql',
-  '014_clean_foundation.sql',
-  '015_lab_lifecycle_guardrails.sql',
-  '016_shared_rate_limits.sql',
-  '017_collaboration_messages.sql',
-];
+const orderedMigrations = (await fs.readdir(migrationsDir))
+  .filter((filename) => /^\d{3}_.+\.sql$/.test(filename))
+  .sort((a, b) => a.localeCompare(b));
+
+if (orderedMigrations.length === 0) {
+  console.error(`No numbered SQL migrations were found in ${migrationsDir}`);
+  process.exit(1);
+}
 
 const client = new Client({ connectionString });
 

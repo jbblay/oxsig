@@ -32,9 +32,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     const { id } = await context.params;
     const result = await getPool().query(
-      `SELECT id, slug, status, runtime_provider, runtime_external_id
-       FROM lab_instances
-       WHERE id = $1 AND owner_id = $2 AND status <> 'destroyed'
+      `SELECT instance.id,
+              definition.slug,
+              instance.status,
+              instance.runtime_provider,
+              instance.runtime_external_id
+       FROM lab_instances instance
+       JOIN lab_definitions definition ON definition.id = instance.definition_id
+       WHERE instance.id = $1 AND instance.owner_id = $2 AND instance.status <> 'destroyed'
        LIMIT 1`,
       [id, user.id]
     );
