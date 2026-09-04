@@ -1,39 +1,46 @@
 import 'server-only';
-import { randomBytes } from 'node:crypto';
 
-export type SsmBridgeTicket = {
+export type SsmBridgeTicketInput = {
   streamUrl: string;
   tokenValue: string;
   region: string;
   sessionId: string;
   ownerId: string;
-  expiresAt: number;
 };
 
-type BridgeProcess = NodeJS.Process & {
-  __oxsigSsmBridgeTickets?: Map<string, SsmBridgeTicket>;
-};
-
-const TICKET_TTL_MS = 30_000;
-
-function ticketStore() {
-  const bridgeProcess = process as BridgeProcess;
-  if (!bridgeProcess.__oxsigSsmBridgeTickets) {
-    bridgeProcess.__oxsigSsmBridgeTickets = new Map<string, SsmBridgeTicket>();
+function bridgeConfig() {
+  const url = process.env.OXSIG_BRIDGE_INTERNAL_URL;
+  const secret = process.env.OXSIG_BRIDGE_INTERNAL_SECRET;
+  if (!url || !secret) {
+    throw new Error("Oxsig's terminal bridge is not running. Start Oxsig with 'pnpm dev:up'.");
   }
-  return bridgeProcess.__oxsigSsmBridgeTickets;
+  return { url, secret };
 }
 
-function pruneExpiredTickets(now = Date.now()) {
-  const store = ticketStore();
-  for (const [id, ticket] of store.entries()) {
-    if (ticket.expiresAt <= now) store.delete(id);
-  }
+export function assertSsmBridgeAvailable() {
+  bridgeConfig();
 }
 
-export function issueSsmBridgeTicket(input: Omit<SsmBridgeTicket, 'expiresAt'>) {
-  pruneExpiredTickets();
-  const id = randomBytes(32).toString('hex');
-  ticketStore().set(id, { ...input, expiresAt: Date.now() + TICKET_TTL_MS });
-  return `/api/labs/terminal-bridge?ticket=${id}`;
+export async function issueSsmBridgeTicket(input: SsmBridgeTicketInput) {
+  const { url, secret } = bridgeConfig();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-oxsig-bridge-secret': secret,
+    },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(5_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Oxsig terminal bridge registration failed with status ${response.status}`);
+  }
+
+  const body = await response.json().catch(() => null) as { streamUrl?: unknown } | null;
+  if (!body || typeof body.streamUrl !== 'string' || !body.streamUrl.startsWith('/api/labs/terminal-bridge?ticket=')) {
+    throw new Error('Oxsig terminal bridge returned an invalid one-time ticket');
+  }
+  return body.streamUrl;
 }
