@@ -114,7 +114,7 @@ export default function AiPractitionerDock() {
       if (handoff.createdAt && Date.now() - handoff.createdAt > 60 * 60 * 1000) return;
       const context = [handoff.title, handoff.summary, handoff.body].filter(Boolean).join('\n\n');
       if (!context) return;
-      const prefill = `Help me practice this Vault knowledge in my Cyber Lab. Explain it first, then give me one safe next command when appropriate.\n\n${context}`;
+      const prefill = `Help me understand and practice this Vault knowledge. Explain it first. If a running Cyber Lab is available and real execution would help, propose one safe command for my approval.\n\n${context}`;
       setPrompt(prefill.slice(0, MAX_PROMPT_LENGTH));
       setOpen(true);
       window.localStorage.removeItem('oxsig:vault-handoff');
@@ -137,10 +137,6 @@ export default function AiPractitionerDock() {
       toast.error(`Keep the request under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`);
       return;
     }
-    if (!instance || !running) {
-      toast.error('Start a Cyber Lab machine first. AI Practitioner acts only inside your running Oxsig lab.');
-      return;
-    }
 
     const id = uid();
     const nextUser: ChatLine = { id: uid(), role: 'user', content: question };
@@ -156,15 +152,15 @@ export default function AiPractitionerDock() {
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
         body: JSON.stringify({
           action: 'plan',
-          labInstanceId: instance.id,
+          labInstanceId: running ? instance?.id : undefined,
           prompt: question,
           history: nextHistory.slice(-8).map(({ role, content }) => ({ role, content })),
         }),
       });
-      if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner could not prepare the next step'));
+      if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner could not answer'));
       const body = await response.json() as { plan: AiPractitionerPlan };
       setEntries((current) => [...current, { id, prompt: question, plan: body.plan }]);
-      setHistory((current) => [...current, { id: uid(), role: 'assistant', content: `${body.plan.explanation}\n${body.plan.command || ''}` }]);
+      setHistory((current) => [...current, { id: uid(), role: 'assistant', content: body.plan.explanation }]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI Practitioner failed');
     } finally {
@@ -173,7 +169,10 @@ export default function AiPractitionerDock() {
   }
 
   async function run(entry: PlanEntry) {
-    if (!instance || !entry.plan.command) return;
+    if (!instance || !running || !entry.plan.command) {
+      toast.error('Start a Cyber Lab machine before running a command.');
+      return;
+    }
     setBusy(`run:${entry.id}`);
     try {
       const token = await csrfToken();
@@ -257,10 +256,7 @@ export default function AiPractitionerDock() {
   return (
     <>
       {!open && (
-        <Button
-          className="fixed bottom-5 right-5 z-40 h-12 rounded-full px-4 shadow-xl"
-          onClick={() => setOpen(true)}
-        >
+        <Button className="fixed bottom-5 right-5 z-40 h-12 rounded-full px-4 shadow-xl" onClick={() => setOpen(true)}>
           <Sparkles className="h-4 w-4" /> AI Practitioner
         </Button>
       )}
@@ -276,10 +272,10 @@ export default function AiPractitionerDock() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-semibold">AI Practitioner</h2>
-                    <Badge variant="secondary" className="text-[10px]">Explain → Act → Observe</Badge>
+                    <Badge variant="secondary" className="text-[10px]">Ask → Approve → Run → Explain</Badge>
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {loadingLab ? 'Checking Cyber Lab…' : instance ? `${instance.name} · ${instance.status}` : 'No active Cyber Lab'}
+                    {loadingLab ? 'Checking Cyber Lab…' : running && instance ? `Chat ready · ${instance.name} ready for execution` : 'Chat ready · start a lab only when you want execution'}
                   </p>
                 </div>
               </div>
@@ -293,25 +289,25 @@ export default function AiPractitionerDock() {
             {history.length === 0 && entries.length === 0 && (
               <div className="space-y-4">
                 <div className="rounded-xl border bg-muted/25 p-4 text-sm leading-6">
-                  <p className="font-medium">A teacher connected to the real lab.</p>
-                  <p className="mt-1 text-muted-foreground">It explains one step, proposes a command, waits for your approval, executes it through Oxsig&apos;s managed SSM path, then explains the real output.</p>
+                  <p className="font-medium">Ask first. Use the lab when you need evidence.</p>
+                  <p className="mt-1 text-muted-foreground">AI Practitioner can answer normal questions without a running machine. When you ask it to inspect, test, or run something, it can propose one command for your approval and explain the real result.</p>
                 </div>
                 <div className="flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p>Commands run only on your authenticated active lab and require an explicit click. Destructive VM/disk operations and remote-shell payloads are blocked server-side.</p>
+                  <p>Conversation never executes commands. Lab commands require an explicit click, run only on your authenticated active lab, and pass server-side command policy checks.</p>
                 </div>
                 <div className="space-y-2">
                   {[
-                    'Teach me Nmap using only this authorized lab. Start from the basics.',
-                    'Teach me how to inspect Linux networking and explain every command.',
-                    'Show me how to troubleshoot a systemd service step by step.',
-                    'Teach me incident-response triage on this machine without changing it.',
+                    'What is Nmap and when would I use it?',
+                    'Explain Linux processes and systemd in simple terms.',
+                    'Inspect networking on my running lab and explain what you find.',
+                    'Run a safe system health check in my lab, then explain the output.',
                   ].map((suggestion) => (
                     <button
                       key={suggestion}
                       type="button"
                       className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm transition hover:bg-muted/40 disabled:opacity-50"
-                      disabled={!running || !!busy}
+                      disabled={!!busy}
                       onClick={() => void ask(suggestion)}
                     >
                       <span>{suggestion}</span><ChevronRight className="h-4 w-4 shrink-0" />
@@ -331,35 +327,25 @@ export default function AiPractitionerDock() {
               <div key={entry.id} className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><p className="font-semibold">{entry.plan.title}</p></div>
-                  <Badge variant={entry.plan.risk === 'changes-system' ? 'outline' : 'secondary'} className="text-[10px]">{entry.plan.risk}</Badge>
+                  {entry.plan.command && <Badge variant={entry.plan.risk === 'changes-system' ? 'outline' : 'secondary'} className="text-[10px]">{entry.plan.risk}</Badge>}
                 </div>
                 <p className="text-sm leading-6">{entry.plan.explanation}</p>
-                <div className="rounded-xl bg-muted/60 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Objective</p>
-                  <p className="mt-1 text-xs leading-5">{entry.plan.objective}</p>
-                </div>
 
-                {entry.plan.command ? (
+                {entry.plan.command && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs font-medium"><Terminal className="h-3.5 w-3.5" /> Proposed command</div>
                     <pre className="oxsig-scrollbar overflow-x-auto rounded-xl border bg-black/90 p-3 text-xs text-white"><code>{entry.plan.command}</code></pre>
                     <p className="text-xs text-muted-foreground">Expected: {entry.plan.expected}</p>
                     {!entry.execution && (
-                      <Button
-                        className="w-full"
-                        disabled={!!busy || !running}
-                        onClick={() => void run(entry)}
-                      >
+                      <Button className="w-full" disabled={!!busy || !running} onClick={() => void run(entry)}>
                         {busy === `run:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                        Approve & run in my lab
+                        {running ? 'Approve & run in my lab' : 'Start a lab to run this command'}
                       </Button>
                     )}
                     {entry.plan.risk === 'changes-system' && !entry.execution && (
                       <div className="flex items-start gap-2 text-xs text-amber-600"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{entry.plan.approvalReason}</span></div>
                     )}
                   </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground">No command is appropriate yet. {entry.plan.approvalReason}</div>
                 )}
 
                 {entry.execution && (
@@ -384,12 +370,7 @@ export default function AiPractitionerDock() {
                     )}
                     <div className="rounded-xl bg-muted/50 p-3 text-xs leading-5"><span className="font-medium">Interpretation:</span> {entry.analysis.interpretation}</div>
                     <p className="text-xs"><span className="font-medium">Next:</span> {entry.analysis.nextStep}</p>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      disabled={!!busy || savedIds.has(entry.id)}
-                      onClick={() => void saveToVault(entry)}
-                    >
+                    <Button variant="outline" className="w-full" disabled={!!busy || savedIds.has(entry.id)} onClick={() => void saveToVault(entry)}>
                       {busy === `save:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : savedIds.has(entry.id) ? <BookOpenCheck className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                       {savedIds.has(entry.id) ? 'Saved to Vault' : 'Capture this evidence in Vault'}
                     </Button>
@@ -399,13 +380,13 @@ export default function AiPractitionerDock() {
             ))}
 
             {busy && !busy.startsWith('run:') && !busy.startsWith('save:') && (
-              <div className="flex items-center gap-2 rounded-xl border p-3 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> AI Practitioner is preparing one explainable step…</div>
+              <div className="flex items-center gap-2 rounded-xl border p-3 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> AI Practitioner is thinking…</div>
             )}
           </div>
 
           <div className="border-t bg-background p-3">
             {!running && (
-              <div className="mb-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">Start a Cyber Lab machine to enable real AI-guided execution.</div>
+              <div className="mb-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">AI chat is available now. Start a Cyber Lab only when you want the practitioner to execute an approved command.</div>
             )}
             <div className="flex items-end gap-2">
               <Textarea
@@ -418,15 +399,15 @@ export default function AiPractitionerDock() {
                   }
                 }}
                 maxLength={MAX_PROMPT_LENGTH}
-                placeholder="What do you want to learn or do in this lab?"
+                placeholder="Ask a question, or ask me to run something in your lab…"
                 className="min-h-[64px] resize-none"
                 disabled={!!busy}
               />
-              <Button size="icon" className="h-10 w-10 shrink-0" disabled={!!busy || !prompt.trim() || !running} onClick={() => void ask()} aria-label="Ask AI Practitioner">
+              <Button size="icon" className="h-10 w-10 shrink-0" disabled={!!busy || !prompt.trim()} onClick={() => void ask()} aria-label="Ask AI Practitioner">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               </Button>
             </div>
-            <p className="mt-2 text-[10px] text-muted-foreground">AI can make mistakes. Oxsig requires approval before lab execution and records practitioner activity for audit.</p>
+            <p className="mt-2 text-[10px] text-muted-foreground">AI can make mistakes. Oxsig requires explicit approval before lab execution and records practitioner activity for audit.</p>
           </div>
         </aside>
       )}
