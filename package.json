@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "next dev",
+    "dev:up": "bash scripts/dev-up.sh",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
