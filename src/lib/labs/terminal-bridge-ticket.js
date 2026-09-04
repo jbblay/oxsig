@@ -1,25 +1,16 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 const VERSION = 1;
 const DEFAULT_TTL_MS = 30_000;
 const MAX_TTL_MS = 60_000;
+const AAD = Buffer.from('oxsig-terminal-bridge-v1', 'utf8');
 
-function bridgeSecret() {
+function bridgeKey() {
   const secret = process.env.OXSIG_TERMINAL_BRIDGE_SECRET;
   if (!secret || secret.length < 32) {
     throw new Error('OXSIG_TERMINAL_BRIDGE_SECRET is unavailable. Start Oxsig through its server entrypoint.');
   }
-  return secret;
-}
-
-function signatureFor(encodedPayload) {
-  return createHmac('sha256', bridgeSecret()).update(encodedPayload).digest('base64url');
-}
-
-function safeEqual(left, right) {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return createHash('sha256').update(secret, 'utf8').digest();
 }
 
 export function createTerminalBridgeTicket({ streamUrl, region, sessionId, target, ttlMs = DEFAULT_TTL_MS }) {
@@ -28,7 +19,7 @@ export function createTerminalBridgeTicket({ streamUrl, region, sessionId, targe
   }
 
   const ttl = Math.max(1_000, Math.min(Number(ttlMs) || DEFAULT_TTL_MS, MAX_TTL_MS));
-  const payload = {
+  const payload = Buffer.from(JSON.stringify({
     v: VERSION,
     streamUrl,
     region,
@@ -36,9 +27,14 @@ export function createTerminalBridgeTicket({ streamUrl, region, sessionId, targe
     target,
     nonce: randomBytes(18).toString('base64url'),
     exp: Date.now() + ttl,
-  };
-  const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  return `${encodedPayload}.${signatureFor(encodedPayload)}`;
+  }), 'utf8');
+
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', bridgeKey(), iv);
+  cipher.setAAD(AAD);
+  const ciphertext = Buffer.concat([cipher.update(payload), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${VERSION}.${iv.toString('base64url')}.${ciphertext.toString('base64url')}.${tag.toString('base64url')}`;
 }
 
 export function verifyTerminalBridgeTicket(ticket) {
@@ -46,22 +42,26 @@ export function verifyTerminalBridgeTicket(ticket) {
     throw new Error('Invalid terminal bridge ticket.');
   }
 
-  const separator = ticket.lastIndexOf('.');
-  if (separator <= 0 || separator === ticket.length - 1) {
-    throw new Error('Invalid terminal bridge ticket.');
-  }
-
-  const encodedPayload = ticket.slice(0, separator);
-  const providedSignature = ticket.slice(separator + 1);
-  if (!safeEqual(signatureFor(encodedPayload), providedSignature)) {
-    throw new Error('Invalid terminal bridge ticket signature.');
+  const parts = ticket.split('.');
+  if (parts.length !== 4 || Number(parts[0]) !== VERSION) {
+    throw new Error('Invalid terminal bridge ticket version.');
   }
 
   let payload;
   try {
-    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    const iv = Buffer.from(parts[1], 'base64url');
+    const ciphertext = Buffer.from(parts[2], 'base64url');
+    const tag = Buffer.from(parts[3], 'base64url');
+    if (iv.length !== 12 || tag.length !== 16 || ciphertext.length < 1) {
+      throw new Error('Malformed encrypted ticket.');
+    }
+    const decipher = createDecipheriv('aes-256-gcm', bridgeKey(), iv);
+    decipher.setAAD(AAD);
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    payload = JSON.parse(plaintext.toString('utf8'));
   } catch {
-    throw new Error('Invalid terminal bridge ticket payload.');
+    throw new Error('Invalid terminal bridge ticket.');
   }
 
   if (
