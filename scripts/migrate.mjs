@@ -58,6 +58,7 @@ const orderedMigrations = [
   '014_clean_foundation.sql',
   '015_lab_lifecycle_guardrails.sql',
   '016_shared_rate_limits.sql',
+  '017_collaboration_chat.sql',
 ];
 
 const client = new Client({ connectionString });
