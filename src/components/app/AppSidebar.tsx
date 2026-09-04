@@ -14,7 +14,6 @@ import {
   Network,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
   Sun,
   X,
 } from 'lucide-react';
@@ -89,7 +88,7 @@ function SidebarContent({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-4 oxisg-scrollbar">
+      <div className="oxsig-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-4">
         {compact && onToggle && (
           <Button size="icon" variant="ghost" className="mb-3 h-10 w-full" onClick={onToggle} aria-label="Expand navigation" title="Expand navigation">
             <PanelLeftOpen className="h-4 w-4" />
