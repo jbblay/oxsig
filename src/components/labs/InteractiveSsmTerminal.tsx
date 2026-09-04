@@ -12,7 +12,7 @@ type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
 type SessionResponse = {
   sessionId: string;
-  streamUrl: string;
+  bridgePath: string;
   tokenValue: string;
   region: string;
   target: string;
@@ -22,6 +22,12 @@ async function getCsrfToken() {
   const response = await fetch("/api/csrf-token", { cache: "no-store" });
   if (!response.ok) throw new Error("Secure terminal setup failed");
   return (await response.json()).token as string;
+}
+
+function bridgeWebSocketUrl(path: string) {
+  const url = new URL(path, window.location.origin);
+  url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }
 
 export default function InteractiveSsmTerminal({
@@ -110,8 +116,8 @@ export default function InteractiveSsmTerminal({
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || "Could not start the interactive AWS terminal");
-      if (!body.sessionId || !body.streamUrl || !body.tokenValue) {
-        throw new Error("AWS did not return a complete terminal session");
+      if (!body.sessionId || !body.bridgePath || !body.tokenValue) {
+        throw new Error("Oxsig did not return a complete terminal bridge session");
       }
       if (generation !== generationRef.current) return;
 
@@ -140,9 +146,6 @@ export default function InteractiveSsmTerminal({
           setState("error");
           setError(message);
           terminalRef.current?.writeln(`\r\n[Oxsig terminal error: ${message}]\r\n`);
-          // A browser upgrade failure may not produce a reliable WebSocket close
-          // event on every client. End the AWS session immediately instead of
-          // leaving a failed Session Manager session active until timeout.
           void endServerSession(true);
         },
         onClose: (reason) => {
@@ -154,7 +157,11 @@ export default function InteractiveSsmTerminal({
         },
       });
       channelRef.current = channel;
-      channel.connect(session);
+      channel.connect({
+        sessionId: session.sessionId,
+        streamUrl: bridgeWebSocketUrl(session.bridgePath),
+        tokenValue: session.tokenValue,
+      });
 
       handshakeTimerRef.current = setTimeout(() => {
         if (generation !== generationRef.current || channel.isReady()) return;
