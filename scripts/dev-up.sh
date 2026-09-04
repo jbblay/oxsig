@@ -75,6 +75,9 @@ else
   pnpm install --no-frozen-lockfile
 fi
 
+info "Applying database migrations"
+pnpm db:migrate
+
 info "Checking AWS SSO profile: $PROFILE"
 ACCOUNT=""
 if ACCOUNT="$(aws sts get-caller-identity --profile "$PROFILE" --query Account --output text 2>/dev/null)"; then
