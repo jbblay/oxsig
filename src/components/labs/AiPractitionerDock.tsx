@@ -24,6 +24,15 @@ import type {
   AiPractitionerExecution,
   AiPractitionerPlan,
 } from '@/lib/ai-practitioner/types';
+import {
+  AI_TERMINAL_QUERY_EVENT,
+  AI_TERMINAL_RESULT_EVENT,
+  AI_TERMINAL_RUN_EVENT,
+  AI_TERMINAL_STATE_EVENT,
+  type AiTerminalRunRequest,
+  type AiTerminalRunResult,
+  type AiTerminalState,
+} from '@/lib/labs/ai-terminal-events';
 
 type LabInstance = {
   id: string;
@@ -76,6 +85,29 @@ function outputText(execution: AiPractitionerExecution) {
   return parts.join('\n\n') || '(command returned no text output)';
 }
 
+function executeInVisibleTerminal(labInstanceId: string, command: string) {
+  return new Promise<AiTerminalRunResult>((resolve, reject) => {
+    const requestId = uid();
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
+      reject(new Error('The interactive terminal did not return the command result in time.'));
+    }, 50_000);
+
+    const onResult = (event: Event) => {
+      const result = (event as CustomEvent<AiTerminalRunResult>).detail;
+      if (!result || result.requestId !== requestId || result.labInstanceId !== labInstanceId) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
+      resolve(result);
+    };
+
+    window.addEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
+    window.dispatchEvent(new CustomEvent<AiTerminalRunRequest>(AI_TERMINAL_RUN_EVENT, {
+      detail: { requestId, labInstanceId, command },
+    }));
+  });
+}
+
 export default function AiPractitionerDock() {
   const [open, setOpen] = React.useState(false);
   const [prompt, setPrompt] = React.useState('');
@@ -85,6 +117,7 @@ export default function AiPractitionerDock() {
   const [entries, setEntries] = React.useState<PlanEntry[]>([]);
   const [history, setHistory] = React.useState<ChatLine[]>([]);
   const [savedIds, setSavedIds] = React.useState<Set<string>>(() => new Set());
+  const [terminalConnected, setTerminalConnected] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   const loadLab = React.useCallback(async () => {
@@ -104,6 +137,19 @@ export default function AiPractitionerDock() {
     const timer = window.setInterval(() => void loadLab(), 7000);
     return () => window.clearInterval(timer);
   }, [loadLab]);
+
+  React.useEffect(() => {
+    const onTerminalState = (event: Event) => {
+      const detail = (event as CustomEvent<AiTerminalState>).detail;
+      if (!detail || detail.labInstanceId !== instance?.id) return;
+      setTerminalConnected(detail.connected);
+    };
+
+    setTerminalConnected(false);
+    window.addEventListener(AI_TERMINAL_STATE_EVENT, onTerminalState);
+    window.dispatchEvent(new Event(AI_TERMINAL_QUERY_EVENT));
+    return () => window.removeEventListener(AI_TERMINAL_STATE_EVENT, onTerminalState);
+  }, [instance?.id]);
 
   React.useEffect(() => {
     try {
@@ -175,17 +221,39 @@ export default function AiPractitionerDock() {
       toast.error('Start a Cyber Lab machine before running a command.');
       return;
     }
+    if (!terminalConnected) {
+      toast.error('Open and connect the interactive terminal first. Approved AI commands now run visibly there.');
+      return;
+    }
+
     setBusy(`run:${entry.id}`);
     try {
-      const token = await csrfToken();
-      const response = await fetch(`/api/labs/instances/${instance.id}/ai/execute`, {
+      const approvalToken = await csrfToken();
+      const approvalResponse = await fetch(`/api/labs/instances/${instance.id}/ai/terminal`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
-        body: JSON.stringify({ command: entry.plan.command, approved: true }),
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': approvalToken },
+        body: JSON.stringify({ action: 'authorize', command: entry.plan.command, approved: true }),
       });
-      if (!response.ok) throw new Error(await apiError(response, 'The lab command could not run'));
-      const body = await response.json() as { execution: AiPractitionerExecution };
-      const execution = body.execution;
+      if (!approvalResponse.ok) throw new Error(await apiError(approvalResponse, 'The command was not authorized'));
+
+      toast.info('Running the approved command in the visible terminal…');
+      const terminalResult = await executeInVisibleTerminal(instance.id, entry.plan.command);
+
+      const recordToken = await csrfToken();
+      const recordResponse = await fetch(`/api/labs/instances/${instance.id}/ai/terminal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': recordToken },
+        body: JSON.stringify({
+          action: 'record',
+          command: entry.plan.command,
+          stdout: terminalResult.stdout,
+          stderr: terminalResult.stderr,
+          exitCode: terminalResult.exitCode,
+        }),
+      });
+      if (!recordResponse.ok) throw new Error(await apiError(recordResponse, 'The terminal ran the command, but Oxsig could not record its evidence'));
+      const recordBody = await recordResponse.json() as { execution: AiPractitionerExecution };
+      const execution = recordBody.execution;
       setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, execution } : item));
 
       const analysisToken = await csrfToken();
@@ -277,7 +345,13 @@ export default function AiPractitionerDock() {
                     <Badge variant="secondary" className="text-[10px]">Ask → Approve → Run → Explain</Badge>
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {loadingLab ? 'Checking Cyber Lab…' : running && instance ? `Chat ready · ${instance.name} ready for execution` : 'Chat ready · start a lab only when you want execution'}
+                    {loadingLab
+                      ? 'Checking Cyber Lab…'
+                      : running && instance
+                        ? terminalConnected
+                          ? `Chat ready · ${instance.name} terminal connected`
+                          : `Chat ready · ${instance.name} running · open terminal for execution`
+                        : 'Chat ready · start a lab only when you want execution'}
                   </p>
                 </div>
               </div>
@@ -296,7 +370,7 @@ export default function AiPractitionerDock() {
                 </div>
                 <div className="flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p>Conversation never executes commands. Lab commands require an explicit click, run only on your authenticated active lab, and pass server-side command policy checks.</p>
+                  <p>Conversation never executes commands. Lab commands require an explicit click, pass server-side command policy checks, run visibly in your connected terminal, and send the real terminal evidence back for explanation.</p>
                 </div>
                 <div className="space-y-2">
                   {[
@@ -338,10 +412,17 @@ export default function AiPractitionerDock() {
                       <pre className="oxsig-scrollbar overflow-x-auto rounded-xl border bg-black/90 p-3 text-xs text-white"><code>{entry.plan.command}</code></pre>
                       <p className="text-xs text-muted-foreground">Expected: {entry.plan.expected}</p>
                       {!entry.execution && (
-                        <Button className="w-full" disabled={!!busy || !running} onClick={() => void run(entry)}>
+                        <Button className="w-full" disabled={!!busy || !running || !terminalConnected} onClick={() => void run(entry)}>
                           {busy === `run:${entry.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                          {running ? 'Approve & run in my lab' : 'Start a lab to run this command'}
+                          {!running
+                            ? 'Start a lab to run this command'
+                            : !terminalConnected
+                              ? 'Open terminal to run this command'
+                              : 'Approve & run visibly in terminal'}
                         </Button>
+                      )}
+                      {running && !terminalConnected && !entry.execution && (
+                        <p className="text-xs text-muted-foreground">Open the live machine terminal and wait for Connected. The approved command will execute there so you can watch the real output.</p>
                       )}
                       {entry.plan.risk === 'changes-system' && !entry.execution && (
                         <div className="flex items-start gap-2 text-xs text-amber-600"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{entry.plan.approvalReason}</span></div>
@@ -351,13 +432,13 @@ export default function AiPractitionerDock() {
 
                   {entry.execution && (
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between"><p className="text-xs font-medium">Real lab evidence</p><Badge variant="outline" className="text-[10px]">exit {entry.execution.exitCode}</Badge></div>
+                      <div className="flex items-center justify-between"><p className="text-xs font-medium">Real terminal evidence</p><Badge variant="outline" className="text-[10px]">exit {entry.execution.exitCode}</Badge></div>
                       <pre className="oxsig-scrollbar max-h-52 overflow-auto rounded-xl border bg-muted/50 p-3 text-xs"><code>{outputText(entry.execution)}</code></pre>
                     </div>
                   )}
 
                   {entry.execution && !entry.analysis && busy === `run:${entry.id}` && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the evidence…</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the terminal evidence…</div>
                   )}
 
                   {entry.analysis && (
