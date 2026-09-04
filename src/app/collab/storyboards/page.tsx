@@ -11,7 +11,10 @@ import {
   Copy,
   Download,
   Eraser,
+  Grid3X3,
+  Link2,
   Loader2,
+  Magnet,
   Maximize2,
   Mic,
   Minimize2,
@@ -29,6 +32,8 @@ import {
   Trash2,
   Undo2,
   UserX,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +56,12 @@ import {
   saveServerStoryboard,
   shareStoryboard,
 } from "@/lib/storyboards/api";
+import {
+  clampStoryboardZoom,
+  snapStoryboardPoint,
+  STORYBOARD_GRID_COLUMNS,
+  STORYBOARD_GRID_ROWS,
+} from "@/lib/storyboards/editor";
 import {
   createStoryboardShapeSegments,
   type StoryboardShapeTool,
@@ -83,6 +94,7 @@ const CANVAS_HEIGHT = 675;
 type RecordingState = "idle" | "recording" | "paused" | "saving";
 type EditorTool = StoryboardTool | StoryboardShapeTool;
 type SessionFilter = "all" | "mine" | "shared" | "draft" | "ready" | "archived";
+type AutosaveStatus = "idle" | "saving" | "saved";
 
 const SHAPE_TOOLS = new Set<EditorTool>(["line", "arrow", "rectangle", "ellipse"]);
 
@@ -104,10 +116,7 @@ function eventId() {
 }
 
 function preferredAudioMimeType(): string | undefined {
-  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) {
-    return undefined;
-  }
-
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return undefined;
   return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) =>
     MediaRecorder.isTypeSupported(type)
   );
@@ -137,6 +146,7 @@ export default function StoryboardsPage() {
   const playbackEventCountRef = React.useRef(-1);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = React.useRef<string | null>(null);
+  const deepLinkOpenedRef = React.useRef(false);
 
   const [title, setTitle] = React.useState("Untitled storyboard");
   const [recordingState, setRecordingState] = React.useState<RecordingState>("idle");
@@ -163,6 +173,10 @@ export default function StoryboardsPage() {
   const [focusMode, setFocusMode] = React.useState(false);
   const [sessionQuery, setSessionQuery] = React.useState("");
   const [sessionFilter, setSessionFilter] = React.useState<SessionFilter>("all");
+  const [showGrid, setShowGrid] = React.useState(false);
+  const [snapToGrid, setSnapToGrid] = React.useState(false);
+  const [zoom, setZoom] = React.useState(1);
+  const [autosaveStatus, setAutosaveStatus] = React.useState<AutosaveStatus>("idle");
 
   const isCapturing = recordingState === "recording" || recordingState === "paused";
   const isBusy = recordingState === "saving";
@@ -189,7 +203,7 @@ export default function StoryboardsPage() {
       setServerSessions(await listServerStoryboards());
     } catch (error) {
       console.error("Failed to load secure storyboards:", error);
-      toast.error("Secure Storyboards could not be loaded. Local recovery drafts are still available.");
+      toast.error("Secure Boards could not be loaded. Local recovery drafts are still available.");
     } finally {
       setServerLoading(false);
     }
@@ -208,14 +222,11 @@ export default function StoryboardsPage() {
     }
   }, []);
 
-  const getContext = React.useCallback(() => {
-    return canvasRef.current?.getContext("2d") || null;
-  }, []);
+  const getContext = React.useCallback(() => canvasRef.current?.getContext("2d") || null, []);
 
   const clearCanvas = React.useCallback(() => {
     const ctx = getContext();
-    if (!ctx) return;
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    if (ctx) ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   }, [getContext]);
 
   const renderDrawEvent = React.useCallback(
@@ -288,12 +299,10 @@ export default function StoryboardsPage() {
       player.removeAttribute("src");
       player.load();
     }
-
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     const nextUrl = audio && audio.size > 0 ? URL.createObjectURL(audio) : null;
     audioUrlRef.current = nextUrl;
     setAudioUrl(nextUrl);
-
     if (player && nextUrl) {
       player.src = nextUrl;
       player.load();
@@ -316,7 +325,6 @@ export default function StoryboardsPage() {
   const syncPlaybackFromAudio = React.useCallback(() => {
     const player = audioRef.current;
     if (!player) return;
-
     const elapsedMs = Math.min(timelineDurationMs, Math.max(0, player.currentTime * 1000));
     setPlaybackMs(elapsedMs);
     const eventCount = getStoryboardEventCountAtTime(eventsRef.current, elapsedMs);
@@ -328,16 +336,12 @@ export default function StoryboardsPage() {
 
   const startPlaybackFrame = React.useCallback(() => {
     cancelPlaybackFrame();
-
     const tick = () => {
       const player = audioRef.current;
       if (!player) return;
       syncPlaybackFromAudio();
-      if (!player.paused && !player.ended) {
-        playbackFrameRef.current = requestAnimationFrame(tick);
-      }
+      if (!player.paused && !player.ended) playbackFrameRef.current = requestAnimationFrame(tick);
     };
-
     playbackFrameRef.current = requestAnimationFrame(tick);
   }, [cancelPlaybackFrame, syncPlaybackFromAudio]);
 
@@ -349,7 +353,6 @@ export default function StoryboardsPage() {
     );
     void loadDrafts();
     void loadServerSessions();
-
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (playbackFrameRef.current !== null) cancelAnimationFrame(playbackFrameRef.current);
@@ -374,9 +377,7 @@ export default function StoryboardsPage() {
   }, [getRecordingElapsed, recordingState]);
 
   const eventTime = React.useCallback(() => {
-    if (recordingState === "recording" || recordingState === "paused") {
-      return getRecordingElapsed();
-    }
+    if (recordingState === "recording" || recordingState === "paused") return getRecordingElapsed();
     return timelineDurationMs;
   }, [getRecordingElapsed, recordingState, timelineDurationMs]);
 
@@ -396,9 +397,7 @@ export default function StoryboardsPage() {
       if (!matchesQuery) return false;
       if (sessionFilter === "mine") return session.permission === "owner";
       if (sessionFilter === "shared") return session.permission !== "owner";
-      if (sessionFilter === "draft" || sessionFilter === "ready" || sessionFilter === "archived") {
-        return session.status === sessionFilter;
-      }
+      if (["draft", "ready", "archived"].includes(sessionFilter)) return session.status === sessionFilter;
       return true;
     });
   }, [serverSessions, sessionFilter, sessionQuery]);
@@ -409,14 +408,13 @@ export default function StoryboardsPage() {
     return drafts.filter((draft) => draft.title.toLowerCase().includes(query));
   }, [drafts, sessionQuery]);
 
-  const pointFromPointer = (
-    event: React.PointerEvent<HTMLCanvasElement>
-  ): StoryboardPoint => {
+  const pointFromPointer = (event: React.PointerEvent<HTMLCanvasElement>): StoryboardPoint => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return {
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+    const point = {
+      x: (event.clientX - rect.left) / rect.width,
+      y: (event.clientY - rect.top) / rect.height,
     };
+    return snapStoryboardPoint(point, snapToGrid && isShapeTool(tool));
   };
 
   const appendDrawSegment = React.useCallback(
@@ -443,26 +441,21 @@ export default function StoryboardsPage() {
     (shapeTool: StoryboardShapeTool, start: StoryboardPoint, end: StoryboardPoint) => {
       const strokeId = strokeIdRef.current || eventId();
       const t = eventTime();
-      const segments = createStoryboardShapeSegments(
-        shapeTool,
-        start,
-        end,
-        CANVAS_WIDTH,
-        CANVAS_HEIGHT
+      createStoryboardShapeSegments(shapeTool, start, end, CANVAS_WIDTH, CANVAS_HEIGHT).forEach(
+        (segment) => {
+          eventsRef.current.push({
+            id: eventId(),
+            strokeId,
+            type: "draw",
+            t,
+            from: segment.from,
+            to: segment.to,
+            width: strokeWidth,
+            color,
+            tool: "pen",
+          });
+        }
       );
-      segments.forEach((segment) => {
-        eventsRef.current.push({
-          id: eventId(),
-          strokeId,
-          type: "draw",
-          t,
-          from: segment.from,
-          to: segment.to,
-          width: strokeWidth,
-          color,
-          tool: "pen",
-        });
-      });
       playbackEventCountRef.current = -1;
       renderBoardAtTime(Number.POSITIVE_INFINITY);
     },
@@ -485,14 +478,12 @@ export default function StoryboardsPage() {
     if (!canDraw || !drawingRef.current || !lastPointRef.current) return;
     event.preventDefault();
     const next = pointFromPointer(event);
-
     if (isShapeTool(tool) && shapeStartRef.current) {
       renderShapePreview(tool, shapeStartRef.current, next);
       strokeMovedRef.current = true;
       lastPointRef.current = next;
       return;
     }
-
     appendDrawSegment(lastPointRef.current, next);
     strokeMovedRef.current = true;
     lastPointRef.current = next;
@@ -500,7 +491,6 @@ export default function StoryboardsPage() {
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
-
     const end = pointFromPointer(event);
     if (isShapeTool(tool) && shapeStartRef.current) {
       if (strokeMovedRef.current) commitShape(tool, shapeStartRef.current, end);
@@ -508,7 +498,6 @@ export default function StoryboardsPage() {
     } else if (!strokeMovedRef.current && lastPointRef.current) {
       appendDrawSegment(lastPointRef.current, lastPointRef.current);
     }
-
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -532,28 +521,17 @@ export default function StoryboardsPage() {
   const handleUndo = React.useCallback(() => {
     const state = getStoryboardHistoryState(eventsRef.current);
     if (!state.undoTarget || !canDraw) return;
-    appendTimelineCommand({
-      id: eventId(),
-      type: "undo",
-      targetId: state.undoTarget,
-      t: eventTime(),
-    });
+    appendTimelineCommand({ id: eventId(), type: "undo", targetId: state.undoTarget, t: eventTime() });
   }, [appendTimelineCommand, canDraw, eventTime]);
 
   const handleRedo = React.useCallback(() => {
     const state = getStoryboardHistoryState(eventsRef.current);
     if (!state.redoTarget || !canDraw) return;
-    appendTimelineCommand({
-      id: eventId(),
-      type: "redo",
-      targetId: state.redoTarget,
-      t: eventTime(),
-    });
+    appendTimelineCommand({ id: eventId(), type: "redo", targetId: state.redoTarget, t: eventTime() });
   }, [appendTimelineCommand, canDraw, eventTime]);
 
   const handleClear = () => {
-    if (!canDraw) return;
-    appendTimelineCommand({ id: eventId(), type: "clear", t: eventTime() });
+    if (canDraw) appendTimelineCommand({ id: eventId(), type: "clear", t: eventTime() });
   };
 
   React.useEffect(() => {
@@ -577,8 +555,20 @@ export default function StoryboardsPage() {
         setFocusMode(false);
         return;
       }
+      if (event.key === "0") {
+        setZoom(1);
+        return;
+      }
       if (!canDraw || mod || event.altKey) return;
-
+      const key = event.key.toLowerCase();
+      if (key === "g") {
+        setShowGrid((value) => !value);
+        return;
+      }
+      if (key === "s") {
+        setSnapToGrid((value) => !value);
+        return;
+      }
       const shortcuts: Record<string, EditorTool> = {
         p: "pen",
         e: "eraser",
@@ -587,12 +577,69 @@ export default function StoryboardsPage() {
         r: "rectangle",
         o: "ellipse",
       };
-      const next = shortcuts[event.key.toLowerCase()];
+      const next = shortcuts[key];
       if (next) setTool(next);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canDraw, focusMode, handleRedo, handleUndo]);
+
+  React.useEffect(() => {
+    if (
+      isCapturing ||
+      isBusy ||
+      serverSaving ||
+      activeDraft?.serverPermission === "viewer" ||
+      eventsRef.current.length === 0
+    ) return;
+
+    const timer = window.setTimeout(() => {
+      const saveRecovery = async () => {
+        const now = Date.now();
+        const durationMs = Math.max(
+          timelineDurationMs,
+          getStoryboardTimelineDuration(eventsRef.current)
+        );
+        const draft: StoryboardDraft = {
+          version: 1,
+          id: activeDraft?.id || eventId(),
+          title: title.trim() || "Untitled storyboard",
+          createdAt: activeDraft?.createdAt || now,
+          updatedAt: now,
+          durationMs,
+          events: [...eventsRef.current],
+          audio: activeDraft?.audio,
+          audioMimeType: activeDraft?.audioMimeType,
+          status: "local-draft",
+          serverId: activeDraft?.serverId,
+          serverPermission: activeDraft?.serverPermission,
+        };
+
+        setAutosaveStatus("saving");
+        try {
+          await saveStoryboardDraft(draft);
+          if (!activeDraft) setActiveDraft(draft);
+          await loadDrafts();
+          setAutosaveStatus("saved");
+        } catch (error) {
+          console.error("Board recovery autosave failed:", error);
+          setAutosaveStatus("idle");
+        }
+      };
+      void saveRecovery();
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeDraft,
+    historyRevision,
+    isBusy,
+    isCapturing,
+    loadDrafts,
+    serverSaving,
+    timelineDurationMs,
+    title,
+  ]);
 
   const syncDraftToServer = React.useCallback(
     async (draft: StoryboardDraft) => {
@@ -610,7 +657,7 @@ export default function StoryboardsPage() {
         setActiveServerSession(session);
         await Promise.all([loadDrafts(), loadServerSessions()]);
         await refreshShares(session);
-        toast.success(draft.serverId ? "Secure storyboard updated." : "Storyboard secured on the server.");
+        toast.success(draft.serverId ? "Secure board updated." : "Board secured on the server.");
         return securedDraft;
       } finally {
         setServerSaving(false);
@@ -624,7 +671,6 @@ export default function StoryboardsPage() {
       toast.error("Audio recording is not supported in this browser.");
       return;
     }
-
     stopPlayback();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -651,12 +697,10 @@ export default function StoryboardsPage() {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
-
       recorder.onerror = (event) => {
         console.error("Storyboard recorder error:", event);
         toast.error("Audio recording stopped because the browser reported an error.");
       };
-
       recorder.onstop = async () => {
         const durationMs = Math.max(
           stoppedDurationRef.current,
@@ -701,7 +745,7 @@ export default function StoryboardsPage() {
             );
           }
         } catch (error) {
-          console.error("Failed to save storyboard:", error);
+          console.error("Failed to save board:", error);
           toast.error("The recording is still open, but it could not be saved locally.");
         } finally {
           setRecordingState("idle");
@@ -715,7 +759,7 @@ export default function StoryboardsPage() {
       streamRef.current = null;
       recorderRef.current = null;
       console.error("Failed to start storyboard recording:", error);
-      toast.error("Allow microphone access to record a storyboard explanation.");
+      toast.error("Allow microphone access to record a board explanation.");
     }
   };
 
@@ -758,7 +802,6 @@ export default function StoryboardsPage() {
       toast.error("Draw something before saving this board.");
       return;
     }
-
     const now = Date.now();
     const durationMs = Math.max(timelineDurationMs, getStoryboardTimelineDuration(eventsRef.current));
     const draft: StoryboardDraft = {
@@ -819,43 +862,59 @@ export default function StoryboardsPage() {
     [refreshShares, renderBoardAtTime, replaceAudioSource, serverSessions, stopPlayback]
   );
 
-  const openServerSession = async (session: StoryboardServerSession, autoplay = false) => {
-    setServerLoading(true);
-    try {
-      const loaded = await getServerStoryboard(session.id);
-      const now = Date.now();
-      const draft: StoryboardDraft = {
-        version: 1,
-        id: `server-${loaded.session.id}`,
-        title: loaded.session.title,
-        createdAt: new Date(loaded.session.createdAt).getTime() || now,
-        updatedAt: new Date(loaded.session.updatedAt).getTime() || now,
-        durationMs: loaded.session.durationMs,
-        events: loaded.session.events || [],
-        audio: loaded.audio,
-        audioMimeType: loaded.session.audioMimeType || loaded.audio?.type,
-        status: "local-draft",
-        serverId: loaded.session.id,
-        serverPermission: loaded.session.permission,
-      };
-      openDraft(draft);
-      setActiveServerSession(loaded.session);
-      await refreshShares(loaded.session);
+  const openServerSession = React.useCallback(
+    async (session: StoryboardServerSession, autoplay = false) => {
+      setServerLoading(true);
+      try {
+        const loaded = await getServerStoryboard(session.id);
+        const now = Date.now();
+        const draft: StoryboardDraft = {
+          version: 1,
+          id: `server-${loaded.session.id}`,
+          title: loaded.session.title,
+          createdAt: new Date(loaded.session.createdAt).getTime() || now,
+          updatedAt: new Date(loaded.session.updatedAt).getTime() || now,
+          durationMs: loaded.session.durationMs,
+          events: loaded.session.events || [],
+          audio: loaded.audio,
+          audioMimeType: loaded.session.audioMimeType || loaded.audio?.type,
+          status: "local-draft",
+          serverId: loaded.session.id,
+          serverPermission: loaded.session.permission,
+        };
+        openDraft(draft);
+        setActiveServerSession(loaded.session);
+        await refreshShares(loaded.session);
 
-      if (autoplay && loaded.audio && audioRef.current) {
-        audioRef.current.currentTime = 0;
-        setPlaybackMs(0);
-        playbackEventCountRef.current = -1;
-        renderBoardAtTime(0, draft.events);
-        await audioRef.current.play();
+        if (autoplay && loaded.audio && audioRef.current) {
+          audioRef.current.currentTime = 0;
+          setPlaybackMs(0);
+          playbackEventCountRef.current = -1;
+          renderBoardAtTime(0, draft.events);
+          await audioRef.current.play();
+        }
+      } catch (error) {
+        console.error("Failed to open secure board:", error);
+        toast.error(error instanceof Error ? error.message : "Secure board could not be opened.");
+      } finally {
+        setServerLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to open secure storyboard:", error);
-      toast.error(error instanceof Error ? error.message : "Secure storyboard could not be opened.");
-    } finally {
-      setServerLoading(false);
+    },
+    [openDraft, refreshShares, renderBoardAtTime]
+  );
+
+  React.useEffect(() => {
+    if (serverLoading || deepLinkOpenedRef.current) return;
+    deepLinkOpenedRef.current = true;
+    const id = new URLSearchParams(window.location.search).get("session");
+    if (!id) return;
+    const session = serverSessions.find((candidate) => candidate.id === id);
+    if (!session) {
+      toast.error("That board link is unavailable or your account does not have access.");
+      return;
     }
-  };
+    void openServerSession(session);
+  }, [openServerSession, serverLoading, serverSessions]);
 
   const playDraft = (draft: StoryboardDraft) => {
     openDraft(draft);
@@ -864,13 +923,12 @@ export default function StoryboardsPage() {
       toast.info("This board has no audio recording yet.");
       return;
     }
-
     player.currentTime = 0;
     setPlaybackMs(0);
     playbackEventCountRef.current = -1;
     renderBoardAtTime(0, draft.events);
     void player.play().catch((error) => {
-      console.error("Failed to play storyboard audio:", error);
+      console.error("Failed to play board audio:", error);
       toast.error("The browser could not play this recording.");
     });
   };
@@ -889,7 +947,7 @@ export default function StoryboardsPage() {
       renderBoardAtTime(0);
     }
     void player.play().catch((error) => {
-      console.error("Failed to play storyboard audio:", error);
+      console.error("Failed to play board audio:", error);
       toast.error("The browser could not play this recording.");
     });
   };
@@ -905,7 +963,7 @@ export default function StoryboardsPage() {
   const newBoard = () => {
     if (
       eventsRef.current.length > 0 &&
-      !window.confirm("Start a new board? Save the current board first if you want to keep it.")
+      !window.confirm("Start a new board? Your recovery draft is saved automatically, but secure the current board if you want it in the cloud.")
     ) return;
 
     stopPlayback();
@@ -918,6 +976,7 @@ export default function StoryboardsPage() {
     setTimelineDurationMs(0);
     setPlaybackMs(0);
     setRecordingElapsedMs(0);
+    setAutosaveStatus("idle");
     replaceAudioSource();
     clearCanvas();
   };
@@ -928,7 +987,18 @@ export default function StoryboardsPage() {
       toast.error("There is nothing on this board to export yet.");
       return;
     }
-    canvas.toBlob((blob) => {
+    const output = document.createElement("canvas");
+    output.width = CANVAS_WIDTH;
+    output.height = CANVAS_HEIGHT;
+    const ctx = output.getContext("2d");
+    if (!ctx) {
+      toast.error("The browser could not export this board.");
+      return;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, output.width, output.height);
+    ctx.drawImage(canvas, 0, 0);
+    output.toBlob((blob) => {
       if (!blob) {
         toast.error("The browser could not export this board.");
         return;
@@ -969,13 +1039,31 @@ export default function StoryboardsPage() {
       openDraft(duplicate);
       toast.success("A local copy was created. Secure it when you are ready.");
     } catch (error) {
-      console.error("Failed to duplicate storyboard:", error);
+      console.error("Failed to duplicate board:", error);
       toast.error("This board could not be duplicated.");
     }
   };
 
+  const copyBoardLink = async (sessionId: string) => {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = "";
+    url.searchParams.set("session", sessionId);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url.toString());
+        toast.success("Secure board link copied.");
+      } else {
+        window.prompt("Copy this secure board link", url.toString());
+      }
+    } catch (error) {
+      console.error("Board link copy failed:", error);
+      window.prompt("Copy this secure board link", url.toString());
+    }
+  };
+
   const removeServerSession = async (session: StoryboardServerSession) => {
-    if (!window.confirm(`Delete secure storyboard “${session.title}”?`)) return;
+    if (!window.confirm(`Delete secure board “${session.title}”?`)) return;
     setServerSaving(true);
     try {
       await deleteServerStoryboard(session.id);
@@ -993,10 +1081,10 @@ export default function StoryboardsPage() {
         clearCanvas();
       }
       await loadServerSessions();
-      toast.success("Secure storyboard deleted.");
+      toast.success("Secure board deleted.");
     } catch (error) {
-      console.error("Failed to delete secure storyboard:", error);
-      toast.error(error instanceof Error ? error.message : "Secure storyboard could not be deleted.");
+      console.error("Failed to delete secure board:", error);
+      toast.error(error instanceof Error ? error.message : "Secure board could not be deleted.");
     } finally {
       setServerSaving(false);
     }
@@ -1009,10 +1097,10 @@ export default function StoryboardsPage() {
       await shareStoryboard(activeServerSession.id, shareEmail.trim(), sharePermission);
       setShareEmail("");
       await refreshShares(activeServerSession);
-      toast.success("Storyboard access granted.");
+      toast.success("Board access granted.");
     } catch (error) {
-      console.error("Failed to share storyboard:", error);
-      toast.error(error instanceof Error ? error.message : "Storyboard could not be shared.");
+      console.error("Failed to share board:", error);
+      toast.error(error instanceof Error ? error.message : "Board could not be shared.");
     } finally {
       setShareBusy(false);
     }
@@ -1024,9 +1112,9 @@ export default function StoryboardsPage() {
     try {
       await revokeStoryboardShare(activeServerSession.id, share.userId);
       await refreshShares(activeServerSession);
-      toast.success("Storyboard access revoked.");
+      toast.success("Board access revoked.");
     } catch (error) {
-      console.error("Failed to revoke storyboard access:", error);
+      console.error("Failed to revoke board access:", error);
       toast.error(error instanceof Error ? error.message : "Access could not be revoked.");
     } finally {
       setShareBusy(false);
@@ -1048,24 +1136,39 @@ export default function StoryboardsPage() {
         clearCanvas();
       }
       await loadDrafts();
-      toast.success("Storyboard draft deleted.");
+      toast.success("Recovery draft deleted.");
     } catch (error) {
-      console.error("Failed to delete storyboard:", error);
-      toast.error("This storyboard could not be deleted.");
+      console.error("Failed to delete board draft:", error);
+      toast.error("This recovery draft could not be deleted.");
     }
   };
+
+  const changeZoom = (delta: number) => setZoom((value) => clampStoryboardZoom(value + delta));
+  const gridStyle: React.CSSProperties = showGrid
+    ? {
+        backgroundColor: "#ffffff",
+        backgroundImage:
+          "linear-gradient(to right, rgba(100,116,139,.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(100,116,139,.18) 1px, transparent 1px)",
+        backgroundSize: `${100 / STORYBOARD_GRID_COLUMNS}% ${100 / STORYBOARD_GRID_ROWS}%`,
+      }
+    : { backgroundColor: "#ffffff" };
 
   const editorCard = (
     <Card className={focusMode ? "fixed inset-3 z-[80] overflow-y-auto bg-background shadow-2xl md:inset-5" : ""}>
       <CardHeader className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <Radio className="h-5 w-5" />
               Board workspace
+              {autosaveStatus !== "idle" && (
+                <Badge variant="outline" className="font-normal">
+                  {autosaveStatus === "saving" ? "Saving recovery…" : "Recovery saved"}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription className="mt-1">
-              Freehand drawing, replayable shapes, synchronized audio, sharing, export, and recovery drafts.
+              Freehand drawing, replayable shapes, synchronized audio, secure sharing, export, zoom, grid snapping, and automatic recovery.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1075,6 +1178,11 @@ export default function StoryboardsPage() {
             <Button type="button" size="sm" variant="outline" onClick={() => void duplicateCurrentBoard()} disabled={isCapturing || isBusy || eventsRef.current.length === 0}>
               <Copy className="h-4 w-4" /> Duplicate
             </Button>
+            {activeServerSession && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void copyBoardLink(activeServerSession.id)}>
+                <Link2 className="h-4 w-4" /> Copy link
+              </Button>
+            )}
             <Button type="button" size="sm" variant={focusMode ? "secondary" : "outline"} onClick={() => setFocusMode((value) => !value)}>
               {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               {focusMode ? "Exit focus" : "Focus"}
@@ -1084,47 +1192,22 @@ export default function StoryboardsPage() {
             </Button>
           </div>
         </div>
-        <Input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Storyboard title"
-          disabled={isCapturing || isBusy}
-          maxLength={120}
-        />
+        <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Board title" disabled={isCapturing || isBusy} maxLength={120} />
       </CardHeader>
+
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/30 p-2">
-          <Button type="button" size="sm" variant={tool === "pen" ? "secondary" : "ghost"} onClick={() => setTool("pen")} disabled={!canDraw} aria-pressed={tool === "pen"} title="Pen (P)">
-            <Pencil className="h-4 w-4" /> Pen
-          </Button>
-          <Button type="button" size="sm" variant={tool === "eraser" ? "secondary" : "ghost"} onClick={() => setTool("eraser")} disabled={!canDraw} aria-pressed={tool === "eraser"} title="Eraser (E)">
-            <Eraser className="h-4 w-4" /> Eraser
-          </Button>
-          <Button type="button" size="sm" variant={tool === "line" ? "secondary" : "ghost"} onClick={() => setTool("line")} disabled={!canDraw} title="Line (L)">
-            <Minus className="h-4 w-4" /> Line
-          </Button>
-          <Button type="button" size="sm" variant={tool === "arrow" ? "secondary" : "ghost"} onClick={() => setTool("arrow")} disabled={!canDraw} title="Arrow (A)">
-            <ArrowUpRight className="h-4 w-4" /> Arrow
-          </Button>
-          <Button type="button" size="sm" variant={tool === "rectangle" ? "secondary" : "ghost"} onClick={() => setTool("rectangle")} disabled={!canDraw} title="Rectangle (R)">
-            <Square className="h-4 w-4" /> Rectangle
-          </Button>
-          <Button type="button" size="sm" variant={tool === "ellipse" ? "secondary" : "ghost"} onClick={() => setTool("ellipse")} disabled={!canDraw} title="Ellipse (O)">
-            <Circle className="h-4 w-4" /> Ellipse
-          </Button>
+          <Button type="button" size="sm" variant={tool === "pen" ? "secondary" : "ghost"} onClick={() => setTool("pen")} disabled={!canDraw} title="Pen (P)"><Pencil className="h-4 w-4" /> Pen</Button>
+          <Button type="button" size="sm" variant={tool === "eraser" ? "secondary" : "ghost"} onClick={() => setTool("eraser")} disabled={!canDraw} title="Eraser (E)"><Eraser className="h-4 w-4" /> Eraser</Button>
+          <Button type="button" size="sm" variant={tool === "line" ? "secondary" : "ghost"} onClick={() => setTool("line")} disabled={!canDraw} title="Line (L)"><Minus className="h-4 w-4" /> Line</Button>
+          <Button type="button" size="sm" variant={tool === "arrow" ? "secondary" : "ghost"} onClick={() => setTool("arrow")} disabled={!canDraw} title="Arrow (A)"><ArrowUpRight className="h-4 w-4" /> Arrow</Button>
+          <Button type="button" size="sm" variant={tool === "rectangle" ? "secondary" : "ghost"} onClick={() => setTool("rectangle")} disabled={!canDraw} title="Rectangle (R)"><Square className="h-4 w-4" /> Rectangle</Button>
+          <Button type="button" size="sm" variant={tool === "ellipse" ? "secondary" : "ghost"} onClick={() => setTool("ellipse")} disabled={!canDraw} title="Ellipse (O)"><Circle className="h-4 w-4" /> Ellipse</Button>
 
           <label className="flex h-8 items-center gap-2 rounded-md border bg-background px-2 text-xs">
             Color
-            <input
-              type="color"
-              value={color}
-              onChange={(event) => setColor(event.target.value)}
-              className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0"
-              disabled={!canDraw || tool === "eraser"}
-              aria-label="Pen color"
-            />
+            <input type="color" value={color} onChange={(event) => setColor(event.target.value)} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" disabled={!canDraw || tool === "eraser"} aria-label="Pen color" />
           </label>
-
           <label className="flex h-8 items-center gap-2 rounded-md border bg-background px-2 text-xs">
             Stroke
             <select value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} className="bg-transparent text-xs outline-none" disabled={!canDraw} aria-label="Stroke thickness">
@@ -1134,25 +1217,29 @@ export default function StoryboardsPage() {
             </select>
           </label>
 
+          <Button type="button" size="sm" variant={showGrid ? "secondary" : "ghost"} onClick={() => setShowGrid((value) => !value)} title="Toggle grid (G)"><Grid3X3 className="h-4 w-4" /> Grid</Button>
+          <Button type="button" size="sm" variant={snapToGrid ? "secondary" : "ghost"} onClick={() => setSnapToGrid((value) => !value)} title="Snap shapes to grid (S)"><Magnet className="h-4 w-4" /> Snap</Button>
+
+          <div className="flex items-center rounded-md border bg-background">
+            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => changeZoom(-0.25)} aria-label="Zoom out"><ZoomOut className="h-4 w-4" /></Button>
+            <button type="button" className="min-w-[54px] px-1 text-xs font-medium" onClick={() => setZoom(1)} title="Reset zoom (0)">{Math.round(zoom * 100)}%</button>
+            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => changeZoom(0.25)} aria-label="Zoom in"><ZoomIn className="h-4 w-4" /></Button>
+          </div>
+
           <div className="ml-auto flex gap-1">
-            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={handleUndo} disabled={!canDraw || !history.undoTarget} aria-label="Undo" title="Undo (Ctrl/Cmd+Z)">
-              <Undo2 className="h-4 w-4" />
-            </Button>
-            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={handleRedo} disabled={!canDraw || !history.redoTarget} aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)">
-              <Redo2 className="h-4 w-4" />
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={handleClear} disabled={!canDraw || eventsRef.current.length === 0}>
-              Clear
-            </Button>
+            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={handleUndo} disabled={!canDraw || !history.undoTarget} aria-label="Undo" title="Undo (Ctrl/Cmd+Z)"><Undo2 className="h-4 w-4" /></Button>
+            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={handleRedo} disabled={!canDraw || !history.redoTarget} aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)"><Redo2 className="h-4 w-4" /></Button>
+            <Button type="button" size="sm" variant="ghost" onClick={handleClear} disabled={!canDraw || eventsRef.current.length === 0}>Clear</Button>
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border bg-white shadow-inner">
+        <div className="overflow-auto rounded-xl border bg-muted/20 p-2 shadow-inner">
           <canvas
             ref={canvasRef}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            className={`block aspect-video w-full touch-none ${canDraw ? "cursor-crosshair" : "cursor-not-allowed"}`}
+            style={{ ...gridStyle, width: `${zoom * 100}%` }}
+            className={`mx-auto block aspect-video touch-none ${canDraw ? "cursor-crosshair" : "cursor-not-allowed"}`}
             aria-label="Storyboard drawing canvas"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -1168,14 +1255,15 @@ export default function StoryboardsPage() {
           <Badge variant="outline" className="font-normal">A Arrow</Badge>
           <Badge variant="outline" className="font-normal">R Rectangle</Badge>
           <Badge variant="outline" className="font-normal">O Ellipse</Badge>
-          <span>Shapes remain synchronized with storyboard replay and undo/redo.</span>
+          <Badge variant="outline" className="font-normal">G Grid</Badge>
+          <Badge variant="outline" className="font-normal">S Snap</Badge>
+          <Badge variant="outline" className="font-normal">0 100%</Badge>
+          <span>Snap affects structured shapes; freehand pen input stays fluid.</span>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {recordingState === "idle" && (
-            <Button type="button" onClick={startRecording} disabled={!recordingSupported || activeDraft?.serverPermission === "viewer" || serverSaving} className="gap-2">
-              <Mic className="h-4 w-4" /> Start recording
-            </Button>
+            <Button type="button" onClick={startRecording} disabled={!recordingSupported || activeDraft?.serverPermission === "viewer" || serverSaving} className="gap-2"><Mic className="h-4 w-4" /> Start recording</Button>
           )}
           {recordingState === "recording" && (
             <>
@@ -1196,7 +1284,7 @@ export default function StoryboardsPage() {
         </div>
 
         {!recordingSupported && (
-          <p className="text-sm text-destructive">This browser does not expose the microphone recording APIs required for audio storyboards. Drawing and local board saving still work.</p>
+          <p className="text-sm text-destructive">This browser does not expose the microphone recording APIs required for audio boards. Drawing and local recovery still work.</p>
         )}
 
         {activeDraft && (
@@ -1206,11 +1294,12 @@ export default function StoryboardsPage() {
                 {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </Button>
               <div className="min-w-0 flex-1">
-                <Slider value={[Math.min(playbackMs, timelineDurationMs)]} min={0} max={Math.max(1, timelineDurationMs)} step={10} onValueChange={seekPlayback} disabled={timelineDurationMs <= 0} aria-label="Storyboard playback position" />
+                <Slider value={[Math.min(playbackMs, timelineDurationMs)]} min={0} max={Math.max(1, timelineDurationMs)} step={10} onValueChange={seekPlayback} disabled={timelineDurationMs <= 0} aria-label="Board playback position" />
               </div>
               <span className="w-[88px] text-right font-mono text-xs text-muted-foreground">{formatDuration(playbackMs)} / {formatDuration(timelineDurationMs)}</span>
             </div>
             <p className="text-xs text-muted-foreground">Seeking rebuilds the canvas at that exact point in the audio timeline.</p>
+
             {activeServerSession && (
               <div className="space-y-3 border-t pt-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1218,6 +1307,7 @@ export default function StoryboardsPage() {
                   <Badge variant="secondary">{activeServerSession.permission}</Badge>
                   <Badge variant="outline" className="capitalize">{activeServerSession.status}</Badge>
                   <span className="text-muted-foreground">Owner: {activeServerSession.ownerName}</span>
+                  <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" onClick={() => void copyBoardLink(activeServerSession.id)}><Link2 className="h-3.5 w-3.5" /> Copy link</Button>
                 </div>
 
                 {activeServerSession.permission === "owner" && (
@@ -1225,7 +1315,7 @@ export default function StoryboardsPage() {
                     <div className="flex items-center gap-2 text-sm font-medium"><Share2 className="h-4 w-4" /> Share with an OXSIG user</div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Input type="email" value={shareEmail} onChange={(event) => setShareEmail(event.target.value)} placeholder="user@example.com" disabled={shareBusy} />
-                      <select value={sharePermission} onChange={(event) => setSharePermission(event.target.value as "viewer" | "editor")} className="h-9 rounded-md border bg-background px-3 text-sm" disabled={shareBusy} aria-label="Storyboard share permission">
+                      <select value={sharePermission} onChange={(event) => setSharePermission(event.target.value as "viewer" | "editor")} className="h-9 rounded-md border bg-background px-3 text-sm" disabled={shareBusy} aria-label="Board share permission">
                         <option value="viewer">Viewer</option>
                         <option value="editor">Editor</option>
                       </select>
@@ -1241,9 +1331,7 @@ export default function StoryboardsPage() {
                               <p className="truncate font-medium">{share.displayName}</p>
                               <p className="truncate text-muted-foreground">{share.email} · {share.permission}</p>
                             </div>
-                            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => revokeShare(share)} disabled={shareBusy} aria-label={`Revoke ${share.displayName}`}>
-                              <UserX className="h-4 w-4" />
-                            </Button>
+                            <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => revokeShare(share)} disabled={shareBusy} aria-label={`Revoke ${share.displayName}`}><UserX className="h-4 w-4" /></Button>
                           </div>
                         ))}
                       </div>
@@ -1290,11 +1378,11 @@ export default function StoryboardsPage() {
             <span>/</span><span>Boards</span>
           </div>
           <h1 className="text-2xl font-bold md:text-3xl">Boards</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Build visual explanations with freehand drawing, structured shapes, synchronized voice, secure sharing, and replay.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Build visual explanations with structured drawing, synchronized voice, automatic recovery, secure sharing, and replay.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">Secure server</Badge>
-          <Badge variant="secondary">Shape tools + PNG export</Badge>
+          <Badge variant="secondary">Grid + snap + zoom</Badge>
           {recordingState !== "idle" && (
             <Badge variant={recordingState === "recording" ? "destructive" : "secondary"}>
               {recordingState === "recording" ? `Recording ${formatDuration(recordingElapsedMs)}` : recordingState === "paused" ? `Paused ${formatDuration(recordingElapsedMs)}` : "Saving…"}
@@ -1310,11 +1398,11 @@ export default function StoryboardsPage() {
             <CardHeader><CardTitle className="text-base">Board capabilities</CardTitle></CardHeader>
             <CardContent className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Visual authoring</p><p className="mt-1 text-xs">Pen, eraser, line, arrow, rectangle and ellipse with grouped undo/redo.</p></div>
+              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Diagram precision</p><p className="mt-1 text-xs">Optional grid, shape snapping and 50–200% zoom make technical diagrams easier to build.</p></div>
               <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Explain & replay</p><p className="mt-1 text-xs">Voice recording stays synchronized with every board event and timeline seek.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Reuse & export</p><p className="mt-1 text-xs">Duplicate a board for a new lesson or export the visible frame as PNG.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Secure persistence</p><p className="mt-1 text-xs">Authenticated server copies plus browser-local recovery drafts.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Collaboration</p><p className="mt-1 text-xs">Owner, editor and viewer permissions are enforced by the API.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Focus workflow</p><p className="mt-1 text-xs">Expand the board into a distraction-free workspace without losing state.</p></div>
+              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Automatic recovery</p><p className="mt-1 text-xs">Edits and title changes are saved locally after a short pause, even before a secure save.</p></div>
+              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Shareable secure links</p><p className="mt-1 text-xs">Authorized viewers and editors can open a copied board link directly into the secure session.</p></div>
+              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Reuse & export</p><p className="mt-1 text-xs">Duplicate a board for a new lesson or export the visible drawing as a white-background PNG.</p></div>
             </CardContent>
           </Card>
         </div>
@@ -1323,7 +1411,7 @@ export default function StoryboardsPage() {
           <Card className="h-fit">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg"><Cloud className="h-4 w-4" /> Secure sessions</CardTitle>
-              <CardDescription>Owned by you or shared with your account. Search and filter without leaving the board.</CardDescription>
+              <CardDescription>Owned by you or shared with your account. Search, filter, open, play, or copy a direct secure link.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
@@ -1358,10 +1446,11 @@ export default function StoryboardsPage() {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => openServerSession(session)} disabled={isCapturing || isBusy || serverLoading}>Open</Button>
-                        <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => openServerSession(session, true)} disabled={!session.hasAudio || isCapturing || isBusy || serverLoading}><Play className="h-3.5 w-3.5" /> Play</Button>
+                        <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => void openServerSession(session)} disabled={isCapturing || isBusy || serverLoading}>Open</Button>
+                        <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => void openServerSession(session, true)} disabled={!session.hasAudio || isCapturing || isBusy || serverLoading}><Play className="h-3.5 w-3.5" /> Play</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => void copyBoardLink(session.id)} aria-label={`Copy link for ${session.title}`}><Link2 className="h-3.5 w-3.5" /></Button>
                         {session.permission === "owner" && (
-                          <Button type="button" size="sm" variant="ghost" onClick={() => removeServerSession(session)} disabled={isCapturing || isBusy || serverSaving} aria-label={`Delete secure storyboard ${session.title}`}><Trash2 className="h-3.5 w-3.5" /></Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => removeServerSession(session)} disabled={isCapturing || isBusy || serverSaving} aria-label={`Delete secure board ${session.title}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                         )}
                       </div>
                     </div>
@@ -1374,7 +1463,7 @@ export default function StoryboardsPage() {
           <Card className="h-fit">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg"><Save className="h-4 w-4" /> Recovery drafts</CardTitle>
-              <CardDescription>Browser-local safety copies. A cloud badge means the draft is linked to a secure session.</CardDescription>
+              <CardDescription>Browser-local safety copies update automatically. A cloud badge means the recovery copy is linked to a secure session.</CardDescription>
             </CardHeader>
             <CardContent>
               {filteredDrafts.length === 0 ? (
