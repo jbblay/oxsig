@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 
 function pageMeta(pathname: string) {
   if (pathname === '/home') return { title: 'Home', description: 'Your Oxsig workspace' };
+  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Generate a roadmap, learn visually, ask questions and move into real lab practice' };
   if (pathname === '/collab') return { title: 'Collaboration', description: 'Conversation, resources and practice' };
   if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Visual explanation and recording' };
   if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Capture, connect and reuse technical knowledge' };
