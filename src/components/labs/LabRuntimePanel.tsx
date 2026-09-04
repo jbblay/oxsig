@@ -41,7 +41,7 @@ import {
 } from "@xyflow/react";
 import { toast } from "sonner";
 import InteractiveSsmTerminal from "@/components/labs/InteractiveSsmTerminal";
-import LabMachineNode, { type LabMachineFlowNode, type LabMachineNodeData } from "@/components/labs/LabMachineNode";
+import LabMachineNode, { LabOsIcon, type LabMachineFlowNode, type LabMachineNodeData } from "@/components/labs/LabMachineNode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -605,7 +605,9 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                       className="rounded-xl border bg-background p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm"
                     >
                       <div className="flex items-start gap-2.5">
-                        <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/60 ring-1 ring-border">
+                          <LabOsIcon osFamily={lab.osFamily} className="h-7 w-7" />
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <p className="truncate text-sm font-medium">{lab.shortName}</p>
@@ -618,6 +620,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                             <span className="font-mono">{lab.recommendedInstanceType}</span>
                           </div>
                         </div>
+                        <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/60" />
                       </div>
                       <Button size="sm" variant="ghost" className="mt-2 h-8 w-full" onClick={() => addMachine(lab.slug)}>
                         <Plus className="mr-1.5 h-3.5 w-3.5" />Add to topology
@@ -628,15 +631,34 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               </div>
 
               {!machinesOpen && (
-                <button
-                  type="button"
-                  onClick={() => setMachinesOpen(true)}
-                  className="flex h-[590px] w-full flex-col items-center gap-3 pt-5 text-muted-foreground transition-colors hover:text-foreground"
-                  title="Expand machines"
-                >
-                  <Server className="h-4 w-4" />
-                  <span className="rotate-180 text-[10px] font-semibold uppercase tracking-[0.2em] [writing-mode:vertical-rl]">Machines</span>
-                </button>
+                <div className="flex h-[590px] w-full flex-col items-center gap-2 py-4">
+                  {catalog.map((lab) => (
+                    <button
+                      key={lab.slug}
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-oxsig-lab", lab.slug);
+                        event.dataTransfer.effectAllowed = "move";
+                      }}
+                      onClick={() => addMachine(lab.slug)}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background transition-all hover:border-primary/40 hover:bg-muted"
+                      title={`Add ${lab.shortName}`}
+                      aria-label={`Add ${lab.shortName} to topology`}
+                    >
+                      <LabOsIcon osFamily={lab.osFamily} className="h-5 w-5" />
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setMachinesOpen(true)}
+                    className="mt-auto flex flex-col items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+                    title="Expand machines"
+                  >
+                    <Server className="h-4 w-4" />
+                    <span className="rotate-180 text-[10px] font-semibold uppercase tracking-[0.2em] [writing-mode:vertical-rl]">Machines</span>
+                  </button>
+                </div>
               )}
             </aside>
 
