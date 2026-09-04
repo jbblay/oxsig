@@ -77,7 +77,11 @@ export function applySecurityHeaders(
     response.headers.set('Content-Security-Policy', contentSecurityPolicy);
   }
 
-  if (process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true') {
+  // Production deployments are HTTPS-only at the edge. Requiring a separate
+  // HTTPS=true environment flag made HSTS easy to omit accidentally. Browsers
+  // ignore HSTS received over plain HTTP, so applying it for every production
+  // response is both safe and deterministic.
+  if (process.env.NODE_ENV === 'production') {
     response.headers.set('Strict-Transport-Security', HSTS_HEADER);
   }
 
