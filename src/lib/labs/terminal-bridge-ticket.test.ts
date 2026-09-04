@@ -44,6 +44,18 @@ describe('terminal bridge tickets', () => {
     expect(() => verifyTerminalBridgeTicket(parts.join('.'))).toThrow('Invalid terminal bridge ticket');
   });
 
+  it('rejects non-canonical base64url segments', () => {
+    const ticket = createTerminalBridgeTicket({
+      streamUrl: 'wss://ssmmessages.eu-central-1.amazonaws.com/v1/data-channel/session-123?role=publish_subscribe',
+      region: 'eu-central-1',
+      sessionId: 'session-123',
+      target: 'i-0123456789abcdef0',
+    });
+    const parts = ticket.split('.');
+    parts[2] = `${parts[2]}=`;
+    expect(() => verifyTerminalBridgeTicket(parts.join('.'))).toThrow('Invalid terminal bridge ticket');
+  });
+
   it('requires the server-generated bridge secret', () => {
     delete process.env.OXSIG_TERMINAL_BRIDGE_SECRET;
     expect(() => createTerminalBridgeTicket({

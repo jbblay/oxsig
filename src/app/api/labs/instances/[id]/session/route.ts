@@ -5,7 +5,7 @@ import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { startInteractiveLabSession, terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
-import { createTerminalBridgeTicket } from '@/lib/labs/terminal-bridge-ticket.js';
+import { createTerminalBridgeTicket, terminalBridgeTicketTtlMs } from '@/lib/labs/terminal-bridge-ticket.js';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
@@ -125,10 +125,29 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (!instance) return failure(404, 'LAB_NOT_FOUND', 'No Oxsig lab record exists for this account and lab ID.', 'database');
 
     const ready = await validateInteractiveReady(instance);
-    if (ready.failure) return ready.failure;
+    if (ready.failure) {
+      const details = await ready.failure.clone().json().catch(() => ({}));
+      await logAudit({
+        userId: user.id,
+        action: AUDIT_ACTIONS.LAB_SESSION_START_FAILED,
+        resourceType: 'lab',
+        resourceId: id,
+        ...getRequestMetadata(req),
+        metadata: {
+          provider: 'aws-ssm',
+          outcome: 'rejected',
+          status: ready.failure.status,
+          code: details.code,
+          stage: details.stage,
+        },
+      });
+      return ready.failure;
+    }
 
     try {
       const session = await startInteractiveLabSession(ready.externalId!);
+      const ticketTtlMs = terminalBridgeTicketTtlMs();
+      const ticketExpiresAt = new Date(Date.now() + ticketTtlMs).toISOString();
       const bridgeTicket = createTerminalBridgeTicket({
         streamUrl: session.streamUrl,
         region: session.region,
@@ -158,11 +177,26 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         sessionId: session.sessionId,
         bridgePath: `/__oxsig/terminal-bridge?ticket=${encodeURIComponent(bridgeTicket)}`,
         tokenValue: session.tokenValue,
+        bridgeTicketTtlMs: ticketTtlMs,
+        bridgeTicketExpiresAt: ticketExpiresAt,
         region: session.region,
         target: ready.externalId,
         diagnostics: ready.diagnostics,
       });
     } catch (error) {
+      await logAudit({
+        userId: user.id,
+        action: AUDIT_ACTIONS.LAB_SESSION_START_FAILED,
+        resourceType: 'lab',
+        resourceId: id,
+        ...getRequestMetadata(req),
+        metadata: {
+          provider: 'aws-ssm',
+          outcome: 'provider_error',
+          stage: 'ssm-session',
+          error: error instanceof Error ? error.message.slice(0, 240) : 'SSM session start failed',
+        },
+      });
       return failure(
         503,
         'SSM_SESSION_START_FAILED',

@@ -140,37 +140,73 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return failure(409, 'LAB_RUNTIME_MISSING', 'The lab record does not have an AWS EC2 runtime attached.', 'database', instance);
     }
 
+    const auditCommandFailure = async (
+      status: number,
+      code: string,
+      stage: string,
+      message: string,
+      diagnostics?: LabTerminalDiagnostics
+    ) => {
+      await logAudit({
+        userId: user.id,
+        action: AUDIT_ACTIONS.LAB_COMMAND_FAILED,
+        resourceType: 'lab',
+        resourceId: id,
+        ...getRequestMetadata(req),
+        metadata: {
+          provider: 'aws-ssm',
+          status,
+          code,
+          stage,
+          length: parsed.data.command.length,
+          ec2State: diagnostics?.ec2State,
+          ssmPingStatus: diagnostics?.ssmPingStatus,
+          error: message.slice(0, 240),
+        },
+      });
+    };
+
     let diagnostics: LabTerminalDiagnostics;
     try {
       diagnostics = await getLabTerminalDiagnostics(instance.runtime_external_id);
       await reconcileObservedState(instance, diagnostics);
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not inspect the lab terminal path.';
+      await auditCommandFailure(503, 'TERMINAL_DIAGNOSTICS_FAILED', 'aws-diagnostics', message);
       return failure(
         503,
         'TERMINAL_DIAGNOSTICS_FAILED',
-        error instanceof Error ? error.message : 'Could not inspect the lab terminal path.',
+        message,
         'aws-diagnostics',
         instance
       );
     }
 
     if (instance.expires_at && new Date(instance.expires_at).getTime() <= Date.now()) {
+      await auditCommandFailure(410, 'LAB_EXPIRED', 'expiry', 'The lab session has expired and cannot accept commands.', diagnostics);
       return failure(410, 'LAB_EXPIRED', 'The lab session has expired and cannot accept commands.', 'expiry', instance, diagnostics);
     }
     if (diagnostics.ec2State === 'destroyed' || diagnostics.ec2State === 'destroying') {
+      await auditCommandFailure(410, 'EC2_TERMINATED', 'ec2', 'The EC2 instance no longer exists as a usable lab.', diagnostics);
       return failure(410, 'EC2_TERMINATED', 'The EC2 instance no longer exists as a usable lab.', 'ec2', instance, diagnostics);
     }
     if (diagnostics.ec2State !== 'running') {
-      return failure(409, 'EC2_NOT_RUNNING', `EC2 is ${diagnostics.ec2State}; commands require a running instance.`, 'ec2', instance, diagnostics);
+      const message = `EC2 is ${diagnostics.ec2State}; commands require a running instance.`;
+      await auditCommandFailure(409, 'EC2_NOT_RUNNING', 'ec2', message, diagnostics);
+      return failure(409, 'EC2_NOT_RUNNING', message, 'ec2', instance, diagnostics);
     }
     if (!diagnostics.instanceProfileConfigured) {
+      await auditCommandFailure(503, 'SSM_PROFILE_MISSING', 'ssm', 'LAB_AWS_INSTANCE_PROFILE is not configured for terminal access.', diagnostics);
       return failure(503, 'SSM_PROFILE_MISSING', 'LAB_AWS_INSTANCE_PROFILE is not configured for terminal access.', 'ssm', instance, diagnostics);
     }
     if (!diagnostics.ssmRegistered) {
+      await auditCommandFailure(503, 'SSM_NOT_REGISTERED', 'ssm', 'EC2 is running, but Systems Manager has not registered this instance yet.', diagnostics);
       return failure(503, 'SSM_NOT_REGISTERED', 'EC2 is running, but Systems Manager has not registered this instance yet.', 'ssm', instance, diagnostics);
     }
     if (diagnostics.ssmPingStatus !== 'Online') {
-      return failure(503, 'SSM_OFFLINE', `Systems Manager reports ${diagnostics.ssmPingStatus || 'unknown'} instead of Online.`, 'ssm', instance, diagnostics);
+      const message = `Systems Manager reports ${diagnostics.ssmPingStatus || 'unknown'} instead of Online.`;
+      await auditCommandFailure(503, 'SSM_OFFLINE', 'ssm', message, diagnostics);
+      return failure(503, 'SSM_OFFLINE', message, 'ssm', instance, diagnostics);
     }
 
     try {
@@ -197,10 +233,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       });
       return NextResponse.json({ ...output, lab: labSnapshot(instance), diagnostics });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'SSM command execution failed.';
+      await auditCommandFailure(503, 'SSM_COMMAND_FAILED', 'command', message, diagnostics);
       return failure(
         503,
         'SSM_COMMAND_FAILED',
-        error instanceof Error ? error.message : 'SSM command execution failed.',
+        message,
         'command',
         instance,
         diagnostics

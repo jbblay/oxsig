@@ -11,7 +11,8 @@ const dev = !process.argv.includes('--prod');
 process.env.NODE_ENV = dev ? 'development' : 'production';
 const { default: next } = await import('next');
 
-const hostname = process.env.OXSIG_HOST || '0.0.0.0';
+const listenHostname = process.env.OXSIG_HOST || '0.0.0.0';
+const appHostname = process.env.OXSIG_APP_HOST || (dev ? 'localhost' : listenHostname);
 const port = Number(process.env.PORT || 3000);
 const BRIDGE_PATH = '/__oxsig/terminal-bridge';
 const MAX_PENDING_BYTES = 1024 * 1024;
@@ -196,7 +197,7 @@ async function bridgeConnection(browserSocket, payload) {
   }
 }
 
-const app = next({ dev, hostname, port });
+const app = next({ dev, hostname: appHostname, port });
 await app.prepare();
 const handle = app.getRequestHandler();
 const handleNextUpgrade = app.getUpgradeHandler();
@@ -254,8 +255,8 @@ server.on('error', (error) => {
   process.exitCode = 1;
 });
 
-server.listen(port, hostname, () => {
+server.listen(port, listenHostname, () => {
   const mode = dev ? 'development' : 'production';
-  console.log(`[oxsig] ${mode} server ready on http://localhost:${port}`);
+  console.log(`[oxsig] ${mode} server ready on http://${appHostname}:${port} (listening on ${listenHostname})`);
   console.log('[oxsig] Interactive terminals use the server-mediated AWS SSM WebSocket bridge.');
 });

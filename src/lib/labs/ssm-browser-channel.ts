@@ -236,6 +236,13 @@ export function buildHandshakeResponse(request: SsmHandshakeRequest) {
   };
 }
 
+export function shouldInferStandardStreamReady(payloadType: number, handshakeRequested: boolean) {
+  return !handshakeRequested && (
+    payloadType === SSM_PAYLOAD.OUTPUT ||
+    payloadType === SSM_PAYLOAD.STDERR
+  );
+}
+
 export class SsmBrowserDataChannel {
   private socket: WebSocket | null = null;
   private callbacks: ChannelCallbacks;
@@ -245,6 +252,7 @@ export class SsmBrowserDataChannel {
   private outgoingBuffer = new Map<number, OutgoingFrame>();
   private paused = false;
   private ready = false;
+  private handshakeRequested = false;
   private closed = false;
   private receiveChain: Promise<void> = Promise.resolve();
   private sendChain: Promise<void> = Promise.resolve();
@@ -257,6 +265,8 @@ export class SsmBrowserDataChannel {
   connect(session: SsmSessionStart) {
     if (this.socket) throw new Error("SSM browser channel is already open");
     this.closed = false;
+    this.ready = false;
+    this.handshakeRequested = false;
     const socket = new WebSocket(session.streamUrl);
     socket.binaryType = "arraybuffer";
     this.socket = socket;
@@ -306,6 +316,12 @@ export class SsmBrowserDataChannel {
     const socket = this.socket;
     this.socket = null;
     if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "Oxsig terminal closed");
+  }
+
+  private markReady(customerMessage?: string) {
+    if (this.ready) return;
+    this.ready = true;
+    this.callbacks.onReady(customerMessage);
   }
 
   private async handleSocketMessage(raw: unknown) {
@@ -391,6 +407,7 @@ export class SsmBrowserDataChannel {
     if (!alreadyAcknowledged) await this.sendAcknowledge(message);
 
     if (message.payloadType === SSM_PAYLOAD.HANDSHAKE_REQUEST) {
+      this.handshakeRequested = true;
       const request = JSON.parse(decoder.decode(message.payload)) as SsmHandshakeRequest;
       const { response, kmsRequested } = buildHandshakeResponse(request);
       await this.enqueueStream(SSM_PAYLOAD.HANDSHAKE_RESPONSE, encoder.encode(JSON.stringify(response)));
@@ -408,8 +425,7 @@ export class SsmBrowserDataChannel {
       } catch {
         // Handshake completion itself is sufficient.
       }
-      this.ready = true;
-      this.callbacks.onReady(customerMessage);
+      this.markReady(customerMessage);
       return;
     }
 
@@ -423,6 +439,9 @@ export class SsmBrowserDataChannel {
       message.payloadType === SSM_PAYLOAD.ERROR ||
       message.payloadType === SSM_PAYLOAD.EXIT_CODE
     ) {
+      if (shouldInferStandardStreamReady(message.payloadType, this.handshakeRequested)) {
+        this.markReady();
+      }
       this.callbacks.onOutput(message.payload, message.payloadType);
     }
   }
