@@ -55,10 +55,14 @@ git pull --ff-only origin "$BRANCH"
 CURRENT_BRANCH="$(git branch --show-current)"
 [[ "$CURRENT_BRANCH" == "$BRANCH" ]] || fail "Expected branch '$BRANCH' but Git reports '$CURRENT_BRANCH'."
 
-# Clear only the disposable Next.js build cache. Keep node_modules so pnpm can
-# reuse the dependencies already present and download only packages that changed.
+# Clear only the disposable Next.js build cache. Use Node's native recursive
+# removal instead of `rm -rf`: on Windows/Git Bash, NTFS can transiently return
+# ENOTEMPTY/EBUSY while Next.js or antivirus releases file handles. fs.rmSync
+# retries those native errors and behaves consistently across platforms.
 info "Clearing Next.js build cache"
-rm -rf .next
+if ! node -e "require('node:fs').rmSync('.next', { recursive: true, force: true, maxRetries: 8, retryDelay: 250 })"; then
+  fail "Could not clear '.next'. A previous Oxsig/Next.js process may still be using the build cache. Stop the old dev server (Ctrl+C or close its terminal), then run 'pnpm dev:up' again."
+fi
 
 if [[ ! -f .env.local ]]; then
   fail ".env.local is missing. Oxsig local development requires your existing local environment configuration."
