@@ -8,6 +8,7 @@ import {
   GripVertical,
   Info,
   Loader2,
+  Monitor,
   Network,
   PanelBottom,
   Play,
@@ -37,7 +38,7 @@ import LabMachineNode, { type LabMachineFlowNode, type LabMachineNodeData } from
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
+import type { LabAccessMode, LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
 
 type Capabilities = LabRuntimeCapabilities & { reason?: string; region?: string };
 type Instance = {
@@ -146,6 +147,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [topologyReady, setTopologyReady] = React.useState(false);
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [liveNodeId, setLiveNodeId] = React.useState<string | null>(null);
+  const [selectedAccessMode, setSelectedAccessMode] = React.useState<LabAccessMode>("terminal");
 
   const [dockOpen, setDockOpen] = React.useState(false);
   const [dockTab, setDockTab] = React.useState<DockTab>("terminal");
@@ -162,6 +164,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const liveMinutesLeft = minutesUntil(instance?.expiresAt);
   const liveExpiringSoon = liveMinutesLeft !== null && liveMinutesLeft > 0 && liveMinutesLeft <= 10;
   const liveExpired = liveMinutesLeft !== null && liveMinutesLeft <= 0;
+  const liveAccessMode: LabAccessMode = instance?.metadata?.accessMode === "desktop" ? "desktop" : "terminal";
 
   const load = React.useCallback(async (silent = false) => {
     try {
@@ -227,6 +230,17 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   }, []);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  React.useEffect(() => {
+    if (!selectedLab) {
+      setSelectedAccessMode("terminal");
+      return;
+    }
+    const modes = selectedLab.accessModes?.length ? selectedLab.accessModes : ["terminal"];
+    if (!modes.includes(selectedAccessMode)) {
+      setSelectedAccessMode(selectedLab.defaultAccessMode || modes[0]);
+    }
+  }, [selectedAccessMode, selectedLab]);
 
   React.useEffect(() => {
     if (!instances.some((item) => TRANSITIONAL.includes(item.status))) return;
@@ -354,13 +368,17 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       return;
     }
 
+    const accessMode = selectedLab.accessModes.includes(selectedAccessMode)
+      ? selectedAccessMode
+      : selectedLab.defaultAccessMode;
+
     setBusy("create");
     try {
       const csrf = await csrfToken();
       const response = await fetch("/api/labs", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
-        body: JSON.stringify({ slug: selectedLab.slug }),
+        body: JSON.stringify({ slug: selectedLab.slug, accessMode }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || "Could not start the cloud lab");
@@ -369,7 +387,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       if (created?.id && typeof window !== "undefined") {
         window.localStorage.setItem(RUNTIME_NODE_KEY, JSON.stringify({ instanceId: created.id, nodeId: selectedNode.id }));
       }
-      toast.success(`${selectedLab.shortName} VM requested`);
+      toast.success(`${selectedLab.shortName} ${accessMode} VM requested`);
       await load(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not start the cloud lab");
@@ -445,8 +463,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         </div>
       </div>
 
-      {!capabilities?.configured && (
-        <Card className="border-amber-500/40"><CardContent className="pt-6"><p className="font-medium">Cloud runtime is not ready on this deployment</p><p className="mt-1 text-sm text-muted-foreground">{capabilities?.reason}</p></CardContent></Card>
+      {capabilities && !capabilities.configured && (
+        <Card className="border-amber-500/40"><CardContent className="pt-6"><p className="font-medium">Cloud runtime is not ready on this deployment</p><p className="mt-1 text-sm text-muted-foreground">{capabilities.reason}</p></CardContent></Card>
       )}
 
       {reconciliationWarning && (
@@ -486,10 +504,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                     <div className="flex flex-wrap items-center gap-1.5">
                       <p className="truncate text-sm font-medium">{lab.shortName}</p>
                       {!lab.available && <Badge variant="outline" className="text-[9px]">Locked</Badge>}
+                      {lab.accessModes.includes("desktop") && <Badge variant="secondary" className="text-[9px]">Desktop</Badge>}
                     </div>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">{lab.category}</p>
                     <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{lab.shell === "powershell" ? "PowerShell" : "Bash"}</span>
+                      <span>{lab.accessModes.includes("desktop") ? "Terminal + Desktop" : lab.shell === "powershell" ? "PowerShell" : "Bash"}</span>
                       <span className="font-mono">{lab.recommendedInstanceType}</span>
                     </div>
                   </div>
@@ -569,6 +588,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">Selected</Badge>
                       {selectedIsLive && <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>}
+                      {selectedIsLive && <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>}
                     </div>
                   </div>
                   <Badge variant="outline" className="capitalize">{selectedIsLive ? instance?.status : "planned"}</Badge>
@@ -579,9 +599,28 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Platform</span>{selectedLab.platform}</div>
                 <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Shell</span>{selectedLab.shell}</div>
-                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Instance</span><span className="font-mono">{selectedLab.recommendedInstanceType}</span></div>
-                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Runtime</span>{selectedIsLive ? "AWS EC2" : "Design"}</div>
+                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Instance</span><span className="font-mono">{!instance && selectedAccessMode === "desktop" && selectedLab.desktopInstanceType ? selectedLab.desktopInstanceType : selectedLab.recommendedInstanceType}</span></div>
+                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Access</span><span className="capitalize">{selectedIsLive ? liveAccessMode : selectedAccessMode}</span></div>
               </div>
+
+              {!instance && selectedLab.accessModes.length > 1 && (
+                <div className="space-y-2 rounded-xl border p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Access mode</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" size="sm" variant={selectedAccessMode === "terminal" ? "default" : "outline"} onClick={() => setSelectedAccessMode("terminal")}>
+                      <Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal
+                    </Button>
+                    <Button type="button" size="sm" variant={selectedAccessMode === "desktop" ? "default" : "outline"} onClick={() => setSelectedAccessMode("desktop")}>
+                      <Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop
+                    </Button>
+                  </div>
+                  <p className="text-[10px] leading-4 text-muted-foreground">
+                    {selectedAccessMode === "desktop"
+                      ? "Desktop provisions a GUI-sized VM and keeps terminal access available too."
+                      : "Terminal uses the lighter persistent SSM shell profile."}
+                  </p>
+                </div>
+              )}
 
               {!selectedLab.available && selectedLab.availabilityNote && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{selectedLab.availabilityNote}</div>
@@ -598,8 +637,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Actions for {selectedNode.data.label}</p>
                 {!instance && (
                   <Button className="w-full" onClick={() => void createLab()} disabled={!capabilities?.configured || !selectedLab.available || busy === "create"}>
-                    {busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                    {selectedLab.available ? "Provision in AWS" : "Activation required"}
+                    {busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : selectedAccessMode === "desktop" ? <Monitor className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                    {selectedLab.available ? `Provision ${selectedAccessMode} in AWS` : "Activation required"}
                   </Button>
                 )}
                 {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">{liveNodeLabel} is currently the live AWS machine. This selected node remains design-only until that runtime is destroyed.</div>}
@@ -607,6 +646,12 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 {selectedIsLive && instance?.status === "running" && (
                   <>
                     {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open interactive terminal — {selectedNode.data.label}</Button>}
+                    {liveAccessMode === "desktop" && (
+                      <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-2 font-medium text-foreground"><Monitor className="h-3.5 w-3.5" />Desktop profile provisioned</div>
+                        <p className="mt-1">The browser desktop gateway is the next transport milestone; terminal access remains available while that gateway is wired through SSM.</p>
+                      </div>
+                    )}
                     <Button className="w-full" variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button>
                   </>
                 )}
@@ -644,6 +689,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
               <span className="font-medium text-foreground">Lab dock — {liveNodeLabel}</span>
               <Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge>
+              <Badge variant="outline" className="h-5 capitalize">{liveAccessMode}</Badge>
               {instance.expiresAt && (
                 <Badge variant={liveExpired ? "destructive" : liveExpiringSoon ? "secondary" : "outline"} className="h-5">
                   {relativeExpiry(instance.expiresAt)}
@@ -678,6 +724,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 <p className="font-medium">Live path</p>
                 <div className="space-y-1 rounded-xl border p-3 text-[11px] text-muted-foreground">
                   <div>Machine <span className="float-right font-medium text-foreground">{liveNodeLabel}</span></div>
+                  <div>Access <span className="float-right capitalize">{liveAccessMode}</span></div>
                   <div>Oxsig <span className="float-right font-mono">{short(instance.id)}</span></div>
                   <div>EC2 <span className="float-right font-mono">{short(terminalDiagnostics?.instanceId, 18)}</span></div>
                   <div>State <span className="float-right">{terminalDiagnostics?.ec2State || instance.status}</span></div>
@@ -693,6 +740,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             <div className="grid gap-3 p-4 sm:grid-cols-3">
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Current lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Access mode</p><p className="mt-1 text-sm capitalize">{liveAccessMode}</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Terminal mode</p><p className="mt-1 text-sm">Persistent SSM shell</p></div>
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div>
               <p className="sm:col-span-3 text-xs text-muted-foreground">A full server-side lab event stream is a later step. This panel intentionally shows only state the current UI can verify.</p>
@@ -715,6 +763,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="font-semibold">Diagnostics — {liveNodeLabel}</span>
                 <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>
+                <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>
               </div>
               <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
                 <span className="rounded bg-muted px-2 py-1">Oxsig {short(instance.id)}</span><span>›</span>
