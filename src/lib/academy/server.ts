@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { z } from 'zod';
-import type { AcademyCourse, AcademyQuestionAnswer } from './types';
+import type { AcademyCourse, AcademyPracticeEvaluation, AcademyQuestionAnswer } from './types';
 
 export const academyRequestSchema = z.discriminatedUnion('action', [
   z.object({
@@ -14,6 +14,17 @@ export const academyRequestSchema = z.discriminatedUnion('action', [
     courseTitle: z.string().trim().min(1).max(200),
     lessonTitle: z.string().trim().min(1).max(200),
     lessonContext: z.string().max(8000),
+  }).strict(),
+  z.object({
+    action: z.literal('evaluate'),
+    courseTitle: z.string().trim().min(1).max(200),
+    lessonTitle: z.string().trim().min(1).max(200),
+    instruction: z.string().trim().min(1).max(1200),
+    command: z.string().trim().min(1).max(1000),
+    expected: z.string().trim().min(1).max(1200),
+    stdout: z.string().max(25000).default(''),
+    stderr: z.string().max(25000).default(''),
+    exitCode: z.number().int().min(-1).max(255),
   }).strict(),
 ]);
 
@@ -49,6 +60,13 @@ const courseSchema = z.object({
 const answerSchema = z.object({
   answer: z.string().min(1).max(3000),
   suggestedAction: z.string().max(500).nullable(),
+}).strict();
+
+const evaluationSchema = z.object({
+  status: z.enum(['passed', 'needs-attention']),
+  summary: z.string().min(1).max(700),
+  feedback: z.string().min(1).max(2200),
+  nextStep: z.string().max(700).nullable(),
 }).strict();
 
 function academyModel() {
@@ -171,6 +189,18 @@ const ANSWER_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
+const EVALUATION_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['passed', 'needs-attention'] },
+    summary: { type: 'string' },
+    feedback: { type: 'string' },
+    nextStep: { type: ['string', 'null'] },
+  },
+  required: ['status', 'summary', 'feedback', 'nextStep'],
+  additionalProperties: false,
+};
+
 export async function generateAcademyCourse(prompt: string): Promise<AcademyCourse> {
   const instructions = `You are Oxsig Academy's curriculum generator. Turn the learner request into a compact, practical technical course.
 
@@ -189,7 +219,7 @@ Practice rules:
 - Prefer inspection, creation of disposable examples, and normal development operations.
 - Never include destructive disk/boot operations, credential theft, malware, persistence, denial-of-service, remote shells, or commands targeting public/external systems.
 - A course may contain conceptual lessons without practice.
-- Practice does not execute automatically. The learner will explicitly choose when to open the Cyber Lab.
+- Practice does not execute automatically. The learner will explicitly choose when to open or use the Cyber Lab.
 
 Estimate a realistic total learning time. Infer the learner level from the request; use beginner when unclear. Keep the course coherent enough that progress can later be measured lesson by lesson.`;
 
@@ -224,5 +254,32 @@ export async function answerAcademyQuestion(args: {
 
   const parsed = answerSchema.safeParse(raw);
   if (!parsed.success) throw new Error('AI generated an invalid Academy answer');
+  return parsed.data;
+}
+
+export async function evaluateAcademyPractice(args: {
+  courseTitle: string;
+  lessonTitle: string;
+  instruction: string;
+  command: string;
+  expected: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}): Promise<AcademyPracticeEvaluation> {
+  const instructions = `You are the Oxsig Academy instructor evaluating a real command that a learner explicitly approved and ran in their authorized Oxsig Cyber Lab terminal.
+
+Judge only from the supplied command, exit code, stdout, stderr, lesson instruction, and expected result. Never invent output or claim evidence that is absent. Mark status passed only when the evidence reasonably demonstrates the lesson objective or expected behavior. A zero exit code alone is not always enough if the expected evidence is missing. If the result needs attention, explain the likely reason in learner-friendly language and give one safe next step. Keep the response concise and focused on teaching from the real terminal evidence.`;
+
+  const raw = await callStructured<AcademyPracticeEvaluation>({
+    name: 'oxsig_academy_practice_evaluation',
+    instructions,
+    input: `COURSE: ${args.courseTitle}\nLESSON: ${args.lessonTitle}\n\nPRACTICE INSTRUCTION\n${args.instruction}\n\nAPPROVED COMMAND\n${args.command}\n\nEXPECTED RESULT\n${args.expected}\n\nREAL EXIT CODE\n${args.exitCode}\n\nREAL STDOUT\n${args.stdout || '(empty)'}\n\nREAL STDERR\n${args.stderr || '(empty)'}`,
+    schema: EVALUATION_JSON_SCHEMA,
+    maxOutputTokens: 1800,
+  });
+
+  const parsed = evaluationSchema.safeParse(raw);
+  if (!parsed.success) throw new Error('AI generated an invalid Academy practice evaluation');
   return parsed.data;
 }
