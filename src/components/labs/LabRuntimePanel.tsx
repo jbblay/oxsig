@@ -3,11 +3,17 @@
 import * as React from "react";
 import {
   Activity,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
   CircleStop,
   Cloud,
   GripVertical,
   Info,
   Loader2,
+  Maximize2,
+  Minimize2,
   Monitor,
   Network,
   PanelBottom,
@@ -15,6 +21,7 @@ import {
   Plus,
   RefreshCw,
   Server,
+  Sparkles,
   Terminal,
   Trash2,
   X,
@@ -68,6 +75,12 @@ type TerminalDiagnostics = {
 
 type TerminalFailure = { error: string; code?: string; stage?: string };
 type DockTab = "terminal" | "events" | "network" | "diagnostics";
+type LabLayoutState = {
+  machinesOpen: boolean;
+  inspectorOpen: boolean;
+  workspaceOpen: boolean;
+  dockCollapsed: boolean;
+};
 
 type PersistedTopology = {
   nodes: Array<Pick<LabMachineFlowNode, "id" | "position" | "type"> & { data: Pick<LabMachineNodeData, "slug" | "label"> }>;
@@ -78,6 +91,8 @@ const TRANSITIONAL: LabInstanceStatus[] = ["created", "provisioning", "stopping"
 const NODE_TYPES = { machine: LabMachineNode };
 const TOPOLOGY_KEY = "oxsig:cyber-lab-topology:v1";
 const RUNTIME_NODE_KEY = "oxsig:cyber-lab-runtime-node:v1";
+const LAYOUT_KEY = "oxsig:cyber-lab-layout:v1";
+const LAYOUT_HINT_KEY = "oxsig:cyber-lab-layout-hint:v1";
 
 async function csrfToken() {
   const response = await fetch("/api/csrf-token", { cache: "no-store" });
@@ -151,9 +166,17 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
   const [dockOpen, setDockOpen] = React.useState(false);
   const [dockTab, setDockTab] = React.useState<DockTab>("terminal");
+  const [dockCollapsed, setDockCollapsed] = React.useState(false);
+  const [dockFocus, setDockFocus] = React.useState(false);
   const [terminalId, setTerminalId] = React.useState<string | null>(null);
   const [terminalDiagnostics, setTerminalDiagnostics] = React.useState<TerminalDiagnostics | null>(null);
   const [terminalFailure, setTerminalFailure] = React.useState<TerminalFailure | null>(null);
+
+  const [machinesOpen, setMachinesOpen] = React.useState(true);
+  const [inspectorOpen, setInspectorOpen] = React.useState(true);
+  const [workspaceOpen, setWorkspaceOpen] = React.useState(true);
+  const [layoutReady, setLayoutReady] = React.useState(false);
+  const [showLayoutHint, setShowLayoutHint] = React.useState(false);
 
   const instance = instances[0];
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
@@ -165,6 +188,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const liveExpiringSoon = liveMinutesLeft !== null && liveMinutesLeft > 0 && liveMinutesLeft <= 10;
   const liveExpired = liveMinutesLeft !== null && liveMinutesLeft <= 0;
   const liveAccessMode: LabAccessMode = instance?.metadata?.accessMode === "desktop" ? "desktop" : "terminal";
+  const workspaceVisible = workspaceOpen && !dockFocus;
+  const labColumns = `${machinesOpen ? "260px" : "52px"} minmax(0,1fr) ${inspectorOpen ? "300px" : "52px"}`;
 
   const load = React.useCallback(async (silent = false) => {
     try {
@@ -190,6 +215,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         setLiveNodeId(null);
         setTerminalId(null);
         setDockOpen(false);
+        setDockCollapsed(false);
+        setDockFocus(false);
         setTerminalDiagnostics(null);
         setTerminalFailure(null);
         if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
@@ -230,6 +257,27 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   }, []);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(LAYOUT_KEY) || "null") as Partial<LabLayoutState> | null;
+      if (typeof saved?.machinesOpen === "boolean") setMachinesOpen(saved.machinesOpen);
+      if (typeof saved?.inspectorOpen === "boolean") setInspectorOpen(saved.inspectorOpen);
+      if (typeof saved?.workspaceOpen === "boolean") setWorkspaceOpen(saved.workspaceOpen);
+      if (typeof saved?.dockCollapsed === "boolean") setDockCollapsed(saved.dockCollapsed);
+    } catch {
+      window.localStorage.removeItem(LAYOUT_KEY);
+    }
+    setShowLayoutHint(!window.localStorage.getItem(LAYOUT_HINT_KEY));
+    setLayoutReady(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!layoutReady || typeof window === "undefined") return;
+    const layout: LabLayoutState = { machinesOpen, inspectorOpen, workspaceOpen, dockCollapsed };
+    window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  }, [dockCollapsed, inspectorOpen, layoutReady, machinesOpen, workspaceOpen]);
 
   React.useEffect(() => {
     if (!selectedLab) {
@@ -409,6 +457,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       if (!response.ok) throw new Error(await errorMessage(response, `Could not ${action} the lab`));
       if (action === "destroy") {
         setDockOpen(false);
+        setDockCollapsed(false);
+        setDockFocus(false);
         setTerminalDiagnostics(null);
         setTerminalFailure(null);
         if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
@@ -427,10 +477,16 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     if (!instance || !selectedIsLive) return;
     setTerminalId(instance.id);
     setDockOpen(true);
+    setDockCollapsed(false);
     setDockTab("terminal");
     setTerminalDiagnostics(null);
     setTerminalFailure(null);
     await refreshTerminal(instance.id);
+  };
+
+  const dismissLayoutHint = () => {
+    setShowLayoutHint(false);
+    if (typeof window !== "undefined") window.localStorage.setItem(LAYOUT_HINT_KEY, "seen");
   };
 
   const removeSelectedNode = () => {
@@ -457,9 +513,19 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
             Design the topology visually, then provision the selected machine into a real temporary AWS lab.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} nodes · {edges.length} links</Badge>
           <Badge variant={capabilities?.configured ? "default" : "outline"}><Cloud className="mr-1 h-3.5 w-3.5" />{capabilities?.configured ? `AWS ${capabilities.region || "connected"}` : "AWS setup needed"}</Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => setWorkspaceOpen((open) => !open)}
+            aria-expanded={workspaceOpen}
+          >
+            {workspaceOpen ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
+            {workspaceOpen ? "Collapse lab" : "Expand lab"}
+          </Button>
         </div>
       </div>
 
@@ -481,198 +547,305 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         </Card>
       )}
 
-      <div className="grid min-h-[650px] gap-3 xl:grid-cols-[260px_minmax(0,1fr)_300px]">
-        <aside className="rounded-2xl border bg-card">
-          <div className="border-b p-4">
-            <p className="font-semibold">Machines</p>
-            <p className="mt-1 text-xs text-muted-foreground">Drag to the canvas, or tap Add on mobile.</p>
+      {showLayoutHint && (
+        <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-r from-blue-500/5 via-background to-purple-500/5 p-3 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 p-2 text-white shadow-sm">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Shape the lab around your task</p>
+                <p className="mt-0.5 max-w-3xl text-xs leading-5 text-muted-foreground">
+                  Machines and Inspector start open, but each can collapse. Collapse the whole topology when you want terminal space, or use Focus in the lab dock for a distraction-free shell.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" className="shrink-0" onClick={dismissLayoutHint}>Got it</Button>
           </div>
-          <div className="max-h-[590px] space-y-2 overflow-auto p-3">
-            {catalog.map((lab) => (
-              <div
-                key={lab.slug}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.setData("application/x-oxsig-lab", lab.slug);
-                  event.dataTransfer.effectAllowed = "move";
-                }}
-                className="rounded-xl border bg-background p-3 transition hover:border-primary/40 hover:shadow-sm"
-              >
-                <div className="flex items-start gap-2.5">
-                  <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <p className="truncate text-sm font-medium">{lab.shortName}</p>
-                      {!lab.available && <Badge variant="outline" className="text-[9px]">Locked</Badge>}
-                      {lab.accessModes.includes("desktop") && <Badge variant="secondary" className="text-[9px]">Desktop</Badge>}
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{lab.category}</p>
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{lab.accessModes.includes("desktop") ? "Terminal + Desktop" : lab.shell === "powershell" ? "PowerShell" : "Bash"}</span>
-                      <span className="font-mono">{lab.recommendedInstanceType}</span>
-                    </div>
+        </div>
+      )}
+
+      <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${workspaceVisible ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="min-h-0 overflow-hidden">
+          <div
+            className="grid min-h-[650px] gap-3 transition-[grid-template-columns] duration-300 ease-in-out xl:grid-cols-[var(--lab-columns)]"
+            style={{ "--lab-columns": labColumns } as React.CSSProperties}
+          >
+            <aside className="overflow-hidden rounded-2xl border bg-card transition-shadow duration-300">
+              <div className={`flex items-center border-b ${machinesOpen ? "justify-between p-4" : "justify-center p-2"}`}>
+                {machinesOpen && (
+                  <div className="min-w-0">
+                    <p className="font-semibold">Machines</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Drag to the canvas, or tap Add on mobile.</p>
                   </div>
-                </div>
-                <Button size="sm" variant="ghost" className="mt-2 h-8 w-full" onClick={() => addMachine(lab.slug)}>
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />Add to topology
+                )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setMachinesOpen((open) => !open)}
+                  aria-label={machinesOpen ? "Collapse machines" : "Expand machines"}
+                  title={machinesOpen ? "Collapse machines" : "Expand machines"}
+                >
+                  {machinesOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </Button>
               </div>
-            ))}
-          </div>
-        </aside>
 
-        <section className="relative min-h-[650px] overflow-hidden rounded-2xl border bg-muted/10">
-          <ReactFlow<LabMachineFlowNode, Edge>
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={NODE_TYPES}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onInit={setFlow}
-            onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
-            onPaneClick={() => setSelectedNodeId(null)}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const slug = event.dataTransfer.getData("application/x-oxsig-lab");
-              if (!slug) return;
-              const position = flow?.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-              addMachine(slug, position);
-            }}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-            minZoom={0.35}
-            maxZoom={1.7}
-            defaultEdgeOptions={{ type: "smoothstep" }}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
-            <Controls position="bottom-left" />
-            <MiniMap pannable zoomable position="bottom-right" className="!bg-background/90" />
-            {nodes.length === 0 && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center shadow-sm backdrop-blur">
-                  <Server className="mx-auto h-10 w-10 text-muted-foreground/50" />
-                  <p className="mt-3 font-medium">Build your lab topology</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Drag machines here, move them freely, connect their handles, and select a node to provision or inspect it.</p>
+              <div className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out ${machinesOpen ? "max-h-[620px] opacity-100" : "pointer-events-none max-h-0 opacity-0"}`}>
+                <div className="max-h-[590px] space-y-2 overflow-auto p-3">
+                  {catalog.map((lab) => (
+                    <div
+                      key={lab.slug}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-oxsig-lab", lab.slug);
+                        event.dataTransfer.effectAllowed = "move";
+                      }}
+                      className="rounded-xl border bg-background p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate text-sm font-medium">{lab.shortName}</p>
+                            {!lab.available && <Badge variant="outline" className="text-[9px]">Locked</Badge>}
+                            {lab.accessModes.includes("desktop") && <Badge variant="secondary" className="text-[9px]">Desktop</Badge>}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">{lab.category}</p>
+                          <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                            <span>{lab.accessModes.includes("desktop") ? "Terminal + Desktop" : lab.shell === "powershell" ? "PowerShell" : "Bash"}</span>
+                            <span className="font-mono">{lab.recommendedInstanceType}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button size="sm" variant="ghost" className="mt-2 h-8 w-full" onClick={() => addMachine(lab.slug)}>
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />Add to topology
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
-          </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur">
-            Topology links are design-only in this release · one live EC2 VM per user
-          </div>
-        </section>
 
-        <aside className="rounded-2xl border bg-card">
-          <div className="border-b p-4">
-            <p className="font-semibold">Inspector</p>
-            <p className="mt-1 text-xs text-muted-foreground">Select a topology node to manage it.</p>
-          </div>
-          {!selectedNode || !selectedLab ? (
-            <div className="flex min-h-[300px] flex-col items-center justify-center p-6 text-center text-muted-foreground">
-              <Info className="h-8 w-8 opacity-40" />
-              <p className="mt-3 text-sm font-medium">Nothing selected</p>
-              <p className="mt-1 text-xs">Choose a node on the canvas.</p>
-            </div>
-          ) : (
-            <div className="space-y-4 p-4">
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold">{selectedNode.data.label}</p>
-                    <p className="text-xs text-muted-foreground">{selectedLab.name}</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">Selected</Badge>
-                      {selectedIsLive && <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>}
-                      {selectedIsLive && <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>}
+              {!machinesOpen && (
+                <button
+                  type="button"
+                  onClick={() => setMachinesOpen(true)}
+                  className="flex h-[590px] w-full flex-col items-center gap-3 pt-5 text-muted-foreground transition-colors hover:text-foreground"
+                  title="Expand machines"
+                >
+                  <Server className="h-4 w-4" />
+                  <span className="rotate-180 text-[10px] font-semibold uppercase tracking-[0.2em] [writing-mode:vertical-rl]">Machines</span>
+                </button>
+              )}
+            </aside>
+
+            <section className="relative min-h-[650px] overflow-hidden rounded-2xl border bg-muted/10 transition-shadow duration-300">
+              <ReactFlow<LabMachineFlowNode, Edge>
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={NODE_TYPES}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onInit={setFlow}
+                onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
+                onPaneClick={() => setSelectedNodeId(null)}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const slug = event.dataTransfer.getData("application/x-oxsig-lab");
+                  if (!slug) return;
+                  const position = flow?.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+                  addMachine(slug, position);
+                }}
+                fitView
+                fitViewOptions={{ padding: 0.2 }}
+                minZoom={0.35}
+                maxZoom={1.7}
+                defaultEdgeOptions={{ type: "smoothstep" }}
+              >
+                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
+                <Controls position="bottom-left" />
+                <MiniMap pannable zoomable position="bottom-right" className="!bg-background/90" />
+                {nodes.length === 0 && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center shadow-sm backdrop-blur">
+                      <Server className="mx-auto h-10 w-10 text-muted-foreground/50" />
+                      <p className="mt-3 font-medium">Build your lab topology</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">Drag machines here, move them freely, connect their handles, and select a node to provision or inspect it.</p>
                     </div>
                   </div>
-                  <Badge variant="outline" className="capitalize">{selectedIsLive ? instance?.status : "planned"}</Badge>
-                </div>
-                <p className="mt-3 text-xs leading-5 text-muted-foreground">{selectedLab.description}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Platform</span>{selectedLab.platform}</div>
-                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Shell</span>{selectedLab.shell}</div>
-                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Instance</span><span className="font-mono">{!instance && selectedAccessMode === "desktop" && selectedLab.desktopInstanceType ? selectedLab.desktopInstanceType : selectedLab.recommendedInstanceType}</span></div>
-                <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Access</span><span className="capitalize">{selectedIsLive ? liveAccessMode : selectedAccessMode}</span></div>
-              </div>
-
-              {!instance && selectedLab.accessModes.length > 1 && (
-                <div className="space-y-2 rounded-xl border p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Access mode</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button type="button" size="sm" variant={selectedAccessMode === "terminal" ? "default" : "outline"} onClick={() => setSelectedAccessMode("terminal")}>
-                      <Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal
-                    </Button>
-                    <Button type="button" size="sm" variant={selectedAccessMode === "desktop" ? "default" : "outline"} onClick={() => setSelectedAccessMode("desktop")}>
-                      <Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop
-                    </Button>
-                  </div>
-                  <p className="text-[10px] leading-4 text-muted-foreground">
-                    {selectedAccessMode === "desktop"
-                      ? "Desktop provisions a GUI-sized VM and keeps terminal access available too."
-                      : "Terminal uses the lighter persistent SSM shell profile."}
-                  </p>
-                </div>
-              )}
-
-              {!selectedLab.available && selectedLab.availabilityNote && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{selectedLab.availabilityNote}</div>
-              )}
-
-              {selectedIsLive && instance?.expiresAt && (
-                <p className={`text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
-                  Expires {new Date(instance.expiresAt).toLocaleString()} ({relativeExpiry(instance.expiresAt)})
-                </p>
-              )}
-              {selectedIsLive && instance?.lastError && <div className="rounded-lg bg-destructive/10 p-3 text-[11px] text-destructive">The last cloud operation failed. Refresh AWS state or open Diagnostics for the exact AWS/SSM state.</div>}
-
-              <div className="space-y-2 rounded-xl border p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Actions for {selectedNode.data.label}</p>
-                {!instance && (
-                  <Button className="w-full" onClick={() => void createLab()} disabled={!capabilities?.configured || !selectedLab.available || busy === "create"}>
-                    {busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : selectedAccessMode === "desktop" ? <Monitor className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                    {selectedLab.available ? `Provision ${selectedAccessMode} in AWS` : "Activation required"}
-                  </Button>
                 )}
-                {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">{liveNodeLabel} is currently the live AWS machine. This selected node remains design-only until that runtime is destroyed.</div>}
-                {selectedIsLive && instance?.status === "stopped" && <Button className="w-full" onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}><Play className="mr-2 h-4 w-4" />Start {selectedNode.data.label}</Button>}
-                {selectedIsLive && instance?.status === "running" && (
-                  <>
-                    {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open interactive terminal — {selectedNode.data.label}</Button>}
-                    {liveAccessMode === "desktop" && (
-                      <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">
-                        <div className="flex items-center gap-2 font-medium text-foreground"><Monitor className="h-3.5 w-3.5" />Desktop profile provisioned</div>
-                        <p className="mt-1">The browser desktop gateway is the next transport milestone; terminal access remains available while that gateway is wired through SSM.</p>
+              </ReactFlow>
+              <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur">
+                Topology links are design-only in this release · one live EC2 VM per user
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="absolute right-3 top-3 z-10 h-8 bg-background/90 shadow-sm backdrop-blur"
+                onClick={() => setWorkspaceOpen(false)}
+                title="Collapse the lab topology"
+              >
+                <ChevronUp className="mr-1.5 h-3.5 w-3.5" />Collapse lab
+              </Button>
+            </section>
+
+            <aside className="overflow-hidden rounded-2xl border bg-card transition-shadow duration-300">
+              <div className={`flex items-center border-b ${inspectorOpen ? "justify-between p-4" : "justify-center p-2"}`}>
+                {inspectorOpen && (
+                  <div className="min-w-0">
+                    <p className="font-semibold">Inspector</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Select a topology node to manage it.</p>
+                  </div>
+                )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setInspectorOpen((open) => !open)}
+                  aria-label={inspectorOpen ? "Collapse inspector" : "Expand inspector"}
+                  title={inspectorOpen ? "Collapse inspector" : "Expand inspector"}
+                >
+                  {inspectorOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                </Button>
+              </div>
+
+              <div className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out ${inspectorOpen ? "max-h-[1500px] opacity-100" : "pointer-events-none max-h-0 opacity-0"}`}>
+                {!selectedNode || !selectedLab ? (
+                  <div className="flex min-h-[300px] flex-col items-center justify-center p-6 text-center text-muted-foreground">
+                    <Info className="h-8 w-8 opacity-40" />
+                    <p className="mt-3 text-sm font-medium">Nothing selected</p>
+                    <p className="mt-1 text-xs">Choose a node on the canvas.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 p-4">
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold">{selectedNode.data.label}</p>
+                          <p className="text-xs text-muted-foreground">{selectedLab.name}</p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <Badge variant="secondary" className="text-[9px] uppercase tracking-wide">Selected</Badge>
+                            {selectedIsLive && <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>}
+                            {selectedIsLive && <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="capitalize">{selectedIsLive ? instance?.status : "planned"}</Badge>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-muted-foreground">{selectedLab.description}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Platform</span>{selectedLab.platform}</div>
+                      <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Shell</span>{selectedLab.shell}</div>
+                      <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Instance</span><span className="font-mono">{!instance && selectedAccessMode === "desktop" && selectedLab.desktopInstanceType ? selectedLab.desktopInstanceType : selectedLab.recommendedInstanceType}</span></div>
+                      <div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Access</span><span className="capitalize">{selectedIsLive ? liveAccessMode : selectedAccessMode}</span></div>
+                    </div>
+
+                    {!instance && selectedLab.accessModes.length > 1 && (
+                      <div className="space-y-2 rounded-xl border p-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Access mode</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button type="button" size="sm" variant={selectedAccessMode === "terminal" ? "default" : "outline"} onClick={() => setSelectedAccessMode("terminal")}>
+                            <Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal
+                          </Button>
+                          <Button type="button" size="sm" variant={selectedAccessMode === "desktop" ? "default" : "outline"} onClick={() => setSelectedAccessMode("desktop")}>
+                            <Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop
+                          </Button>
+                        </div>
+                        <p className="text-[10px] leading-4 text-muted-foreground">
+                          {selectedAccessMode === "desktop"
+                            ? "Desktop provisions a GUI-sized VM and keeps terminal access available too."
+                            : "Terminal uses the lighter persistent SSM shell profile."}
+                        </p>
                       </div>
                     )}
-                    <Button className="w-full" variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button>
-                  </>
+
+                    {!selectedLab.available && selectedLab.availabilityNote && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{selectedLab.availabilityNote}</div>
+                    )}
+
+                    {selectedIsLive && instance?.expiresAt && (
+                      <p className={`text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                        Expires {new Date(instance.expiresAt).toLocaleString()} ({relativeExpiry(instance.expiresAt)})
+                      </p>
+                    )}
+                    {selectedIsLive && instance?.lastError && <div className="rounded-lg bg-destructive/10 p-3 text-[11px] text-destructive">The last cloud operation failed. Refresh AWS state or open Diagnostics for the exact AWS/SSM state.</div>}
+
+                    <div className="space-y-2 rounded-xl border p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Actions for {selectedNode.data.label}</p>
+                      {!instance && (
+                        <Button className="w-full" onClick={() => void createLab()} disabled={!capabilities?.configured || !selectedLab.available || busy === "create"}>
+                          {busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : selectedAccessMode === "desktop" ? <Monitor className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                          {selectedLab.available ? `Provision ${selectedAccessMode} in AWS` : "Activation required"}
+                        </Button>
+                      )}
+                      {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">{liveNodeLabel} is currently the live AWS machine. This selected node remains design-only until that runtime is destroyed.</div>}
+                      {selectedIsLive && instance?.status === "stopped" && <Button className="w-full" onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}><Play className="mr-2 h-4 w-4" />Start {selectedNode.data.label}</Button>}
+                      {selectedIsLive && instance?.status === "running" && (
+                        <>
+                          {capabilities?.supportsTerminal && <Button className="w-full" variant="outline" onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open interactive terminal — {selectedNode.data.label}</Button>}
+                          {liveAccessMode === "desktop" && (
+                            <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">
+                              <div className="flex items-center gap-2 font-medium text-foreground"><Monitor className="h-3.5 w-3.5" />Desktop profile provisioned</div>
+                              <p className="mt-1">The browser desktop gateway is the next transport milestone; terminal access remains available while that gateway is wired through SSM.</p>
+                            </div>
+                          )}
+                          <Button className="w-full" variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button>
+                        </>
+                      )}
+                      {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className="w-full" variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}><Trash2 className="mr-2 h-4 w-4" />Destroy {selectedNode.data.label}</Button>}
+                      {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && (
+                        <Button className="w-full" variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile"}>
+                          <RefreshCw className={`mr-2 h-4 w-4 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state
+                        </Button>
+                      )}
+                      <Button className="w-full" variant="ghost" onClick={removeSelectedNode} disabled={selectedIsLive}><X className="mr-2 h-4 w-4" />Remove {selectedNode.data.label} from canvas</Button>
+                      {selectedIsLive && <p className="text-[10px] leading-4 text-muted-foreground">A live AWS node stays on the canvas until AWS reconciliation confirms that its runtime is gone.</p>}
+                    </div>
+
+                    {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />AWS is updating {selectedNode.data.label}. Use Refresh AWS state if this does not clear.</div>}
+                  </div>
                 )}
-                {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className="w-full" variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}><Trash2 className="mr-2 h-4 w-4" />Destroy {selectedNode.data.label}</Button>}
-                {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && (
-                  <Button className="w-full" variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile"}>
-                    <RefreshCw className={`mr-2 h-4 w-4 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state
-                  </Button>
-                )}
-                <Button className="w-full" variant="ghost" onClick={removeSelectedNode} disabled={selectedIsLive}><X className="mr-2 h-4 w-4" />Remove {selectedNode.data.label} from canvas</Button>
-                {selectedIsLive && <p className="text-[10px] leading-4 text-muted-foreground">A live AWS node stays on the canvas until AWS reconciliation confirms that its runtime is gone.</p>}
               </div>
 
-              {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />AWS is updating {selectedNode.data.label}. Use Refresh AWS state if this does not clear.</div>}
-            </div>
-          )}
-        </aside>
+              {!inspectorOpen && (
+                <button
+                  type="button"
+                  onClick={() => setInspectorOpen(true)}
+                  className="flex h-[590px] w-full flex-col items-center gap-3 pt-5 text-muted-foreground transition-colors hover:text-foreground"
+                  title="Expand inspector"
+                >
+                  <Info className="h-4 w-4" />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] [writing-mode:vertical-rl]">Inspector</span>
+                </button>
+              )}
+            </aside>
+          </div>
+        </div>
       </div>
 
+      {!workspaceVisible && !dockFocus && (
+        <button
+          type="button"
+          onClick={() => setWorkspaceOpen(true)}
+          className="flex w-full items-center justify-between rounded-2xl border bg-card px-4 py-3 text-left shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow"
+        >
+          <div>
+            <p className="text-sm font-semibold">Lab topology collapsed</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Expand when you need Machines, connections, or Inspector.</p>
+          </div>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </button>
+      )}
+
       {dockOpen && instance && (
-        <section className="overflow-hidden rounded-2xl border bg-card shadow-lg">
+        <section className={`overflow-hidden rounded-2xl border bg-card shadow-lg transition-all duration-300 ease-in-out ${dockFocus ? "fixed inset-3 z-[80] overflow-y-auto shadow-2xl md:inset-5" : ""}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
             <div className="flex flex-wrap gap-1">
               {([
@@ -681,12 +854,12 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 ["network", "Network", Network],
                 ["diagnostics", "Diagnostics", RefreshCw],
               ] as const).map(([tab, label, Icon]) => (
-                <Button key={tab} size="sm" variant={dockTab === tab ? "secondary" : "ghost"} className="h-8" onClick={() => setDockTab(tab)}>
+                <Button key={tab} size="sm" variant={dockTab === tab ? "secondary" : "ghost"} className="h-8" onClick={() => { setDockTab(tab); setDockCollapsed(false); }}>
                   <Icon className="mr-1.5 h-3.5 w-3.5" />{label}
                 </Button>
               ))}
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="font-medium text-foreground">Lab dock — {liveNodeLabel}</span>
               <Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge>
               <Badge variant="outline" className="h-5 capitalize">{liveAccessMode}</Badge>
@@ -695,100 +868,126 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                   {relativeExpiry(instance.expiresAt)}
                 </Badge>
               )}
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setTerminalId(null); setDockOpen(false); }}><X className="h-4 w-4" /></Button>
+              {terminalId && (
+                <Button
+                  size="icon"
+                  variant={dockFocus ? "secondary" : "ghost"}
+                  className="h-7 w-7"
+                  onClick={() => { setDockCollapsed(false); setDockFocus((focus) => !focus); }}
+                  aria-label={dockFocus ? "Exit terminal focus mode" : "Focus terminal"}
+                  title={dockFocus ? "Exit terminal focus mode" : "Focus terminal"}
+                >
+                  {dockFocus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => { if (dockFocus) setDockFocus(false); setDockCollapsed((collapsed) => !collapsed); }}
+                aria-label={dockCollapsed ? "Expand lab dock" : "Collapse lab dock"}
+                title={dockCollapsed ? "Expand lab dock" : "Collapse lab dock"}
+              >
+                {dockCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setTerminalId(null); setDockOpen(false); setDockCollapsed(false); setDockFocus(false); }} aria-label="Close lab dock"><X className="h-4 w-4" /></Button>
             </div>
           </div>
 
-          {terminalId && terminalDiagnostics?.ready && (
-            <div className={dockTab === "terminal" ? "p-3" : "hidden"}>
-              <InteractiveSsmTerminal labInstanceId={terminalId} machineLabel={liveNodeLabel} />
-            </div>
-          )}
-
-          {dockTab === "terminal" && (!terminalId || !terminalDiagnostics?.ready) && (
-            <div className="grid gap-3 p-3 lg:grid-cols-[1fr_260px]">
-              <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center">
-                <Terminal className="h-9 w-9 text-muted-foreground/50" />
-                <p className="mt-3 text-sm font-medium">{terminalId ? `Waiting for ${liveNodeLabel} terminal readiness` : `Interactive terminal is not open`}</p>
-                <p className="mt-1 max-w-md text-xs text-muted-foreground">
-                  {terminalId ? "EC2 must be running and Systems Manager must report Online before the persistent shell can start." : `Select ${liveNodeLabel} and use Open interactive terminal to create a persistent Session Manager shell.`}
-                </p>
-                {instance.expiresAt && (
-                  <p className={`mt-2 text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
-                    Lab lease: {relativeExpiry(instance.expiresAt)}
-                  </p>
-                )}
-                {terminalId && <Button className="mt-4" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh terminal readiness</Button>}
-              </div>
-              <div className="space-y-2 text-xs">
-                <p className="font-medium">Live path</p>
-                <div className="space-y-1 rounded-xl border p-3 text-[11px] text-muted-foreground">
-                  <div>Machine <span className="float-right font-medium text-foreground">{liveNodeLabel}</span></div>
-                  <div>Access <span className="float-right capitalize">{liveAccessMode}</span></div>
-                  <div>Oxsig <span className="float-right font-mono">{short(instance.id)}</span></div>
-                  <div>EC2 <span className="float-right font-mono">{short(terminalDiagnostics?.instanceId, 18)}</span></div>
-                  <div>State <span className="float-right">{terminalDiagnostics?.ec2State || instance.status}</span></div>
-                  <div>SSM <span className="float-right">{terminalDiagnostics?.ssmPingStatus || "checking"}</span></div>
-                  <div>Region <span className="float-right">{terminalDiagnostics?.region || capabilities?.region || "—"}</span></div>
+          <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${dockCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"}`}>
+            <div className="min-h-0 overflow-hidden">
+              {terminalId && terminalDiagnostics?.ready && (
+                <div className={dockTab === "terminal" ? "p-3" : "hidden"}>
+                  <InteractiveSsmTerminal labInstanceId={terminalId} machineLabel={liveNodeLabel} focusMode={dockFocus} />
                 </div>
-                {terminalFailure && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive"><div className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</div><div className="mt-1">{terminalFailure.error}</div></div>}
-              </div>
-            </div>
-          )}
+              )}
 
-          {dockTab === "events" && (
-            <div className="grid gap-3 p-4 sm:grid-cols-3">
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Current lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Access mode</p><p className="mt-1 text-sm capitalize">{liveAccessMode}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Terminal mode</p><p className="mt-1 text-sm">Persistent SSM shell</p></div>
-              <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div>
-              <p className="sm:col-span-3 text-xs text-muted-foreground">A full server-side lab event stream is a later step. This panel intentionally shows only state the current UI can verify.</p>
-            </div>
-          )}
-
-          {dockTab === "network" && (
-            <div className="p-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Designed nodes</p><p className="mt-1 text-xl font-semibold">{nodes.length}</p></div>
-                <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Designed links</p><p className="mt-1 text-xl font-semibold">{edges.length}</p></div>
-                <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Live AWS nodes</p><p className="mt-1 text-xl font-semibold">{instance ? 1 : 0}</p></div>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">Canvas links are topology-design edges only. They do not create VPC routes, security-group rules, ENIs, or private subnets yet.</p>
-            </div>
-          )}
-
-          {dockTab === "diagnostics" && (
-            <div className="p-4 text-xs">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <span className="font-semibold">Diagnostics — {liveNodeLabel}</span>
-                <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>
-                <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>
-              </div>
-              <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                <span className="rounded bg-muted px-2 py-1">Oxsig {short(instance.id)}</span><span>›</span>
-                <span className="rounded bg-muted px-2 py-1">EC2 {short(terminalDiagnostics?.instanceId, 18)}</span><span>›</span>
-                <span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.ec2State || instance.status}</span><span>›</span>
-                <span className="rounded bg-muted px-2 py-1">SSM {terminalDiagnostics?.ssmPingStatus || (terminalDiagnostics?.ssmRegistered ? "registered" : "checking")}</span><span>›</span>
-                <span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.region || capabilities?.region || "region"}</span>
-              </div>
-              {terminalDiagnostics ? (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border p-3"><span className="text-muted-foreground">SSM registered</span><strong className="mt-1 block">{terminalDiagnostics.ssmRegistered ? "Yes" : "No"}</strong></div>
-                  <div className="rounded-xl border p-3"><span className="text-muted-foreground">Agent</span><strong className="mt-1 block">{terminalDiagnostics.ssmAgentVersion || "—"}</strong></div>
-                  <div className="rounded-xl border p-3"><span className="text-muted-foreground">Platform</span><strong className="mt-1 block">{terminalDiagnostics.platformType || "—"}</strong></div>
-                  <div className="rounded-xl border p-3"><span className="text-muted-foreground">OS</span><strong className="mt-1 block">{[terminalDiagnostics.platformName, terminalDiagnostics.platformVersion].filter(Boolean).join(" ") || "—"}</strong></div>
+              {dockTab === "terminal" && (!terminalId || !terminalDiagnostics?.ready) && (
+                <div className="grid gap-3 p-3 lg:grid-cols-[1fr_260px]">
+                  <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center">
+                    <Terminal className="h-9 w-9 text-muted-foreground/50" />
+                    <p className="mt-3 text-sm font-medium">{terminalId ? `Waiting for ${liveNodeLabel} terminal readiness` : `Interactive terminal is not open`}</p>
+                    <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                      {terminalId ? "EC2 must be running and Systems Manager must report Online before the persistent shell can start." : `Select ${liveNodeLabel} and use Open interactive terminal to create a persistent Session Manager shell.`}
+                    </p>
+                    {instance.expiresAt && (
+                      <p className={`mt-2 text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                        Lab lease: {relativeExpiry(instance.expiresAt)}
+                      </p>
+                    )}
+                    {terminalId && <Button className="mt-4" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh terminal readiness</Button>}
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <p className="font-medium">Live path</p>
+                    <div className="space-y-1 rounded-xl border p-3 text-[11px] text-muted-foreground">
+                      <div>Machine <span className="float-right font-medium text-foreground">{liveNodeLabel}</span></div>
+                      <div>Access <span className="float-right capitalize">{liveAccessMode}</span></div>
+                      <div>Oxsig <span className="float-right font-mono">{short(instance.id)}</span></div>
+                      <div>EC2 <span className="float-right font-mono">{short(terminalDiagnostics?.instanceId, 18)}</span></div>
+                      <div>State <span className="float-right">{terminalDiagnostics?.ec2State || instance.status}</span></div>
+                      <div>SSM <span className="float-right">{terminalDiagnostics?.ssmPingStatus || "checking"}</span></div>
+                      <div>Region <span className="float-right">{terminalDiagnostics?.region || capabilities?.region || "—"}</span></div>
+                    </div>
+                    {terminalFailure && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive"><div className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</div><div className="mt-1">{terminalFailure.error}</div></div>}
+                  </div>
                 </div>
-              ) : <p className="mt-3 text-muted-foreground">Open Terminal or refresh the path to collect EC2/SSM diagnostics.</p>}
-              {terminalFailure && <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-destructive"><span className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</span><p className="mt-1">{terminalFailure.error}</p></div>}
-              <Button className="mt-3" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh diagnostics</Button>
+              )}
+
+              {dockTab === "events" && (
+                <div className="grid gap-3 p-4 sm:grid-cols-3">
+                  <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div>
+                  <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Current lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div>
+                  <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Access mode</p><p className="mt-1 text-sm capitalize">{liveAccessMode}</p></div>
+                  <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Terminal mode</p><p className="mt-1 text-sm">Persistent SSM shell</p></div>
+                  <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div>
+                  <p className="sm:col-span-3 text-xs text-muted-foreground">A full server-side lab event stream is a later step. This panel intentionally shows only state the current UI can verify.</p>
+                </div>
+              )}
+
+              {dockTab === "network" && (
+                <div className="p-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Designed nodes</p><p className="mt-1 text-xl font-semibold">{nodes.length}</p></div>
+                    <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Designed links</p><p className="mt-1 text-xl font-semibold">{edges.length}</p></div>
+                    <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Live AWS nodes</p><p className="mt-1 text-xl font-semibold">{instance ? 1 : 0}</p></div>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">Canvas links are topology-design edges only. They do not create VPC routes, security-group rules, ENIs, or private subnets yet.</p>
+                </div>
+              )}
+
+              {dockTab === "diagnostics" && (
+                <div className="p-4 text-xs">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">Diagnostics — {liveNodeLabel}</span>
+                    <Badge className="text-[9px]"><Cloud className="mr-1 h-3 w-3" />Live in AWS</Badge>
+                    <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                    <span className="rounded bg-muted px-2 py-1">Oxsig {short(instance.id)}</span><span>›</span>
+                    <span className="rounded bg-muted px-2 py-1">EC2 {short(terminalDiagnostics?.instanceId, 18)}</span><span>›</span>
+                    <span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.ec2State || instance.status}</span><span>›</span>
+                    <span className="rounded bg-muted px-2 py-1">SSM {terminalDiagnostics?.ssmPingStatus || (terminalDiagnostics?.ssmRegistered ? "registered" : "checking")}</span><span>›</span>
+                    <span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.region || capabilities?.region || "region"}</span>
+                  </div>
+                  {terminalDiagnostics ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded-xl border p-3"><span className="text-muted-foreground">SSM registered</span><strong className="mt-1 block">{terminalDiagnostics.ssmRegistered ? "Yes" : "No"}</strong></div>
+                      <div className="rounded-xl border p-3"><span className="text-muted-foreground">Agent</span><strong className="mt-1 block">{terminalDiagnostics.ssmAgentVersion || "—"}</strong></div>
+                      <div className="rounded-xl border p-3"><span className="text-muted-foreground">Platform</span><strong className="mt-1 block">{terminalDiagnostics.platformType || "—"}</strong></div>
+                      <div className="rounded-xl border p-3"><span className="text-muted-foreground">OS</span><strong className="mt-1 block">{[terminalDiagnostics.platformName, terminalDiagnostics.platformVersion].filter(Boolean).join(" ") || "—"}</strong></div>
+                    </div>
+                  ) : <p className="mt-3 text-muted-foreground">Open Terminal or refresh the path to collect EC2/SSM diagnostics.</p>}
+                  {terminalFailure && <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-destructive"><span className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</span><p className="mt-1">{terminalFailure.error}</p></div>}
+                  <Button className="mt-3" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh diagnostics</Button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </section>
       )}
 
       {!dockOpen && instance && (
-        <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setDockOpen(true); setDockTab(terminalId ? "terminal" : "diagnostics"); if (!terminalId) void refreshTerminal(instance.id); }}>
+        <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setDockOpen(true); setDockCollapsed(false); setDockTab(terminalId ? "terminal" : "diagnostics"); if (!terminalId) void refreshTerminal(instance.id); }}>
           <PanelBottom className="mr-2 h-4 w-4" />Open {liveNodeLabel} lab dock
         </Button>
       )}
