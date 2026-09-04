@@ -9,7 +9,8 @@ function pageMeta(pathname: string) {
   if (pathname === '/home') return { title: 'Home', description: 'Your Oxsig workspace' };
   if (pathname === '/collab') return { title: 'Collaboration', description: 'Conversation, resources and practice' };
   if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Visual explanation and recording' };
-  if (pathname.startsWith('/storage')) return { title: 'Storage', description: 'Your secure learning resources' };
+  if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Capture, connect and reuse technical knowledge' };
+  if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your technical knowledge workspace' };
   if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Design, launch and operate cloud labs' };
   if (pathname.startsWith('/account')) return { title: 'Account', description: 'Profile and workspace settings' };
   return { title: 'Oxsig', description: 'Learn, collaborate and practice' };
