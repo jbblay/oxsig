@@ -31,9 +31,8 @@ if [[ ! -f package.json ]]; then
 fi
 
 # pnpm currently generates an untracked lockfile in this repository. Remove only
-# that known disposable file before checking whether the worktree is safe to switch.
+# that known generated file so it does not block switching to the canonical branch.
 if [[ -f pnpm-lock.yaml ]] && ! git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
-  info "Removing generated untracked pnpm-lock.yaml"
   rm -f pnpm-lock.yaml
 fi
 
@@ -42,32 +41,30 @@ if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
   fail "The repository has uncommitted or untracked work. Commit, stash, or remove it before running the startup script."
 fi
 
-info "Fetching latest Oxsig code"
+info "Switching to the latest Oxsig code"
 git fetch origin --prune
 
-info "Switching to canonical branch: $BRANCH"
 if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
   git switch "$BRANCH"
 else
   git switch --track -c "$BRANCH" "origin/$BRANCH"
 fi
 
+git pull --ff-only origin "$BRANCH"
+
 CURRENT_BRANCH="$(git branch --show-current)"
 [[ "$CURRENT_BRANCH" == "$BRANCH" ]] || fail "Expected branch '$BRANCH' but Git reports '$CURRENT_BRANCH'."
 
-git pull --ff-only origin "$BRANCH"
+# Clear only the disposable Next.js build cache. Keep node_modules so pnpm can
+# reuse the dependencies already present and download only packages that changed.
+info "Clearing Next.js build cache"
+rm -rf .next
 
-info "Cleaning disposable local build/install state"
-rm -rf .next node_modules out build
-rm -f ./*.tsbuildinfo
-
-# Preserve all .env* files. They contain local configuration and secrets and are
-# intentionally excluded from the cleanup above.
 if [[ ! -f .env.local ]]; then
   fail ".env.local is missing. Oxsig local development requires your existing local environment configuration."
 fi
 
-info "Installing dependencies"
+info "Checking dependencies"
 if git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
   pnpm install --frozen-lockfile
 else
@@ -77,9 +74,9 @@ fi
 info "Checking AWS SSO profile: $PROFILE"
 ACCOUNT=""
 if ACCOUNT="$(aws sts get-caller-identity --profile "$PROFILE" --query Account --output text 2>/dev/null)"; then
-  :
+  info "AWS session is already authenticated"
 else
-  info "AWS SSO session is missing or expired; starting login"
+  info "AWS session is expired; opening SSO login"
   aws sso login --profile "$PROFILE"
   ACCOUNT="$(aws sts get-caller-identity --profile "$PROFILE" --query Account --output text)"
 fi
@@ -90,8 +87,8 @@ fi
 
 export AWS_PROFILE="$PROFILE"
 
-info "AWS authenticated: account $ACCOUNT via profile $PROFILE"
-info "Starting Oxsig development server on branch $BRANCH"
+info "AWS authentication successful: account $ACCOUNT"
+info "Starting Oxsig"
 printf '[oxsig] Press Ctrl+C to stop the server.\n\n'
 
 exec pnpm dev
