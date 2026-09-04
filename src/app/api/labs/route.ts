@@ -8,7 +8,10 @@ import { createLabVm, describeLabVmStates, destroyLabVm, labCapabilities } from 
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
-const createSchema = z.object({ slug: z.string().max(120) }).strict();
+const createSchema = z.object({
+  slug: z.string().max(120),
+  accessMode: z.enum(['terminal', 'desktop']).optional(),
+}).strict();
 
 const configuredTtl = Number.parseInt(process.env.LAB_AWS_TTL_MINUTES || '60', 10);
 const LAB_TTL_MINUTES = Number.isFinite(configuredTtl) ? Math.min(120, Math.max(15, configuredTtl)) : 60;
@@ -143,6 +146,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const accessMode = parsed.data.accessMode || lab.defaultAccessMode;
+    if (!lab.accessModes.includes(accessMode)) {
+      return NextResponse.json(
+        { error: `${lab.shortName} does not support ${accessMode} access` },
+        { status: 400 }
+      );
+    }
+    if (accessMode === 'desktop' && !lab.desktopInstanceType) {
+      return NextResponse.json(
+        {
+          error: `${lab.shortName} desktop access is not configured on this deployment`,
+          code: 'DESKTOP_PROFILE_UNAVAILABLE',
+        },
+        { status: 409 }
+      );
+    }
+
+    const provisionLab = accessMode === 'desktop'
+      ? { ...lab, recommendedInstanceType: lab.desktopInstanceType! }
+      : lab;
+
     const capabilities = await labCapabilities();
     if (!capabilities.configured) {
       return NextResponse.json({ error: capabilities.reason || 'AWS lab runtime is unavailable' }, { status: 503 });
@@ -186,7 +210,10 @@ export async function POST(request: NextRequest) {
           osFamily: lab.osFamily,
           platform: lab.platform,
           shell: lab.shell,
+          accessModes: lab.accessModes,
+          defaultAccessMode: lab.defaultAccessMode,
           recommendedInstanceType: lab.recommendedInstanceType,
+          desktopInstanceType: lab.desktopInstanceType,
         }),
       ]
     );
@@ -214,7 +241,7 @@ export async function POST(request: NextRequest) {
     let externalId: string | undefined;
 
     try {
-      const provisioned = await createLabVm(instanceId, user.id, expiresAt, lab);
+      const provisioned = await createLabVm(instanceId, user.id, expiresAt, provisionLab);
       externalId = provisioned.externalId;
 
       const result = await pool.query(
@@ -234,6 +261,7 @@ export async function POST(request: NextRequest) {
             osFamily: provisioned.osFamily,
             platform: provisioned.platform,
             shell: lab.shell,
+            accessMode,
           }),
           instanceId,
         ]
@@ -249,6 +277,7 @@ export async function POST(request: NextRequest) {
             externalId: provisioned.externalId,
             osFamily: provisioned.osFamily,
             imageId: provisioned.imageId,
+            accessMode,
           }),
         ]
       );
@@ -259,7 +288,7 @@ export async function POST(request: NextRequest) {
         resourceType: 'lab',
         resourceId: instanceId,
         ...getRequestMetadata(req),
-        metadata: { definition: lab.slug, provider: 'aws-ec2', osFamily: lab.osFamily },
+        metadata: { definition: lab.slug, provider: 'aws-ec2', osFamily: lab.osFamily, accessMode },
       });
 
       return NextResponse.json(

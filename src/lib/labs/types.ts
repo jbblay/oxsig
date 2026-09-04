@@ -4,6 +4,7 @@ export type LabRuntimeKind = 'container' | 'vm';
 export type LabOsFamily = 'ubuntu' | 'amazon-linux' | 'rocky' | 'kali' | 'windows';
 export type LabPlatform = 'linux' | 'windows';
 export type LabShell = 'bash' | 'powershell';
+export type LabAccessMode = 'terminal' | 'desktop';
 
 export type LabInstanceStatus =
   | 'created'
@@ -27,7 +28,10 @@ export type LabDefinition = {
   osFamily: LabOsFamily;
   platform: LabPlatform;
   shell: LabShell;
+  accessModes: LabAccessMode[];
+  defaultAccessMode: LabAccessMode;
   recommendedInstanceType: string;
+  desktopInstanceType?: string;
   defaultCommand: string;
   estimatedMemoryMb: number;
   estimatedCpu: number;
