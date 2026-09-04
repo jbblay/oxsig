@@ -5,6 +5,7 @@ import {
   buildSsmAcknowledge,
   decodeSsmAgentMessage,
   encodeSsmAgentMessage,
+  shouldInferStandardStreamReady,
   validateSsmAgentMessage,
 } from "./ssm-browser-channel";
 
@@ -74,5 +75,12 @@ describe("SSM browser channel protocol", () => {
     expect(response.ProcessedClientActions[0]).toMatchObject({ ActionType: "SessionType", ActionStatus: 1 });
     expect(response.ProcessedClientActions[1]).toMatchObject({ ActionType: "KMSEncryption", ActionStatus: 2 });
     expect(response.Errors).toHaveLength(1);
+  });
+
+  it("treats standard-stream shell output as readiness when AWS skips the handshake", () => {
+    expect(shouldInferStandardStreamReady(SSM_PAYLOAD.OUTPUT, false)).toBe(true);
+    expect(shouldInferStandardStreamReady(SSM_PAYLOAD.STDERR, false)).toBe(true);
+    expect(shouldInferStandardStreamReady(SSM_PAYLOAD.OUTPUT, true)).toBe(false);
+    expect(shouldInferStandardStreamReady(SSM_PAYLOAD.HANDSHAKE_COMPLETE, false)).toBe(false);
   });
 });
