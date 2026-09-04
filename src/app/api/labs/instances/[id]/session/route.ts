@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SSMClient } from '@aws-sdk/client-ssm';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { startInteractiveLabSession, terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
-import { presignSsmBrowserStreamUrl } from '@/lib/labs/ssm-websocket-presign';
+import { createTerminalBridgeTicket } from '@/lib/labs/terminal-bridge-ticket.js';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
@@ -130,13 +129,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     try {
       const session = await startInteractiveLabSession(ready.externalId!);
-      const signingClient = new SSMClient({ region: session.region });
-      const browserStreamUrl = await presignSsmBrowserStreamUrl(
-        session.streamUrl,
-        session.region,
-        signingClient.config.credentials,
-        60
-      );
+      const bridgeTicket = createTerminalBridgeTicket({
+        streamUrl: session.streamUrl,
+        region: session.region,
+        sessionId: session.sessionId,
+        target: ready.externalId!,
+      });
 
       await logAudit({
         userId: user.id,
@@ -149,15 +147,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
           sessionId: session.sessionId,
           target: ready.externalId,
           region: session.region,
-          websocketAuth: 'sigv4-query',
+          websocketAuth: 'server-bridge-sigv4-header',
         },
       });
 
-      // TokenValue and the SigV4 query URL are short-lived capabilities. They are
-      // returned once with no-store headers and are never persisted or logged.
+      // The browser receives the SSM channel token plus a short-lived, single-use
+      // Oxsig bridge ticket. AWS credentials and the AWS WebSocket URL stay on the
+      // server side of the bridge and are never exposed as browser connection data.
       return json({
         sessionId: session.sessionId,
-        streamUrl: browserStreamUrl,
+        bridgePath: `/__oxsig/terminal-bridge?ticket=${encodeURIComponent(bridgeTicket)}`,
         tokenValue: session.tokenValue,
         region: session.region,
         target: ready.externalId,
