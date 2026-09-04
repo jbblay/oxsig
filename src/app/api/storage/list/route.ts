@@ -48,7 +48,10 @@ export async function GET(request: NextRequest) {
           mimeType: 'application/octet-stream',
           url: object.Key ? storageDownloadPath(object.Key) : '',
           metadata: {},
-          encrypted: false,
+          // The Oxsig bucket enforces server-side encryption at rest. This is
+          // presentation metadata only; access control remains enforced by S3
+          // and by the authenticated user prefix above.
+          encrypted: true,
           checksum: object.ETag || '',
           uploadedBy: user.id,
           createdAt: object.LastModified?.toISOString() || '',
