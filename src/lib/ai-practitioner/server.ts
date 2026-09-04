@@ -49,9 +49,12 @@ const destructivePatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /(^|\s)(?:shutdown|reboot|poweroff|halt)\b/i, reason: 'AI Practitioner cannot change the VM lifecycle' },
   { pattern: /:\(\)\s*\{[^}]*:\|:&[^}]*\}\s*;\s*:/, reason: 'resource-exhaustion commands are blocked' },
   { pattern: /(^|\s)(?:nc|ncat|netcat|socat)\b[^\n]*(?:\s-e\s|EXEC:)/i, reason: 'interactive remote-shell payloads are blocked' },
+  { pattern: /\/dev\/(?:tcp|udp)\//i, reason: 'shell network redirection payloads are blocked' },
+  { pattern: /\b(?:bash|sh|zsh|ksh)\s+-i\b[^\n]*(?:\||>|<)[^\n]*\b(?:nc|ncat|netcat|socat)\b/i, reason: 'interactive remote-shell pipelines are blocked' },
+  { pattern: /\b(?:python(?:3)?|perl|ruby|php)\b[^\n]*(?:socket\.socket|TCPSocket|fsockopen)[^\n]*(?:dup2|subprocess|system|exec|spawn|shell_exec)/i, reason: 'scripted remote-shell payloads are blocked' },
 ];
 
-const mutatingPattern = /(^|\s)(?:apt(?:-get)?|dnf|yum|rpm|dpkg|pip|pip3|npm|pnpm|systemctl|service|useradd|userdel|usermod|groupadd|groupdel|chmod|chown|setfacl|firewall-cmd|ufw|iptables|nft|mount|umount|mkdir|touch|cp|mv|tee|sed\s+-i|echo\b[^\n]*>|printf\b[^\n]*>)\b/i;
+const mutatingPattern = /(?:^|\s)(?:apt(?:-get)?|dnf|yum|rpm|dpkg|pip|pip3|npm|pnpm|systemctl|service|useradd|userdel|usermod|groupadd|groupdel|chmod|chown|setfacl|firewall-cmd|ufw|iptables|nft|mount|umount|mkdir|touch|cp|mv|tee|sed\s+-i)\b|(?:^|\s)(?:echo|printf)\b[^\n]*>/i;
 
 export function classifyPractitionerCommand(command: string): AiPractitionerRisk {
   return mutatingPattern.test(command) ? 'changes-system' : 'read-only';
