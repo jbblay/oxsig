@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-BRANCH="${OXSIG_DEV_BRANCH:-refactor/clean-foundation}"
+BRANCH="${OXSIG_DEV_BRANCH:-main}"
 PROFILE="${OXSIG_AWS_PROFILE:-oxsig-dev}"
 EXPECTED_ACCOUNT="094525993701"
 
