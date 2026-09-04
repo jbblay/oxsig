@@ -43,7 +43,7 @@ export function aiPractitionerModel() {
 }
 
 const destructivePatterns: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /(^|\s)rm\s+[^\n]*(?:-rf|-fr)[^\n]*(?:\/\s|\/\*|--no-preserve-root)/i, reason: 'destructive filesystem removal is blocked' },
+  { pattern: /(^|\s)rm\s+[^\n]*(?:-rf|-fr)[^\n]*(?:\/(?:\s|$)|\/\*|--no-preserve-root)/i, reason: 'destructive filesystem removal is blocked' },
   { pattern: /(^|\s)(?:mkfs(?:\.[a-z0-9]+)?|wipefs)\b/i, reason: 'filesystem destruction is blocked' },
   { pattern: /\bdd\b[^\n]*\bof=\/dev\//i, reason: 'raw block-device writes are blocked' },
   { pattern: /(^|\s)(?:shutdown|reboot|poweroff|halt)\b/i, reason: 'AI Practitioner cannot change the VM lifecycle' },
