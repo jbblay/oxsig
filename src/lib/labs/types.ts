@@ -28,9 +28,10 @@ export type LabDefinition = {
   osFamily: LabOsFamily;
   platform: LabPlatform;
   shell: LabShell;
-  accessMode?: LabAccessMode;
-  desktopCapable?: boolean;
+  accessModes: LabAccessMode[];
+  defaultAccessMode: LabAccessMode;
   recommendedInstanceType: string;
+  desktopInstanceType?: string;
   defaultCommand: string;
   estimatedMemoryMb: number;
   estimatedCpu: number;
