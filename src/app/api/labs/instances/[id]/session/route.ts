@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SSMClient } from '@aws-sdk/client-ssm';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { startInteractiveLabSession, terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
-import { presignSsmBrowserStreamUrl } from '@/lib/labs/ssm-websocket-presign';
+import { issueSsmBridgeTicket } from '@/lib/labs/ssm-bridge-ticket';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
@@ -130,13 +129,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     try {
       const session = await startInteractiveLabSession(ready.externalId!);
-      const signingClient = new SSMClient({ region: session.region });
-      const browserStreamUrl = await presignSsmBrowserStreamUrl(
-        session.streamUrl,
-        session.region,
-        signingClient.config.credentials,
-        60
-      );
+      const bridgeUrl = issueSsmBridgeTicket({
+        streamUrl: session.streamUrl,
+        tokenValue: session.tokenValue,
+        region: session.region,
+        sessionId: session.sessionId,
+        ownerId: user.id,
+      });
 
       await logAudit({
         userId: user.id,
@@ -149,16 +148,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
           sessionId: session.sessionId,
           target: ready.externalId,
           region: session.region,
-          websocketAuth: 'sigv4-query',
+          websocketAuth: 'server-sigv4-header-bridge',
         },
       });
 
-      // TokenValue and the SigV4 query URL are short-lived capabilities. They are
-      // returned once with no-store headers and are never persisted or logged.
+      // The AWS StreamUrl, TokenValue and AWS credentials remain server-side.
+      // The browser receives only a one-time, short-lived same-origin bridge URL.
       return json({
         sessionId: session.sessionId,
-        streamUrl: browserStreamUrl,
-        tokenValue: session.tokenValue,
+        streamUrl: bridgeUrl,
         region: session.region,
         target: ready.externalId,
         diagnostics: ready.diagnostics,
