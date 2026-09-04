@@ -51,6 +51,8 @@ type VaultHandoff = {
   createdAt?: number;
 };
 
+const MAX_PROMPT_LENGTH = 4000;
+
 async function csrfToken() {
   const response = await fetch('/api/csrf-token', { cache: 'no-store' });
   if (!response.ok) throw new Error('Secure request setup failed');
@@ -112,7 +114,8 @@ export default function AiPractitionerDock() {
       if (handoff.createdAt && Date.now() - handoff.createdAt > 60 * 60 * 1000) return;
       const context = [handoff.title, handoff.summary, handoff.body].filter(Boolean).join('\n\n');
       if (!context) return;
-      setPrompt(`Help me practice this Vault knowledge in my Cyber Lab. Explain it first, then give me one safe next command when appropriate.\n\n${context.slice(0, 6000)}`);
+      const prefill = `Help me practice this Vault knowledge in my Cyber Lab. Explain it first, then give me one safe next command when appropriate.\n\n${context}`;
+      setPrompt(prefill.slice(0, MAX_PROMPT_LENGTH));
       setOpen(true);
       window.localStorage.removeItem('oxsig:vault-handoff');
     } catch {
@@ -130,6 +133,10 @@ export default function AiPractitionerDock() {
   async function ask(value = prompt) {
     const question = value.trim();
     if (!question) return;
+    if (question.length > MAX_PROMPT_LENGTH) {
+      toast.error(`Keep the request under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`);
+      return;
+    }
     if (!instance || !running) {
       toast.error('Start a Cyber Lab machine first. AI Practitioner acts only inside your running Oxsig lab.');
       return;
@@ -137,7 +144,8 @@ export default function AiPractitionerDock() {
 
     const id = uid();
     const nextUser: ChatLine = { id: uid(), role: 'user', content: question };
-    setHistory((current) => [...current, nextUser]);
+    const nextHistory = [...history, nextUser];
+    setHistory(nextHistory);
     setPrompt('');
     setBusy(id);
 
@@ -150,7 +158,7 @@ export default function AiPractitionerDock() {
           action: 'plan',
           labInstanceId: instance.id,
           prompt: question,
-          history: history.slice(-8).map(({ role, content }) => ({ role, content })),
+          history: nextHistory.slice(-8).map(({ role, content }) => ({ role, content })),
         }),
       });
       if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner could not prepare the next step'));
@@ -409,6 +417,7 @@ export default function AiPractitionerDock() {
                     if (!busy) void ask();
                   }
                 }}
+                maxLength={MAX_PROMPT_LENGTH}
                 placeholder="What do you want to learn or do in this lab?"
                 className="min-h-[64px] resize-none"
                 disabled={!!busy}
