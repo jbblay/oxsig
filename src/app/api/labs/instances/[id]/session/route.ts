@@ -153,10 +153,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       });
 
       // The AWS StreamUrl, TokenValue and AWS credentials remain server-side.
-      // The browser receives only a one-time, short-lived same-origin bridge URL.
+      // `tokenValue` below is only a compatibility marker for the existing
+      // browser protocol; the bridge consumes that first client message and
+      // sends AWS the real server-held TokenValue instead.
       return json({
         sessionId: session.sessionId,
         streamUrl: bridgeUrl,
+        tokenValue: 'server-bridge',
         region: session.region,
         target: ready.externalId,
         diagnostics: ready.diagnostics,
