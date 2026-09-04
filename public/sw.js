@@ -1,147 +1,28 @@
-const CACHE_NAME = "oxsig-v1.0.0";
-const RUNTIME_CACHE = "oxsig-runtime-v1";
-const IMAGE_CACHE = "oxsig-images-v1";
+// Oxsig no longer uses the legacy offline service worker.
+//
+// Older production clients may still have a previous version registered. That
+// version cached navigation responses, which can retain authenticated HTML and
+// keep a browser on stale application code after a deployment. This tiny
+// retirement worker updates those clients, removes only Oxsig-owned caches,
+// and unregisters itself.
 
-// Critical assets to cache immediately
-const PRECACHE_URLS = [
-  "/",
-  "/offline",
-  "/manifest.webmanifest",
-  "/favicon.ico"
-];
-
-// Install event - cache critical assets
-self.addEventListener("install", (event) => {
-  console.log('[SW] Installing service worker...');
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Precaching critical assets');
-        return cache.addAll(PRECACHE_URLS);
-      })
-      .then(() => self.skipWaiting())
-  );
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
-// Activate event - clean up old caches
-self.addEventListener("activate", (event) => {
-  console.log('[SW] Activating service worker...');
-  const currentCaches = [CACHE_NAME, RUNTIME_CACHE, IMAGE_CACHE];
-  event.waitUntil(
-    caches.keys()
-      .then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (!currentCaches.includes(cacheName)) {
-              console.log('[SW] Deleting old cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-          })
-        );
-      })
-      .then(() => self.clients.claim())
-  );
-});
-
-// Fetch event - implement caching strategies
-self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Skip non-GET requests
-  if (request.method !== "GET") return;
-
-  // Skip chrome extension requests
-  if (url.protocol === "chrome-extension:") return;
-
-  // API requests are never cached by the generic service worker.
-  // Many OXSIG APIs return authenticated/private data, and storing those
-  // responses in Cache Storage would create an unnecessary local disclosure
-  // surface. Endpoints that are intentionally offline-capable should implement
-  // an explicit, data-specific persistence strategy instead.
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(request));
-    return;
-  }
-
-  // Images - Cache First, fallback to network
-  if (request.destination === 'image') {
-    event.respondWith(
-      caches.match(request)
-        .then((cached) => {
-          if (cached) return cached;
-          return fetch(request).then((response) => {
-            const responseClone = response.clone();
-            caches.open(IMAGE_CACHE).then((cache) => {
-              cache.put(request, responseClone);
-            });
-            return response;
-          });
-        })
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames
+        .filter((name) => name.startsWith('oxsig-'))
+        .map((name) => caches.delete(name))
     );
-    return;
-  }
 
-  // Navigation requests - Network First with fast fallback
-  event.respondWith(
-    request.mode === "navigate"
-      ? Promise.race([
-          fetch(request)
-            .then((response) => {
-              const responseClone = response.clone();
-              caches.open(RUNTIME_CACHE).then((cache) => {
-                cache.put(request, responseClone);
-              });
-              return response;
-            }),
-          new Promise((resolve) => setTimeout(() => resolve(caches.match(request)), 3000))
-        ])
-        .catch(() => {
-          return caches.match(request)
-            .then((cached) => cached || caches.match('/offline'));
-        })
-      : caches.match(request)
-          .then((cached) => {
-            const fetchPromise = fetch(request)
-              .then((response) => {
-                const responseClone = response.clone();
-                caches.open(CACHE_NAME).then((cache) => {
-                  cache.put(request, responseClone);
-                });
-                return response;
-              })
-              .catch(() => cached);
+    await self.registration.unregister();
 
-            return cached || fetchPromise;
-          })
-  );
+    // Take control long enough to retire the old worker consistently. We do
+    // not register a fetch handler, so requests continue to the network.
+    await self.clients.claim();
+  })());
 });
-
-// Background sync for offline actions
-self.addEventListener('sync', (event) => {
-  console.log('[SW] Background sync:', event.tag);
-  if (event.tag === 'sync-data') {
-    event.waitUntil(syncOfflineOperations());
-  }
-});
-
-// Helper function for background sync
-async function syncOfflineOperations() {
-  console.log('[SW] Syncing offline operations...');
-
-  try {
-    // Notify all clients to start sync
-    const clients = await self.clients.matchAll();
-    clients.forEach(client => {
-      client.postMessage({
-        type: 'SYNC_TRIGGERED',
-        timestamp: Date.now(),
-      });
-    });
-
-    return Promise.resolve();
-  } catch (error) {
-    console.error('[SW] Sync failed:', error);
-    throw error;
-  }
-}
