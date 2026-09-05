@@ -8,11 +8,13 @@ import {
   CheckCircle2,
   ChevronRight,
   Loader2,
+  Mic,
   Pause,
   Play,
   Save,
   ShieldCheck,
   Sparkles,
+  Square,
   Terminal,
   Volume2,
   X,
@@ -37,6 +39,7 @@ import {
 } from '@/lib/labs/ai-terminal-events';
 import { getLabsSnapshot } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { useOxsigVoiceInput } from '@/lib/voice/use-voice-input';
 import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
 type LabInstance = {
@@ -130,6 +133,15 @@ export default function AiPractitionerDock() {
   const [savedIds, setSavedIds] = React.useState<Set<string>>(() => new Set());
   const [terminalConnected, setTerminalConnected] = React.useState(false);
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
+  const voiceInput = useOxsigVoiceInput({
+    onTranscript: ({ transcript }) => {
+      setPrompt((current) => {
+        const combined = current.trim() ? `${current.trim()} ${transcript}` : transcript;
+        return combined.slice(0, MAX_PROMPT_LENGTH);
+      });
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   const loadLab = React.useCallback(async () => {
@@ -188,6 +200,7 @@ export default function AiPractitionerDock() {
   const running = instance?.status === 'running';
   const planning = !!busy && !busy.startsWith('run:') && !busy.startsWith('save:');
   const pendingQuestion = planning && history.at(-1)?.role === 'user' ? history.at(-1)?.content : null;
+  const voiceInputBusy = voiceInput.recording || voiceInput.processing || voiceInput.state === 'requesting-permission';
 
   async function ask(value = prompt) {
     const question = value.trim();
@@ -197,6 +210,7 @@ export default function AiPractitionerDock() {
       return;
     }
 
+    voiceInput.cancel();
     stopVoice();
     const id = uid();
     const nextUser: ChatLine = { id: uid(), role: 'user', content: question };
@@ -349,6 +363,15 @@ export default function AiPractitionerDock() {
     });
   }
 
+  function toggleVoiceInput() {
+    if (voiceInput.recording) {
+      voiceInput.stop();
+      return;
+    }
+    stopVoice();
+    void voiceInput.start();
+  }
+
   return (
     <>
       {!open && (
@@ -381,7 +404,7 @@ export default function AiPractitionerDock() {
                   </p>
                 </div>
               </div>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { stopVoice(); setOpen(false); }} aria-label="Close AI Practitioner">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { voiceInput.cancel(); stopVoice(); setOpen(false); }} aria-label="Close AI Practitioner">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -409,7 +432,7 @@ export default function AiPractitionerDock() {
                       key={suggestion}
                       type="button"
                       className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm transition hover:bg-muted/40 disabled:opacity-50"
-                      disabled={!!busy}
+                      disabled={!!busy || voiceInputBusy}
                       onClick={() => void ask(suggestion)}
                     >
                       <span>{suggestion}</span><ChevronRight className="h-4 w-4 shrink-0" />
@@ -523,19 +546,41 @@ export default function AiPractitionerDock() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
-                    if (!busy) void ask();
+                    if (!busy && !voiceInputBusy) void ask();
                   }
                 }}
                 maxLength={MAX_PROMPT_LENGTH}
-                placeholder="Ask a question, or ask me to run something in your lab…"
+                placeholder={voiceInput.recording ? 'Listening… press stop when you are finished.' : voiceInput.processing ? 'Transcribing your question…' : 'Ask a question, or ask me to run something in your lab…'}
                 className="min-h-[64px] resize-none"
-                disabled={!!busy}
+                disabled={!!busy || voiceInputBusy}
               />
-              <Button size="icon" className="h-10 w-10 shrink-0" disabled={!!busy || !prompt.trim()} onClick={() => void ask()} aria-label="Ask AI Practitioner">
+              <Button
+                type="button"
+                size="icon"
+                variant={voiceInput.recording ? 'destructive' : 'outline'}
+                className="h-10 w-10 shrink-0"
+                disabled={!!busy || voiceInput.processing || voiceInput.state === 'requesting-permission' || !voiceInput.supported}
+                onClick={toggleVoiceInput}
+                title={voiceInput.recording ? 'Stop recording' : 'Speak your question'}
+                aria-label={voiceInput.recording ? 'Stop recording' : 'Speak your question'}
+              >
+                {voiceInput.processing || voiceInput.state === 'requesting-permission'
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : voiceInput.recording
+                    ? <Square className="h-4 w-4" />
+                    : <Mic className="h-4 w-4" />}
+              </Button>
+              <Button size="icon" className="h-10 w-10 shrink-0" disabled={!!busy || voiceInputBusy || !prompt.trim()} onClick={() => void ask()} aria-label="Ask AI Practitioner">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               </Button>
             </div>
-            <p className="mt-2 text-[10px] text-muted-foreground">AI can make mistakes. Oxsig requires explicit approval before lab execution and records practitioner activity for audit.</p>
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              {voiceInput.recording
+                ? 'Microphone active. Recording stops when you press stop or after 60 seconds.'
+                : voiceInput.processing
+                  ? 'ElevenLabs is transcribing. Review the text before you send it.'
+                  : 'Voice input is user-initiated and review-first. AI can make mistakes; lab execution still requires explicit approval.'}
+            </p>
           </div>
         </aside>
       )}
