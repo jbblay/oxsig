@@ -8,6 +8,11 @@ import {
   evaluateAcademyPractice,
   generateAcademyCourse,
 } from '@/lib/academy/server';
+import {
+  createAcademyCourse,
+  recordAcademyPractice,
+  recordAcademyQuestion,
+} from '@/lib/academy/persistence';
 
 export const runtime = 'nodejs';
 
@@ -28,7 +33,8 @@ export async function POST(request: NextRequest) {
     try {
       if (parsed.data.action === 'generate') {
         const course = await generateAcademyCourse(parsed.data.prompt);
-        return NextResponse.json({ course });
+        const courseId = await createAcademyCourse(user.id, parsed.data.prompt, course);
+        return NextResponse.json({ courseId, course });
       }
 
       if (parsed.data.action === 'ask') {
@@ -37,6 +43,13 @@ export async function POST(request: NextRequest) {
           courseTitle: parsed.data.courseTitle,
           lessonTitle: parsed.data.lessonTitle,
           lessonContext: parsed.data.lessonContext,
+        });
+        await recordAcademyQuestion({
+          ownerId: user.id,
+          courseTitle: parsed.data.courseTitle,
+          lessonTitle: parsed.data.lessonTitle,
+          question: parsed.data.question,
+          answer,
         });
         return NextResponse.json({ answer });
       }
@@ -50,6 +63,16 @@ export async function POST(request: NextRequest) {
         stdout: parsed.data.stdout,
         stderr: parsed.data.stderr,
         exitCode: parsed.data.exitCode,
+      });
+      await recordAcademyPractice({
+        ownerId: user.id,
+        courseTitle: parsed.data.courseTitle,
+        lessonTitle: parsed.data.lessonTitle,
+        command: parsed.data.command,
+        stdout: parsed.data.stdout,
+        stderr: parsed.data.stderr,
+        exitCode: parsed.data.exitCode,
+        evaluation,
       });
       return NextResponse.json({ evaluation });
     } catch (error) {
