@@ -60,6 +60,30 @@ if (labsEnabled) {
   requireValue('LAB_AWS_INSTANCE_PROFILE', 'LAB_AWS_INSTANCE_PROFILE is required when LAB_AWS_ENABLED=true');
 }
 
+const resendKey = value('RESEND_API_KEY');
+const emailFrom = value('EMAIL_FROM');
+const appUrl = value('OXSIG_APP_URL');
+const emailPartiallyConfigured = Boolean(resendKey || emailFrom);
+
+if (emailPartiallyConfigured) {
+  requireValue('RESEND_API_KEY', 'RESEND_API_KEY is required when transactional email is configured');
+  requireValue('EMAIL_FROM', 'EMAIL_FROM is required when transactional email is configured');
+  requireValue('OXSIG_APP_URL', 'OXSIG_APP_URL is required when transactional email is configured');
+} else {
+  warnings.push('Transactional email is not configured; external collaboration invitations will be created but cannot be delivered automatically');
+}
+
+if (appUrl) {
+  try {
+    const parsed = new URL(appUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      errors.push('OXSIG_APP_URL must use http:// or https://');
+    }
+  } catch {
+    errors.push('OXSIG_APP_URL is not a valid URL');
+  }
+}
+
 if (!value('OPENAI_API_KEY')) {
   warnings.push('OPENAI_API_KEY is not configured; AI Practitioner and Academy AI features will be unavailable');
 }
