@@ -19,8 +19,17 @@ const MAX_PENDING_BYTES = 1024 * 1024;
 const TICKET_RETENTION_MS = 90_000;
 const AWS_PING_INTERVAL_MS = 5 * 60_000;
 
-if (!process.env.OXSIG_TERMINAL_BRIDGE_SECRET) {
+const configuredBridgeSecret = process.env.OXSIG_TERMINAL_BRIDGE_SECRET?.trim();
+if (!configuredBridgeSecret) {
+  if (!dev) {
+    throw new Error(
+      '[oxsig] OXSIG_TERMINAL_BRIDGE_SECRET is required in production so terminal bridge tickets survive restarts and remain valid across server instances.'
+    );
+  }
   process.env.OXSIG_TERMINAL_BRIDGE_SECRET = randomBytes(48).toString('base64url');
+  console.warn('[oxsig] Generated an ephemeral terminal bridge secret for local development.');
+} else if (configuredBridgeSecret.length < 32) {
+  throw new Error('[oxsig] OXSIG_TERMINAL_BRIDGE_SECRET must contain at least 32 characters.');
 }
 
 const usedTickets = new Map();
