@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { getCollaborationAccess } from '@/lib/collab/server';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -143,15 +144,25 @@ export async function POST(
         `SELECT display_name, email, avatar_url FROM users WHERE id = $1 LIMIT 1`,
         [user.id]
       );
+      const message = mapMessage({
+        ...inserted.rows[0],
+        sender_name: sender.rows[0]?.display_name,
+        sender_email: sender.rows[0]?.email,
+        sender_avatar: sender.rows[0]?.avatar_url,
+      }, user.id);
 
-      return NextResponse.json({
-        message: mapMessage({
-          ...inserted.rows[0],
-          sender_name: sender.rows[0]?.display_name,
-          sender_email: sender.rows[0]?.email,
-          sender_avatar: sender.rows[0]?.avatar_url,
-        }, user.id),
-      }, { status: 201 });
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'message.created',
+        data: {
+          messageId: message.id,
+          senderId: message.senderId,
+          type: message.type,
+          createdAt: message.createdAt,
+        },
+      });
+
+      return NextResponse.json({ message }, { status: 201 });
     } catch (error) {
       console.error('Collaboration message send failed:', error);
       return NextResponse.json({ error: 'Could not send message' }, { status: 500 });

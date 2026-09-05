@@ -8,6 +8,7 @@ import {
   sendCollaborationInvitationEmail,
 } from '@/lib/collab/invitations';
 import { emailProviderConfigured } from '@/lib/email/resend';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -212,6 +213,11 @@ export async function POST(
         ]
       );
       await pool.query(`UPDATE collaborations SET updated_at = NOW() WHERE id = $1`, [id]);
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'members.changed',
+        data: { memberId: member.id, action: 'added' },
+      });
 
       return NextResponse.json({
         member: mapMember({ ...member, role: 'member' }),

@@ -5,6 +5,7 @@ import {
   CollaborationInvitationError,
 } from '@/lib/collab/invitations';
 import { requireAuth } from '@/lib/auth/middleware';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -35,6 +36,13 @@ export async function POST(
         userId: user.id,
         userEmail: user.email,
       });
+      if (!accepted.alreadyAccepted) {
+        await publishCollaborationEvent({
+          collaborationId: accepted.collaborationId,
+          name: 'members.changed',
+          data: { memberId: user.id, action: 'accepted' },
+        });
+      }
       return NextResponse.json(accepted);
     } catch (error) {
       if (error instanceof CollaborationInvitationError) {

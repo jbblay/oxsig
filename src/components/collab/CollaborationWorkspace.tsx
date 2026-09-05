@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
 
 
 type Collaboration = {
@@ -193,6 +194,26 @@ export default function CollaborationWorkspace() {
     }
   }, []);
 
+  const realtimeCallbacks = React.useMemo(() => ({
+    onMessageCreated: () => {
+      if (!activeId) return;
+      void loadConversation(activeId, true);
+      void loadSessions(true);
+    },
+    onMembersChanged: () => {
+      if (!activeId) return;
+      void loadConversation(activeId, true);
+      void loadSessions(true);
+    },
+    onSessionChanged: () => {
+      if (!activeId) return;
+      void loadConversation(activeId, true);
+      void loadSessions(true);
+    },
+  }), [activeId, loadConversation, loadSessions]);
+
+  const realtime = useCollaborationRealtime(activeId, realtimeCallbacks);
+
   React.useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
@@ -204,12 +225,16 @@ export default function CollaborationWorkspace() {
       return;
     }
     void loadConversation(activeId);
+
+    // Realtime is the primary transport when configured. Keep a slow poll as a
+    // reconciliation safety net; without Ably, preserve the existing fallback.
+    const intervalMs = realtime.state === 'connected' ? 30_000 : 3500;
     const timer = window.setInterval(() => {
       void loadConversation(activeId, true);
       void loadSessions(true);
-    }, 3500);
+    }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [activeId, loadConversation, loadSessions]);
+  }, [activeId, loadConversation, loadSessions, realtime.state]);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -406,7 +431,7 @@ export default function CollaborationWorkspace() {
       setInviteEmail('');
       await loadConversation(activeId, true);
       await loadSessions(true);
-      toast.success(`${body.member?.displayName || 'Member'} added`);
+      toast.success(body.message || `${body.member?.displayName || 'Member'} added`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not add member');
     } finally {
@@ -518,7 +543,12 @@ export default function CollaborationWorkspace() {
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{activeSession.description || 'Shared conversation workspace'}</p>
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />Polling for new messages
+                  <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                  {realtime.state === 'connected'
+                    ? `Realtime · ${realtime.onlineCount} online`
+                    : realtime.state === 'connecting'
+                      ? 'Connecting realtime…'
+                      : 'Polling fallback'}
                 </div>
               </div>
 
@@ -683,7 +713,7 @@ export default function CollaborationWorkspace() {
                   <Button size="sm" className="w-full" variant="outline" onClick={() => void inviteMember()} disabled={!inviteEmail.trim() || inviting}>
                     {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Add member
                   </Button>
-                  <p className="text-[10px] leading-4 text-muted-foreground">The person must have signed in to Oxsig at least once.</p>
+                  <p className="text-[10px] leading-4 text-muted-foreground">Existing OXSIG users are added immediately. New users receive a secure email invitation when transactional email is configured.</p>
                 </div>
               )}
 

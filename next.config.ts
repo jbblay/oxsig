@@ -3,6 +3,7 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   compiler: { removeConsole: process.env.NODE_ENV === 'production' },
   experimental: { optimizePackageImports: ['lucide-react', 'framer-motion'] },
+  serverExternalPackages: ['ably'],
   async headers() {
     return [{
       source: '/:path*',
