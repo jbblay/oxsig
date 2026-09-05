@@ -47,6 +47,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLabsSnapshot, invalidateLabsSnapshot } from "@/lib/labs/client";
+import { applyOptimisticLabLifecycle, replaceLabInstance, type LabLifecycleAction } from "@/lib/labs/optimistic-lifecycle";
 import type { LabAccessMode, LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
 import { notifyLocalStorageChange } from "@/lib/persistence/storage-change-observer";
 import { getCsrfToken } from "@/lib/security/csrf-client";
@@ -190,6 +191,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const liveAccessMode: LabAccessMode = instance?.metadata?.accessMode === "desktop" ? "desktop" : "terminal";
   const workspaceVisible = workspaceOpen && !dockFocus;
   const labColumns = `${machinesOpen ? "260px" : "52px"} minmax(0,1fr) ${inspectorOpen ? "300px" : "52px"}`;
+  const lifecycleBusy = busy === "start" || busy === "stop" || busy === "destroy";
 
   const load = React.useCallback(async (silent = false, force = false) => {
     try {
@@ -290,10 +292,10 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   }, [selectedAccessMode, selectedLab]);
 
   React.useEffect(() => {
-    if (!instances.some((item) => TRANSITIONAL.includes(item.status))) return;
+    if (lifecycleBusy || !instances.some((item) => TRANSITIONAL.includes(item.status))) return;
     const timer = window.setInterval(() => void load(true), 4000);
     return () => window.clearInterval(timer);
-  }, [instances, load]);
+  }, [instances, lifecycleBusy, load]);
 
   React.useEffect(() => {
     if (!terminalId) return;
@@ -422,8 +424,15 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     }
   };
 
-  const act = async (id: string, action: "start" | "stop" | "destroy") => {
+  const act = async (id: string, action: LabLifecycleAction) => {
+    const previous = instances.find((item) => item.id === id) || null;
+    if (!previous) return;
+    const optimistic = applyOptimisticLabLifecycle(previous, action);
+    const previousTerminalId = terminalId;
+    const previousDesktopId = desktopId;
+
     setBusy(action);
+    setInstances((current) => replaceLabInstance(current, optimistic));
     if (action === "stop" || action === "destroy") {
       setTerminalId(null);
       setDesktopId(null);
@@ -449,6 +458,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       invalidateLabsSnapshot();
       await load(true, true);
     } catch (error) {
+      setInstances((current) => replaceLabInstance(current, previous));
+      if (action === "stop" || action === "destroy") {
+        setTerminalId(previousTerminalId);
+        setDesktopId(previousDesktopId);
+      }
       toast.error(error instanceof Error ? error.message : `Could not ${action} the lab`);
     } finally {
       setBusy(null);
@@ -512,7 +526,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       {capabilities && !capabilities.configured && <Card className="border-amber-500/40"><CardContent className="pt-6"><p className="font-medium">Cloud runtime is not ready on this deployment</p><p className="mt-1 text-sm text-muted-foreground">{capabilities.reason}</p></CardContent></Card>}
 
       {reconciliationWarning && (
-        <Card className="border-amber-500/40 bg-amber-500/5"><CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-medium">AWS state needs another check</p><p className="mt-1 text-xs text-muted-foreground">{reconciliationWarning}</p></div><Button size="sm" variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state</Button></CardContent></Card>
+        <Card className="border-amber-500/40 bg-amber-500/5"><CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-medium">AWS state needs another check</p><p className="mt-1 text-xs text-muted-foreground">{reconciliationWarning}</p></div><Button size="sm" variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile" || lifecycleBusy}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state</Button></CardContent></Card>
       )}
 
       {showLayoutHint && (
@@ -580,7 +594,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                       {selectedIsLive && instance?.status === "stopped" && <Button className={ACTION_BUTTON} onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}>{busy === "start" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Start {selectedNode.data.label}</Button>}
                       {selectedIsLive && instance?.status === "running" && <>{liveAccessMode === "desktop" && <Button className={ACTION_BUTTON} onClick={openDesktop}><Monitor className="mr-2 h-4 w-4" />Open browser desktop — {selectedNode.data.label}</Button>}{capabilities?.supportsTerminal && <Button className={ACTION_BUTTON} variant={liveAccessMode === "desktop" ? "outline" : "default"} onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open interactive terminal — {selectedNode.data.label}</Button>}<Button className={ACTION_BUTTON} variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}>{busy === "stop" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CircleStop className="mr-2 h-4 w-4" />}Stop {selectedNode.data.label}</Button></>}
                       {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className={ACTION_BUTTON} variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}>{busy === "destroy" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}Destroy {selectedNode.data.label}</Button>}
-                      {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <Button className={ACTION_BUTTON} variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile"}><RefreshCw className={`mr-2 h-4 w-4 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state</Button>}
+                      {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <Button className={ACTION_BUTTON} variant="outline" onClick={() => void refreshCloudState()} disabled={busy === "reconcile" || lifecycleBusy}><RefreshCw className={`mr-2 h-4 w-4 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh AWS state</Button>}
                       <Button className={ACTION_BUTTON} variant="ghost" onClick={removeSelectedNode} disabled={selectedIsLive}><X className="mr-2 h-4 w-4" />Remove {selectedNode.data.label} from canvas</Button>
                       {selectedIsLive && <p className="text-[10px] leading-4 text-muted-foreground">A live AWS node stays on the canvas until AWS reconciliation confirms that its runtime is gone.</p>}
                     </div>
