@@ -38,6 +38,7 @@ import {
   listVaultItems,
   updateVaultItem,
 } from '@/lib/vault/api';
+import { optimisticTogglePinned, replaceVaultItem } from '@/lib/vault/optimistic';
 import {
   VAULT_KIND_DESCRIPTIONS,
   VAULT_KIND_LABELS,
@@ -244,12 +245,15 @@ export default function VaultPage() {
   }
 
   async function togglePin(item: VaultItem) {
+    const previous = item;
+    const optimistic = optimisticTogglePinned(item);
     setSaving(true);
+    setItems((current) => replaceVaultItem(current, optimistic));
     try {
-      const updated = await updateVaultItem(item.id, { pinned: !item.pinned });
-      setItems((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
-      if (activeId === updated.id) setEditor(itemEditor(updated));
+      const updated = await updateVaultItem(item.id, { pinned: optimistic.pinned });
+      setItems((current) => replaceVaultItem(current, updated));
     } catch (error) {
+      setItems((current) => replaceVaultItem(current, previous));
       toast.error(error instanceof Error ? error.message : 'Could not update pin');
     } finally {
       setSaving(false);
