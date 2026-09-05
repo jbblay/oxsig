@@ -135,7 +135,9 @@ function dataBytes(data: WebSocketData): number {
   if (Buffer.isBuffer(data)) return data.byteLength;
   if (Array.isArray(data)) return data.reduce((total, part) => total + part.byteLength, 0);
   if (data instanceof ArrayBuffer) return data.byteLength;
-  return data.byteLength;
+  const unknownData: unknown = data;
+  if (ArrayBuffer.isView(unknownData)) return unknownData.byteLength;
+  return 0;
 }
 
 function closeQuietly(socket: { readyState: number; close(code?: number, reason?: string): void }, code = 1000, reason = '') {
