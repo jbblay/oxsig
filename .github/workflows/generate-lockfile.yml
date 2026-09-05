@@ -19,7 +19,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          cache: pnpm
       - name: Generate lockfile
         run: pnpm install --lockfile-only --no-frozen-lockfile
       - name: Commit lockfile when changed
