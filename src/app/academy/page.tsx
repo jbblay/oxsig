@@ -45,6 +45,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
+import { notifyLocalStorageChange } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
@@ -166,6 +167,7 @@ export default function AcademyPage() {
     if (course) window.localStorage.setItem(COURSE_KEY, JSON.stringify(course));
     else window.localStorage.removeItem(COURSE_KEY);
     window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ activeIndex, completed: Array.from(completed) }));
+    notifyLocalStorageChange(COURSE_KEY);
   }, [activeIndex, completed, course, hydrated]);
 
   React.useEffect(() => () => {
