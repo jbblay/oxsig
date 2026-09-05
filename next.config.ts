@@ -31,6 +31,10 @@ export default sentrySourceMapsConfigured
       project: process.env.SENTRY_PROJECT,
       silent: true,
       widenClientFileUpload: true,
-      disableLogger: true,
+      webpack: {
+        treeshake: {
+          removeDebugLogging: true,
+        },
+      },
     })
   : nextConfig;
