@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { storyboardSessionSchema, storyboardShareSchema } from './validation';
+import {
+  storyboardAudioReferenceSchema,
+  storyboardSessionSchema,
+  storyboardShareSchema,
+} from './validation';
 
 describe('storyboard API validation', () => {
   it('accepts a bounded normalized drawing event', () => {
@@ -35,6 +39,26 @@ describe('storyboard API validation', () => {
     expect(invalidSession.success).toBe(false);
     expect(storyboardShareSchema.safeParse({
       email: 'bob@example.com', permission: 'owner',
+    }).success).toBe(false);
+  });
+
+  it('accepts only bounded private-storage audio references', () => {
+    expect(storyboardAudioReferenceSchema.safeParse({
+      key: 'storyboards/audio/user-id/recording.webm',
+      size: 1024,
+      mimeType: 'audio/webm',
+    }).success).toBe(true);
+
+    expect(storyboardAudioReferenceSchema.safeParse({
+      key: 'storyboards/audio/user-id/recording.exe',
+      size: 1024,
+      mimeType: 'application/octet-stream',
+    }).success).toBe(false);
+
+    expect(storyboardAudioReferenceSchema.safeParse({
+      key: 'storyboards/audio/user-id/huge.webm',
+      size: 600 * 1024 * 1024,
+      mimeType: 'audio/webm',
     }).success).toBe(false);
   });
 });

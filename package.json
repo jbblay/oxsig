@@ -15,7 +15,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "storyboards:migrate-audio": "node scripts/migrate-storyboard-audio.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
