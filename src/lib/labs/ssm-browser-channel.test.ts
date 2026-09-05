@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SSM_PAYLOAD,
   buildHandshakeResponse,
+  buildOpenDataChannelMessage,
   buildSsmAcknowledge,
   decodeSsmAgentMessage,
   encodeSsmAgentMessage,
@@ -75,6 +76,15 @@ describe("SSM browser channel protocol", () => {
     expect(response.ProcessedClientActions[0]).toMatchObject({ ActionType: "SessionType", ActionStatus: 1 });
     expect(response.ProcessedClientActions[1]).toMatchObject({ ActionType: "KMSEncryption", ActionStatus: 2 });
     expect(response.Errors).toHaveLength(1);
+  });
+
+  it("keeps the browser client below the SSM TCP-multiplexing threshold used by desktop port forwarding", () => {
+    const open = JSON.parse(buildOpenDataChannelMessage("token", "client-id"));
+
+    // amazon-ssm-agent selects multiplexed LocalPortForwarding at client version >= 1.1.70.
+    // Oxsig intentionally stays at 1.0.0 so the browser desktop receives the documented basic
+    // Output byte stream directly instead of the native session-manager-plugin smux framing.
+    expect(open.ClientVersion).toBe("1.0.0");
   });
 
   it("treats standard-stream shell output as readiness when AWS skips the handshake", () => {

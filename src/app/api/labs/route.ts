@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
       [user.id]
     );
     if ((active.rows[0]?.count || 0) >= 1) {
-      return NextResponse.json({ error: 'The MVP allows one active cloud lab per user. Stop or destroy the current lab first.' }, { status: 409 });
+      return NextResponse.json({ error: 'One active cloud lab is allowed per account at a time. Stop or destroy the current lab first.' }, { status: 409 });
     }
 
     const definition = await pool.query(

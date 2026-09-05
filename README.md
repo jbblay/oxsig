@@ -4,15 +4,15 @@ OXSIG is a learning, collaboration, and practical cloud-lab workspace built arou
 
 ## Production architecture
 
-- **Vercel** — Next.js application and production WebSocket terminal bridge
+- **Vercel** — Next.js application and same-origin WebSocket bridge for browser lab sessions
 - **Clerk** — user identity, sessions, and user-sync webhooks
-- **Neon** — PostgreSQL application state, Academy history/mastery, collaboration state, lab topology, rate limits, and terminal replay protection
+- **Neon** — PostgreSQL application state, Academy history/mastery, collaboration state, lab topology, rate limits, and session-ticket replay protection
 - **AWS S3** — private workspace files, collaboration media, and Storyboard audio
-- **AWS EC2 + Systems Manager** — temporary lab machines and browser terminal sessions without inbound SSH
+- **AWS EC2 + Systems Manager** — temporary lab machines, persistent browser terminals, and private browser desktop tunnels without public SSH/RDP/VNC ingress
 - **OpenAI** — Academy and AI Practitioner teaching features
 - **Resend** — transactional collaboration invitations
 - **Ably** — realtime collaboration, with polling fallback when unconfigured
-- **Sentry** — server/browser/terminal observability
+- **Sentry** — server/browser/lab-session observability
 - **PostHog** — allow-listed server-side product analytics
 
 ## Product surface
@@ -20,13 +20,14 @@ OXSIG is a learning, collaboration, and practical cloud-lab workspace built arou
 - Academy courses with durable progress, Q&A, practice evidence, sessions, mastery, and history
 - AI Practitioner teaching flow integrated with visible lab-terminal execution
 - AWS Cyber Lab with durable topology and temporary EC2/SSM machines
-- Browser terminal through the same-origin `/__oxsig/terminal-bridge` boundary
+- Persistent browser terminal through the authenticated same-origin `/__oxsig/terminal-bridge` boundary
+- Browser desktop profiles for supported labs through loopback-only VNC carried over AWS Session Manager port forwarding and the same authenticated bridge
 - Storyboards with private S3 audio recording, signed playback, replay, and sharing
 - Vault/private cloud storage
 - Collaboration invitations, attachments, and realtime updates
 - Scheduled lab cleanup and production readiness diagnostics
 
-Desktop access is intentionally not advertised in the production lab catalog until a genuine browser desktop transport is implemented. Terminal access remains the supported production lab transport.
+Desktop mode is enabled only for lab definitions that have a desktop profile. The remote VNC service binds to loopback on the lab VM; Oxsig does not require an internet-exposed VNC or RDP security-group rule. Terminal access remains available for desktop-profile machines.
 
 ## Local development
 
@@ -53,6 +54,8 @@ pnpm dev
 ## Production configuration
 
 `.env.example` is the authoritative variable contract. Never commit real credentials. Production uses the same application variable names in Vercel, while local-only `AWS_PROFILE` must be replaced by a production IAM/OIDC identity.
+
+The production AWS identity used by OXSIG must permit the existing EC2/SSM lab operations and `ssm:StartSession` with the AWS-managed `AWS-StartPortForwardingSession` document for browser desktop sessions. Keep the lab security group closed to inbound SSH, RDP, and VNC unless another explicitly reviewed feature requires them.
 
 Before release, run:
 
@@ -83,4 +86,4 @@ Do not delete historical SQL migrations after they have been applied.
 
 ## Release rule
 
-`main` is the canonical application only after a production PR has passed exact-head CI and been merged. A merged integration is not proof that external credentials, cloud resources, database migrations, or live end-to-end paths are configured; those must be verified separately in the target production environment.
+`main` is the canonical application only after a production PR has passed exact-head CI and been merged. A merged integration is not proof that external credentials, cloud resources, database migrations, IAM permissions, or live end-to-end paths are configured; those must be verified separately in the target production environment.
