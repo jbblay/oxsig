@@ -3,6 +3,7 @@ import { getClerkAuthenticatedUser } from './clerk-user';
 
 export interface AuthenticatedUser {
   id: string;
+  clerkUserId?: string;
   did?: string;
   email?: string;
   name?: string;
@@ -14,6 +15,7 @@ export async function getUserFromRequest(_request: NextRequest): Promise<Authent
   if (!clerkUser) return null;
   return {
     id: clerkUser.id,
+    clerkUserId: clerkUser.clerkUserId,
     did: clerkUser.did,
     email: clerkUser.email,
     name: clerkUser.name,

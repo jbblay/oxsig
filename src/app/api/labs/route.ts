@@ -6,6 +6,7 @@ import { getPool } from '@/lib/db/pool';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
 import { createLabVm, describeLabVmStates, destroyLabVm, labCapabilities } from '@/lib/labs/aws-runtime';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
+import { captureProductEvent } from '@/lib/analytics/posthog';
 
 export const runtime = 'nodejs';
 const createSchema = z.object({
@@ -289,6 +290,18 @@ export async function POST(request: NextRequest) {
         resourceId: instanceId,
         ...getRequestMetadata(req),
         metadata: { definition: lab.slug, provider: 'aws-ec2', osFamily: lab.osFamily, accessMode },
+      });
+
+      await captureProductEvent({
+        distinctId: user.clerkUserId || user.id,
+        event: 'cloud_lab_created',
+        properties: {
+          lab_slug: lab.slug,
+          os_family: lab.osFamily,
+          platform: lab.platform,
+          access_mode: accessMode,
+          ttl_minutes: LAB_TTL_MINUTES,
+        },
       });
 
       return NextResponse.json(

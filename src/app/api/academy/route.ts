@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
+import { captureProductEvent } from '@/lib/analytics/posthog';
 import {
   academyRequestSchema,
   answerAcademyQuestion,
@@ -34,6 +35,13 @@ export async function POST(request: NextRequest) {
       if (parsed.data.action === 'generate') {
         const course = await generateAcademyCourse(parsed.data.prompt);
         const courseId = await createAcademyCourse(user.id, parsed.data.prompt, course);
+        await captureProductEvent({
+          distinctId: user.clerkUserId || user.id,
+          event: 'academy_course_created',
+          properties: {
+            lesson_count: Array.isArray(course.lessons) ? course.lessons.length : 0,
+          },
+        });
         return NextResponse.json({ courseId, course });
       }
 
@@ -73,6 +81,13 @@ export async function POST(request: NextRequest) {
         stderr: parsed.data.stderr,
         exitCode: parsed.data.exitCode,
         evaluation,
+      });
+      await captureProductEvent({
+        distinctId: user.clerkUserId || user.id,
+        event: 'academy_checkpoint_evaluated',
+        properties: {
+          exit_code: parsed.data.exitCode,
+        },
       });
       return NextResponse.json({ evaluation });
     } catch (error) {
