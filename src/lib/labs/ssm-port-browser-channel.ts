@@ -29,6 +29,8 @@ type OutgoingFrame = {
   sent: boolean;
 };
 
+const CONNECT_TO_PORT_ERROR = 3;
+
 export class SsmBrowserPortChannel {
   private socket: WebSocket | null = null;
   private callbacks: PortCallbacks;
@@ -187,6 +189,15 @@ export class SsmBrowserPortChannel {
     }
     if (message.payloadType === SSM_PAYLOAD.ENC_CHALLENGE_REQUEST) {
       throw new Error('AWS requested an unsupported KMS encryption challenge for the desktop tunnel.');
+    }
+    if (message.payloadType === SSM_PAYLOAD.FLAG) {
+      if (message.payload.byteLength >= 4) {
+        const flag = new DataView(message.payload.buffer, message.payload.byteOffset, message.payload.byteLength).getUint32(0, false);
+        if (flag === CONNECT_TO_PORT_ERROR) {
+          throw new Error('AWS Systems Manager could not connect to the private desktop port on this lab VM.');
+        }
+      }
+      return;
     }
     if (message.payloadType === SSM_PAYLOAD.OUTPUT) {
       this.markReady();
