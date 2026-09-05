@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
+import pg from 'pg';
 import { WebSocket, WebSocketServer } from 'ws';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { Sha256 } from '@aws-crypto/sha256-js';
@@ -7,6 +8,7 @@ import { HttpRequest } from '@smithy/protocol-http';
 import { SignatureV4 } from '@smithy/signature-v4';
 import { verifyTerminalBridgeTicket } from './src/lib/labs/terminal-bridge-ticket.js';
 
+const { Pool } = pg;
 const dev = !process.argv.includes('--prod');
 process.env.NODE_ENV = dev ? 'development' : 'production';
 const { default: next } = await import('next');
@@ -33,6 +35,14 @@ if (!configuredBridgeSecret) {
 }
 
 const usedTickets = new Map();
+const terminalTicketPool = !dev && process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 2,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+    })
+  : null;
 
 function rejectUpgrade(socket, status = 401, reason = 'Unauthorized') {
   if (socket.destroyed) return;
@@ -47,12 +57,42 @@ function cleanupUsedTickets() {
   }
 }
 
-function consumeTicket(ticket) {
-  cleanupUsedTickets();
-  const key = createHash('sha256').update(ticket).digest('hex');
-  if (usedTickets.has(key)) throw new Error('Terminal bridge ticket was already used.');
+async function consumeTicket(ticket) {
   const payload = verifyTerminalBridgeTicket(ticket);
-  usedTickets.set(key, Math.max(payload.exp, Date.now() + TICKET_RETENTION_MS));
+  const key = createHash('sha256').update(ticket).digest('hex');
+  const expiresAt = Math.max(payload.exp, Date.now() + TICKET_RETENTION_MS);
+
+  if (dev) {
+    cleanupUsedTickets();
+    if (usedTickets.has(key)) throw new Error('Terminal bridge ticket was already used.');
+    usedTickets.set(key, expiresAt);
+    return payload;
+  }
+
+  if (!terminalTicketPool) {
+    throw new Error('DATABASE_URL is required for production terminal ticket replay protection.');
+  }
+
+  try {
+    await terminalTicketPool.query(
+      `INSERT INTO terminal_bridge_ticket_uses (ticket_hash, expires_at)
+       VALUES ($1, $2)`,
+      [key, new Date(expiresAt)]
+    );
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === '23505') {
+      throw new Error('Terminal bridge ticket was already used.');
+    }
+    throw error;
+  }
+
+  // Keep the short-lived replay table bounded without requiring a separate
+  // cleanup job for correctness. This is best-effort and does not affect the
+  // accepted ticket if cleanup itself fails.
+  void terminalTicketPool
+    .query(`DELETE FROM terminal_bridge_ticket_uses WHERE expires_at <= NOW()`)
+    .catch((error) => console.warn('[oxsig] Terminal ticket cleanup failed:', error));
+
   return payload;
 }
 
@@ -220,7 +260,7 @@ const server = createServer((req, res) => {
   void handle(req, res);
 });
 
-server.on('upgrade', (req, socket, head) => {
+server.on('upgrade', async (req, socket, head) => {
   let requestUrl;
   try {
     requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -247,7 +287,7 @@ server.on('upgrade', (req, socket, head) => {
 
   let payload;
   try {
-    payload = consumeTicket(ticket);
+    payload = await consumeTicket(ticket);
     validateAwsStreamUrl(payload.streamUrl, payload.region);
   } catch {
     rejectUpgrade(socket);
@@ -262,6 +302,10 @@ server.on('upgrade', (req, socket, head) => {
 server.on('error', (error) => {
   console.error('[oxsig] Server error:', error);
   process.exitCode = 1;
+});
+
+server.on('close', () => {
+  void terminalTicketPool?.end().catch(() => undefined);
 });
 
 server.listen(port, listenHostname, () => {
