@@ -2,11 +2,14 @@
 
 import * as React from 'react';
 import type { AcademyCourse } from '@/lib/academy/types';
+import { subscribeToLocalStorageChanges } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
 const PROGRESS_KEY = 'oxsig:academy-progress:v1';
 const SERVER_STATE_KEY = 'oxsig:academy-server-state:v1';
+const SYNC_DEBOUNCE_MS = 300;
+const SYNC_RETRY_MS = 5000;
 
 type InitialState = {
   courseId: string;
@@ -76,19 +79,36 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
 
   React.useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof window.setTimeout> | null = null;
+    let queued = false;
     const initialLocal = readLocalState();
     // If no server course exists yet, deliberately force the first sync so a
     // pre-production localStorage course is migrated instead of being stranded
     // on this browser forever.
     lastSnapshotRef.current = serverKnownRef.current ? snapshot(initialLocal) : '';
 
+    const scheduleSync = (delay = SYNC_DEBOUNCE_MS) => {
+      if (cancelled) return;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void sync();
+      }, delay);
+    };
+
     async function sync() {
-      if (cancelled || syncingRef.current) return;
+      if (cancelled) return;
+      if (syncingRef.current) {
+        queued = true;
+        return;
+      }
+
       const local = readLocalState();
       const nextSnapshot = snapshot(local);
       if (nextSnapshot === lastSnapshotRef.current) return;
 
       syncingRef.current = true;
+      let failed = false;
       try {
         if (!local.course) {
           if (serverKnownRef.current) {
@@ -145,20 +165,29 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
 
         lastSnapshotRef.current = nextSnapshot;
       } catch (error) {
+        failed = true;
         console.warn('[oxsig] Academy persistence sync deferred:', error);
       } finally {
         syncingRef.current = false;
+        if (cancelled) return;
+        if (queued) {
+          queued = false;
+          scheduleSync();
+        } else if (failed) {
+          scheduleSync(SYNC_RETRY_MS);
+        }
       }
     }
 
-    // The current Academy page writes progress to localStorage. This bridge is a
-    // temporary compatibility layer: PostgreSQL becomes authoritative without
-    // requiring a risky rewrite of the working learning cockpit in one step.
+    const unsubscribe = subscribeToLocalStorageChanges([COURSE_KEY, PROGRESS_KEY], () => scheduleSync());
+    // Catch a legacy local state immediately, then react only to actual storage
+    // changes. Failed network writes receive a bounded retry without idle polling.
     void sync();
-    const timer = window.setInterval(() => void sync(), 1200);
+
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      unsubscribe();
+      if (timer) window.clearTimeout(timer);
     };
   }, []);
 
