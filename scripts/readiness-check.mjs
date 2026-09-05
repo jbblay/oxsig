@@ -198,6 +198,21 @@ function checkOpenAI() {
   );
 }
 
+function checkElevenLabs() {
+  const apiKey = env('ELEVENLABS_API_KEY');
+  const voiceId = env('ELEVENLABS_VOICE_ID');
+  const modelId = env('ELEVENLABS_TTS_MODEL');
+  if (!apiKey && !voiceId) {
+    record('ElevenLabs voice', 'CONFIGURATION_REQUIRED', 'Set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to enable spoken Academy and Cyber Lab responses.');
+    return;
+  }
+  if (!apiKey || !voiceId) {
+    record('ElevenLabs voice', 'DEGRADED', 'Voice configuration is partial; ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID must be configured together.');
+    return;
+  }
+  record('ElevenLabs voice', 'READY', `Server-side TTS configuration is complete; model ${modelId || 'eleven_multilingual_v2'}.`);
+}
+
 function checkEmail() {
   if (!env('RESEND_API_KEY') && !env('EMAIL_FROM') && !env('OXSIG_APP_URL')) {
     record('Resend email', 'CONFIGURATION_REQUIRED', 'Set RESEND_API_KEY, EMAIL_FROM and OXSIG_APP_URL to deliver external invitations.');
@@ -299,6 +314,7 @@ await checkStorage();
 const labsReady = await checkLabs();
 await checkTerminal(databasePool, labsReady);
 checkOpenAI();
+checkElevenLabs();
 checkEmail();
 checkRealtime();
 checkSentry();
