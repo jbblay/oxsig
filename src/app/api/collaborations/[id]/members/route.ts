@@ -7,6 +7,7 @@ import {
   createCollaborationInvitation,
   sendCollaborationInvitationEmail,
 } from '@/lib/collab/invitations';
+import { emailProviderConfigured } from '@/lib/email/resend';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -129,6 +130,16 @@ export async function POST(
     const member = candidate.rows[0];
 
     if (!member) {
+      if (!emailProviderConfigured()) {
+        return NextResponse.json(
+          {
+            error: 'External collaboration invitations are ready but email delivery is not configured. Set RESEND_API_KEY and EMAIL_FROM, then invite this person again.',
+            configurationRequired: ['RESEND_API_KEY', 'EMAIL_FROM'],
+          },
+          { status: 503 }
+        );
+      }
+
       try {
         const contextResult = await pool.query(
           `SELECT c.name AS collaboration_name,
@@ -158,22 +169,24 @@ export async function POST(
           requestOrigin: new URL(req.url).origin,
         });
 
+        if (!delivery.sent) {
+          return NextResponse.json(
+            {
+              error: 'The invitation was created, but the email provider could not deliver it. Invite the recipient again after email delivery is healthy.',
+              invitationId: invitation.id,
+            },
+            { status: 502 }
+          );
+        }
+
         return NextResponse.json({
           invitation: {
             id: invitation.id,
             email: invitation.email,
             expiresAt: invitation.expiresAt,
-            delivery: !delivery.configured
-              ? 'configuration-required'
-              : delivery.sent
-                ? 'sent'
-                : 'failed',
+            delivery: 'sent',
           },
-          message: !delivery.configured
-            ? 'Invitation created. Configure the email provider to deliver invitations automatically.'
-            : delivery.sent
-              ? 'Invitation sent.'
-              : 'Invitation created, but email delivery failed.',
+          message: 'Invitation sent.',
         }, { status: 202 });
       } catch (error) {
         console.error('Collaboration invitation creation failed:', error);
