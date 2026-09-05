@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { getCollaborationAccess } from '@/lib/collab/server';
+import {
+  createCollaborationInvitation,
+  sendCollaborationInvitationEmail,
+} from '@/lib/collab/invitations';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -114,19 +118,67 @@ export async function POST(
       return NextResponse.json({ error: 'Only session owners and admins can add members' }, { status: 403 });
     }
 
+    const normalizedEmail = parsed.data.email.trim().toLowerCase();
     const candidate = await pool.query(
       `SELECT id, display_name, email, avatar_url
        FROM users
-       WHERE is_active = true AND LOWER(email) = LOWER($1)
+       WHERE is_active = true AND LOWER(email) = $1
        LIMIT 1`,
-      [parsed.data.email]
+      [normalizedEmail]
     );
     const member = candidate.rows[0];
+
     if (!member) {
-      return NextResponse.json(
-        { error: 'That person must sign in to Oxsig once before they can be added.' },
-        { status: 404 }
-      );
+      try {
+        const contextResult = await pool.query(
+          `SELECT c.name AS collaboration_name,
+                  COALESCE(inviter.display_name, inviter.email, 'An OXSIG member') AS inviter_name
+           FROM collaborations c
+           JOIN users inviter ON inviter.id = $2
+           WHERE c.id = $1
+           LIMIT 1`,
+          [id, user.id]
+        );
+        const context = contextResult.rows[0];
+        if (!context) {
+          return NextResponse.json({ error: 'Collaboration session not found' }, { status: 404 });
+        }
+
+        const invitation = await createCollaborationInvitation({
+          collaborationId: id,
+          email: normalizedEmail,
+          invitedBy: user.id,
+        });
+        const { delivery } = await sendCollaborationInvitationEmail({
+          invitationId: invitation.id,
+          token: invitation.token,
+          email: invitation.email,
+          collaborationName: context.collaboration_name as string,
+          inviterName: context.inviter_name as string,
+          requestOrigin: new URL(req.url).origin,
+        });
+
+        return NextResponse.json({
+          invitation: {
+            id: invitation.id,
+            email: invitation.email,
+            expiresAt: invitation.expiresAt,
+            delivery: !delivery.configured
+              ? 'configuration-required'
+              : delivery.sent
+                ? 'sent'
+                : 'failed',
+          },
+          message: !delivery.configured
+            ? 'Invitation created. Configure the email provider to deliver invitations automatically.'
+            : delivery.sent
+              ? 'Invitation sent.'
+              : 'Invitation created, but email delivery failed.',
+        }, { status: 202 });
+      } catch (error) {
+        console.error('Collaboration invitation creation failed:', error);
+        return NextResponse.json({ error: 'Could not create collaboration invitation' }, { status: 500 });
+      }
     }
 
     if (member.id === access.ownerId) {
