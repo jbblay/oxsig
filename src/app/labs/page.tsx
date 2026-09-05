@@ -1,13 +1,10 @@
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
-import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
-import LabTopologyPersistenceBridge from '@/components/labs/LabTopologyPersistenceBridge';
+import CyberLabWorkspace from '@/components/labs/CyberLabWorkspace';
 
 export default function CyberLabPage() {
   return (
     <>
-      <LabTopologyPersistenceBridge>
-        <LabRuntimePanel />
-      </LabTopologyPersistenceBridge>
+      <CyberLabWorkspace />
       <AiPractitionerDock />
     </>
   );
