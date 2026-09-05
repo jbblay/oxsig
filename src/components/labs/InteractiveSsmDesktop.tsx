@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SsmBrowserPortChannel } from "@/lib/labs/ssm-port-browser-channel";
 import { RfbClient } from "@/lib/labs/vnc-client";
+import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -22,12 +23,6 @@ class DesktopRequestError extends Error {
     super(message);
     this.code = code;
   }
-}
-
-async function getCsrfToken() {
-  const response = await fetch("/api/csrf-token", { cache: "no-store" });
-  if (!response.ok) throw new Error("Secure desktop setup failed");
-  return (await response.json()).token as string;
 }
 
 function bridgeWebSocketUrl(path: string) {
