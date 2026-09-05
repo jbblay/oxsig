@@ -79,7 +79,7 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
 
   React.useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof window.setTimeout> | null = null;
+    let timer: number | null = null;
     let queued = false;
     const initialLocal = readLocalState();
     // If no server course exists yet, deliberately force the first sync so a
