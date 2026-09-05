@@ -17,6 +17,12 @@ function design(overrides: Partial<InfrastructureDesign> = {}): InfrastructureDe
           ipv4: '10.10.10.10',
           cidr: '10.10.10.0/24',
           gateway: '10.10.10.1',
+          runtimeProfile: {
+            profileId: 'ubuntu-24-04',
+            architecture: 'x86_64',
+            resourceClass: 'lab-small',
+            accessMode: 'terminal',
+          },
         },
       },
       {
@@ -31,6 +37,12 @@ function design(overrides: Partial<InfrastructureDesign> = {}): InfrastructureDe
           cidr: '10.10.10.0/24',
           gateway: '10.10.10.1',
           role: 'AD DS + DNS',
+          runtimeProfile: {
+            profileId: 'windows-server-2022',
+            architecture: 'x86_64',
+            resourceClass: 'lab-medium',
+            accessMode: 'terminal',
+          },
         },
       },
       {
@@ -73,16 +85,52 @@ describe('compileDeploymentPlan', () => {
       nodeId: 'server-1',
       role: 'AD DS + DNS',
       runtime: 'virtual-machine',
-      runtimeProfile: 'unspecified',
+      runtimeProfile: {
+        profileId: 'windows-server-2022',
+        architecture: 'x86_64',
+        resourceClass: 'lab-medium',
+        accessMode: 'terminal',
+      },
+      runtimeProfileLabel: 'Windows Server 2022',
+      runtimeAdapter: {
+        status: 'mapped-available',
+        labSlug: 'windows-server-security-lab',
+      },
     });
     expect(first.networkFunctions[0]).toMatchObject({
       nodeId: 'switch-1',
       implementation: 'adapter-required',
     });
     expect(first.readiness.executable).toBe(false);
-    expect(first.readiness.blockers.join(' ')).toContain('operating-system/runtime profile');
+    expect(first.readiness.blockers.join(' ')).not.toContain('need an explicit operating-system/runtime profile');
     expect(first.readiness.blockers.join(' ')).toContain('proposal-only');
     expect(first.actions.every((action) => action.executableNow === false)).toBe(true);
+  });
+
+  it('keeps a missing runtime profile explicit instead of inferring an operating system', () => {
+    const value = design();
+    delete value.nodes[0].data.runtimeProfile;
+    const plan = compileDeploymentPlan(value);
+    expect(plan.workloads[0].runtimeProfile).toBe('unspecified');
+    expect(plan.workloads[0].runtimeAdapter.status).toBe('unmapped');
+    expect(plan.readiness.blockers.join(' ')).toContain('need an explicit operating-system/runtime profile');
+  });
+
+  it('carries current catalog unavailability into the plan without erasing learner intent', () => {
+    const value = design();
+    value.nodes[0].data.runtimeProfile = {
+      profileId: 'rocky-linux-9',
+      architecture: 'x86_64',
+      resourceClass: 'lab-small',
+      accessMode: 'terminal',
+    };
+    const plan = compileDeploymentPlan(value);
+    expect(plan.workloads[0].runtimeProfile).toMatchObject({ profileId: 'rocky-linux-9' });
+    expect(plan.workloads[0].runtimeAdapter).toMatchObject({
+      status: 'mapped-unavailable',
+      labSlug: 'rocky-linux-rhcsa-lab',
+    });
+    expect(plan.readiness.blockers.join(' ')).toContain('Marketplace activation');
   });
 
   it('refuses to compile a blueprint with blocking validation errors', () => {
@@ -104,7 +152,19 @@ describe('compileDeploymentPlan', () => {
   it('surfaces incomplete addressing as a warning instead of inventing values', () => {
     const incomplete = design({
       nodes: design().nodes.map((node) => node.id === 'client-1'
-        ? { ...node, data: { kind: 'client' as const, label: 'Client-01' } }
+        ? {
+            ...node,
+            data: {
+              kind: 'client' as const,
+              label: 'Client-01',
+              runtimeProfile: {
+                profileId: 'ubuntu-24-04',
+                architecture: 'x86_64' as const,
+                resourceClass: 'lab-small' as const,
+                accessMode: 'terminal' as const,
+              },
+            },
+          }
         : node),
     });
 
