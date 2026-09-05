@@ -73,7 +73,13 @@ if (Test-Path $ready) { exit 0 }
 try { New-Item -ItemType File -Path $lock -ErrorAction Stop | Out-Null } catch { exit 0 }
 try {
   $msi = Join-Path $root 'tightvnc-2.8.88-gpl-setup-64bit.msi'
+  $expectedSha256 = 'FA86D817AC29C5FFE1E8E7095E738D9BA5CA28AA62304AC234580916622A8CA2'
   Invoke-WebRequest -UseBasicParsing 'https://www.tightvnc.com/download/2.8.88/tightvnc-2.8.88-gpl-setup-64bit.msi' -OutFile $msi
+  $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $msi).Hash.ToUpperInvariant()
+  if ($actualSha256 -ne $expectedSha256) {
+    Remove-Item -Force -ErrorAction SilentlyContinue $msi
+    throw "TightVNC installer checksum mismatch; refusing to execute unverified desktop bootstrap content"
+  }
   $arguments = @('/i', ('"' + $msi + '"'), '/quiet', '/norestart', 'ADDLOCAL=Server', 'SET_ACCEPTHTTPCONNECTIONS=1', 'VALUE_OF_ACCEPTHTTPCONNECTIONS=0', 'SET_ACCEPTRFBCONNECTIONS=1', 'VALUE_OF_ACCEPTRFBCONNECTIONS=1', 'SET_ALLOWLOOPBACK=1', 'VALUE_OF_ALLOWLOOPBACK=1', 'SET_LOOPBACKONLY=1', 'VALUE_OF_LOOPBACKONLY=1', 'SET_USEVNCAUTHENTICATION=1', 'VALUE_OF_USEVNCAUTHENTICATION=0', 'SET_ALWAYSSHARED=1', 'VALUE_OF_ALWAYSSHARED=1')
   $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
   if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) { throw "TightVNC installer exited with $($process.ExitCode)" }
