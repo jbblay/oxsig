@@ -41,12 +41,21 @@ import {
   type InfrastructureKind,
 } from '@/lib/infrastructure/designer-schema';
 import { validateInfrastructureDesign } from '@/lib/infrastructure/designer-validation';
+import {
+  RUNTIME_PROFILE_CATALOG,
+  RUNTIME_RESOURCE_CLASSES,
+  defaultRuntimeProfileSelection,
+  getRuntimeProfile,
+  getRuntimeProfileAvailability,
+  type RuntimeProfileSelection,
+} from '@/lib/infrastructure/runtime-profile';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const NODE_TYPES = { infrastructure: InfrastructureDeviceNode };
 const SAVE_DELAY_MS = 650;
 
 type SaveState = 'loading' | 'saved' | 'saving' | 'error';
+type EditableTextField = Exclude<keyof InfrastructureDeviceNodeData, 'kind' | 'runtimeProfile'>;
 
 function uniqueNodeId(kind: InfrastructureKind) {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${kind}-${crypto.randomUUID()}`;
@@ -62,6 +71,7 @@ function persistedNodeData(data: InfrastructureDeviceNodeData): InfrastructureDe
     ...(data.cidr?.trim() ? { cidr: data.cidr.trim() } : {}),
     ...(data.gateway?.trim() ? { gateway: data.gateway.trim() } : {}),
     ...(data.role?.trim() ? { role: data.role.trim() } : {}),
+    ...(data.runtimeProfile ? { runtimeProfile: data.runtimeProfile } : {}),
   };
 }
 
@@ -107,6 +117,12 @@ export default function InfrastructureDesigner() {
   const design = React.useMemo(() => serializeDesign(nodes, edges), [edges, nodes]);
   const serialized = React.useMemo(() => JSON.stringify(design), [design]);
   const validation = React.useMemo(() => validateInfrastructureDesign(design), [design]);
+  const selectedRuntimeProfile = getRuntimeProfile(selectedNode?.data.runtimeProfile?.profileId);
+  const selectedRuntimeAvailability = getRuntimeProfileAvailability(selectedNode?.data.runtimeProfile?.profileId);
+  const selectedIsCompute = selectedNode?.data.kind === 'client' || selectedNode?.data.kind === 'server';
+  const compatibleProfiles = selectedIsCompute
+    ? RUNTIME_PROFILE_CATALOG.filter((profile) => profile.allowedKinds.includes(selectedNode.data.kind as 'client' | 'server'))
+    : [];
 
   React.useEffect(() => {
     let cancelled = false;
@@ -202,11 +218,27 @@ export default function InfrastructureDesigner() {
     });
   }, [setEdges]);
 
-  const updateSelected = React.useCallback((field: keyof InfrastructureDeviceNodeData, value: string) => {
+  const updateSelected = React.useCallback((field: EditableTextField, value: string) => {
     if (!selectedNodeId) return;
     setNodes((current) => current.map((node) => {
       if (node.id !== selectedNodeId) return node;
       return { ...node, data: { ...node.data, [field]: value } };
+    }));
+  }, [selectedNodeId, setNodes]);
+
+  const setRuntimeProfile = React.useCallback((selection?: RuntimeProfileSelection) => {
+    if (!selectedNodeId) return;
+    setNodes((current) => current.map((node) => {
+      if (node.id !== selectedNodeId) return node;
+      return { ...node, data: { ...node.data, runtimeProfile: selection } };
+    }));
+  }, [selectedNodeId, setNodes]);
+
+  const patchRuntimeProfile = React.useCallback((patch: Partial<RuntimeProfileSelection>) => {
+    if (!selectedNodeId) return;
+    setNodes((current) => current.map((node) => {
+      if (node.id !== selectedNodeId || !node.data.runtimeProfile) return node;
+      return { ...node, data: { ...node.data, runtimeProfile: { ...node.data.runtimeProfile, ...patch } } };
     }));
   }, [selectedNodeId, setNodes]);
 
@@ -229,7 +261,7 @@ export default function InfrastructureDesigner() {
             <h1 className="text-2xl font-bold md:text-3xl">Infrastructure Designer</h1>
             <Badge variant="secondary">Blueprint v1</Badge>
           </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Build the intended network first. OXSIG stores and validates the blueprint separately from live AWS runtime state so it can later become a controlled deployment plan.</p>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Build the intended network first. Compute nodes now carry an explicit runtime profile so operating system, access, architecture, and resource intent are part of the saved blueprint and later deployment plan.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} devices · {edges.length} links</Badge>
@@ -244,7 +276,7 @@ export default function InfrastructureDesigner() {
         </div>
       </div>
 
-      <div className="grid min-h-[680px] gap-3 xl:grid-cols-[250px_minmax(0,1fr)_310px]">
+      <div className="grid min-h-[680px] gap-3 xl:grid-cols-[250px_minmax(0,1fr)_330px]">
         <aside className="overflow-hidden rounded-2xl border bg-card">
           <div className="border-b p-4"><p className="font-semibold">Technical palette</p><p className="mt-1 text-xs text-muted-foreground">Drag a device to the canvas or tap Add.</p></div>
           <div className="max-h-[620px] space-y-2 overflow-auto p-3">
@@ -292,9 +324,9 @@ export default function InfrastructureDesigner() {
             <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
             <Controls position="bottom-left" />
             <MiniMap pannable zoomable position="bottom-right" className="!bg-background/90" />
-            {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center shadow-sm backdrop-blur"><Network className="mx-auto h-10 w-10 text-muted-foreground/50" /><p className="mt-3 font-medium">Design the system before you deploy it</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Add clients, servers, routers, switches, and firewalls. Connect them, configure addressing, then let OXSIG validate the blueprint.</p></div></div>}
+            {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center shadow-sm backdrop-blur"><Network className="mx-auto h-10 w-10 text-muted-foreground/50" /><p className="mt-3 font-medium">Design the system before you deploy it</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Add clients, servers, routers, switches, and firewalls. Connect them, configure addressing and runtime intent, then let OXSIG validate the blueprint.</p></div></div>}
           </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur">Blueprint only · deployment compiler comes after the design contract is proven</div>
+          <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur">Blueprint only · saved runtime intent participates in the deployment plan identity</div>
         </section>
 
         <aside className="overflow-hidden rounded-2xl border bg-card">
@@ -313,10 +345,52 @@ export default function InfrastructureDesigner() {
                 <Field label="Role" value={selectedNode.data.role || ''} onChange={(value) => updateSelected('role', value.slice(0, 240))} placeholder="AD DS + DNS" />
               </div>
 
+              {selectedIsCompute && (
+                <div className="space-y-3 rounded-xl border p-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Runtime profile</p>
+                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Make the OS and execution intent explicit. OXSIG will never infer this from the role label.</p>
+                  </div>
+                  <SelectField
+                    label="Operating system"
+                    value={selectedNode.data.runtimeProfile?.profileId || ''}
+                    onChange={(value) => setRuntimeProfile(value ? defaultRuntimeProfileSelection(value) : undefined)}
+                    options={[{ value: '', label: 'Not selected' }, ...compatibleProfiles.map((profile) => ({ value: profile.id, label: profile.label }))]}
+                  />
+                  {selectedNode.data.runtimeProfile && selectedRuntimeProfile && (
+                    <>
+                      <SelectField
+                        label="Architecture"
+                        value={selectedNode.data.runtimeProfile.architecture}
+                        onChange={(value) => patchRuntimeProfile({ architecture: value as RuntimeProfileSelection['architecture'] })}
+                        options={selectedRuntimeProfile.supportedArchitectures.map((value) => ({ value, label: value }))}
+                      />
+                      <SelectField
+                        label="Resource class"
+                        value={selectedNode.data.runtimeProfile.resourceClass}
+                        onChange={(value) => patchRuntimeProfile({ resourceClass: value as RuntimeProfileSelection['resourceClass'] })}
+                        options={RUNTIME_RESOURCE_CLASSES.map((value) => ({ value, label: value }))}
+                      />
+                      <SelectField
+                        label="Access"
+                        value={selectedNode.data.runtimeProfile.accessMode}
+                        onChange={(value) => patchRuntimeProfile({ accessMode: value as RuntimeProfileSelection['accessMode'] })}
+                        options={selectedRuntimeProfile.supportedAccessModes.map((value) => ({ value, label: value }))}
+                      />
+                      <div className={`rounded-lg p-2 text-[11px] leading-4 ${selectedRuntimeAvailability.available ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
+                        {selectedRuntimeAvailability.available
+                          ? `Mapped to the controlled ${selectedRuntimeAvailability.labSlug} runtime adapter.`
+                          : selectedRuntimeAvailability.note || 'This runtime profile is not currently deployable.'}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2 rounded-xl border p-3">
                 <div className="flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Validation</p><Badge variant={validation.valid ? 'outline' : 'destructive'} className="text-[9px]">{validation.valid ? 'No blocking errors' : `${validation.errors.length} blocking`}</Badge></div>
                 {validation.issues.filter((issue) => !issue.nodeId || issue.nodeId === selectedNode.id).slice(0, 6).map((issue, index) => <div key={`${issue.code}-${index}`} className={`rounded-lg p-2 text-[11px] leading-4 ${issue.severity === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>{issue.message}</div>)}
-                {!validation.issues.some((issue) => issue.nodeId === selectedNode.id) && <p className="text-[11px] text-muted-foreground">This device has no addressing or connectivity issues detected.</p>}
+                {!validation.issues.some((issue) => issue.nodeId === selectedNode.id) && <p className="text-[11px] text-muted-foreground">This device has no addressing, runtime-profile, or connectivity issues detected.</p>}
               </div>
 
               <Button variant="destructive" className="w-full" onClick={removeSelected}><Trash2 className="mr-2 h-4 w-4" />Remove device</Button>
@@ -327,7 +401,7 @@ export default function InfrastructureDesigner() {
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Whole design</p>
             <div className="mt-2 space-y-1.5">
               {validation.issues.slice(0, 5).map((issue, index) => <p key={`${issue.code}-summary-${index}`} className={`text-[11px] leading-4 ${issue.severity === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>• {issue.message}</p>)}
-              {validation.issues.length === 0 && <p className="text-[11px] text-muted-foreground">No validation issues detected. The blueprint is ready for a future deployment translation step.</p>}
+              {validation.issues.length === 0 && <p className="text-[11px] text-muted-foreground">No validation issues detected. The blueprint is ready for deployment translation.</p>}
               {validation.issues.length > 5 && <p className="text-[10px] text-muted-foreground">+{validation.issues.length - 5} more issues</p>}
             </div>
           </div>
@@ -342,6 +416,17 @@ function Field({ label, value, onChange, placeholder, mono = false }: { label: s
     <label className="block space-y-1.5">
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
       <Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={mono ? 'font-mono text-xs' : 'text-xs'} />
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> | readonly { value: string; label: string }[] }) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring">
+        {options.map((option) => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
+      </select>
     </label>
   );
 }
