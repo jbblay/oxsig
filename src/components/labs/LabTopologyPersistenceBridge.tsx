@@ -87,7 +87,7 @@ export default function LabTopologyPersistenceBridge({ children }: { children: R
     if (!ready || !syncEnabledRef.current) return;
 
     let cancelled = false;
-    let timer: ReturnType<typeof window.setTimeout> | null = null;
+    let timer: number | null = null;
     let queued = false;
 
     const scheduleSync = (delay = SYNC_DEBOUNCE_MS) => {
