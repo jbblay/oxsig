@@ -9,14 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth/use-auth';
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Profile = { id: string; displayName: string; email?: string; bio?: string; avatarUrl?: string; role?: string };
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Could not prepare secure request');
-  return (await response.json()).token as string;
-}
 
 export default function AccountPage() {
   const { isAuthenticated, isLoading: authLoading, profileError, refresh } = useAuth();
@@ -42,7 +37,7 @@ export default function AccountPage() {
   async function save() {
     setLoading(true);
     try {
-      const response = await fetch('/api/users/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-csrf-token': await csrfToken() }, body: JSON.stringify({ displayName, bio }) });
+      const response = await fetch('/api/users/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-csrf-token': await getCsrfToken() }, body: JSON.stringify({ displayName, bio }) });
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Update failed');
       const next = (await response.json()).user as Profile;
       setProfile(next); await refresh(); toast.success('Profile updated');
