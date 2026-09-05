@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { runtimeProfileSelectionSchema } from './runtime-profile';
 
 export const INFRASTRUCTURE_KINDS = ['client', 'server', 'router', 'switch', 'firewall'] as const;
 export type InfrastructureKind = (typeof INFRASTRUCTURE_KINDS)[number];
@@ -16,6 +17,7 @@ const deviceDataSchema = z.object({
   cidr: z.string().trim().max(64).optional(),
   gateway: z.string().trim().max(64).optional(),
   role: z.string().trim().max(240).optional(),
+  runtimeProfile: runtimeProfileSelectionSchema.optional(),
 }).strict();
 
 const deviceNodeSchema = z.object({

@@ -79,7 +79,7 @@ export default function DeploymentPlanner() {
             <Badge variant="secondary">Proposal v1</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Compile the saved Infrastructure Designer blueprint into a reviewable deployment contract. This stage never provisions AWS resources or changes live lab state.
+            Compile the saved Infrastructure Designer blueprint—including explicit OS, access, architecture, and resource intent—into a reviewable deployment contract. This stage never provisions AWS resources or changes live lab state.
           </p>
         </div>
         <Button onClick={() => void generatePlan()} disabled={loading}>
@@ -93,7 +93,7 @@ export default function DeploymentPlanner() {
           <FileCog className="mx-auto h-10 w-10 text-muted-foreground/50" />
           <p className="mt-3 font-semibold">Blueprint → explicit proposal</p>
           <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            OXSIG will read your persisted blueprint, re-run validation on the server, identify workloads, network functions, segments, links, missing execution profiles, and the ordered actions a future authorized deployment would require.
+            OXSIG will read your persisted blueprint, re-run validation on the server, identify workloads, runtime mappings, network functions, segments, links, and the ordered actions a future authorized deployment would require.
           </p>
         </div>
       )}
@@ -158,13 +158,40 @@ export default function DeploymentPlanner() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Plan identity</p>
                 <p className="mt-2 break-all font-mono text-xs">{result.planId}</p>
                 <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                  Stable SHA-256 identity over the deterministic plan. A later authorization layer can bind approval to this exact proposal instead of trusting mutable client state.
+                  Stable SHA-256 identity over the deterministic plan. Runtime profile selections are inside this identity, so later approval can bind to the exact OS/access/resource proposal instead of mutable client state.
                 </p>
                 <div className="mt-3 space-y-1 text-[10px] text-muted-foreground">
                   <p>Design saved: {new Date(result.sourceDesignUpdatedAt).toLocaleString()}</p>
                   <p>Plan generated: {new Date(result.generatedAt).toLocaleString()}</p>
                 </div>
               </div>
+
+              {result.plan.workloads.length > 0 && (
+                <div className="rounded-2xl border bg-card p-4">
+                  <div className="flex items-center justify-between gap-2"><p className="font-semibold">Runtime mappings</p><Badge variant="outline">{result.plan.workloads.length}</Badge></div>
+                  <div className="mt-3 space-y-2">
+                    {result.plan.workloads.map((workload) => {
+                      const selected = workload.runtimeProfile === 'unspecified' ? null : workload.runtimeProfile;
+                      const statusLabel = workload.runtimeAdapter.status === 'mapped-available'
+                        ? 'Mapped'
+                        : workload.runtimeAdapter.status === 'mapped-unavailable'
+                          ? 'Unavailable'
+                          : 'Unmapped';
+                      return (
+                        <div key={workload.nodeId} className="rounded-xl border p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0"><p className="truncate text-xs font-semibold">{workload.label}</p><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{workload.runtimeProfileLabel || 'Runtime profile not selected'}</p></div>
+                            <Badge variant={workload.runtimeAdapter.status === 'mapped-available' ? 'default' : 'secondary'} className="text-[9px]">{statusLabel}</Badge>
+                          </div>
+                          {selected && <p className="mt-2 font-mono text-[10px] text-muted-foreground">{selected.architecture} · {selected.resourceClass} · {selected.accessMode}</p>}
+                          {workload.runtimeAdapter.labSlug && <p className="mt-1 font-mono text-[10px] text-muted-foreground/70">{workload.runtimeAdapter.labSlug}</p>}
+                          {workload.runtimeAdapter.note && <p className="mt-1 text-[10px] leading-4 text-muted-foreground">{workload.runtimeAdapter.note}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-2xl border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">

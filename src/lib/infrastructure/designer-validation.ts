@@ -1,4 +1,5 @@
 import type { InfrastructureDesign } from './designer-schema';
+import { inspectRuntimeProfileSelection } from './runtime-profile';
 
 export type InfrastructureValidationSeverity = 'error' | 'warning';
 
@@ -74,7 +75,7 @@ export function validateInfrastructureDesign(design: InfrastructureDesign): Infr
   }
 
   for (const node of design.nodes) {
-    const { hostname, ipv4, cidr, gateway } = node.data;
+    const { hostname, ipv4, cidr, gateway, runtimeProfile } = node.data;
     const cleanHostname = normalized(hostname);
     const cleanIpv4 = ipv4?.trim() || '';
     const cleanCidr = cidr?.trim() || '';
@@ -119,6 +120,21 @@ export function validateInfrastructureDesign(design: InfrastructureDesign): Infr
 
     if (cleanGateway && parseIpv4(cleanGateway) && cleanCidr && parseCidr(cleanCidr) && !isIpv4InCidr(cleanGateway, cleanCidr)) {
       issues.push({ severity: 'warning', code: 'gateway-outside-cidr', message: `${node.data.label} gateway is outside its configured CIDR.`, nodeId: node.id });
+    }
+
+    const computeNode = node.data.kind === 'client' || node.data.kind === 'server';
+    if (computeNode && !runtimeProfile) {
+      issues.push({ severity: 'warning', code: 'runtime-profile-missing', message: `${node.data.label} does not have an explicit runtime profile yet.`, nodeId: node.id });
+    }
+
+    if (runtimeProfile) {
+      const inspection = inspectRuntimeProfileSelection(node.data.kind, runtimeProfile);
+      for (const message of inspection.errors) {
+        issues.push({ severity: 'error', code: 'runtime-profile-invalid', message: `${node.data.label}: ${message}`, nodeId: node.id });
+      }
+      for (const message of inspection.warnings) {
+        issues.push({ severity: 'warning', code: 'runtime-profile-unavailable', message: `${node.data.label}: ${message}`, nodeId: node.id });
+      }
     }
 
     if (design.nodes.length > 1 && !connectedNodeIds.has(node.id)) {

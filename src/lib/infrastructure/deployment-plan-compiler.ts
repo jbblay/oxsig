@@ -1,6 +1,7 @@
 import type { InfrastructureDesign } from './designer-schema';
 import { validateInfrastructureDesign, type InfrastructureValidationResult } from './designer-validation';
 import { deploymentPlanSchema, type DeploymentPlan, type DeploymentPlanAction } from './deployment-plan-schema';
+import { getRuntimeProfile, getRuntimeProfileAvailability, type RuntimeProfileSelection } from './runtime-profile';
 
 export class DeploymentPlanCompileError extends Error {
   readonly validation: InfrastructureValidationResult;
@@ -21,24 +22,65 @@ function descriptionLabel(label: string, hostname?: string) {
   return hostname ? `${label} (${hostname})` : label;
 }
 
+function runtimeAdapterFor(selection?: RuntimeProfileSelection) {
+  if (!selection) {
+    return {
+      status: 'unmapped' as const,
+      note: 'Choose an explicit runtime profile before an execution adapter can be selected.',
+    };
+  }
+
+  const profile = getRuntimeProfile(selection.profileId);
+  if (!profile) {
+    return { status: 'unmapped' as const, note: `Runtime profile ${selection.profileId} is not recognized.` };
+  }
+
+  const availability = getRuntimeProfileAvailability(profile.id);
+  if (!availability.mapped) {
+    return {
+      status: 'unmapped' as const,
+      ...(availability.note ? { note: availability.note } : {}),
+    };
+  }
+
+  if (!availability.available) {
+    return {
+      status: 'mapped-unavailable' as const,
+      labSlug: availability.labSlug,
+      ...(availability.note ? { note: availability.note } : {}),
+    };
+  }
+
+  return {
+    status: 'mapped-available' as const,
+    labSlug: availability.labSlug,
+  };
+}
+
 export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentPlan {
   const validation = validateInfrastructureDesign(design);
   if (!validation.valid) throw new DeploymentPlanCompileError(validation);
 
   const workloads = design.nodes
     .filter((node) => node.data.kind === 'client' || node.data.kind === 'server')
-    .map((node) => ({
-      nodeId: node.id,
-      kind: node.data.kind as 'client' | 'server',
-      label: node.data.label,
-      ...(present(node.data.hostname) ? { hostname: present(node.data.hostname) } : {}),
-      ...(present(node.data.ipv4) ? { ipv4: present(node.data.ipv4) } : {}),
-      ...(present(node.data.cidr) ? { cidr: present(node.data.cidr) } : {}),
-      ...(present(node.data.gateway) ? { gateway: present(node.data.gateway) } : {}),
-      ...(present(node.data.role) ? { role: present(node.data.role) } : {}),
-      runtime: 'virtual-machine' as const,
-      runtimeProfile: 'unspecified' as const,
-    }));
+    .map((node) => {
+      const selection = node.data.runtimeProfile;
+      const profile = getRuntimeProfile(selection?.profileId);
+      return {
+        nodeId: node.id,
+        kind: node.data.kind as 'client' | 'server',
+        label: node.data.label,
+        ...(present(node.data.hostname) ? { hostname: present(node.data.hostname) } : {}),
+        ...(present(node.data.ipv4) ? { ipv4: present(node.data.ipv4) } : {}),
+        ...(present(node.data.cidr) ? { cidr: present(node.data.cidr) } : {}),
+        ...(present(node.data.gateway) ? { gateway: present(node.data.gateway) } : {}),
+        ...(present(node.data.role) ? { role: present(node.data.role) } : {}),
+        runtime: 'virtual-machine' as const,
+        runtimeProfile: selection || ('unspecified' as const),
+        ...(profile ? { runtimeProfileLabel: profile.label } : {}),
+        runtimeAdapter: runtimeAdapterFor(selection),
+      };
+    });
 
   const networkFunctions = design.nodes
     .filter((node) => node.data.kind === 'router' || node.data.kind === 'switch' || node.data.kind === 'firewall')
@@ -95,14 +137,23 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
   }
 
   for (const workload of workloads) {
+    let blocker: string;
+    if (workload.runtimeProfile === 'unspecified') {
+      blocker = 'Choose an explicit operating-system/runtime profile before provisioning.';
+    } else if (workload.runtimeAdapter.status === 'mapped-available') {
+      blocker = `Runtime profile ${workload.runtimeProfileLabel || workload.runtimeProfile.profileId} is mapped to ${workload.runtimeAdapter.labSlug}; deployment authorization and execution are not enabled in this planner stage.`;
+    } else {
+      blocker = workload.runtimeAdapter.note || 'No controlled runtime adapter is currently available for this profile.';
+    }
+
     actions.push({
       id: `compute:${workload.nodeId}`,
       phase: 'compute',
       type: 'provision-workload',
       nodeId: workload.nodeId,
-      description: `Provision ${workload.kind} ${descriptionLabel(workload.label, workload.hostname)} as a virtual machine.`,
+      description: `Provision ${workload.kind} ${descriptionLabel(workload.label, workload.hostname)} as a virtual machine${workload.runtimeProfileLabel ? ` using ${workload.runtimeProfileLabel}` : ''}.`,
       executableNow: false,
-      blocker: 'Choose an explicit operating-system/runtime profile before provisioning.',
+      blocker,
     });
   }
 
@@ -141,7 +192,19 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
 
   const blockers = new Set<string>();
   if (design.nodes.length === 0) blockers.add('The blueprint has no devices to deploy.');
-  if (workloads.length > 0) blockers.add(`${workloads.length} compute workload${workloads.length === 1 ? '' : 's'} need an explicit operating-system/runtime profile.`);
+
+  const missingProfiles = workloads.filter((workload) => workload.runtimeProfile === 'unspecified');
+  if (missingProfiles.length > 0) {
+    blockers.add(`${missingProfiles.length} compute workload${missingProfiles.length === 1 ? '' : 's'} need an explicit operating-system/runtime profile.`);
+  }
+
+  for (const workload of workloads) {
+    if (workload.runtimeProfile === 'unspecified') continue;
+    if (workload.runtimeAdapter.status !== 'mapped-available') {
+      blockers.add(`${workload.label}: ${workload.runtimeAdapter.note || 'No controlled runtime adapter is available.'}`);
+    }
+  }
+
   if (networkFunctions.length > 0) blockers.add(`${networkFunctions.length} network function${networkFunctions.length === 1 ? '' : 's'} require controlled execution adapters.`);
   blockers.add('Deployment Planner v1 is proposal-only and cannot modify AWS or live Cyber Lab runtime state.');
 

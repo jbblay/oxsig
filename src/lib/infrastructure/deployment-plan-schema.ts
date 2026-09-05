@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { runtimeProfileSelectionSchema } from './runtime-profile';
+
+const runtimeAdapterSchema = z.object({
+  status: z.enum(['unmapped', 'mapped-unavailable', 'mapped-available']),
+  labSlug: z.string().min(1).max(160).optional(),
+  note: z.string().min(1).max(500).optional(),
+}).strict();
 
 const workloadSchema = z.object({
   nodeId: z.string().min(1).max(160),
@@ -10,7 +17,9 @@ const workloadSchema = z.object({
   gateway: z.string().max(64).optional(),
   role: z.string().max(240).optional(),
   runtime: z.literal('virtual-machine'),
-  runtimeProfile: z.literal('unspecified'),
+  runtimeProfile: z.union([z.literal('unspecified'), runtimeProfileSelectionSchema]),
+  runtimeProfileLabel: z.string().min(1).max(160).optional(),
+  runtimeAdapter: runtimeAdapterSchema,
 }).strict();
 
 const networkFunctionSchema = z.object({
