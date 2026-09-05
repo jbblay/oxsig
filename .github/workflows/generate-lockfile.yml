@@ -1,0 +1,35 @@
+name: Generate pnpm lockfile
+
+on:
+  push:
+    branches:
+      - production/dependency-reproducibility
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: pnpm
+      - name: Generate lockfile
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Commit lockfile when changed
+        run: |
+          if git diff --quiet -- pnpm-lock.yaml && git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
+            echo "pnpm-lock.yaml is already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "Commit reproducible pnpm lockfile"
+          git push origin HEAD:production/dependency-reproducibility
