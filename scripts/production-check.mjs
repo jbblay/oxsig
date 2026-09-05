@@ -117,6 +117,19 @@ if (sentrySourceMapCount > 0 && sentrySourceMapCount < sentrySourceMapValues.len
   errors.push('SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT must all be configured together for source-map uploads');
 }
 
+const posthogToken = value('NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN');
+const posthogHost = value('NEXT_PUBLIC_POSTHOG_HOST');
+if (!posthogToken && !posthogHost) {
+  warnings.push('PostHog is not configured; product analytics events will not be collected');
+} else {
+  requireValue('NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN', 'NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN is required when PostHog analytics is configured');
+  requireValue('NEXT_PUBLIC_POSTHOG_HOST', 'NEXT_PUBLIC_POSTHOG_HOST is required when PostHog analytics is configured');
+  validateHttpUrl('NEXT_PUBLIC_POSTHOG_HOST');
+  if (posthogToken && !posthogToken.startsWith('ph_')) {
+    warnings.push('NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN does not use the usual ph_ PostHog project-token prefix');
+  }
+}
+
 if (!value('OPENAI_API_KEY')) {
   warnings.push('OPENAI_API_KEY is not configured; AI Practitioner and Academy AI features will be unavailable');
 }
