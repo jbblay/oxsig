@@ -117,16 +117,16 @@ export default function LabTopologyPersistenceBridge({ children }: { children: R
       try {
         const response = await putTopology(topology);
         if (!response.ok) {
-          if (response.status === 401 || response.status === 403 || response.status >= 500) {
-            syncEnabledRef.current = false;
-          } else {
+          if (response.status >= 500 || response.status === 408 || response.status === 429) {
             retry = true;
+          } else {
+            syncEnabledRef.current = false;
           }
           return;
         }
         lastSyncedRef.current = raw;
       } catch {
-        syncEnabledRef.current = false;
+        retry = true;
       } finally {
         savingRef.current = false;
         if (cancelled || !syncEnabledRef.current) return;
