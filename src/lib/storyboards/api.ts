@@ -1,5 +1,6 @@
 'use client';
 
+import { getCsrfToken } from '@/lib/security/csrf-client';
 import type {
   StoryboardDraft,
   StoryboardServerSession,
@@ -32,12 +33,6 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
-async function csrfToken(): Promise<string> {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error(await readError(response));
-  return (await response.json()).token;
-}
-
 function storyboardAudioFilename(audio: Blob): string {
   if (audio.type.includes('mp4')) return 'storyboard.m4a';
   if (audio.type.includes('ogg')) return 'storyboard.ogg';
@@ -46,7 +41,7 @@ function storyboardAudioFilename(audio: Blob): string {
 
 async function uploadStoryboardAudio(audio: Blob): Promise<StoryboardAudioObject> {
   const contentType = audio.type || 'audio/webm';
-  const token = await csrfToken();
+  const token = await getCsrfToken();
   const presignResponse = await fetch('/api/storyboards/audio/uploads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
@@ -75,7 +70,7 @@ async function uploadStoryboardAudio(audio: Blob): Promise<StoryboardAudioObject
 
 async function cleanupStoryboardAudio(object: StoryboardAudioObject): Promise<void> {
   try {
-    const token = await csrfToken();
+    const token = await getCsrfToken();
     await fetch('/api/storyboards/audio/uploads', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
@@ -128,7 +123,7 @@ export async function saveServerStoryboard(
     }));
     if (uploadedAudio) form.set('audioStorage', JSON.stringify(uploadedAudio));
 
-    const token = await csrfToken();
+    const token = await getCsrfToken();
     const response = await fetch(existingId ? `/api/storyboards/${existingId}` : '/api/storyboards', {
       method: existingId ? 'PATCH' : 'POST',
       headers: { 'x-csrf-token': token },
@@ -150,7 +145,7 @@ export async function saveServerStoryboard(
 }
 
 export async function deleteServerStoryboard(id: string): Promise<void> {
-  const token = await csrfToken();
+  const token = await getCsrfToken();
   const response = await fetch(`/api/storyboards/${id}`, {
     method: 'DELETE',
     headers: { 'x-csrf-token': token },
@@ -169,7 +164,7 @@ export async function shareStoryboard(
   email: string,
   permission: 'viewer' | 'editor'
 ): Promise<StoryboardShare> {
-  const token = await csrfToken();
+  const token = await getCsrfToken();
   const response = await fetch(`/api/storyboards/${id}/shares`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
@@ -180,7 +175,7 @@ export async function shareStoryboard(
 }
 
 export async function revokeStoryboardShare(id: string, userId: string): Promise<void> {
-  const token = await csrfToken();
+  const token = await getCsrfToken();
   const response = await fetch(`/api/storyboards/${id}/shares/${userId}`, {
     method: 'DELETE',
     headers: { 'x-csrf-token': token },

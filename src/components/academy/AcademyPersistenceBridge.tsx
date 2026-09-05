@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import type { AcademyCourse } from '@/lib/academy/types';
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
 const PROGRESS_KEY = 'oxsig:academy-progress:v1';
@@ -50,12 +51,6 @@ function snapshot(state: LocalState) {
   });
 }
 
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Academy persistence security token unavailable');
-  return (await response.json()).token as string;
-}
-
 export default function AcademyPersistenceBridge({ initialState }: { initialState: InitialState }) {
   const serverKnownRef = React.useRef(Boolean(initialState));
   const syncingRef = React.useRef(false);
@@ -97,7 +92,7 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
       try {
         if (!local.course) {
           if (serverKnownRef.current) {
-            const token = await csrfToken();
+            const token = await getCsrfToken();
             const response = await fetch('/api/academy/state', {
               method: 'DELETE',
               headers: { 'x-csrf-token': token },
@@ -110,7 +105,7 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
           return;
         }
 
-        const token = await csrfToken();
+        const token = await getCsrfToken();
         if (!serverKnownRef.current) {
           const response = await fetch('/api/academy/state', {
             method: 'POST',

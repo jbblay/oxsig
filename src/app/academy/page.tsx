@@ -45,6 +45,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
 const PROGRESS_KEY = 'oxsig:academy-progress:v1';
@@ -63,12 +64,6 @@ type PracticeResult = {
   execution: AcademyExecution;
   evaluation?: AcademyPracticeEvaluation;
 };
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Secure Academy request setup failed');
-  return (await response.json()).token as string;
-}
 
 async function apiError(response: Response, fallback: string) {
   const body = await response.json().catch(() => ({}));
@@ -223,7 +218,7 @@ export default function AcademyPage() {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     setNarrating(false);
     try {
-      const token = await csrfToken();
+      const token = await getCsrfToken();
       const response = await fetch('/api/academy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
@@ -254,7 +249,7 @@ export default function AcademyPage() {
     setBusy('ask');
     setQuestion('');
     try {
-      const token = await csrfToken();
+      const token = await getCsrfToken();
       const response = await fetch('/api/academy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
@@ -294,7 +289,7 @@ export default function AcademyPage() {
     const practice = activeLesson.practice;
     setBusy('practice');
     try {
-      const approvalToken = await csrfToken();
+      const approvalToken = await getCsrfToken();
       const approvalResponse = await fetch(`/api/labs/instances/${runningLab.id}/ai/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': approvalToken },
@@ -305,7 +300,7 @@ export default function AcademyPage() {
       toast.info('Running the approved checkpoint in the visible Academy terminal…');
       const terminalResult = await executeInVisibleTerminal(runningLab.id, practice.command);
 
-      const recordToken = await csrfToken();
+      const recordToken = await getCsrfToken();
       const recordResponse = await fetch(`/api/labs/instances/${runningLab.id}/ai/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': recordToken },
@@ -322,7 +317,7 @@ export default function AcademyPage() {
       const execution = recordBody.execution;
       setPracticeResults((current) => ({ ...current, [activeLesson.id]: { execution } }));
 
-      const evaluationToken = await csrfToken();
+      const evaluationToken = await getCsrfToken();
       const evaluationResponse = await fetch('/api/academy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': evaluationToken },

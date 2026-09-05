@@ -16,6 +16,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from "@/lib/labs/ai-terminal-events";
+import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -40,12 +41,6 @@ type ActiveAiRun = {
   started: boolean;
   timeout: ReturnType<typeof setTimeout> | null;
 };
-
-async function getCsrfToken() {
-  const response = await fetch("/api/csrf-token", { cache: "no-store" });
-  if (!response.ok) throw new Error("Secure terminal setup failed");
-  return (await response.json()).token as string;
-}
 
 function bridgeWebSocketUrl(path: string) {
   const url = new URL(path, window.location.origin);

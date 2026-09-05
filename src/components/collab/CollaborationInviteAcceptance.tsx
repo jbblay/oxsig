@@ -6,12 +6,7 @@ import { CheckCircle2, Loader2, MailCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Secure invitation setup failed');
-  return (await response.json()).token as string;
-}
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 export default function CollaborationInviteAcceptance({ token }: { token: string }) {
   const router = useRouter();
@@ -24,7 +19,7 @@ export default function CollaborationInviteAcceptance({ token }: { token: string
     setBusy(true);
     setError(null);
     try {
-      const csrf = await csrfToken();
+      const csrf = await getCsrfToken();
       const response = await fetch(`/api/collaborations/invitations/${encodeURIComponent(token)}/accept`, {
         method: 'POST',
         headers: { 'x-csrf-token': csrf },

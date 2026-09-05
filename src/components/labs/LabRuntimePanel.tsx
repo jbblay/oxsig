@@ -47,6 +47,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { LabAccessMode, LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
+import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type Capabilities = LabRuntimeCapabilities & { reason?: string; region?: string };
 type Instance = {
@@ -95,12 +96,6 @@ const RUNTIME_NODE_KEY = "oxsig:cyber-lab-runtime-node:v1";
 const LAYOUT_KEY = "oxsig:cyber-lab-layout:v1";
 const LAYOUT_HINT_KEY = "oxsig:cyber-lab-layout-hint:v1";
 const ACTION_BUTTON = "h-10 w-full justify-start";
-
-async function csrfToken() {
-  const response = await fetch("/api/csrf-token", { cache: "no-store" });
-  if (!response.ok) throw new Error("Secure request setup failed");
-  return (await response.json()).token as string;
-}
 
 async function errorMessage(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
@@ -403,7 +398,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     const accessMode = selectedLab.accessModes.includes(selectedAccessMode) ? selectedAccessMode : selectedLab.defaultAccessMode;
     setBusy("create");
     try {
-      const csrf = await csrfToken();
+      const csrf = await getCsrfToken();
       const response = await fetch("/api/labs", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
@@ -430,7 +425,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       setDesktopId(null);
     }
     try {
-      const csrf = await csrfToken();
+      const csrf = await getCsrfToken();
       const response = await fetch(`/api/labs/instances/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
