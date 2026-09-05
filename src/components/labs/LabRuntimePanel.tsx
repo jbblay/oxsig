@@ -47,6 +47,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { LabAccessMode, LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
+import { notifyLocalStorageChange } from "@/lib/persistence/storage-change-observer";
 import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type Capabilities = LabRuntimeCapabilities & { reason?: string; region?: string };
@@ -341,6 +342,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       edges,
     };
     window.localStorage.setItem(TOPOLOGY_KEY, JSON.stringify(payload));
+    notifyLocalStorageChange(TOPOLOGY_KEY);
   }, [edges, nodes, topologyReady]);
 
   React.useEffect(() => {
