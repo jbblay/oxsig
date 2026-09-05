@@ -12,7 +12,7 @@ Repository: `jbblay/oxsig`
 
 PR #59, `Productionize terminal WebSocket transport for Vercel`, passed exact-head CI and was merged into `main` as `f634fb5fe526440486c16f527e3871b1ad7fe92f`.
 
-The final code-side hardening slice after that merge is PR #60 from `production/final-runtime-hardening`. It adds bounded terminal transport recovery, intentionally removes desktop advertising until a real browser desktop transport exists, fixes no-practice Academy mastery scoring, and refreshes production documentation. Require exact-head CI to be green before merging #60. After merge, the resulting `main` commit becomes the canonical release baseline.
+PR #60, `Final runtime hardening before production configuration`, also passed exact-head CI and was merged into `main` as `c2d24b2dc6fcc96a5185cf1f3cce64ddb353105b`. That merge is the final code-side production baseline before environment configuration and live production validation. It adds bounded terminal transport recovery, intentionally removes desktop advertising until a real browser desktop transport exists, fixes no-practice Academy mastery scoring, and refreshes production documentation.
 
 ## Terminal transport state
 
@@ -110,7 +110,7 @@ pnpm dev:up
 
 `pnpm dev:up` preserves `.env.local`, performs frozen-lockfile installation when appropriate, runs database migrations, validates the configured local AWS identity/profile/account, and starts development. `pnpm dev` alone does not apply migrations.
 
-## Remaining production gates after final hardening merges
+## Remaining production gates
 
 These are environment/operator/live-validation tasks rather than unfinished feature architecture:
 
@@ -125,7 +125,7 @@ These are environment/operator/live-validation tasks rather than unfinished feat
 - Live-test collaboration invitations, realtime/fallback behavior, and attachments.
 - Exercise terminal recovery under a forced/unexpected WebSocket interruption and confirm the fresh-shell reset message is accurate.
 - Enable/verify a `main` branch protection/ruleset requiring CI. The current GitHub app connection cannot independently read the administrative branch-protection endpoint.
-- Perform final production smoke/E2E validation and assign the release score only from the resulting canonical `main` plus live evidence.
+- Perform final production smoke/E2E validation and assign the release score only from canonical `main` plus live evidence.
 
 ## Final audit rule
 
