@@ -83,7 +83,8 @@ describe('transcribeElevenLabsSpeech', () => {
     expect(init.body.get('tag_audio_events')).toBe('false');
     const uploaded = init.body.get('file');
     expect(uploaded).toBeInstanceOf(File);
-    expect((uploaded as File).name).toBe('question.webm');
+    expect((uploaded as File).type).toBe('audio/webm');
+    expect((uploaded as File).size).toBe(audio.size);
   });
 
   it('rejects empty recordings before contacting the provider', async () => {
