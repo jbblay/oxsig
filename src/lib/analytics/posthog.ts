@@ -5,8 +5,8 @@ import { PostHog } from 'posthog-node';
 type ProductEventProperties = Record<string, string | number | boolean | null | undefined>;
 
 function config() {
-  const token = String(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN || '').trim();
-  const host = String(process.env.NEXT_PUBLIC_POSTHOG_HOST || '').trim();
+  const token = String(process.env.POSTHOG_PROJECT_TOKEN || '').trim();
+  const host = String(process.env.POSTHOG_HOST || '').trim();
   return token && host ? { token, host } : null;
 }
 
@@ -15,7 +15,7 @@ export function productAnalyticsConfigured() {
 }
 
 /**
- * Capture a deliberately allow-listed product event.
+ * Capture a deliberately allow-listed product event from trusted server code.
  *
  * Callers must not pass prompts, terminal input/output, collaboration message
  * text, email addresses, filenames, uploaded content, or other user-generated
