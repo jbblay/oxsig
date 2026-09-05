@@ -1,11 +1,5 @@
+import { getCsrfToken } from '@/lib/security/csrf-client';
 import type { VaultItem, VaultItemInput } from './types';
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Could not prepare secure request');
-  const data = await response.json();
-  return data.token as string;
-}
 
 async function responseError(response: Response, fallback: string) {
   const data = await response.json().catch(() => ({}));
@@ -24,7 +18,7 @@ export async function createVaultItem(input: VaultItemInput): Promise<VaultItem>
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-csrf-token': await csrfToken(),
+      'x-csrf-token': await getCsrfToken(),
     },
     body: JSON.stringify(input),
   });
@@ -40,7 +34,7 @@ export async function updateVaultItem(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      'x-csrf-token': await csrfToken(),
+      'x-csrf-token': await getCsrfToken(),
     },
     body: JSON.stringify(patch),
   });
@@ -51,7 +45,7 @@ export async function updateVaultItem(
 export async function deleteVaultItem(id: string): Promise<void> {
   const response = await fetch(`/api/vault/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: { 'x-csrf-token': await csrfToken() },
+    headers: { 'x-csrf-token': await getCsrfToken() },
   });
   if (!response.ok) throw await responseError(response, 'Vault item could not be deleted');
 }
