@@ -5,11 +5,14 @@ type StorageChangeSubscriber = {
   callback: () => void;
 };
 
+type StoragePrototype = Pick<Storage, 'setItem' | 'removeItem' | 'clear'>;
+
 const subscribers = new Set<StorageChangeSubscriber>();
 
-let originalSetItem: typeof Storage.prototype.setItem | null = null;
-let originalRemoveItem: typeof Storage.prototype.removeItem | null = null;
-let originalClear: typeof Storage.prototype.clear | null = null;
+let observedPrototype: StoragePrototype | null = null;
+let originalSetItem: Storage['setItem'] | null = null;
+let originalRemoveItem: Storage['removeItem'] | null = null;
+let originalClear: Storage['clear'] | null = null;
 let installed = false;
 
 function isLocalStorage(storage: Storage) {
@@ -50,25 +53,30 @@ function onStorage(event: StorageEvent) {
 }
 
 function installObserver() {
-  if (installed || typeof window === 'undefined' || typeof Storage === 'undefined') return;
+  if (installed || typeof window === 'undefined') return;
 
-  originalSetItem = Storage.prototype.setItem;
-  originalRemoveItem = Storage.prototype.removeItem;
-  originalClear = Storage.prototype.clear;
-  Storage.prototype.setItem = observedSetItem;
-  Storage.prototype.removeItem = observedRemoveItem;
-  Storage.prototype.clear = observedClear;
+  const prototype = Object.getPrototypeOf(window.localStorage) as StoragePrototype | null;
+  if (!prototype) return;
+
+  observedPrototype = prototype;
+  originalSetItem = prototype.setItem;
+  originalRemoveItem = prototype.removeItem;
+  originalClear = prototype.clear;
+  prototype.setItem = observedSetItem;
+  prototype.removeItem = observedRemoveItem;
+  prototype.clear = observedClear;
   window.addEventListener('storage', onStorage);
   installed = true;
 }
 
 function uninstallObserver() {
-  if (!installed || typeof window === 'undefined' || typeof Storage === 'undefined') return;
+  if (!installed || typeof window === 'undefined') return;
 
   window.removeEventListener('storage', onStorage);
-  if (Storage.prototype.setItem === observedSetItem && originalSetItem) Storage.prototype.setItem = originalSetItem;
-  if (Storage.prototype.removeItem === observedRemoveItem && originalRemoveItem) Storage.prototype.removeItem = originalRemoveItem;
-  if (Storage.prototype.clear === observedClear && originalClear) Storage.prototype.clear = originalClear;
+  if (observedPrototype?.setItem === observedSetItem && originalSetItem) observedPrototype.setItem = originalSetItem;
+  if (observedPrototype?.removeItem === observedRemoveItem && originalRemoveItem) observedPrototype.removeItem = originalRemoveItem;
+  if (observedPrototype?.clear === observedClear && originalClear) observedPrototype.clear = originalClear;
+  observedPrototype = null;
   originalSetItem = null;
   originalRemoveItem = null;
   originalClear = null;
