@@ -1,10 +1,13 @@
 'use client';
 
 import * as React from 'react';
+import { subscribeToLocalStorageChanges } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const TOPOLOGY_KEY = 'oxsig:cyber-lab-topology:v1';
 const EMPTY_TOPOLOGY = JSON.stringify({ nodes: [], edges: [] });
+const SYNC_DEBOUNCE_MS = 400;
+const SYNC_RETRY_MS = 5000;
 
 function parseLocalTopology(raw: string | null) {
   if (!raw) return { nodes: [], edges: [] };
@@ -83,8 +86,25 @@ export default function LabTopologyPersistenceBridge({ children }: { children: R
   React.useEffect(() => {
     if (!ready || !syncEnabledRef.current) return;
 
-    const timer = window.setInterval(async () => {
-      if (savingRef.current || !syncEnabledRef.current) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof window.setTimeout> | null = null;
+    let queued = false;
+
+    const scheduleSync = (delay = SYNC_DEBOUNCE_MS) => {
+      if (cancelled || !syncEnabledRef.current) return;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void sync();
+      }, delay);
+    };
+
+    async function sync() {
+      if (cancelled || !syncEnabledRef.current) return;
+      if (savingRef.current) {
+        queued = true;
+        return;
+      }
 
       const raw = window.localStorage.getItem(TOPOLOGY_KEY) || EMPTY_TOPOLOGY;
       if (raw === lastSyncedRef.current) return;
@@ -93,11 +113,14 @@ export default function LabTopologyPersistenceBridge({ children }: { children: R
       if (!topology) return;
 
       savingRef.current = true;
+      let retry = false;
       try {
         const response = await putTopology(topology);
         if (!response.ok) {
           if (response.status === 401 || response.status === 403 || response.status >= 500) {
             syncEnabledRef.current = false;
+          } else {
+            retry = true;
           }
           return;
         }
@@ -106,10 +129,26 @@ export default function LabTopologyPersistenceBridge({ children }: { children: R
         syncEnabledRef.current = false;
       } finally {
         savingRef.current = false;
+        if (cancelled || !syncEnabledRef.current) return;
+        if (queued) {
+          queued = false;
+          scheduleSync();
+        } else if (retry) {
+          scheduleSync(SYNC_RETRY_MS);
+        }
       }
-    }, 1200);
+    }
 
-    return () => window.clearInterval(timer);
+    const unsubscribe = subscribeToLocalStorageChanges([TOPOLOGY_KEY], () => scheduleSync());
+    // Catch a write that happened while the saved workspace was mounting, then
+    // persist only after actual topology mutations instead of waking every 1.2s.
+    void sync();
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (timer) window.clearTimeout(timer);
+    };
   }, [ready]);
 
   if (!ready) {
