@@ -15,11 +15,13 @@ import {
   Clock3,
   Loader2,
   MessageCircleQuestion,
+  Mic,
   Pause,
   Play,
   RotateCcw,
   ShieldCheck,
   Sparkles,
+  Square,
   Terminal,
   Volume2,
   WandSparkles,
@@ -48,6 +50,7 @@ import {
 import { getLabsSnapshot } from '@/lib/labs/client';
 import { notifyLocalStorageChange } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { useOxsigVoiceInput } from '@/lib/voice/use-voice-input';
 import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
@@ -139,7 +142,17 @@ export default function AcademyPage() {
   const [question, setQuestion] = React.useState('');
   const [qa, setQa] = React.useState<Record<string, LessonQa[]>>({});
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
+  const voiceInput = useOxsigVoiceInput({
+    onTranscript: ({ transcript }) => {
+      setQuestion((current) => {
+        const combined = current.trim() ? `${current.trim()} ${transcript}` : transcript;
+        return combined.slice(0, 2000);
+      });
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const narrating = speakingKey === 'academy-lesson';
+  const voiceInputBusy = voiceInput.recording || voiceInput.processing || voiceInput.state === 'requesting-permission';
   const [hydrated, setHydrated] = React.useState(false);
   const [instructorCollapsed, setInstructorCollapsed] = React.useState(false);
   const [runningLab, setRunningLab] = React.useState<LabInstance | null>(null);
@@ -214,6 +227,7 @@ export default function AcademyPage() {
       return;
     }
 
+    voiceInput.cancel();
     setBusy('generate');
     stopVoice();
     try {
@@ -243,6 +257,7 @@ export default function AcademyPage() {
   async function askInstructor() {
     if (!course || !activeLesson || !question.trim()) return;
     const asked = question.trim();
+    voiceInput.cancel();
     stopVoice();
     setBusy('ask');
     setQuestion('');
@@ -284,6 +299,8 @@ export default function AcademyPage() {
       return;
     }
 
+    voiceInput.cancel();
+    stopVoice();
     const practice = activeLesson.practice;
     setBusy('practice');
     try {
@@ -355,13 +372,24 @@ export default function AcademyPage() {
       return;
     }
 
+    voiceInput.cancel();
     void playVoice(narrationText(course, activeLesson), 'academy-lesson').catch((error) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       toast.error(error instanceof Error ? error.message : 'ElevenLabs narration failed');
     });
   }
 
+  function toggleVoiceInput() {
+    if (voiceInput.recording) {
+      voiceInput.stop();
+      return;
+    }
+    stopVoice();
+    void voiceInput.start();
+  }
+
   function selectLesson(index: number) {
+    voiceInput.cancel();
     stopVoice();
     setActiveIndex(index);
     setQuestion('');
@@ -378,6 +406,7 @@ export default function AcademyPage() {
   }
 
   function resetCourse() {
+    voiceInput.cancel();
     stopVoice();
     setCourse(null);
     setActiveIndex(0);
@@ -649,7 +678,7 @@ export default function AcademyPage() {
                       <CardDescription className="mt-1">Synced to lesson {activeIndex + 1}.</CardDescription>
                     </div>
                   </div>
-                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setInstructorCollapsed(true)} title="Collapse instructor" aria-label="Collapse instructor"><ChevronRight className="h-4 w-4" /></Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { voiceInput.cancel(); setInstructorCollapsed(true); }} title="Collapse instructor" aria-label="Collapse instructor"><ChevronRight className="h-4 w-4" /></Button>
                 </div>
                 <Button className="mt-3 w-full" variant={narrating ? 'secondary' : 'outline'} size="sm" onClick={toggleNarration}>
                   {narrating ? <Pause className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -696,19 +725,43 @@ export default function AcademyPage() {
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
-                        if (!busy) void askInstructor();
+                        if (!busy && !voiceInputBusy) void askInstructor();
                       }
                     }}
-                    placeholder="Wait — what exactly is the Docker daemon?"
+                    placeholder={voiceInput.recording ? 'Listening… press stop when you are finished.' : voiceInput.processing ? 'Transcribing your question…' : 'Wait — what exactly is the Docker daemon?'}
                     className="min-h-[84px] resize-none"
-                    disabled={busy === 'ask'}
+                    disabled={busy === 'ask' || voiceInputBusy}
                     maxLength={2000}
                   />
-                  <Button className="w-full" variant="outline" disabled={busy === 'ask' || !question.trim()} onClick={() => void askInstructor()}>
-                    {busy === 'ask' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircleQuestion className="h-4 w-4" />}
-                    Ask about this lesson
-                  </Button>
-                  <p className="text-[10px] leading-4 text-muted-foreground">Asking a question stops narration so the instructor can answer without losing the active lesson. Press Play lesson to continue.</p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant={voiceInput.recording ? 'destructive' : 'outline'}
+                      className="shrink-0"
+                      disabled={busy === 'ask' || voiceInput.processing || voiceInput.state === 'requesting-permission' || !voiceInput.supported}
+                      onClick={toggleVoiceInput}
+                      title={voiceInput.recording ? 'Stop recording' : 'Interrupt with your voice'}
+                      aria-label={voiceInput.recording ? 'Stop recording' : 'Interrupt with your voice'}
+                    >
+                      {voiceInput.processing || voiceInput.state === 'requesting-permission'
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : voiceInput.recording
+                          ? <Square className="h-4 w-4" />
+                          : <Mic className="h-4 w-4" />}
+                    </Button>
+                    <Button className="flex-1" variant="outline" disabled={busy === 'ask' || voiceInputBusy || !question.trim()} onClick={() => void askInstructor()}>
+                      {busy === 'ask' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircleQuestion className="h-4 w-4" />}
+                      Ask about this lesson
+                    </Button>
+                  </div>
+                  <p className="text-[10px] leading-4 text-muted-foreground">
+                    {voiceInput.recording
+                      ? 'Narration is stopped while your microphone is active. Press stop when you finish speaking.'
+                      : voiceInput.processing
+                        ? 'ElevenLabs is transcribing. Review the question before sending it.'
+                        : 'Pressing the mic interrupts narration, records only on your action, and places the transcript here for review before submission.'}
+                  </p>
                 </section>
               </CardContent>
             </Card>
