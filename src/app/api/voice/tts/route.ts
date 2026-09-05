@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const providerResponse = await createOxsigVoiceStream(parsed.data.text);
-      return new Response(providerResponse.body, {
+      return new NextResponse(providerResponse.body, {
         status: 200,
         headers: {
           'Content-Type': providerResponse.headers.get('content-type') || 'audio/mpeg',
