@@ -22,9 +22,10 @@ async function requestCsrfToken(): Promise<string> {
     throw new Error('Could not prepare secure request: token missing');
   }
 
-  cachedToken = body.token;
+  const token = body.token;
+  cachedToken = token;
   cachedUntil = Date.now() + CSRF_CACHE_TTL_MS;
-  return cachedToken;
+  return token;
 }
 
 export function clearCsrfTokenCache(): void {
