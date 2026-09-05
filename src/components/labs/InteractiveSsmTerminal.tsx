@@ -19,6 +19,9 @@ import {
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
+const MAX_AUTO_RECONNECT_ATTEMPTS = 3;
+const AUTO_RECONNECT_DELAYS_MS = [1000, 2500, 5000] as const;
+
 type SessionResponse = {
   sessionId: string;
   bridgePath: string;
@@ -82,6 +85,9 @@ export default function InteractiveSsmTerminal({
   const generationRef = React.useRef(0);
   const intentionalCloseRef = React.useRef(false);
   const handshakeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = React.useRef(0);
+  const connectRef = React.useRef<(recovery?: boolean) => Promise<void>>(async () => undefined);
   const activeAiRunRef = React.useRef<ActiveAiRun | null>(null);
   const outputDecoderRef = React.useRef(new TextDecoder());
   const [terminalReady, setTerminalReady] = React.useState(false);
@@ -101,6 +107,11 @@ export default function InteractiveSsmTerminal({
   const clearHandshakeTimer = React.useCallback(() => {
     if (handshakeTimerRef.current) clearTimeout(handshakeTimerRef.current);
     handshakeTimerRef.current = null;
+  }, []);
+
+  const clearReconnectTimer = React.useCallback(() => {
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = null;
   }, []);
 
   const emitTerminalState = React.useCallback((connected: boolean) => {
@@ -194,10 +205,35 @@ export default function InteractiveSsmTerminal({
     }
   }, [labInstanceId]);
 
+  const scheduleRecovery = React.useCallback((generation: number, reason?: string) => {
+    if (generation !== generationRef.current || intentionalCloseRef.current) return false;
+    const attempt = reconnectAttemptRef.current + 1;
+    if (attempt > MAX_AUTO_RECONNECT_ATTEMPTS) return false;
+
+    reconnectAttemptRef.current = attempt;
+    const delay = AUTO_RECONNECT_DELAYS_MS[Math.min(attempt - 1, AUTO_RECONNECT_DELAYS_MS.length - 1)];
+    clearReconnectTimer();
+    setState("connecting");
+    setError(null);
+    setBridgeTicketExpiresAt(null);
+    setStatusDetail(`Terminal transport interrupted${reason ? `: ${reason}` : ""}. Recovering automatically (${attempt}/${MAX_AUTO_RECONNECT_ATTEMPTS})…`);
+    emitTerminalState(false);
+    terminalRef.current?.writeln(`\r\n[Terminal transport interrupted. Automatic recovery ${attempt}/${MAX_AUTO_RECONNECT_ATTEMPTS} in ${Math.ceil(delay / 1000)}s…]\r\n`);
+
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      if (generation !== generationRef.current || intentionalCloseRef.current) return;
+      void connectRef.current(true);
+    }, delay);
+    return true;
+  }, [clearReconnectTimer, emitTerminalState]);
+
   const disconnect = React.useCallback(async (writeMessage = true) => {
     generationRef.current += 1;
     intentionalCloseRef.current = true;
+    reconnectAttemptRef.current = 0;
     clearHandshakeTimer();
+    clearReconnectTimer();
     failActiveAiRun("The interactive terminal disconnected before the AI command completed.");
     channelRef.current?.close();
     channelRef.current = null;
@@ -209,10 +245,12 @@ export default function InteractiveSsmTerminal({
     emitTerminalState(false);
     if (writeMessage) terminalRef.current?.writeln("\r\n[Oxsig terminal disconnected]\r\n");
     intentionalCloseRef.current = false;
-  }, [clearHandshakeTimer, emitTerminalState, endServerSession, failActiveAiRun]);
+  }, [clearHandshakeTimer, clearReconnectTimer, emitTerminalState, endServerSession, failActiveAiRun]);
 
-  const connect = React.useCallback(async () => {
+  const connect = React.useCallback(async (recovery = false) => {
     if (!terminalRef.current || !fitRef.current) return;
+    if (!recovery) reconnectAttemptRef.current = 0;
+    clearReconnectTimer();
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     intentionalCloseRef.current = true;
@@ -225,11 +263,11 @@ export default function InteractiveSsmTerminal({
 
     setState("connecting");
     setError(null);
-    setStatusDetail("Requesting an interactive Session Manager shell.");
+    setStatusDetail(recovery ? "Recovering the interactive Session Manager shell." : "Requesting an interactive Session Manager shell.");
     setBridgeTicketExpiresAt(null);
     emitTerminalState(false);
     const terminal = terminalRef.current;
-    terminal.writeln(`\r\n[Connecting ${machineLabel} through AWS Systems Manager…]`);
+    terminal.writeln(`\r\n[${recovery ? "Recovering" : "Connecting"} ${machineLabel} through AWS Systems Manager…]`);
 
     try {
       const csrf = await getCsrfToken();
@@ -261,11 +299,13 @@ export default function InteractiveSsmTerminal({
         onReady: (customerMessage) => {
           if (generation !== generationRef.current) return;
           clearHandshakeTimer();
+          reconnectAttemptRef.current = 0;
           setState("connected");
           setError(null);
           setBridgeTicketExpiresAt(null);
-          setStatusDetail("Connected to the persistent shell session.");
+          setStatusDetail(recovery ? "Terminal transport recovered with a fresh SSM shell." : "Connected to the persistent shell session.");
           emitTerminalState(true);
+          if (recovery) terminalRef.current?.writeln("\r\n[Terminal transport recovered. A fresh SSM shell is active.]\r\n");
           if (customerMessage) terminalRef.current?.writeln(`\r\n${customerMessage}`);
           requestAnimationFrame(() => {
             fitRef.current?.fit();
@@ -290,12 +330,14 @@ export default function InteractiveSsmTerminal({
           if (generation !== generationRef.current || intentionalCloseRef.current) return;
           clearHandshakeTimer();
           failActiveAiRun(reason || "The terminal session closed before the AI command completed.");
-          setState("disconnected");
-          setStatusDetail(reason ? `Session closed: ${reason}` : "Session closed.");
           setBridgeTicketExpiresAt(null);
           emitTerminalState(false);
-          if (reason) terminalRef.current?.writeln(`\r\n[Session closed: ${reason}]\r\n`);
-          void endServerSession(true);
+          void endServerSession(true).finally(() => {
+            if (scheduleRecovery(generation, reason)) return;
+            setState("disconnected");
+            setStatusDetail(reason ? `Session closed: ${reason}` : "Session closed.");
+            if (reason) terminalRef.current?.writeln(`\r\n[Session closed: ${reason}]\r\n`);
+          });
         },
       });
       channelRef.current = channel;
@@ -320,15 +362,21 @@ export default function InteractiveSsmTerminal({
       if (generation !== generationRef.current) return;
       const message = connectError instanceof Error ? connectError.message : "Interactive terminal connection failed";
       clearHandshakeTimer();
-      setState("error");
       setError(message);
-      setStatusDetail("Connection attempt failed.");
       setBridgeTicketExpiresAt(null);
       emitTerminalState(false);
       terminal.writeln(`\r\n[Oxsig terminal error: ${message}]\r\n`);
       await endServerSession(false);
+      if (!scheduleRecovery(generation, message)) {
+        setState("error");
+        setStatusDetail("Connection attempt failed. Automatic recovery attempts are exhausted; reconnect manually to retry.");
+      }
     }
-  }, [clearHandshakeTimer, emitTerminalState, endServerSession, failActiveAiRun, handleChannelOutput, labInstanceId, machineLabel]);
+  }, [clearHandshakeTimer, clearReconnectTimer, emitTerminalState, endServerSession, failActiveAiRun, handleChannelOutput, labInstanceId, machineLabel, scheduleRecovery]);
+
+  React.useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   React.useEffect(() => {
     const answerStateQuery = () => {
@@ -463,6 +511,8 @@ export default function InteractiveSsmTerminal({
       resizeObserver?.disconnect();
       dataDisposable?.dispose();
       clearHandshakeTimer();
+      clearReconnectTimer();
+      reconnectAttemptRef.current = 0;
       failActiveAiRun("The interactive terminal closed before the AI command completed.");
       emitTerminalState(false);
       generationRef.current += 1;
@@ -474,7 +524,7 @@ export default function InteractiveSsmTerminal({
       terminalRef.current = null;
       fitRef.current = null;
     };
-  }, [clearHandshakeTimer, emitTerminalState, endServerSession, failActiveAiRun, machineLabel]);
+  }, [clearHandshakeTimer, clearReconnectTimer, emitTerminalState, endServerSession, failActiveAiRun, machineLabel]);
 
   React.useEffect(() => {
     if (!terminalReady) return;
@@ -527,7 +577,7 @@ export default function InteractiveSsmTerminal({
         />
       </div>
       <p className="text-[10px] text-muted-foreground">
-        This is one persistent shell session: directories, environment changes, interactive programs, Ctrl+C, and command history remain in the same terminal until you disconnect or the VM ends. Approved AI Practitioner commands run here visibly and their real terminal output is sent back for explanation.
+        The shell stays persistent while its SSM transport remains connected. If a serverless WebSocket transport is interrupted, Oxsig makes up to three bounded recovery attempts using a fresh SSM shell; shell-local state such as the working directory or exported variables can reset after recovery. Approved AI Practitioner commands run visibly and their real terminal output is sent back for explanation.
       </p>
     </div>
   );

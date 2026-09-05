@@ -1,30 +1,86 @@
-# Oxsig
+# OXSIG
 
-Oxsig is a learning and collaboration workspace that connects visual explanation, shared resources, and practical cloud labs.
+OXSIG is a learning, collaboration, and practical cloud-lab workspace built around durable Academy progress, AI-assisted teaching, visual Storyboards, shared resources, and temporary AWS lab machines.
 
-## Core architecture
+## Production architecture
 
-- **Vercel** — Next.js web application
-- **Clerk** — user identity and sessions
-- **Neon** — PostgreSQL application data
-- **AWS S3** — workspace files
-- **AWS EC2 + SSM** — temporary lab machines
+- **Vercel** — Next.js application and production WebSocket terminal bridge
+- **Clerk** — user identity, sessions, and user-sync webhooks
+- **Neon** — PostgreSQL application state, Academy history/mastery, collaboration state, lab topology, rate limits, and terminal replay protection
+- **AWS S3** — private workspace files, collaboration media, and Storyboard audio
+- **AWS EC2 + Systems Manager** — temporary lab machines and browser terminal sessions without inbound SSH
+- **OpenAI** — Academy and AI Practitioner teaching features
+- **Resend** — transactional collaboration invitations
+- **Ably** — realtime collaboration, with polling fallback when unconfigured
+- **Sentry** — server/browser/terminal observability
+- **PostHog** — allow-listed server-side product analytics
 
-## Current product surface
+## Product surface
 
-- Home workspace
-- Account/profile
-- Storyboards: drawing, voice recording, replay, and sharing
-- Cloud storage
-- AWS Cyber Lab
+- Academy courses with durable progress, Q&A, practice evidence, sessions, mastery, and history
+- AI Practitioner teaching flow integrated with visible lab-terminal execution
+- AWS Cyber Lab with durable topology and temporary EC2/SSM machines
+- Browser terminal through the same-origin `/__oxsig/terminal-bridge` boundary
+- Storyboards with private S3 audio recording, signed playback, replay, and sharing
+- Vault/private cloud storage
+- Collaboration invitations, attachments, and realtime updates
+- Scheduled lab cleanup and production readiness diagnostics
+
+Desktop access is intentionally not advertised in the production lab catalog until a genuine browser desktop transport is implemented. Terminal access remains the supported production lab transport.
 
 ## Local development
 
-1. Install dependencies: `pnpm install`
-2. Copy `.env.example` to `.env.local` and add development values.
-3. Apply database migrations: `pnpm db:migrate`
-4. Start Next.js: `pnpm dev`
+The recommended canonical workflow is:
 
-`.env.local` is the development configuration source. Production uses the same application variable names in Vercel, except local AWS authentication (`AWS_PROFILE`) is replaced by a production IAM/OIDC role.
+```bash
+git switch main
+git pull --ff-only origin main
+pnpm dev:up
+```
 
-Historical experiments and removed features remain available through Git history and older branches.
+`pnpm dev:up` preserves an existing `.env.local`, installs from the frozen lockfile when needed, applies database migrations, validates the configured local AWS identity/profile, and starts development.
+
+For manual operation:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm db:migrate
+pnpm dev
+```
+
+`pnpm dev` alone does not apply migrations.
+
+## Production configuration
+
+`.env.example` is the authoritative variable contract. Never commit real credentials. Production uses the same application variable names in Vercel, while local-only `AWS_PROFILE` must be replaced by a production IAM/OIDC identity.
+
+Before release, run:
+
+```bash
+pnpm prod:check
+pnpm readiness -- --strict
+```
+
+`prod:check` validates the configuration contract. `readiness` additionally performs live checks where supported, including PostgreSQL, S3, EC2 lab networking, and terminal replay-protection state.
+
+## Database and Storyboard migration
+
+Apply committed schema migrations with:
+
+```bash
+pnpm db:migrate
+```
+
+The latest tracked schema migration is `026_storyboard_audio_storage.sql`.
+
+After migration 026 is applied to a production database, migrate any legacy Storyboard BYTEA audio into S3 with:
+
+```bash
+pnpm storyboards:migrate-audio
+```
+
+Do not delete historical SQL migrations after they have been applied.
+
+## Release rule
+
+`main` is the canonical application only after a production PR has passed exact-head CI and been merged. A merged integration is not proof that external credentials, cloud resources, database migrations, or live end-to-end paths are configured; those must be verified separately in the target production environment.
