@@ -63,6 +63,7 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.0",
     "@vitest/coverage-v8": "4.0.4",
     "happy-dom": "^20.0.8",
