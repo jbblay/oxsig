@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   BookOpen,
   Box,
+  GraduationCap,
   Home,
   LibraryBig,
   LogOut,
@@ -32,10 +33,11 @@ const groups = [
     ],
   },
   {
-    label: 'Build & practice',
+    label: 'Learn & practice',
     items: [
-      { href: '/vault', label: 'Vault', icon: LibraryBig },
+      { href: '/academy', label: 'AI Academy', icon: GraduationCap },
       { href: '/labs', label: 'Cyber Lab', icon: Box },
+      { href: '/vault', label: 'Vault', icon: LibraryBig },
     ],
   },
 ];

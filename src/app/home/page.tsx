@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { BookOpen, Box, LibraryBig, User, Users } from 'lucide-react';
+import { BookOpen, Box, GraduationCap, LibraryBig, User, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/use-auth';
 
 const workspaces = [
+  { href: '/academy', title: 'AI Academy', description: 'Ask what you want to learn and get a structured, visual, narrated course with real lab practice.', icon: GraduationCap },
   { href: '/collab/storyboards', title: 'Boards', description: 'Draw, record explanations, replay, and share lessons.', icon: BookOpen },
   { href: '/collab', title: 'Collaboration', description: 'Discuss, share resources, and move a session toward practice.', icon: Users },
   { href: '/vault', title: 'Vault', description: 'Capture commands, procedures, cheat sheets, concepts, scripts and playbooks as reusable knowledge.', icon: LibraryBig },
@@ -19,7 +20,7 @@ export default function HomePage() {
     <div className="space-y-8">
       <section className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">{isAuthenticated ? `Welcome, ${user?.displayName || user?.email || 'back'}` : 'Explore Oxsig'}</h1>
-        <p className="max-w-2xl text-muted-foreground">Discuss knowledge, explain it visually, prove it in a lab, then capture what worked so it becomes reusable.</p>
+        <p className="max-w-2xl text-muted-foreground">Learn with an AI-generated roadmap, prove concepts in a real lab, collaborate visually, and keep moving from explanation to evidence.</p>
         {profileError && <p className="text-sm text-amber-600">Your Clerk session is active, but the Oxsig profile service is not ready yet.</p>}
       </section>
 
