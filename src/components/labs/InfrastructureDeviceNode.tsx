@@ -3,6 +3,7 @@
 import { Monitor, Network, Router, Server, ShieldCheck } from 'lucide-react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { InfrastructureKind } from '@/lib/infrastructure/designer-schema';
+import { getRuntimeProfile, type RuntimeProfileSelection } from '@/lib/infrastructure/runtime-profile';
 
 export type InfrastructureDeviceNodeData = {
   kind: InfrastructureKind;
@@ -12,6 +13,7 @@ export type InfrastructureDeviceNodeData = {
   cidr?: string;
   gateway?: string;
   role?: string;
+  runtimeProfile?: RuntimeProfileSelection;
 };
 
 export type InfrastructureDeviceFlowNode = Node<InfrastructureDeviceNodeData, 'infrastructure'>;
@@ -36,6 +38,7 @@ export default function InfrastructureDeviceNode({ data, selected }: NodeProps<I
   const meta = INFRASTRUCTURE_KIND_META[data.kind];
   const identity = data.hostname?.trim() || meta.label;
   const address = data.ipv4?.trim() || 'Address not set';
+  const runtimeProfile = getRuntimeProfile(data.runtimeProfile?.profileId);
 
   return (
     <div className={`min-w-[210px] rounded-2xl border bg-background/95 shadow-lg backdrop-blur transition ${selected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'}`}>
@@ -51,6 +54,9 @@ export default function InfrastructureDeviceNode({ data, selected }: NodeProps<I
           </div>
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{identity}</p>
           <p className="mt-2 truncate font-mono text-[10px] text-muted-foreground">{address}{data.cidr ? ` · ${data.cidr}` : ''}</p>
+          {(data.kind === 'client' || data.kind === 'server') && (
+            <p className="mt-1 truncate text-[10px] text-muted-foreground">{runtimeProfile?.label || 'Runtime profile not selected'}{data.runtimeProfile ? ` · ${data.runtimeProfile.accessMode}` : ''}</p>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-between border-t px-4 py-2 text-[10px] text-muted-foreground">
