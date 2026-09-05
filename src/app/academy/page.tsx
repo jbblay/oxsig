@@ -45,6 +45,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
+import { getLabsSnapshot } from '@/lib/labs/client';
 import { notifyLocalStorageChange } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
@@ -176,11 +177,10 @@ export default function AcademyPage() {
 
   const loadLab = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/labs', { cache: 'no-store' });
-      if (!response.ok) return;
-      const body = await response.json() as { instances?: LabInstance[] };
-      const current = (body.instances || []).find((instance) => instance.status === 'running') || null;
-      setRunningLab(current);
+      const result = await getLabsSnapshot();
+      if (!result.ok) return;
+      const current = (result.data.instances || []).find((instance) => instance.status === 'running') as LabInstance | undefined;
+      setRunningLab(current || null);
     } finally {
       setLoadingLab(false);
     }

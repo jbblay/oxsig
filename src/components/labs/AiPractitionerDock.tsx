@@ -33,6 +33,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
+import { getLabsSnapshot } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type LabInstance = {
@@ -117,10 +118,9 @@ export default function AiPractitionerDock() {
 
   const loadLab = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/labs', { cache: 'no-store' });
-      if (!response.ok) return;
-      const body = await response.json();
-      const current = (body.instances || [])[0] as LabInstance | undefined;
+      const result = await getLabsSnapshot();
+      if (!result.ok) return;
+      const current = (result.data.instances || [])[0] as LabInstance | undefined;
       setInstance(current || null);
     } finally {
       setLoadingLab(false);
