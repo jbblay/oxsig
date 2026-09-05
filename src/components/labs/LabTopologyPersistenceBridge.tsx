@@ -1,15 +1,10 @@
 'use client';
 
 import * as React from 'react';
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const TOPOLOGY_KEY = 'oxsig:cyber-lab-topology:v1';
 const EMPTY_TOPOLOGY = JSON.stringify({ nodes: [], edges: [] });
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Secure request setup failed');
-  return (await response.json()).token as string;
-}
 
 function parseLocalTopology(raw: string | null) {
   if (!raw) return { nodes: [], edges: [] };
@@ -23,7 +18,7 @@ function parseLocalTopology(raw: string | null) {
 }
 
 async function putTopology(topology: unknown) {
-  const csrf = await csrfToken();
+  const csrf = await getCsrfToken();
   return fetch('/api/labs/topology', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
