@@ -134,8 +134,12 @@ async function refreshAcademyMastery(
   const passedPractices = Math.min(requiredPractices, Number(passedResult.rows[0]?.passed) || 0);
 
   const lessonRatio = totalLessons > 0 ? completedCount / totalLessons : 0;
-  const practiceRatio = requiredPractices > 0 ? passedPractices / requiredPractices : 1;
-  const score = Math.max(0, Math.min(100, Math.round((lessonRatio * 70) + (practiceRatio * 30))));
+  const practiceRatio = requiredPractices > 0 ? passedPractices / requiredPractices : 0;
+  const score = Math.max(0, Math.min(100, Math.round(
+    requiredPractices > 0
+      ? (lessonRatio * 70) + (practiceRatio * 30)
+      : lessonRatio * 100
+  )));
   const mastered = completedCount >= totalLessons && passedPractices >= requiredPractices;
 
   await getPool().query(
@@ -237,7 +241,7 @@ export async function createAcademyCourse(
         ownerId,
         course.lessons.length,
         requiredPracticeCount(course),
-        requiredPracticeCount(course) === 0 ? 30 : 0,
+        0,
       ]
     );
     await client.query('COMMIT');
