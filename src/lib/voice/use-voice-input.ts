@@ -130,7 +130,7 @@ export function useOxsigVoiceInput({
           autoGainControl: true,
         },
       });
-      if (!mountedRef.current) {
+      if (!mountedRef.current || cancelledRef.current) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
@@ -206,15 +206,18 @@ export function useOxsigVoiceInput({
     }
   }, [clearTimer, maxDurationMs, reportError, stop, stopTracks]);
 
-  React.useEffect(() => () => {
-    mountedRef.current = false;
-    cancelledRef.current = true;
-    clearTimer();
-    abortRef.current?.abort();
-    abortRef.current = null;
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
-    for (const track of streamRef.current?.getTracks() || []) track.stop();
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelledRef.current = true;
+      clearTimer();
+      abortRef.current?.abort();
+      abortRef.current = null;
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      for (const track of streamRef.current?.getTracks() || []) track.stop();
+    };
   }, [clearTimer]);
 
   return {
