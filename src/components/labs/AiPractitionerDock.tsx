@@ -33,6 +33,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type LabInstance = {
   id: string;
@@ -61,12 +62,6 @@ type VaultHandoff = {
 };
 
 const MAX_PROMPT_LENGTH = 4000;
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Secure request setup failed');
-  return (await response.json()).token as string;
-}
 
 async function apiError(response: Response, fallback: string) {
   const body = await response.json().catch(() => ({}));
@@ -194,7 +189,7 @@ export default function AiPractitionerDock() {
     setBusy(id);
 
     try {
-      const token = await csrfToken();
+      const token = await getCsrfToken();
       const response = await fetch('/api/ai/practitioner', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
@@ -228,7 +223,7 @@ export default function AiPractitionerDock() {
 
     setBusy(`run:${entry.id}`);
     try {
-      const approvalToken = await csrfToken();
+      const approvalToken = await getCsrfToken();
       const approvalResponse = await fetch(`/api/labs/instances/${instance.id}/ai/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': approvalToken },
@@ -239,7 +234,7 @@ export default function AiPractitionerDock() {
       toast.info('Running the approved command in the visible terminal…');
       const terminalResult = await executeInVisibleTerminal(instance.id, entry.plan.command);
 
-      const recordToken = await csrfToken();
+      const recordToken = await getCsrfToken();
       const recordResponse = await fetch(`/api/labs/instances/${instance.id}/ai/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': recordToken },
@@ -256,7 +251,7 @@ export default function AiPractitionerDock() {
       const execution = recordBody.execution;
       setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, execution } : item));
 
-      const analysisToken = await csrfToken();
+      const analysisToken = await getCsrfToken();
       const analysisResponse = await fetch('/api/ai/practitioner', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': analysisToken },
@@ -285,7 +280,7 @@ export default function AiPractitionerDock() {
     if (!instance || !entry.execution || !entry.analysis) return;
     setBusy(`save:${entry.id}`);
     try {
-      const token = await csrfToken();
+      const token = await getCsrfToken();
       const body = [
         `Goal\n${entry.plan.objective}`,
         `Explanation\n${entry.plan.explanation}`,
