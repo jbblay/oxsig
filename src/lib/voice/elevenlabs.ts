@@ -6,6 +6,19 @@ export type ElevenLabsTtsOptions = {
   fetchImpl?: typeof fetch;
 };
 
+export type ElevenLabsSttOptions = {
+  apiKey: string;
+  audio: Blob;
+  filename?: string;
+  modelId?: string;
+  fetchImpl?: typeof fetch;
+};
+
+export type ElevenLabsTranscript = {
+  text: string;
+  languageCode: string | null;
+};
+
 function providerErrorMessage(payload: unknown, status: number) {
   if (payload && typeof payload === 'object') {
     const detail = (payload as { detail?: unknown }).detail;
@@ -62,4 +75,41 @@ export async function streamElevenLabsTextToSpeech({
   if (!response.body) throw new Error('ElevenLabs returned no audio stream.');
 
   return response;
+}
+
+export async function transcribeElevenLabsSpeech({
+  apiKey,
+  audio,
+  filename = 'oxsig-recording.webm',
+  modelId = 'scribe_v2',
+  fetchImpl = fetch,
+}: ElevenLabsSttOptions): Promise<ElevenLabsTranscript> {
+  const key = apiKey.trim();
+  if (!key) throw new Error('ELEVENLABS_API_KEY is not configured.');
+  if (!audio.size) throw new Error('Voice recording is empty.');
+
+  const form = new FormData();
+  form.set('file', audio, filename);
+  form.set('model_id', modelId.trim() || 'scribe_v2');
+  form.set('tag_audio_events', 'false');
+
+  const response = await fetchImpl('https://api.elevenlabs.io/v1/speech-to-text', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'xi-api-key': key,
+    },
+    body: form,
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(providerErrorMessage(payload, response.status));
+
+  const text = typeof payload?.text === 'string' ? payload.text.trim() : '';
+  if (!text) throw new Error('ElevenLabs returned an empty transcript.');
+
+  return {
+    text,
+    languageCode: typeof payload?.language_code === 'string' ? payload.language_code : null,
+  };
 }
