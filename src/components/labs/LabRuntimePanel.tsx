@@ -46,6 +46,7 @@ import LabMachineNode, { LabOsIcon, type LabMachineFlowNode, type LabMachineNode
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { getLabsSnapshot, invalidateLabsSnapshot } from "@/lib/labs/client";
 import type { LabAccessMode, LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from "@/lib/labs/types";
 import { notifyLocalStorageChange } from "@/lib/persistence/storage-change-observer";
 import { getCsrfToken } from "@/lib/security/csrf-client";
@@ -190,11 +191,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const workspaceVisible = workspaceOpen && !dockFocus;
   const labColumns = `${machinesOpen ? "260px" : "52px"} minmax(0,1fr) ${inspectorOpen ? "300px" : "52px"}`;
 
-  const load = React.useCallback(async (silent = false) => {
+  const load = React.useCallback(async (silent = false, force = false) => {
     try {
-      const response = await fetch("/api/labs", { cache: "no-store" });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load the Cyber Lab"));
-      const body = await response.json();
+      const result = await getLabsSnapshot({ force });
+      if (!result.ok) throw new Error(result.data.error || "Could not load the Cyber Lab");
+      const body = result.data;
       const nextCatalog = (body.catalog || []) as LabDefinition[];
       const nextInstances = (body.instances || []) as Instance[];
       setCatalog(nextCatalog);
@@ -230,7 +231,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
   const refreshCloudState = React.useCallback(async () => {
     setBusy("reconcile");
-    await load(true);
+    await load(true, true);
     setBusy(null);
   }, [load]);
 
@@ -412,7 +413,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       setLiveNodeId(selectedNode.id);
       if (created?.id && typeof window !== "undefined") window.localStorage.setItem(RUNTIME_NODE_KEY, JSON.stringify({ instanceId: created.id, nodeId: selectedNode.id }));
       toast.success(`${selectedLab.shortName} ${accessMode} VM requested`);
-      await load(true);
+      invalidateLabsSnapshot();
+      await load(true, true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not start the cloud lab");
     } finally {
@@ -444,7 +446,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       }
       if (action === "stop") setDockTab("diagnostics");
       toast.success(action === "destroy" ? "VM termination requested" : `VM ${action} requested`);
-      await load(true);
+      invalidateLabsSnapshot();
+      await load(true, true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not ${action} the lab`);
     } finally {
