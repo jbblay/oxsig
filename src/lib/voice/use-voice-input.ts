@@ -145,6 +145,10 @@ export function useOxsigVoiceInput({
       };
 
       recorder.onerror = (event) => {
+        cancelledRef.current = true;
+        chunksRef.current = [];
+        recorder.onstop = null;
+        recorderRef.current = null;
         clearTimer();
         stopTracks();
         reportError((event as Event & { error?: DOMException }).error || new Error('Microphone recording failed.'));
