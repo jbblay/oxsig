@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { captureProductEvent } from '@/lib/analytics/posthog';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
 
     const pool = getPool();
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
       const created = await client.query(
@@ -125,6 +127,15 @@ export async function POST(request: NextRequest) {
         [row.id, user.id, JSON.stringify({ read: true, write: true, admin: true })]
       );
       await client.query('COMMIT');
+      committed = true;
+
+      await captureProductEvent({
+        distinctId: user.clerkUserId || user.id,
+        event: 'collaboration_session_created',
+        properties: {
+          collaboration_type: 'chat',
+        },
+      });
 
       return NextResponse.json({
         collaboration: {
@@ -143,7 +154,7 @@ export async function POST(request: NextRequest) {
         },
       }, { status: 201 });
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      if (!committed) await client.query('ROLLBACK').catch(() => undefined);
       console.error('Collaboration create failed:', error);
       return NextResponse.json({ error: 'Could not create collaboration session' }, { status: 500 });
     } finally {
