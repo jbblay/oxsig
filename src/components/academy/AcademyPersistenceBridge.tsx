@@ -81,7 +81,11 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
 
   React.useEffect(() => {
     let cancelled = false;
-    lastSnapshotRef.current = snapshot(readLocalState());
+    const initialLocal = readLocalState();
+    // If no server course exists yet, deliberately force the first sync so a
+    // pre-production localStorage course is migrated instead of being stranded
+    // on this browser forever.
+    lastSnapshotRef.current = serverKnownRef.current ? snapshot(initialLocal) : '';
 
     async function sync() {
       if (cancelled || syncingRef.current) return;
@@ -155,6 +159,7 @@ export default function AcademyPersistenceBridge({ initialState }: { initialStat
     // The current Academy page writes progress to localStorage. This bridge is a
     // temporary compatibility layer: PostgreSQL becomes authoritative without
     // requiring a risky rewrite of the working learning cockpit in one step.
+    void sync();
     const timer = window.setInterval(() => void sync(), 1200);
     return () => {
       cancelled = true;
