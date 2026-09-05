@@ -70,7 +70,7 @@ if (emailPartiallyConfigured) {
   requireValue('EMAIL_FROM', 'EMAIL_FROM is required when transactional email is configured');
   requireValue('OXSIG_APP_URL', 'OXSIG_APP_URL is required when transactional email is configured');
 } else {
-  warnings.push('Transactional email is not configured; external collaboration invitations will be created but cannot be delivered automatically');
+  warnings.push('Transactional email is not configured; external collaboration invitations cannot be delivered automatically');
 }
 
 if (appUrl) {
@@ -82,6 +82,13 @@ if (appUrl) {
   } catch {
     errors.push('OXSIG_APP_URL is not a valid URL');
   }
+}
+
+const ablyKey = value('ABLY_API_KEY');
+if (!ablyKey) {
+  warnings.push('ABLY_API_KEY is not configured; collaboration will fall back to periodic polling instead of realtime delivery');
+} else if (!ablyKey.includes(':') || !ablyKey.includes('.')) {
+  errors.push('ABLY_API_KEY does not look like a valid Ably API key');
 }
 
 if (!value('OPENAI_API_KEY')) {
