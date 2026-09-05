@@ -20,6 +20,19 @@ function positiveNumber(name, { min = 0, max = Number.POSITIVE_INFINITY } = {}) 
   }
 }
 
+function validateHttpUrl(name) {
+  const raw = value(name);
+  if (!raw) return;
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      errors.push(`${name} must use http:// or https://`);
+    }
+  } catch {
+    errors.push(`${name} is not a valid URL`);
+  }
+}
+
 requireValue('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY');
 requireValue('CLERK_SECRET_KEY');
 requireValue('DATABASE_URL');
@@ -73,22 +86,35 @@ if (emailPartiallyConfigured) {
   warnings.push('Transactional email is not configured; external collaboration invitations cannot be delivered automatically');
 }
 
-if (appUrl) {
-  try {
-    const parsed = new URL(appUrl);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      errors.push('OXSIG_APP_URL must use http:// or https://');
-    }
-  } catch {
-    errors.push('OXSIG_APP_URL is not a valid URL');
-  }
-}
+validateHttpUrl('OXSIG_APP_URL');
 
 const ablyKey = value('ABLY_API_KEY');
 if (!ablyKey) {
   warnings.push('ABLY_API_KEY is not configured; collaboration will fall back to periodic polling instead of realtime delivery');
 } else if (!ablyKey.includes(':') || !ablyKey.includes('.')) {
   errors.push('ABLY_API_KEY does not look like a valid Ably API key');
+}
+
+const sentryServerDsn = value('SENTRY_DSN');
+const sentryBrowserDsn = value('NEXT_PUBLIC_SENTRY_DSN');
+validateHttpUrl('SENTRY_DSN');
+validateHttpUrl('NEXT_PUBLIC_SENTRY_DSN');
+
+if (!sentryServerDsn && !sentryBrowserDsn) {
+  warnings.push('Sentry is not configured; application errors will not be sent to centralized monitoring');
+} else {
+  if (!sentryServerDsn) {
+    warnings.push('SENTRY_DSN is not configured; custom server and terminal-bridge errors will not be sent to Sentry');
+  }
+  if (!sentryBrowserDsn) {
+    warnings.push('NEXT_PUBLIC_SENTRY_DSN is not configured; browser errors will not be sent to Sentry');
+  }
+}
+
+const sentrySourceMapValues = ['SENTRY_AUTH_TOKEN', 'SENTRY_ORG', 'SENTRY_PROJECT'];
+const sentrySourceMapCount = sentrySourceMapValues.filter((name) => value(name)).length;
+if (sentrySourceMapCount > 0 && sentrySourceMapCount < sentrySourceMapValues.length) {
+  errors.push('SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT must all be configured together for source-map uploads');
 }
 
 if (!value('OPENAI_API_KEY')) {
