@@ -1,7 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { Realtime, type InboundMessage, type PresenceMessage } from 'ably';
+import type { InboundMessage, PresenceMessage } from 'ably';
+import {
+  BaseRealtime,
+  FetchRequest,
+  RealtimePresence,
+  WebSocketTransport,
+} from 'ably/modular';
 
 export type CollaborationRealtimeState = 'disabled' | 'connecting' | 'connected' | 'disconnected';
 
@@ -32,11 +38,16 @@ export function useCollaborationRealtime(
 
     let disposed = false;
     const encodedId = encodeURIComponent(collaborationId);
-    const client = new Realtime({
+    const client = new BaseRealtime({
       authUrl: `/api/realtime/ably/token?collaborationId=${encodedId}`,
       useTokenAuth: true,
       closeOnUnload: true,
       echoMessages: false,
+      plugins: {
+        WebSocketTransport,
+        FetchRequest,
+        RealtimePresence,
+      },
     });
     const channel = client.channels.get(`oxsig:collaboration:${collaborationId}`);
 
