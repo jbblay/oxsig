@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
+import { getCsrfToken } from '@/lib/security/csrf-client';
 
 
 type Collaboration = {
@@ -75,12 +76,6 @@ type Member = {
 };
 
 type ComposerMode = 'text' | 'explain';
-
-async function csrfToken() {
-  const response = await fetch('/api/csrf-token', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Secure request setup failed');
-  return (await response.json()).token as string;
-}
 
 function formatTime(value?: string | null) {
   if (!value) return '';
@@ -251,7 +246,7 @@ export default function CollaborationWorkspace() {
     const name = newSessionName.trim();
     if (!name) return;
     try {
-      const csrf = await csrfToken();
+      const csrf = await getCsrfToken();
       const response = await fetch('/api/collaborations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
@@ -276,7 +271,7 @@ export default function CollaborationWorkspace() {
     metadata: Record<string, unknown> = {}
   ) => {
     if (!activeId) throw new Error('Choose a collaboration session first');
-    const csrf = await csrfToken();
+    const csrf = await getCsrfToken();
     const response = await fetch(`/api/collaborations/${activeId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
@@ -308,7 +303,7 @@ export default function CollaborationWorkspace() {
 
   const uploadAttachment = React.useCallback(async (file: File, type: 'resource' | 'audio') => {
     if (!activeId) throw new Error('Choose a collaboration session first');
-    const csrf = await csrfToken();
+    const csrf = await getCsrfToken();
     const presign = await fetch(`/api/collaborations/${activeId}/attachments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
@@ -420,7 +415,7 @@ export default function CollaborationWorkspace() {
     if (!activeId || !inviteEmail.trim() || inviting) return;
     setInviting(true);
     try {
-      const csrf = await csrfToken();
+      const csrf = await getCsrfToken();
       const response = await fetch(`/api/collaborations/${activeId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
