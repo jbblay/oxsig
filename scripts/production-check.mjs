@@ -117,16 +117,16 @@ if (sentrySourceMapCount > 0 && sentrySourceMapCount < sentrySourceMapValues.len
   errors.push('SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT must all be configured together for source-map uploads');
 }
 
-const posthogToken = value('NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN');
-const posthogHost = value('NEXT_PUBLIC_POSTHOG_HOST');
+const posthogToken = value('POSTHOG_PROJECT_TOKEN');
+const posthogHost = value('POSTHOG_HOST');
 if (!posthogToken && !posthogHost) {
-  warnings.push('PostHog is not configured; product analytics events will not be collected');
+  warnings.push('PostHog is not configured; explicit product analytics events will not be collected');
 } else {
-  requireValue('NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN', 'NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN is required when PostHog analytics is configured');
-  requireValue('NEXT_PUBLIC_POSTHOG_HOST', 'NEXT_PUBLIC_POSTHOG_HOST is required when PostHog analytics is configured');
-  validateHttpUrl('NEXT_PUBLIC_POSTHOG_HOST');
+  requireValue('POSTHOG_PROJECT_TOKEN', 'POSTHOG_PROJECT_TOKEN is required when PostHog analytics is configured');
+  requireValue('POSTHOG_HOST', 'POSTHOG_HOST is required when PostHog analytics is configured');
+  validateHttpUrl('POSTHOG_HOST');
   if (posthogToken && !posthogToken.startsWith('ph_')) {
-    warnings.push('NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN does not use the usual ph_ PostHog project-token prefix');
+    warnings.push('POSTHOG_PROJECT_TOKEN does not use the usual ph_ PostHog project-token prefix');
   }
 }
 
