@@ -7,6 +7,7 @@ import './globals.css';
 import './oxsig-design.css';
 import './lab-flow.css';
 import AppShell from '@/components/app/AppShell';
+import PostHogIdentity from '@/components/analytics/PostHogIdentity';
 import GuestAuthGate from '@/components/auth/guest-auth-gate';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <body className={`${inter.className} min-h-screen`}>
           <ThemeProvider>
             <AuthProvider>
+              <PostHogIdentity />
               <GuestAuthGate>
                 <AppShell>{children}</AppShell>
                 <Toaster richColors />
