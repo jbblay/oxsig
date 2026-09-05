@@ -48,6 +48,7 @@ import {
 import { getLabsSnapshot } from '@/lib/labs/client';
 import { notifyLocalStorageChange } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
 const PROGRESS_KEY = 'oxsig:academy-progress:v1';
@@ -137,7 +138,8 @@ export default function AcademyPage() {
   const [busy, setBusy] = React.useState<'generate' | 'ask' | 'practice' | null>(null);
   const [question, setQuestion] = React.useState('');
   const [qa, setQa] = React.useState<Record<string, LessonQa[]>>({});
-  const [narrating, setNarrating] = React.useState(false);
+  const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
+  const narrating = speakingKey === 'academy-lesson';
   const [hydrated, setHydrated] = React.useState(false);
   const [instructorCollapsed, setInstructorCollapsed] = React.useState(false);
   const [runningLab, setRunningLab] = React.useState<LabInstance | null>(null);
@@ -170,10 +172,6 @@ export default function AcademyPage() {
     window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ activeIndex, completed: Array.from(completed) }));
     notifyLocalStorageChange(COURSE_KEY);
   }, [activeIndex, completed, course, hydrated]);
-
-  React.useEffect(() => () => {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-  }, []);
 
   const loadLab = React.useCallback(async () => {
     try {
@@ -217,8 +215,7 @@ export default function AcademyPage() {
     }
 
     setBusy('generate');
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    setNarrating(false);
+    stopVoice();
     try {
       const token = await getCsrfToken();
       const response = await fetch('/api/academy', {
@@ -246,8 +243,7 @@ export default function AcademyPage() {
   async function askInstructor() {
     if (!course || !activeLesson || !question.trim()) return;
     const asked = question.trim();
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    setNarrating(false);
+    stopVoice();
     setBusy('ask');
     setQuestion('');
     try {
@@ -352,29 +348,21 @@ export default function AcademyPage() {
   }
 
   function toggleNarration() {
-    if (!course || !activeLesson || !('speechSynthesis' in window)) {
-      toast.error('Voice narration is not available in this browser.');
-      return;
-    }
+    if (!course || !activeLesson) return;
 
     if (narrating) {
-      window.speechSynthesis.cancel();
-      setNarrating(false);
+      stopVoice();
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(narrationText(course, activeLesson));
-    utterance.rate = 0.96;
-    utterance.onend = () => setNarrating(false);
-    utterance.onerror = () => setNarrating(false);
-    setNarrating(true);
-    window.speechSynthesis.speak(utterance);
+    void playVoice(narrationText(course, activeLesson), 'academy-lesson').catch((error) => {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      toast.error(error instanceof Error ? error.message : 'ElevenLabs narration failed');
+    });
   }
 
   function selectLesson(index: number) {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    setNarrating(false);
+    stopVoice();
     setActiveIndex(index);
     setQuestion('');
   }
@@ -390,8 +378,7 @@ export default function AcademyPage() {
   }
 
   function resetCourse() {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    setNarrating(false);
+    stopVoice();
     setCourse(null);
     setActiveIndex(0);
     setCompleted(new Set());
