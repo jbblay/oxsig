@@ -8,11 +8,13 @@ import {
   CheckCircle2,
   ChevronRight,
   Loader2,
+  Pause,
   Play,
   Save,
   ShieldCheck,
   Sparkles,
   Terminal,
+  Volume2,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -35,6 +37,7 @@ import {
 } from '@/lib/labs/ai-terminal-events';
 import { getLabsSnapshot } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
 type LabInstance = {
   id: string;
@@ -81,6 +84,18 @@ function outputText(execution: AiPractitionerExecution) {
   return parts.join('\n\n') || '(command returned no text output)';
 }
 
+function practitionerVoiceText(entry: PlanEntry) {
+  const parts = [entry.plan.explanation];
+  if (entry.analysis) {
+    parts.push(
+      `What actually happened. ${entry.analysis.summary}`,
+      `Interpretation. ${entry.analysis.interpretation}`,
+      `Next step. ${entry.analysis.nextStep}`
+    );
+  }
+  return parts.join(' ');
+}
+
 function executeInVisibleTerminal(labInstanceId: string, command: string) {
   return new Promise<AiTerminalRunResult>((resolve, reject) => {
     const requestId = uid();
@@ -114,6 +129,7 @@ export default function AiPractitionerDock() {
   const [history, setHistory] = React.useState<ChatLine[]>([]);
   const [savedIds, setSavedIds] = React.useState<Set<string>>(() => new Set());
   const [terminalConnected, setTerminalConnected] = React.useState(false);
+  const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   const loadLab = React.useCallback(async () => {
@@ -181,6 +197,7 @@ export default function AiPractitionerDock() {
       return;
     }
 
+    stopVoice();
     const id = uid();
     const nextUser: ChatLine = { id: uid(), role: 'user', content: question };
     const nextHistory = [...history, nextUser];
@@ -221,6 +238,7 @@ export default function AiPractitionerDock() {
       return;
     }
 
+    stopVoice();
     setBusy(`run:${entry.id}`);
     try {
       const approvalToken = await getCsrfToken();
@@ -318,6 +336,19 @@ export default function AiPractitionerDock() {
     }
   }
 
+  function toggleEntryVoice(entry: PlanEntry) {
+    const key = `practitioner:${entry.id}`;
+    if (speakingKey === key) {
+      stopVoice();
+      return;
+    }
+
+    void playVoice(practitionerVoiceText(entry), key).catch((error) => {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      toast.error(error instanceof Error ? error.message : 'ElevenLabs voice playback failed');
+    });
+  }
+
   return (
     <>
       {!open && (
@@ -350,7 +381,7 @@ export default function AiPractitionerDock() {
                   </p>
                 </div>
               </div>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setOpen(false)} aria-label="Close AI Practitioner">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { stopVoice(); setOpen(false); }} aria-label="Close AI Practitioner">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -397,7 +428,20 @@ export default function AiPractitionerDock() {
                 <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /><p className="font-semibold">{entry.plan.title}</p></div>
-                    {entry.plan.command && <Badge variant={entry.plan.risk === 'changes-system' ? 'outline' : 'secondary'} className="text-[10px]">{entry.plan.risk}</Badge>}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant={speakingKey === `practitioner:${entry.id}` ? 'secondary' : 'ghost'}
+                        className="h-7 w-7"
+                        onClick={() => toggleEntryVoice(entry)}
+                        title={speakingKey === `practitioner:${entry.id}` ? 'Stop voice' : 'Listen with ElevenLabs'}
+                        aria-label={speakingKey === `practitioner:${entry.id}` ? 'Stop voice' : 'Listen with ElevenLabs'}
+                      >
+                        {speakingKey === `practitioner:${entry.id}` ? <Pause className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                      </Button>
+                      {entry.plan.command && <Badge variant={entry.plan.risk === 'changes-system' ? 'outline' : 'secondary'} className="text-[10px]">{entry.plan.risk}</Badge>}
+                    </div>
                   </div>
                   <p className="text-sm leading-6">{entry.plan.explanation}</p>
 
