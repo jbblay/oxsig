@@ -11,6 +11,35 @@ import { verifyTerminalBridgeTicket } from './src/lib/labs/terminal-bridge-ticke
 const { Pool } = pg;
 const dev = !process.argv.includes('--prod');
 process.env.NODE_ENV = dev ? 'development' : 'production';
+
+let serverSentry = null;
+const serverSentryDsn = String(process.env.SENTRY_DSN || '').trim();
+if (serverSentryDsn) {
+  try {
+    serverSentry = await import('@sentry/node');
+    serverSentry.init({
+      dsn: serverSentryDsn,
+      environment: String(process.env.VERCEL_ENV || process.env.NODE_ENV || 'development').trim(),
+      tracesSampleRate: dev ? 1 : 0.1,
+      enabled: true,
+    });
+  } catch (error) {
+    console.warn('[oxsig] Sentry custom-server initialization failed:', error);
+  }
+}
+
+function captureServerException(error, context = {}) {
+  if (!serverSentry) return;
+  const exception = error instanceof Error ? error : new Error(String(error));
+  serverSentry.withScope((scope) => {
+    scope.setTag('oxsig.runtime', 'custom-server');
+    if (context.component) scope.setTag('oxsig.component', String(context.component));
+    if (context.sessionId) scope.setTag('oxsig.session_id', String(context.sessionId));
+    scope.setContext('oxsig', context);
+    serverSentry.captureException(exception);
+  });
+}
+
 const { default: next } = await import('next');
 
 const listenHostname = process.env.OXSIG_HOST || '0.0.0.0';
@@ -91,7 +120,10 @@ async function consumeTicket(ticket) {
   // accepted ticket if cleanup itself fails.
   void terminalTicketPool
     .query(`DELETE FROM terminal_bridge_ticket_uses WHERE expires_at <= NOW()`)
-    .catch((error) => console.warn('[oxsig] Terminal ticket cleanup failed:', error));
+    .catch((error) => {
+      console.warn('[oxsig] Terminal ticket cleanup failed:', error);
+      captureServerException(error, { component: 'terminal-ticket-cleanup' });
+    });
 
   return payload;
 }
@@ -178,7 +210,13 @@ async function bridgeConnection(browserSocket, payload) {
 
   const fail = (message) => {
     stopPings();
+    const error = new Error(message);
     console.error(`[oxsig] Terminal bridge failed for ${payload.sessionId}: ${message}`);
+    captureServerException(error, {
+      component: 'terminal-bridge',
+      sessionId: payload.sessionId,
+      region: payload.region,
+    });
     closeQuietly(browserSocket, 1011, 'AWS Session Manager bridge failed');
     if (awsSocket) closeQuietly(awsSocket, 1011, 'Bridge failed');
   };
@@ -301,15 +339,19 @@ server.on('upgrade', async (req, socket, head) => {
 
 server.on('error', (error) => {
   console.error('[oxsig] Server error:', error);
+  captureServerException(error, { component: 'http-server' });
   process.exitCode = 1;
 });
 
 server.on('close', () => {
-  void terminalTicketPool?.end().catch(() => undefined);
+  void terminalTicketPool?.end().catch((error) => {
+    captureServerException(error, { component: 'terminal-ticket-pool-close' });
+  });
 });
 
 server.listen(port, listenHostname, () => {
   const mode = dev ? 'development' : 'production';
   console.log(`[oxsig] ${mode} server ready on http://${appHostname}:${port} (listening on ${listenHostname})`);
   console.log('[oxsig] Interactive terminals use the server-mediated AWS SSM WebSocket bridge.');
+  if (serverSentry) console.log('[oxsig] Sentry custom-server monitoring is enabled.');
 });
