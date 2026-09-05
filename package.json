@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "node server.mjs --prod",
     "server:check": "node --check server.mjs",
+    "prod:check": "node scripts/production-check.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",

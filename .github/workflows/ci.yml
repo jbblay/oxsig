@@ -17,6 +17,16 @@ jobs:
           node-version: 20.x
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm server:check
+      - run: pnpm prod:check
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_dummy
+          DATABASE_URL: postgresql://user:pass@localhost:5432/oxsig
+          CRON_SECRET: ci-cron-secret-0123456789abcdef
+          STORAGE_BUCKET: oxsig-ci
+          STORAGE_REGION: eu-central-1
+          LAB_AWS_ENABLED: 'false'
+          OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
       - run: pnpm typecheck
       - run: pnpm test:run
       - run: pnpm build
@@ -25,4 +35,6 @@ jobs:
           CLERK_SECRET_KEY: sk_test_dummy
           DATABASE_URL: postgresql://user:pass@localhost:5432/oxsig
           STORAGE_BUCKET: oxsig-ci
+          STORAGE_REGION: eu-central-1
           LAB_AWS_ENABLED: 'false'
+          OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
