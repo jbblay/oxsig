@@ -445,7 +445,7 @@ export default function InteractiveSsmTerminal({
       }, 45_000);
       activeAiRunRef.current = active;
 
-      const shellLine = `__oxsig_id='${markerId}'; __oxsig_cmd="$(printf '%s' '${commandBase64}' | base64 -d)"; printf '\n__OXSIG_AI_BEGIN_%s__\n' "$__oxsig_id"; eval "$__oxsig_cmd"; __oxsig_rc=$?; printf '\n__OXSIG_AI_END_%s__:%s\n' "$__oxsig_id" "$__oxsig_rc"\r`;
+      const shellLine = `__oxsig_id='${markerId}'; __oxsig_cmd="$(printf '%s' '${commandBase64}' | base64 -d)"; printf '\\n__OXSIG_AI_BEGIN_%s__\\n' "$__oxsig_id"; eval "$__oxsig_cmd"; __oxsig_rc=$?; printf '\\n__OXSIG_AI_END_%s__:%s\\n' "$__oxsig_id" "$__oxsig_rc"\r`;
       channel.sendInput(shellLine);
     };
 
