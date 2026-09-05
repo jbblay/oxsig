@@ -136,6 +136,15 @@ if (!value('OPENAI_API_KEY')) {
   warnings.push('OPENAI_API_KEY is not configured; AI Practitioner and Academy AI features will be unavailable');
 }
 
+const elevenLabsKey = value('ELEVENLABS_API_KEY');
+const elevenLabsVoiceId = value('ELEVENLABS_VOICE_ID');
+if (!elevenLabsKey && !elevenLabsVoiceId) {
+  warnings.push('ElevenLabs is not configured; Academy and Cyber Lab spoken narration will be unavailable');
+} else {
+  requireValue('ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY is required when ElevenLabs voice is configured');
+  requireValue('ELEVENLABS_VOICE_ID', 'ELEVENLABS_VOICE_ID is required when ElevenLabs voice is configured');
+}
+
 if (value('AWS_PROFILE')) {
   warnings.push('AWS_PROFILE is set; production deployments should prefer an attached IAM/OIDC role');
 }
