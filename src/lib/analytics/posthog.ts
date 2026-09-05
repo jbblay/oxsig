@@ -33,10 +33,14 @@ export async function captureProductEvent(input: {
     host: configured.host,
     flushAt: 1,
     flushInterval: 0,
+    requestTimeout: 1500,
   });
 
   try {
-    client.capture({
+    // PostHog recommends captureImmediate for short-lived/serverless runtimes so
+    // the request completes before the function can be suspended. The bounded
+    // timeout prevents analytics availability from materially delaying OXSIG.
+    await client.captureImmediate({
       distinctId: input.distinctId,
       event: input.event,
       properties: input.properties,
