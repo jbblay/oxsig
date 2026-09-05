@@ -18,7 +18,7 @@ export function mapStoryboardRow(row: Record<string, any>): StoryboardAccess {
     status: row.status,
     durationMs: row.duration_ms,
     events: row.events,
-    hasAudio: row.has_audio,
+    hasAudio: Boolean(row.has_audio),
     audioMimeType: row.audio_mime_type,
     audioSize: row.audio_size,
     ownerId: row.owner_id,
@@ -38,8 +38,8 @@ export async function getStoryboardAccess(
   const result = await getPool().query(
     `SELECT
        s.id, s.owner_id, s.title, s.description, s.status, s.duration_ms,
-       s.events, s.audio_data IS NOT NULL AS has_audio, s.audio_mime_type,
-       s.audio_size, s.version, s.created_at, s.updated_at,
+       s.events, (s.audio_storage_key IS NOT NULL OR s.audio_data IS NOT NULL) AS has_audio,
+       s.audio_mime_type, s.audio_size, s.version, s.created_at, s.updated_at,
        owner.display_name AS owner_name, owner.email AS owner_email,
        share.permission AS share_permission, $2::uuid AS request_user_id
      FROM storyboard_sessions s
@@ -63,7 +63,8 @@ export async function listStoryboardsForUser(userId: string): Promise<Storyboard
   const result = await getPool().query(
     `SELECT
        s.id, s.owner_id, s.title, s.description, s.status, s.duration_ms,
-       NULL::jsonb AS events, s.audio_data IS NOT NULL AS has_audio,
+       NULL::jsonb AS events,
+       (s.audio_storage_key IS NOT NULL OR s.audio_data IS NOT NULL) AS has_audio,
        s.audio_mime_type, s.audio_size, s.version, s.created_at, s.updated_at,
        owner.display_name AS owner_name, owner.email AS owner_email,
        share.permission AS share_permission, $1::uuid AS request_user_id

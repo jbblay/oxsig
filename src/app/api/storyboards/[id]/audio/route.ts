@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { logAudit, getRequestMetadata, AUDIT_ACTIONS } from '@/lib/audit/logger';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 import { storyboardIdSchema } from '@/lib/storyboards/validation';
+import { getStorageBucket, getStorageClient, storageErrorResponse } from '@/lib/storage/server';
+
+export const runtime = 'nodejs';
+
+const DOWNLOAD_TTL_SECONDS = 60;
 
 export async function GET(
   request: NextRequest,
@@ -14,9 +22,16 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid storyboard ID' }, { status: 400 });
     }
 
+    const rateLimit = await checkRateLimit(
+      req,
+      { maxRequests: 120, windowMs: 60_000 },
+      `${user.id}:${id}:storyboard-audio`
+    );
+    if (rateLimit) return rateLimit;
+
     try {
       const result = await getPool().query(
-        `SELECT s.audio_data, s.audio_mime_type, s.audio_size
+        `SELECT s.audio_storage_key, s.audio_data, s.audio_mime_type, s.audio_size
          FROM storyboard_sessions s
          LEFT JOIN storyboard_shares share
            ON share.session_id = s.id
@@ -28,8 +43,9 @@ export async function GET(
          LIMIT 1`,
         [id, user.id]
       );
-      if (!result.rows[0]) return NextResponse.json({ error: 'Storyboard not found' }, { status: 404 });
-      if (!result.rows[0].audio_data) {
+      const row = result.rows[0];
+      if (!row) return NextResponse.json({ error: 'Storyboard not found' }, { status: 404 });
+      if (!row.audio_storage_key && !row.audio_data) {
         return NextResponse.json({ error: 'Storyboard has no audio' }, { status: 404 });
       }
 
@@ -39,15 +55,38 @@ export async function GET(
         resourceType: 'storyboard',
         resourceId: id,
         ...getRequestMetadata(req),
+        metadata: { storage: row.audio_storage_key ? 's3' : 'legacy-database' },
       });
 
-      return new NextResponse(result.rows[0].audio_data, {
+      if (row.audio_storage_key) {
+        try {
+          const signedUrl = await getSignedUrl(
+            getStorageClient(),
+            new GetObjectCommand({
+              Bucket: getStorageBucket(),
+              Key: row.audio_storage_key,
+              ResponseContentType: row.audio_mime_type || 'application/octet-stream',
+              ResponseContentDisposition: `inline; filename="storyboard-${id}"`,
+              ResponseCacheControl: 'private, no-store',
+            }),
+            { expiresIn: DOWNLOAD_TTL_SECONDS }
+          );
+          return NextResponse.redirect(signedUrl, 302);
+        } catch (error) {
+          console.error('Failed to sign Storyboard audio URL:', error);
+          const failure = storageErrorResponse(error);
+          return NextResponse.json(failure.body, { status: failure.status });
+        }
+      }
+
+      return new NextResponse(row.audio_data, {
         headers: {
-          'Content-Type': result.rows[0].audio_mime_type,
-          'Content-Length': String(result.rows[0].audio_size),
+          'Content-Type': row.audio_mime_type,
+          'Content-Length': String(row.audio_size),
           'Cache-Control': 'private, no-store',
           'Content-Disposition': `inline; filename="storyboard-${id}"`,
           'X-Content-Type-Options': 'nosniff',
+          'X-OXSIG-Storage': 'legacy-database',
         },
       });
     } catch (error) {

@@ -6,6 +6,23 @@ import type {
   StoryboardShare,
 } from './types';
 
+type StoryboardAudioObject = {
+  key: string;
+  size: number;
+  mimeType: string;
+};
+
+type PresignedStoryboardAudio = {
+  upload: {
+    url: string;
+    fields: Record<string, string>;
+    expiresIn: number;
+  };
+  object: StoryboardAudioObject;
+};
+
+const serverAudioBlobs = new WeakSet<Blob>();
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = await response.json();
@@ -19,6 +36,54 @@ async function csrfToken(): Promise<string> {
   const response = await fetch('/api/csrf-token', { cache: 'no-store' });
   if (!response.ok) throw new Error(await readError(response));
   return (await response.json()).token;
+}
+
+function storyboardAudioFilename(audio: Blob): string {
+  if (audio.type.includes('mp4')) return 'storyboard.m4a';
+  if (audio.type.includes('ogg')) return 'storyboard.ogg';
+  return 'storyboard.webm';
+}
+
+async function uploadStoryboardAudio(audio: Blob): Promise<StoryboardAudioObject> {
+  const contentType = audio.type || 'audio/webm';
+  const token = await csrfToken();
+  const presignResponse = await fetch('/api/storyboards/audio/uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+    body: JSON.stringify({
+      filename: storyboardAudioFilename(audio),
+      size: audio.size,
+      contentType,
+    }),
+  });
+  if (!presignResponse.ok) throw new Error(await readError(presignResponse));
+
+  const presigned = (await presignResponse.json()) as PresignedStoryboardAudio;
+  const form = new FormData();
+  for (const [key, value] of Object.entries(presigned.upload.fields)) form.append(key, value);
+  form.append('file', audio, storyboardAudioFilename(audio));
+
+  const uploadResponse = await fetch(presigned.upload.url, {
+    method: 'POST',
+    body: form,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`Storyboard audio upload failed (${uploadResponse.status})`);
+  }
+  return presigned.object;
+}
+
+async function cleanupStoryboardAudio(object: StoryboardAudioObject): Promise<void> {
+  try {
+    const token = await csrfToken();
+    await fetch('/api/storyboards/audio/uploads', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+      body: JSON.stringify({ key: object.key }),
+    });
+  } catch {
+    // Best effort only. The object remains private if cleanup cannot run.
+  }
 }
 
 export async function listServerStoryboards(): Promise<StoryboardServerSession[]> {
@@ -37,33 +102,51 @@ export async function getServerStoryboard(
   if (!session.hasAudio) return { session };
   const audioResponse = await fetch(`/api/storyboards/${id}/audio`, { cache: 'no-store' });
   if (!audioResponse.ok) throw new Error(await readError(audioResponse));
-  return { session, audio: await audioResponse.blob() };
+  const audio = await audioResponse.blob();
+  serverAudioBlobs.add(audio);
+  return { session, audio };
 }
 
 export async function saveServerStoryboard(
   draft: StoryboardDraft,
   existingId?: string
 ): Promise<StoryboardServerSession> {
-  const form = new FormData();
-  form.set('metadata', JSON.stringify({
-    title: draft.title,
-    description: null,
-    status: draft.audio ? 'ready' : 'draft',
-    durationMs: Math.round(draft.durationMs),
-    events: draft.events,
-  }));
-  if (draft.audio) {
-    form.set('audio', draft.audio, `storyboard.${draft.audio.type.includes('mp4') ? 'm4a' : 'webm'}`);
+  let uploadedAudio: StoryboardAudioObject | null = null;
+
+  if (draft.audio && !serverAudioBlobs.has(draft.audio)) {
+    uploadedAudio = await uploadStoryboardAudio(draft.audio);
   }
 
-  const token = await csrfToken();
-  const response = await fetch(existingId ? `/api/storyboards/${existingId}` : '/api/storyboards', {
-    method: existingId ? 'PATCH' : 'POST',
-    headers: { 'x-csrf-token': token },
-    body: form,
-  });
-  if (!response.ok) throw new Error(await readError(response));
-  return (await response.json()).session;
+  try {
+    const form = new FormData();
+    form.set('metadata', JSON.stringify({
+      title: draft.title,
+      description: null,
+      status: draft.audio ? 'ready' : 'draft',
+      durationMs: Math.round(draft.durationMs),
+      events: draft.events,
+    }));
+    if (uploadedAudio) form.set('audioStorage', JSON.stringify(uploadedAudio));
+
+    const token = await csrfToken();
+    const response = await fetch(existingId ? `/api/storyboards/${existingId}` : '/api/storyboards', {
+      method: existingId ? 'PATCH' : 'POST',
+      headers: { 'x-csrf-token': token },
+      body: form,
+    });
+    if (!response.ok) {
+      if (uploadedAudio) await cleanupStoryboardAudio(uploadedAudio);
+      throw new Error(await readError(response));
+    }
+
+    const body = await response.json();
+    if (draft.audio) serverAudioBlobs.add(draft.audio);
+    return body.session;
+  } catch (error) {
+    // Only clean up here for failures that occurred before a successful API response.
+    // The non-OK response path above already performs the cleanup.
+    throw error;
+  }
 }
 
 export async function deleteServerStoryboard(id: string): Promise<void> {

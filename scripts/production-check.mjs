@@ -64,6 +64,7 @@ if (value('CRON_SECRET') && value('CRON_SECRET').length < 24) {
 
 positiveNumber('STORAGE_MAX_UPLOAD_BYTES', { min: 1, max: 5 * 1024 * 1024 * 1024 });
 positiveNumber('COLLAB_MAX_ATTACHMENT_BYTES', { min: 1, max: 5 * 1024 * 1024 * 1024 });
+positiveNumber('STORYBOARD_MAX_AUDIO_BYTES', { min: 1, max: 512 * 1024 * 1024 });
 positiveNumber('LAB_AWS_TTL_MINUTES', { min: 5, max: 1440 });
 
 const labsEnabled = value('LAB_AWS_ENABLED').toLowerCase() === 'true';
