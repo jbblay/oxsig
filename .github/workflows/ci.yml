@@ -19,6 +19,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm server:check
+      - run: node --check scripts/readiness-check.mjs
       - run: pnpm prod:check
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
