@@ -211,7 +211,7 @@ export class SsmBrowserPortChannel {
     return task;
   }
 
-  private async sendNow(payload: Uint8Array, payloadType = SSM_PAYLOAD.OUTPUT) {
+  private async sendNow(payload: Uint8Array, payloadType: number = SSM_PAYLOAD.OUTPUT) {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('AWS desktop tunnel WebSocket is not connected');
     const sequence = this.outgoingSequence++;
