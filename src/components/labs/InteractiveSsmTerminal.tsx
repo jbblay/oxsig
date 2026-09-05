@@ -16,6 +16,7 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from "@/lib/labs/ai-terminal-events";
+import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
@@ -40,12 +41,6 @@ type ActiveAiRun = {
   started: boolean;
   timeout: ReturnType<typeof setTimeout> | null;
 };
-
-async function getCsrfToken() {
-  const response = await fetch("/api/csrf-token", { cache: "no-store" });
-  if (!response.ok) throw new Error("Secure terminal setup failed");
-  return (await response.json()).token as string;
-}
 
 function bridgeWebSocketUrl(path: string) {
   const url = new URL(path, window.location.origin);
@@ -450,7 +445,7 @@ export default function InteractiveSsmTerminal({
       }, 45_000);
       activeAiRunRef.current = active;
 
-      const shellLine = `__oxsig_id='${markerId}'; __oxsig_cmd="$(printf '%s' '${commandBase64}' | base64 -d)"; printf '\\n__OXSIG_AI_BEGIN_%s__\\n' "$__oxsig_id"; eval "$__oxsig_cmd"; __oxsig_rc=$?; printf '\\n__OXSIG_AI_END_%s__:%s\\n' "$__oxsig_id" "$__oxsig_rc"\r`;
+      const shellLine = `__oxsig_id='${markerId}'; __oxsig_cmd="$(printf '%s' '${commandBase64}' | base64 -d)"; printf '\n__OXSIG_AI_BEGIN_%s__\n' "$__oxsig_id"; eval "$__oxsig_cmd"; __oxsig_rc=$?; printf '\n__OXSIG_AI_END_%s__:%s\n' "$__oxsig_id" "$__oxsig_rc"\r`;
       channel.sendInput(shellLine);
     };
 
