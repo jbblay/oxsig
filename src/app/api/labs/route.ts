@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
 import { createLabVm, describeLabVmStates, destroyLabVm, labCapabilities } from '@/lib/labs/aws-runtime';
@@ -130,6 +131,14 @@ export async function POST(request: NextRequest) {
     if (!(await validateCsrfToken(req))) {
       return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
     }
+
+    const rateLimit = await checkRateLimit(
+      req,
+      RATE_LIMITS.LAB_PROVISION,
+      user.id,
+      'lab-provision'
+    );
+    if (rateLimit) return rateLimit;
 
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid lab request' }, { status: 400 });
