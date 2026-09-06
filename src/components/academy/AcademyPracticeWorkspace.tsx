@@ -4,6 +4,7 @@ import * as React from 'react';
 import { BrainCircuit, CheckCircle2, Loader2, Play, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import AcademyAdaptiveInstructor from '@/components/academy/AcademyAdaptiveInstructor';
+import AcademyFailureChallenge from '@/components/academy/AcademyFailureChallenge';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -333,6 +334,14 @@ export default function AcademyPracticeWorkspace({
             </div>
           )}
         </div>
+      )}
+
+      {reflection?.status === 'reflected' && (
+        <AcademyFailureChallenge
+          courseTitle={course.title}
+          lessonTitle={lesson.title}
+          labInstanceId={runningLab.id}
+        />
       )}
     </div>
   );
