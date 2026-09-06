@@ -122,7 +122,7 @@ describe('Academy prediction and reflection lifecycle', () => {
     vi.clearAllMocks();
   });
 
-  it('derives the predicted command from the active server-side lesson', async () => {
+  it('derives the predicted command from the active server-side lesson and resets rewritten prediction time', async () => {
     mocks.poolQuery
       .mockResolvedValueOnce({ rows: [{ id: courseId, course_data: course }] })
       .mockResolvedValueOnce({ rows: [reflectionRow()] });
@@ -136,7 +136,7 @@ describe('Academy prediction and reflection lifecycle', () => {
 
     expect(result.command).toBe('uname -a');
     expect(mocks.poolQuery).toHaveBeenLastCalledWith(
-      expect.stringContaining('INSERT INTO academy_learning_reflections'),
+      expect.stringContaining('created_at=NOW()'),
       [courseId, ownerId, 'lesson-1', 'uname -a', 'I expect kernel and architecture details.']
     );
   });
@@ -180,6 +180,7 @@ describe('Academy prediction and reflection lifecycle', () => {
       }
       if (sql.includes('FROM academy_courses')) return { rows: [{ course_data: course }] };
       if (sql.includes('FROM execution_evidence')) return { rows: [evidenceRow()] };
+      if (sql.includes('WHERE owner_id=$1 AND evidence_id=$2')) return { rows: [] };
       if (sql.includes("SET status='evaluating'")) return { rows: [claimed] };
       throw new Error(`Unexpected SQL: ${sql.slice(0, 100)}`);
     });
@@ -204,7 +205,27 @@ describe('Academy prediction and reflection lifecycle', () => {
     );
   });
 
-  it('weights understanding by reflection coverage instead of quality alone', async () => {
+  it('rejects execution evidence already bound to another learner reflection', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM academy_learning_reflections') && sql.includes('FOR UPDATE')) {
+        return { rows: [reflectionRow()] };
+      }
+      if (sql.includes('FROM academy_courses')) return { rows: [{ course_data: course }] };
+      if (sql.includes('FROM execution_evidence')) return { rows: [evidenceRow()] };
+      if (sql.includes('WHERE owner_id=$1 AND evidence_id=$2')) return { rows: [{ id: 'other-reflection' }] };
+      throw new Error(`Unexpected SQL: ${sql.slice(0, 100)}`);
+    });
+    mocks.transaction.mockImplementation(async (handler) => handler({ query }));
+
+    await expect(claimAcademyReflection({
+      ownerId,
+      reflectionId,
+      evidenceId,
+      explanation: 'The output reports the active kernel and architecture.',
+    })).rejects.toMatchObject({ code: 'EVIDENCE_ALREADY_REFLECTED' });
+  });
+
+  it('weights latest-per-practice understanding by reflection coverage instead of quality alone', async () => {
     const evaluation = {
       score: 80,
       status: 'demonstrated' as const,
@@ -234,7 +255,7 @@ describe('Academy prediction and reflection lifecycle', () => {
         return { rows: [evaluating] };
       }
       if (sql.includes("SET status='reflected'")) return { rows: [reflected] };
-      if (sql.includes('COUNT(DISTINCT lesson_id)')) {
+      if (sql.includes('SELECT DISTINCT ON (lesson_id)')) {
         return { rows: [{ reflected: 1, average_score: 80 }] };
       }
       if (sql.includes('UPDATE academy_mastery')) return { rows: [] };
