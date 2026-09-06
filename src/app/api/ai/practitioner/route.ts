@@ -11,6 +11,11 @@ import {
   planPractitionerStep,
   practitionerRequestSchema,
 } from '@/lib/ai-practitioner/server';
+import {
+  ExecutionEvidenceConflictError,
+  getTerminalEvidenceForAnalysis,
+  storeExecutionEvidenceAnalysis,
+} from '@/lib/execution-evidence/server';
 
 export const runtime = 'nodejs';
 
@@ -97,14 +102,51 @@ export async function POST(request: NextRequest) {
       if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
       const { instance, lab } = resolved;
 
+      // The browser payload remains in the request schema for compatibility, but it
+      // is deliberately not used for AI reasoning. The AI consumes the owner-bound,
+      // one-time evidence record that Oxsig persisted after the visible terminal run.
+      const evidence = await getTerminalEvidenceForAnalysis({
+        ownerId: user.id,
+        labInstanceId: instance.id,
+        command: parsed.data.command,
+        surface: 'ai-practitioner',
+      });
+
+      if (evidence.state === 'analyzed') {
+        if (evidence.analysisKind !== 'ai-practitioner' || !evidence.analysis) {
+          throw new ExecutionEvidenceConflictError(
+            'This execution evidence was already analyzed by another learning surface.',
+            'EVIDENCE_ALREADY_ANALYZED'
+          );
+        }
+        return NextResponse.json({
+          analysis: evidence.analysis,
+          model: evidence.model || model,
+          evidence: {
+            id: evidence.id,
+            executionId: evidence.executionId,
+            provenance: evidence.provenance,
+            state: evidence.state,
+          },
+        });
+      }
+
       const analysis = await explainPractitionerEvidence({
         prompt: parsed.data.prompt,
-        command: parsed.data.command,
-        stdout: parsed.data.stdout,
-        stderr: parsed.data.stderr,
-        exitCode: parsed.data.exitCode,
+        command: evidence.command || parsed.data.command,
+        stdout: evidence.stdout,
+        stderr: evidence.stderr,
+        exitCode: evidence.exitCode ?? -1,
         labName: lab.name,
         platform: lab.platform,
+      });
+
+      const analyzedEvidence = await storeExecutionEvidenceAnalysis({
+        ownerId: user.id,
+        evidenceId: evidence.id,
+        analysisKind: 'ai-practitioner',
+        analysis: analysis as unknown as Record<string, unknown>,
+        model,
       });
 
       await getPool().query(
@@ -115,15 +157,35 @@ export async function POST(request: NextRequest) {
           user.id,
           instance.id,
           parsed.data.prompt,
-          parsed.data.command,
-          parsed.data.exitCode,
+          evidence.command || parsed.data.command,
+          evidence.exitCode ?? -1,
           model,
-          JSON.stringify({ analysis }),
+          JSON.stringify({
+            analysis,
+            evidenceId: evidence.id,
+            executionId: evidence.executionId,
+            provenance: evidence.provenance,
+          }),
         ]
       );
 
-      return NextResponse.json({ analysis, model });
+      return NextResponse.json({
+        analysis,
+        model,
+        evidence: {
+          id: analyzedEvidence.id,
+          executionId: analyzedEvidence.executionId,
+          provenance: analyzedEvidence.provenance,
+          state: analyzedEvidence.state,
+        },
+      });
     } catch (error) {
+      if (error instanceof ExecutionEvidenceConflictError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: 409, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
       console.error('AI Practitioner request failed:', error);
       return NextResponse.json({
         error: error instanceof Error ? error.message : 'AI Practitioner failed',
