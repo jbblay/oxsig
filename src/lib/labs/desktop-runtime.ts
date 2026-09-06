@@ -9,6 +9,21 @@ const ssm = new SSMClient({ region: REGION });
 
 export type DesktopPlatform = 'linux' | 'windows';
 
+export type DesktopServiceInspection = {
+  platform: DesktopPlatform;
+  serviceName: string;
+  expectedPort: number;
+  serviceInstalled: boolean;
+  serviceState: string;
+  serviceRunning: boolean;
+  readyMarkerPresent: boolean;
+  listenerPresent: boolean;
+  listenerAddress: string | null;
+  loopbackOnly: boolean;
+  ready: boolean;
+  exitCode: number;
+};
+
 function assertAwsInstanceId(instanceId: string) {
   if (!INSTANCE_ID.test(instanceId)) throw new Error('Invalid AWS lab instance identifier');
 }
@@ -89,6 +104,59 @@ try {
 } finally {
   Remove-Item -Force -ErrorAction SilentlyContinue $lock
 }`;
+
+function parseInspectionOutput(stdout: string) {
+  const fields = new Map<string, string>();
+  for (const line of stdout.split(/\r?\n/)) {
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    fields.set(line.slice(0, separator).trim().toLowerCase(), line.slice(separator + 1).trim());
+  }
+  return fields;
+}
+
+function isLoopbackAddress(address: string | undefined) {
+  if (!address) return false;
+  const normalized = address.trim().toLowerCase();
+  return normalized === '127.0.0.1' || normalized === '::1' || normalized.startsWith('127.0.0.1:') || normalized.startsWith('[::1]:');
+}
+
+export async function inspectDesktopService(instanceId: string, platform: DesktopPlatform): Promise<DesktopServiceInspection> {
+  assertAwsInstanceId(instanceId);
+  const expectedPort = desktopPortFor(platform);
+  const serviceName = platform === 'windows' ? 'tvnserver' : 'oxsig-desktop-vnc.service';
+  const command = platform === 'windows'
+    ? "$s=Get-Service tvnserver -EA SilentlyContinue;$c=Get-NetTCPConnection -State Listen -LocalPort 5900 -EA SilentlyContinue|Select-Object -First 1;$m=Test-Path 'C:\\ProgramData\\Oxsig\\desktop-ready';Write-Output ('installed='+[bool]$s);Write-Output ('state='+$(if($s){$s.Status}else{'Missing'}));Write-Output ('marker='+$m);Write-Output ('listener='+$(if($c){$c.LocalAddress}else{''}))"
+    : "load=$(systemctl show -p LoadState --value oxsig-desktop-vnc.service 2>/dev/null||echo not-found);state=$(systemctl is-active oxsig-desktop-vnc.service 2>/dev/null||true);marker=false;[ -f /var/lib/oxsig/desktop-ready ]&&marker=true;listener=$(ss -ltnH 2>/dev/null|awk '$4 ~ /:5901$/ {print $4; exit}');printf 'installed=%s\\nstate=%s\\nmarker=%s\\nlistener=%s\\n' \"$([ \"$load\" != not-found ]&&echo true||echo false)\" \"$state\" \"$marker\" \"$listener\"";
+
+  const result = await executeLabCommand(instanceId, command, platform);
+  const fields = parseInspectionOutput(result.stdout);
+  const listenerAddress = fields.get('listener') || null;
+  const serviceInstalled = (fields.get('installed') || '').toLowerCase() === 'true';
+  const serviceState = fields.get('state') || 'unknown';
+  const serviceRunning = platform === 'windows'
+    ? serviceState.toLowerCase() === 'running'
+    : serviceState.toLowerCase() === 'active';
+  const readyMarkerPresent = (fields.get('marker') || '').toLowerCase() === 'true';
+  const listenerPresent = Boolean(listenerAddress);
+  const loopbackOnly = isLoopbackAddress(listenerAddress || undefined);
+  const ready = result.exitCode === 0 && serviceInstalled && serviceRunning && readyMarkerPresent && listenerPresent && loopbackOnly;
+
+  return {
+    platform,
+    serviceName,
+    expectedPort,
+    serviceInstalled,
+    serviceState,
+    serviceRunning,
+    readyMarkerPresent,
+    listenerPresent,
+    listenerAddress,
+    loopbackOnly,
+    ready,
+    exitCode: result.exitCode,
+  };
+}
 
 async function readiness(instanceId: string, platform: DesktopPlatform) {
   const command = platform === 'windows'
