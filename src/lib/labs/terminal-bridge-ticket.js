@@ -46,7 +46,31 @@ export function terminalBridgeTicketTtlMs(ttlMs = DEFAULT_TTL_MS) {
   return resolveTicketTtlMs(ttlMs);
 }
 
-export function createTerminalBridgeTicket({ streamUrl, region, sessionId, target, workspaceControl, ttlMs = DEFAULT_TTL_MS }) {
+/**
+ * @param {{
+ *   streamUrl: string,
+ *   region: string,
+ *   sessionId: string,
+ *   target: string,
+ *   workspaceControl?: {
+ *     collaborationId: string,
+ *     participantId: string,
+ *     bindingId: string,
+ *     labInstanceId: string,
+ *     leaseId: string,
+ *     surface: 'terminal'
+ *   },
+ *   ttlMs?: number
+ * }} args
+ */
+export function createTerminalBridgeTicket({
+  streamUrl,
+  region,
+  sessionId,
+  target,
+  workspaceControl = undefined,
+  ttlMs = DEFAULT_TTL_MS,
+}) {
   if (!streamUrl || !region || !sessionId || !target) {
     throw new Error('A complete Session Manager session is required for a terminal bridge ticket.');
   }
