@@ -4,7 +4,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
-import { ensureDesktopRuntime, startDesktopPortSession, type DesktopPlatform } from '@/lib/labs/desktop-runtime';
+import { ensureDesktopRuntime, inspectDesktopService, startDesktopPortSession, type DesktopPlatform } from '@/lib/labs/desktop-runtime';
 import { terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
 import { createTerminalBridgeTicket, terminalBridgeTicketTtlMs } from '@/lib/labs/terminal-bridge-ticket.js';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
@@ -98,6 +98,31 @@ async function validateDesktopReady(instance: LabRow) {
         'DESKTOP_BOOTSTRAP_PENDING',
         'The private desktop service is being prepared on this lab. Oxsig will retry automatically.',
         'desktop-bootstrap',
+        diagnostics
+      ),
+    };
+  }
+
+  try {
+    const service = await inspectDesktopService(instance.runtime_external_id, platform);
+    if (!service.ready) {
+      return {
+        failure: failure(
+          425,
+          'DESKTOP_SERVICE_NOT_READY',
+          'The desktop service has not yet reached the expected loopback-only listening state. Oxsig will retry automatically.',
+          'desktop-service',
+          diagnostics
+        ),
+      };
+    }
+  } catch (error) {
+    return {
+      failure: failure(
+        503,
+        'DESKTOP_SERVICE_INSPECTION_FAILED',
+        error instanceof Error ? error.message : 'Could not inspect the desktop guest service.',
+        'desktop-service',
         diagnostics
       ),
     };
