@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { listControlState } from '@/lib/live-workspace/control';
 import { getLiveWorkspaceAccess, listLiveWorkspaceParticipants } from '@/lib/live-workspace/server';
 
 export const runtime = 'nodejs';
@@ -16,15 +17,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!access) return NextResponse.json({ error: 'Live Workspace not found or access denied' }, { status: 404 });
 
     try {
-      const [participants, resources] = await Promise.all([
+      const [participants, resources, control] = await Promise.all([
         listLiveWorkspaceParticipants(pool, id),
         pool.query(
-          `SELECT id, resource_type, resource_id, resource_owner_id, attached_by, metadata, attached_at
-           FROM live_workspace_resources
-           WHERE collaboration_id = $1 AND status = 'attached'
-           ORDER BY attached_at ASC`,
+          `SELECT resource.id, resource.resource_type, resource.resource_id, resource.resource_owner_id,
+                  resource.attached_by, resource.metadata, resource.attached_at,
+                  CASE
+                    WHEN resource.resource_type = 'lab-instance' AND lab.metadata->>'accessMode' = 'desktop' THEN 'desktop'
+                    WHEN resource.resource_type = 'lab-instance' THEN 'terminal'
+                    ELSE NULL
+                  END AS access_mode
+           FROM live_workspace_resources resource
+           LEFT JOIN lab_instances lab
+             ON resource.resource_type = 'lab-instance' AND lab.id = resource.resource_id
+           WHERE resource.collaboration_id = $1 AND resource.status = 'attached'
+           ORDER BY resource.attached_at ASC`,
           [id]
         ),
+        listControlState({ pool, collaborationId: id, viewerId: user.id }),
       ]);
       return NextResponse.json({
         workspace: access,
@@ -37,12 +47,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           attachedBy: row.attached_by,
           label: row.metadata?.label || row.resource_type,
           attachedAt: row.attached_at,
+          accessMode: row.access_mode || null,
           ownershipTransferred: false,
         })),
         control: {
-          terminalLeaseActive: false,
-          desktopLeaseActive: false,
-          note: 'Foundation v1 defines eligibility and permissions only. It does not grant shared terminal or desktop input.',
+          ...control,
+          note: 'Workspace membership and resource visibility do not grant machine input. Only an unexpired server-validated control lease authorizes a future shared transport.',
         },
       }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
