@@ -44,6 +44,14 @@ describe('Live Workspace foundation policy', () => {
     });
   });
 
+  it('lets instructors manage participants but not attach owner resources', () => {
+    expect(capabilitiesForLiveWorkspaceRole('instructor')).toMatchObject({
+      manageParticipants: true,
+      manageResources: false,
+      grantControl: true,
+    });
+  });
+
   it('defaults a generic active collaboration member to observer when no live role exists', async () => {
     const pool = poolWith(() => ({ rows: [{
       id: 'workspace-1',
@@ -74,6 +82,22 @@ describe('Live Workspace foundation policy', () => {
       targetUserId: 'owner-1',
       role: 'learner',
     })).rejects.toMatchObject({ code: 'OWNER_ROLE_IMMUTABLE' });
+  });
+
+  it('prevents instructors from creating another instructor', async () => {
+    const pool = poolWith((sql) => {
+      if (sql.includes('FROM collaborations c')) return { rows: [{
+        id: 'workspace-1', name: 'Lab class', description: '', owner_id: 'owner-1', is_owner: false, live_role: 'instructor',
+      }] };
+      return { rows: [{ '?column?': 1 }], rowCount: 1 };
+    });
+    await expect(assignLiveWorkspaceRole({
+      pool,
+      collaborationId: 'workspace-1',
+      actorId: 'instructor-1',
+      targetUserId: 'member-2',
+      role: 'instructor',
+    })).rejects.toMatchObject({ code: 'INSTRUCTOR_ASSIGNMENT_DENIED', status: 403 });
   });
 
   it('rejects foreign lab resources instead of attaching them to the workspace owner', async () => {
