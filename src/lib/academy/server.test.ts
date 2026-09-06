@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { academyRequestSchema } from './server';
+import { academyRequestSchema, evaluateAcademyReflection } from './server';
 
 describe('AI Academy request contract', () => {
   it('accepts a course generation request', () => {
@@ -50,5 +50,38 @@ describe('AI Academy request contract', () => {
       stderr: '',
       exitCode: 0,
     }).success).toBe(false);
+  });
+
+  it('derives reflection status from the numeric understanding score', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({
+        score: 69,
+        status: 'demonstrated',
+        predictionComparison: 'The prediction was partly correct.',
+        explanationFeedback: 'The mechanism needs one more connection.',
+        evidenceConnection: 'The learner cited the real output.',
+        nextStep: 'Explain why the reported field matters.',
+      }),
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+
+    const evaluation = await evaluateAcademyReflection({
+      courseTitle: 'Linux Basics',
+      lessonTitle: 'Inspect the kernel',
+      instruction: 'Inspect kernel information.',
+      expected: 'Kernel details.',
+      prediction: 'I expect kernel information.',
+      explanation: 'The command showed the kernel release and architecture.',
+      command: 'uname -a',
+      stdout: 'Linux lab 6.8.0 x86_64',
+      stderr: '',
+      exitCode: 0,
+      practiceEvaluation: { status: 'passed' },
+    });
+
+    expect(evaluation.score).toBe(69);
+    expect(evaluation.status).toBe('developing');
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });
