@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { recordGuestServiceReadinessEvidence } from '@/lib/execution-evidence/guest-service-readiness';
-import { getRuntimeReadinessEvidence } from '@/lib/execution-evidence/runtime-readiness';
+import {
+  getRuntimeReadinessEvidence,
+  RuntimeReadinessEvidenceConflictError,
+} from '@/lib/execution-evidence/runtime-readiness';
 import { getDeploymentAuthorizationById } from '@/lib/infrastructure/deployment-authorization';
 import {
   buildGuestServiceReadinessFacts,
   buildGuestServiceReadinessPayload,
   GuestServiceReadinessInterpretationError,
 } from '@/lib/infrastructure/guest-service-readiness-evidence';
-import { buildRuntimeReadinessFacts } from '@/lib/infrastructure/runtime-readiness-evidence';
+import {
+  buildRuntimeReadinessFacts,
+  RuntimeReadinessInterpretationError,
+} from '@/lib/infrastructure/runtime-readiness-evidence';
 import { inspectDesktopService, type DesktopPlatform } from '@/lib/labs/desktop-runtime';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -144,7 +150,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         facts,
       }, 201);
     } catch (error) {
-      if (error instanceof GuestServiceReadinessInterpretationError) {
+      if (
+        error instanceof GuestServiceReadinessInterpretationError ||
+        error instanceof RuntimeReadinessEvidenceConflictError ||
+        error instanceof RuntimeReadinessInterpretationError
+      ) {
         return json({ error: error.message, code: error.code }, 409);
       }
       console.error('Guest-service readiness evidence capture failed:', error);
