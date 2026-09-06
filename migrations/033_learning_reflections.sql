@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS academy_learning_reflections (
     lesson_id VARCHAR(64) NOT NULL,
     command TEXT NOT NULL,
     prediction TEXT NOT NULL,
-    evidence_id UUID REFERENCES execution_evidence(id) ON DELETE SET NULL,
+    evidence_id UUID REFERENCES execution_evidence(id) ON DELETE RESTRICT,
     explanation TEXT,
     evaluation JSONB,
     explanation_score INTEGER CHECK (explanation_score IS NULL OR explanation_score BETWEEN 0 AND 100),
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS academy_learning_reflections (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (length(btrim(prediction)) BETWEEN 1 AND 2000),
     CHECK (length(command) BETWEEN 1 AND 1000),
+    CHECK (explanation IS NULL OR length(btrim(explanation)) BETWEEN 1 AND 4000),
     CHECK (
         (status = 'predicted' AND evidence_id IS NULL AND explanation IS NULL AND evaluation IS NULL AND explanation_score IS NULL AND evidence_bound_at IS NULL AND evaluation_started_at IS NULL AND reflected_at IS NULL)
         OR
@@ -56,4 +57,4 @@ ALTER TABLE academy_mastery
 COMMENT ON TABLE academy_learning_reflections IS
     'Learner predictions captured before Academy execution and explanations scored only against the exact persisted execution evidence';
 COMMENT ON COLUMN academy_mastery.understanding_score IS
-    'Average reflection quality multiplied by required-practice reflection coverage; separate from completion/practice mastery score';
+    'Latest-per-practice reflection quality multiplied by required-practice reflection coverage; separate from completion/practice mastery score';
