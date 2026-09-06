@@ -71,7 +71,7 @@ export type AcademyLearningReflection = {
   explanation: string | null;
   evaluation: AcademyReflectionEvaluation | null;
   explanationScore: number | null;
-  status: 'predicted' | 'reflected';
+  status: 'predicted' | 'evaluating' | 'reflected';
   createdAt: string;
   reflectedAt: string | null;
 };
