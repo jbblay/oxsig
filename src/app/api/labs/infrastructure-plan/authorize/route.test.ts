@@ -13,15 +13,13 @@ const mocks = vi.hoisted(() => ({
   createDeploymentAuthorization: vi.fn(),
 }));
 
-class MockDeploymentAuthorizationConflictError extends Error {}
-
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/infrastructure/designer-persistence', () => ({ getInfrastructureDesign: mocks.getInfrastructureDesign }));
 vi.mock('@/lib/infrastructure/deployment-authorization', () => ({
   createDeploymentAuthorization: mocks.createDeploymentAuthorization,
-  DeploymentAuthorizationConflictError: MockDeploymentAuthorizationConflictError,
+  DeploymentAuthorizationConflictError: class DeploymentAuthorizationConflictError extends Error {},
 }));
 
 import { POST } from './route';
