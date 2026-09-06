@@ -10,6 +10,7 @@ function pageMeta(pathname: string) {
   if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Generate a roadmap, learn visually, ask questions and move into real lab practice' };
   if (pathname === '/collab') return { title: 'Collaboration', description: 'Conversation, resources and practice' };
   if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Visual explanation and recording' };
+  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Share a session, attach owner resources and grant explicit time-bounded control' };
   if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Capture, connect and reuse technical knowledge' };
   if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your technical knowledge workspace' };
   if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Design, launch and operate cloud labs' };
