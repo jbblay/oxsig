@@ -17,23 +17,26 @@ CREATE TABLE IF NOT EXISTS academy_learning_reflections (
     explanation_score INTEGER CHECK (explanation_score IS NULL OR explanation_score BETWEEN 0 AND 100),
     model VARCHAR(128),
     status VARCHAR(16) NOT NULL DEFAULT 'predicted'
-        CHECK (status IN ('predicted', 'reflected')),
+        CHECK (status IN ('predicted', 'evaluating', 'reflected')),
     evidence_bound_at TIMESTAMPTZ,
+    evaluation_started_at TIMESTAMPTZ,
     reflected_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (length(btrim(prediction)) BETWEEN 1 AND 2000),
     CHECK (length(command) BETWEEN 1 AND 1000),
     CHECK (
-        (status = 'predicted' AND evidence_id IS NULL AND explanation IS NULL AND evaluation IS NULL AND explanation_score IS NULL AND reflected_at IS NULL)
+        (status = 'predicted' AND evidence_id IS NULL AND explanation IS NULL AND evaluation IS NULL AND explanation_score IS NULL AND evidence_bound_at IS NULL AND evaluation_started_at IS NULL AND reflected_at IS NULL)
         OR
-        (status = 'reflected' AND evidence_id IS NOT NULL AND explanation IS NOT NULL AND evaluation IS NOT NULL AND explanation_score IS NOT NULL AND evidence_bound_at IS NOT NULL AND reflected_at IS NOT NULL)
+        (status = 'evaluating' AND evidence_id IS NOT NULL AND explanation IS NOT NULL AND evaluation IS NULL AND explanation_score IS NULL AND evidence_bound_at IS NOT NULL AND evaluation_started_at IS NOT NULL AND reflected_at IS NULL)
+        OR
+        (status = 'reflected' AND evidence_id IS NOT NULL AND explanation IS NOT NULL AND evaluation IS NOT NULL AND explanation_score IS NOT NULL AND evidence_bound_at IS NOT NULL AND evaluation_started_at IS NOT NULL AND reflected_at IS NOT NULL)
     )
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_academy_learning_reflections_one_pending
     ON academy_learning_reflections(course_id, owner_id, lesson_id)
-    WHERE status = 'predicted';
+    WHERE status IN ('predicted', 'evaluating');
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_academy_learning_reflections_evidence
     ON academy_learning_reflections(owner_id, evidence_id)
@@ -53,4 +56,4 @@ ALTER TABLE academy_mastery
 COMMENT ON TABLE academy_learning_reflections IS
     'Learner predictions captured before Academy execution and explanations scored only against the exact persisted execution evidence';
 COMMENT ON COLUMN academy_mastery.understanding_score IS
-    'Reflection quality multiplied by required-practice reflection coverage; separate from completion/practice mastery score';
+    'Average reflection quality multiplied by required-practice reflection coverage; separate from completion/practice mastery score';
