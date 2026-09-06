@@ -3,8 +3,9 @@
  *
  * Production requests coordinate through PostgreSQL so limits survive
  * serverless cold starts and apply consistently across application instances.
- * A small in-memory bucket remains only as an availability fallback when the
- * database is not configured or a rate-limit query itself fails.
+ * A small in-memory bucket remains as an availability fallback for ordinary
+ * endpoints. Cost-bearing or security-sensitive callers can opt into
+ * fail-closed behavior so a shared-limiter outage never weakens their policy.
  */
 
 import { createHash } from 'node:crypto';
@@ -14,6 +15,10 @@ import { getPool, isDatabaseConfigured } from '@/lib/db/pool';
 export interface RateLimitConfig {
   maxRequests: number;
   windowMs: number;
+}
+
+export interface RateLimitOptions {
+  failClosed?: boolean;
 }
 
 interface RequestRecord {
@@ -146,11 +151,25 @@ function limitedResponse(config: RateLimitConfig, bucket: ConsumedBucket): NextR
   );
 }
 
+function unavailableResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: 'Rate Limit Unavailable',
+      message: 'This protected operation is temporarily unavailable because its shared safety limit could not be verified.',
+    },
+    {
+      status: 503,
+      headers: { 'Cache-Control': 'no-store' },
+    }
+  );
+}
+
 export async function checkRateLimit(
   request: NextRequest,
   config: RateLimitConfig,
   identifier?: string,
-  bucketScope?: string
+  bucketScope?: string,
+  options: RateLimitOptions = {}
 ): Promise<NextResponse | null> {
   if (!Number.isFinite(config.maxRequests) || config.maxRequests < 1) {
     throw new Error('Rate-limit maxRequests must be at least 1');
@@ -166,9 +185,16 @@ export async function checkRateLimit(
     try {
       bucket = await consumeDatabaseBucket(key, config);
     } catch (error) {
+      if (options.failClosed) {
+        console.error('Shared rate limiter unavailable; protected operation denied:', error);
+        return unavailableResponse();
+      }
       console.error('Shared rate limiter unavailable; using local fallback:', error);
       bucket = consumeMemoryBucket(key, config);
     }
+  } else if (options.failClosed) {
+    console.error('Shared rate limiter unavailable; protected operation denied because DATABASE_URL is not configured.');
+    return unavailableResponse();
   } else {
     bucket = consumeMemoryBucket(key, config);
   }
