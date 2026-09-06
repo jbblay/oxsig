@@ -98,8 +98,9 @@ const observation = {
   desktopName: 'OXSIG Desktop',
   framebuffer: { width: 1440, height: 900 },
 };
+const encryptedTicketFixture = `1.${'a'.repeat(16)}.${'b'.repeat(64)}.${'c'.repeat(24)}`;
 
-function request(body = { ticket: 'encrypted-ticket', observation }) {
+function request(body = { ticket: encryptedTicketFixture, observation }) {
   return new NextRequest(`http://localhost/api/labs/instances/${labId}/access-path-evidence`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
