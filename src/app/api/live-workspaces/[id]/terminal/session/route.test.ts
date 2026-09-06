@@ -57,6 +57,7 @@ const labInstanceId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const leaseId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const user = { id: participantId, clerkUserId: 'clerk-1', role: 'user' as const };
 const pool = { query: vi.fn() };
+const runtimeExternalId = 'i-0123456789abcdef0';
 
 const authorization = {
   collaborationId: workspaceId,
@@ -88,7 +89,7 @@ describe('Live Workspace shared terminal session API', () => {
     mocks.prepareTerminal.mockResolvedValue({
       authorization,
       label: 'Ubuntu Security Lab',
-      runtimeExternalId: 'i-0123456789abcdef0',
+      runtimeExternalId,
       diagnostics: { ec2State: 'running', ssmRegistered: true, ssmPingStatus: 'Online' },
       leaseExpiresAt: '2099-01-01T00:15:00.000Z',
     });
@@ -98,6 +99,7 @@ describe('Live Workspace shared terminal session API', () => {
       tokenValue: 'ssm-token',
       region: 'eu-central-1',
     });
+    mocks.terminateSession.mockResolvedValue({ terminated: true, alreadyEnded: false });
     mocks.createTicket.mockReturnValue('encrypted-bridge-ticket');
     mocks.ticketTtl.mockReturnValue(30_000);
     mocks.requestMetadata.mockReturnValue({ ipAddress: '127.0.0.1', userAgent: 'vitest' });
@@ -114,7 +116,7 @@ describe('Live Workspace shared terminal session API', () => {
       bindingId,
     });
     expect(mocks.createTicket).toHaveBeenCalledWith(expect.objectContaining({
-      target: 'i-0123456789abcdef0',
+      target: runtimeExternalId,
       workspaceControl: authorization,
     }));
     const body = await response.json();
@@ -150,5 +152,14 @@ describe('Live Workspace shared terminal session API', () => {
     expect(await response.json()).toMatchObject({ code: 'TERMINAL_CONTROL_LEASE_REQUIRED' });
     expect(mocks.startSession).not.toHaveBeenCalled();
     expect(mocks.createTicket).not.toHaveBeenCalled();
+  });
+
+  it('terminates a partially started SSM session when ticket minting fails', async () => {
+    mocks.createTicket.mockImplementation(() => { throw new Error('ticket mint failed'); });
+    const response = await POST(request({ bindingId }), { params: Promise.resolve({ id: workspaceId }) });
+    expect(response.status).toBe(503);
+    expect(mocks.startSession).toHaveBeenCalledTimes(1);
+    expect(mocks.terminateSession).toHaveBeenCalledWith(runtimeExternalId, 'session-shared-1');
+    expect(await response.json()).toMatchObject({ code: 'SHARED_TERMINAL_SESSION_START_FAILED' });
   });
 });
