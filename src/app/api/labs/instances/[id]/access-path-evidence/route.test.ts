@@ -16,10 +16,10 @@ const mocks = vi.hoisted(() => ({
   buildAccessFacts: vi.fn(),
   buildGuestFacts: vi.fn(),
   buildRuntimeFacts: vi.fn(),
-  parseAccessPayload: vi.fn(),
   parseGuestPayload: vi.fn(),
 }));
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
@@ -43,18 +43,14 @@ vi.mock('@/lib/execution-evidence/guest-service-readiness', () => ({
 vi.mock('@/lib/execution-evidence/runtime-readiness', () => ({
   getRuntimeReadinessEvidence: mocks.getRuntimeEvidence,
 }));
-vi.mock('@/lib/infrastructure/access-path-readiness-evidence', () => ({
-  AccessPathReadinessInterpretationError: class AccessPathReadinessInterpretationError extends Error {
-    constructor(message: string, readonly code: string) { super(message); }
-  },
-  accessPathReadinessPayloadSchema: { parse: mocks.parseAccessPayload },
-  browserAccessObservationSchema: {
-    _def: {},
-    parse: (value: unknown) => value,
-  },
-  buildAccessPathReadinessFacts: mocks.buildAccessFacts,
-  buildAccessPathReadinessPayload: mocks.buildPayload,
-}));
+vi.mock('@/lib/infrastructure/access-path-readiness-evidence', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/infrastructure/access-path-readiness-evidence')>();
+  return {
+    ...actual,
+    buildAccessPathReadinessFacts: mocks.buildAccessFacts,
+    buildAccessPathReadinessPayload: mocks.buildPayload,
+  };
+});
 vi.mock('@/lib/infrastructure/guest-service-readiness-evidence', () => ({
   guestServiceReadinessPayloadSchema: { parse: mocks.parseGuestPayload },
   buildGuestServiceReadinessFacts: mocks.buildGuestFacts,
