@@ -25,6 +25,12 @@ export type AiPractitionerExecution = {
   stderr: string;
   exitCode: number;
   risk: AiPractitionerRisk;
+  executionId: string;
+  evidenceId: string;
+  provenance: 'browser-observed' | 'server-executed' | 'provider-attested' | 'learner-provided';
+  executionReceiptId: string;
+  terminalSessionId: string;
+  surface: 'ai-practitioner';
 };
 
 export type AiPractitionerHistoryItem = {
