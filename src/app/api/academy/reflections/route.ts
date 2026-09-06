@@ -9,6 +9,7 @@ import {
   claimAcademyReflection,
   completeAcademyReflection,
   createAcademyPrediction,
+  getAcademyUnderstandingForReflection,
   releaseAcademyReflectionClaim,
 } from '@/lib/academy/reflections';
 
@@ -68,8 +69,12 @@ export async function POST(request: NextRequest) {
       });
 
       if (claimResult.existing) {
+        const understanding = await getAcademyUnderstandingForReflection(
+          user.id,
+          claimResult.existing.id
+        );
         return NextResponse.json(
-          { reflection: claimResult.existing, understanding: null, replayed: true },
+          { reflection: claimResult.existing, understanding, replayed: true },
           { headers: { 'Cache-Control': 'no-store' } }
         );
       }
