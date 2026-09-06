@@ -53,7 +53,7 @@ export function capabilitiesForLiveWorkspaceRole(role: LiveWorkspaceRole): LiveW
       requestControl: true,
       grantControl: true,
       manageParticipants: true,
-      manageResources: true,
+      manageResources: false,
       eligibleForTerminalControl: true,
       eligibleForDesktopControl: true,
     };
@@ -236,6 +236,9 @@ export async function assignLiveWorkspaceRole(args: {
   if (!access) throw new LiveWorkspaceError('Live Workspace not found or access denied.', 404, 'WORKSPACE_NOT_FOUND');
   if (!access.capabilities.manageParticipants) throw new LiveWorkspaceError('You cannot manage Live Workspace participants.', 403, 'PARTICIPANT_MANAGEMENT_DENIED');
   if (args.targetUserId === access.ownerId) throw new LiveWorkspaceError('The workspace owner role cannot be changed.', 409, 'OWNER_ROLE_IMMUTABLE');
+  if (!access.isOwner && args.role === 'instructor') {
+    throw new LiveWorkspaceError('Only the workspace owner can assign the instructor role.', 403, 'INSTRUCTOR_ASSIGNMENT_DENIED');
+  }
 
   const member = await args.pool.query(
     `SELECT 1 FROM collaboration_members
