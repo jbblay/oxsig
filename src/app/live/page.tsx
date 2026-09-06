@@ -341,7 +341,9 @@ export default function LiveWorkspacePage() {
                         )}
                         {participant.role !== 'owner' && detail.workspace.capabilities.manageParticipants && (
                           <select id={`role-${participant.id}`} aria-label={`Role for ${participant.displayName}`} className="rounded-md border bg-background px-2 py-1.5 text-xs" value={participant.role} disabled={busy === `role:${participant.id}`} onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}>
-                            <option value="observer">Observer</option><option value="learner">Learner</option><option value="instructor">Instructor</option>
+                            <option value="observer">Observer</option>
+                            <option value="learner">Learner</option>
+                            {(detail.workspace.isOwner || participant.role === 'instructor') && <option value="instructor" disabled={!detail.workspace.isOwner}>Instructor</option>}
                           </select>
                         )}
                         <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'Can request control' : 'Observe only'}</span>
