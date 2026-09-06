@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   captureProductEvent: vi.fn(),
 }));
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/db/pool', () => ({
   transaction: mocks.transaction,
   getPool: () => ({ query: mocks.poolQuery }),
