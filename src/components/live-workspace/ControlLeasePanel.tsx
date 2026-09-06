@@ -83,9 +83,14 @@ function SurfaceIcon({ surface }: { surface: Surface }) {
   return surface === 'terminal' ? <Terminal className="h-4 w-4" /> : <Monitor className="h-4 w-4" />;
 }
 
+function surfaceLabel(surface: Surface) {
+  return surface === 'terminal' ? 'Terminal' : 'Desktop';
+}
+
 export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resources, control, onRefresh }: Props) {
   const [busy, setBusy] = React.useState<string | null>(null);
   const [now, setNow] = React.useState(() => Date.now());
+  const [durationMinutes, setDurationMinutes] = React.useState(15);
 
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -121,14 +126,14 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Control leases</CardTitle>
-            <CardDescription>Request, grant and revoke time-bounded authorization. Membership alone never grants machine input.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Machine control</CardTitle>
+            <CardDescription>Choose who may send input to an attached lab. Access is temporary and can be released or revoked at any time.</CardDescription>
           </div>
-          <Badge variant="outline">Shared terminal transport v1</Badge>
+          <Badge variant="outline">Explicit control</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {labs.length === 0 && <p className="text-xs text-muted-foreground">Attach a Cyber Lab before requesting terminal or desktop control.</p>}
+        {labs.length === 0 && <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Attach a Cyber Lab to make terminal or desktop control available.</p>}
 
         {labs.map((resource) => {
           const lease = control.leases.find((item) => item.bindingId === resource.id && item.surface === resource.accessMode);
@@ -138,19 +143,20 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
             : capabilities.eligibleForDesktopControl;
           const canRequest = capabilities.requestControl && eligible && !lease && !ownPending;
           const canRevoke = Boolean(lease && (capabilities.grantControl || lease.participantId === viewerId));
-          const ownsTerminalLease = Boolean(lease && lease.participantId === viewerId && lease.surface === 'terminal');
+          const ownsLease = Boolean(lease && lease.participantId === viewerId);
+          const ownsTerminalLease = Boolean(ownsLease && lease?.surface === 'terminal');
 
           return (
-            <div key={resource.id} className="rounded-xl border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div key={resource.id} className="rounded-xl border p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold"><SurfaceIcon surface={resource.accessMode} /> {resource.label}</div>
-                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">{resource.accessMode} · {resource.resourceId}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{surfaceLabel(resource.accessMode)} control</p>
                 </div>
                 {lease ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge>lease active</Badge>
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" /> {remaining(lease.expiresAt, now)}</span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Badge>{ownsLease ? 'You have control' : 'Control active'}</Badge>
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" /> {remaining(lease.expiresAt, now)} remaining</span>
                     {canRevoke && (
                       <Button
                         size="sm"
@@ -160,15 +166,15 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                           `revoke:${lease.id}`,
                           `/api/live-workspaces/${workspaceId}/control-leases/${lease.id}/revoke`,
                           undefined,
-                          lease.participantId === viewerId ? 'Control lease released.' : 'Control lease revoked.'
+                          ownsLease ? 'Control released.' : 'Control revoked.'
                         )}
                       >
-                        {busy === `revoke:${lease.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Revoke'}
+                        {busy === `revoke:${lease.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : ownsLease ? 'Release control' : 'Revoke control'}
                       </Button>
                     )}
                   </div>
                 ) : ownPending ? (
-                  <Badge variant="secondary">request pending</Badge>
+                  <Badge variant="secondary">Request pending</Badge>
                 ) : canRequest ? (
                   <Button
                     size="sm"
@@ -178,21 +184,22 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                       `request:${resource.id}`,
                       `/api/live-workspaces/${workspaceId}/control-requests`,
                       { bindingId: resource.id, surface: resource.accessMode },
-                      `${resource.accessMode === 'terminal' ? 'Terminal' : 'Desktop'} control requested.`
+                      `${surfaceLabel(resource.accessMode)} control requested.`
                     )}
                   >
                     {busy === `request:${resource.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Request control'}
                   </Button>
                 ) : (
-                  <Badge variant="outline">observe only</Badge>
+                  <Badge variant="outline">Observe only</Badge>
                 )}
               </div>
               {lease && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Controller: {lease.participantName}. {lease.surface === 'terminal'
-                    ? 'Only the authenticated lease holder can open and send input through the shared terminal transport.'
-                    : 'Desktop transport is not connected in this slice.'}
-                </p>
+                <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Controller: {lease.participantName}.</span>{' '}
+                  {lease.surface === 'terminal'
+                    ? ownsLease ? 'Open the shared terminal below when you are ready to work.' : 'Only that participant can open and send input through the shared terminal.'
+                    : 'Desktop control is authorized, but shared desktop transport is not connected yet.'}
+                </div>
               )}
               {ownsTerminalLease && lease && (
                 <SharedWorkspaceTerminal
@@ -209,13 +216,24 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
         })}
 
         {capabilities.grantControl && pending.length > 0 && (
-          <div className="space-y-2 border-t pt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending approval</p>
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div><p className="text-sm font-semibold">Control requests</p><p className="text-xs text-muted-foreground">Approve only the participant who should actively operate the machine.</p></div>
+              <div className="space-y-1">
+                <label htmlFor="control-duration" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Grant for</label>
+                <select id="control-duration" className="block h-9 rounded-md border bg-background px-2 text-xs" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}>
+                  <option value={5}>5 minutes</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>60 minutes</option>
+                </select>
+              </div>
+            </div>
             {pending.map((request) => (
               <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
                 <div>
-                  <p className="text-sm font-semibold">{request.participantName} → {request.labLabel}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><SurfaceIcon surface={request.surface} /> {request.surface} control</p>
+                  <p className="text-sm font-semibold">{request.participantName}</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><SurfaceIcon surface={request.surface} /> {request.labLabel} · {surfaceLabel(request.surface)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -227,15 +245,15 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                   <Button
                     size="sm"
                     disabled={busy === `approve:${request.id}` || request.participantId === viewerId}
-                    title={request.participantId === viewerId ? 'Self-approval is not allowed' : undefined}
+                    title={request.participantId === viewerId ? 'You cannot approve your own control request' : undefined}
                     onClick={() => void mutate(
                       `approve:${request.id}`,
                       `/api/live-workspaces/${workspaceId}/control-requests/${request.id}/approve`,
-                      { durationMinutes: 15 },
-                      'Control granted for 15 minutes.'
+                      { durationMinutes },
+                      `Control granted for ${durationMinutes} minutes.`
                     )}
                   >
-                    {busy === `approve:${request.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Grant 15 min'}
+                    {busy === `approve:${request.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : `Grant ${durationMinutes} min`}
                   </Button>
                 </div>
               </div>
