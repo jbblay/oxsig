@@ -1,7 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { buildRateLimitBucketKey } from './rate-limit';
+const mocks = vi.hoisted(() => ({
+  isDatabaseConfigured: vi.fn(),
+  query: vi.fn(),
+}));
+
+vi.mock('@/lib/db/pool', () => ({
+  isDatabaseConfigured: mocks.isDatabaseConfigured,
+  getPool: () => ({ query: mocks.query }),
+}));
+
+import {
+  RATE_LIMITS,
+  buildRateLimitBucketKey,
+  checkRateLimit,
+  clearAllRateLimits,
+} from './rate-limit';
 
 const config = { maxRequests: 20, windowMs: 60_000 };
 
@@ -48,5 +63,51 @@ describe('buildRateLimitBucketKey', () => {
 
     expect(key).toMatch(/^[a-f0-9]{64}$/);
     expect(key).not.toContain('sensitive-user-id');
+  });
+});
+
+describe('checkRateLimit failure policy', () => {
+  beforeEach(() => {
+    clearAllRateLimits();
+    mocks.isDatabaseConfigured.mockReset();
+    mocks.query.mockReset();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  it('keeps the local availability fallback for ordinary endpoints', async () => {
+    mocks.isDatabaseConfigured.mockReturnValue(false);
+    const request = new NextRequest('https://oxsig.example/api/storyboards');
+
+    await expect(checkRateLimit(request, config, 'user-a')).resolves.toBeNull();
+  });
+
+  it('fails closed for cost-bearing lab provisioning when the shared database is unavailable', async () => {
+    mocks.isDatabaseConfigured.mockReturnValue(false);
+    const request = new NextRequest('https://oxsig.example/api/labs');
+
+    const response = await checkRateLimit(
+      request,
+      RATE_LIMITS.LAB_PROVISION,
+      'user-a',
+      'lab-provision'
+    );
+
+    expect(response?.status).toBe(503);
+    await expect(response?.json()).resolves.toMatchObject({ error: 'Rate Limit Unavailable' });
+  });
+
+  it('fails closed for cost-bearing lab provisioning when the shared limiter query fails', async () => {
+    mocks.isDatabaseConfigured.mockReturnValue(true);
+    mocks.query.mockRejectedValue(new Error('database unavailable'));
+    const request = new NextRequest('https://oxsig.example/api/labs');
+
+    const response = await checkRateLimit(
+      request,
+      RATE_LIMITS.LAB_PROVISION,
+      'user-a',
+      'lab-provision'
+    );
+
+    expect(response?.status).toBe(503);
   });
 });
