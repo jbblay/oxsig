@@ -37,6 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         listControlState({ pool, collaborationId: id, viewerId: user.id }),
       ]);
       return NextResponse.json({
+        viewerId: user.id,
         workspace: access,
         participants,
         resources: resources.rows.map((row) => ({
