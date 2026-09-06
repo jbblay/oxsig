@@ -75,3 +75,40 @@ export type AcademyLearningReflection = {
   createdAt: string;
   reflectedAt: string | null;
 };
+
+export type AcademyInstructorMode = 'explain' | 'guide' | 'demonstrate' | 'observe';
+
+export type AcademyIndependenceSummary = {
+  reflectedPractices: number;
+  requiredPractices: number;
+  instructorInterventions: number;
+  score: number;
+  status: 'not_started' | 'supported' | 'independent';
+};
+
+export type AcademyAdaptiveInstructorStatus = {
+  recommendedMode: AcademyInstructorMode;
+  reason: string;
+  guideHintCount: number;
+  nextHintLevel: 1 | 2 | 3;
+  understandingScore: number;
+  understandingStatus: 'not_started' | 'developing' | 'demonstrated';
+  latestReflectionScore: number | null;
+  latestPracticeStatus: 'passed' | 'needs-attention' | null;
+  independence: AcademyIndependenceSummary;
+};
+
+export type AcademyInstructorIntervention = {
+  id: string;
+  recommendedMode: AcademyInstructorMode;
+  requestedMode: AcademyInstructorMode;
+  appliedMode: AcademyInstructorMode;
+  kind: 'hint' | 'explanation' | 'demonstration' | 'observation';
+  hintLevel: 0 | 1 | 2 | 3;
+  title: string;
+  guidance: string;
+  learnerPrompt: string;
+  example: string | null;
+  independence: AcademyIndependenceSummary;
+  createdAt: string;
+};

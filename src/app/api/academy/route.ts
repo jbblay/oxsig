@@ -4,9 +4,9 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { captureProductEvent } from '@/lib/analytics/posthog';
+import { answerAdaptiveAcademyQuestion } from '@/lib/academy/adaptive-question';
 import {
   academyRequestSchema,
-  answerAcademyQuestion,
   evaluateAcademyPractice,
   generateAcademyCourse,
 } from '@/lib/academy/server';
@@ -74,11 +74,11 @@ export async function POST(request: NextRequest) {
       }
 
       if (parsed.data.action === 'ask') {
-        const answer = await answerAcademyQuestion({
+        const answer = await answerAdaptiveAcademyQuestion({
+          ownerId: user.id,
           question: parsed.data.question,
           courseTitle: parsed.data.courseTitle,
           lessonTitle: parsed.data.lessonTitle,
-          lessonContext: parsed.data.lessonContext,
         });
         await recordAcademyQuestion({
           ownerId: user.id,

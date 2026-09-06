@@ -4,6 +4,9 @@ import { AI_TERMINAL_RESULT_EVENT, AI_TERMINAL_RUN_EVENT, type AiTerminalRunRequ
 
 const mocks = vi.hoisted(() => ({ getCsrfToken: vi.fn() }));
 
+vi.mock('@/components/academy/AcademyAdaptiveInstructor', () => ({
+  default: () => <div data-testid="adaptive-instructor">adaptive instructor</div>,
+}));
 vi.mock('@/components/labs/InteractiveSsmTerminal', () => ({
   default: () => <div data-testid="terminal">terminal</div>,
 }));
@@ -129,6 +132,7 @@ describe('AcademyPracticeWorkspace', () => {
       />
     );
 
+    expect(screen.getByTestId('adaptive-instructor')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('I expect this command to… because…'), {
       target: { value: 'I expect kernel details.' },
     });

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { BrainCircuit, CheckCircle2, Loader2, Play, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import AcademyAdaptiveInstructor from '@/components/academy/AcademyAdaptiveInstructor';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -238,6 +239,13 @@ export default function AcademyPracticeWorkspace({
     }
   }
 
+  const adaptiveRefreshKey = [
+    reflection?.status || 'none',
+    reflection?.explanationScore ?? 'none',
+    evaluation?.status || 'none',
+    understanding?.score ?? 'none',
+  ].join(':');
+
   return (
     <div className="rounded-2xl border p-3 sm:p-4">
       <div className="mb-4 rounded-xl border bg-muted/20 p-3">
@@ -259,7 +267,15 @@ export default function AcademyPracticeWorkspace({
         />
       </div>
 
-      <InteractiveSsmTerminal key={runningLab.id} labInstanceId={runningLab.id} machineLabel={runningLab.name} />
+      <AcademyAdaptiveInstructor
+        courseTitle={course.title}
+        lessonTitle={lesson.title}
+        refreshKey={adaptiveRefreshKey}
+      />
+
+      <div className="mt-4">
+        <InteractiveSsmTerminal key={runningLab.id} labInstanceId={runningLab.id} machineLabel={runningLab.name} />
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
         <p className="max-w-2xl text-[11px] leading-5 text-muted-foreground">
