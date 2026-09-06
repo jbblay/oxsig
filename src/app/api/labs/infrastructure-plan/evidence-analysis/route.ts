@@ -116,20 +116,26 @@ export async function POST(request: NextRequest) {
         }, { status: 503 });
       }
 
-      const analysis = await interpretDeploymentEvidence(facts);
-      const model = deploymentEvidenceModel();
+      const proposedAnalysis = await interpretDeploymentEvidence(facts);
+      const requestedModel = deploymentEvidenceModel();
       const analyzedEvidence = await storeExecutionEvidenceAnalysis({
         ownerId: user.id,
         evidenceId: evidence.id,
         analysisKind: 'deployment',
-        analysis: analysis as unknown as Record<string, unknown>,
-        model,
+        analysis: proposedAnalysis as unknown as Record<string, unknown>,
+        model: requestedModel,
       });
+      if (analyzedEvidence.analysisKind !== 'deployment' || !analyzedEvidence.analysis) {
+        throw new ExecutionEvidenceConflictError(
+          'Persisted deployment evidence analysis is unavailable.',
+          'DEPLOYMENT_ANALYSIS_PERSISTENCE_MISMATCH'
+        );
+      }
 
       return noStoreJson({
-        analysis,
+        analysis: analyzedEvidence.analysis,
         facts,
-        model,
+        model: analyzedEvidence.model || requestedModel,
         evidence: {
           id: analyzedEvidence.id,
           executionId: analyzedEvidence.executionId,
