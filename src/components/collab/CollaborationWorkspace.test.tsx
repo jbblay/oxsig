@@ -1,11 +1,17 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getCsrfToken: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getCsrfToken: vi.fn(),
+  realtimeCallbacks: null as null | { onMessageCreated: () => void },
+}));
 
 vi.mock('@/lib/security/csrf-client', () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock('@/lib/collab/use-realtime', () => ({
-  useCollaborationRealtime: () => ({ state: 'connected', onlineCount: 1 }),
+  useCollaborationRealtime: (_activeId: string | null, callbacks: { onMessageCreated: () => void }) => {
+    mocks.realtimeCallbacks = callbacks;
+    return { state: 'connected', onlineCount: 1 };
+  },
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -52,6 +58,7 @@ const memberBody = {
 describe('CollaborationWorkspace session isolation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.realtimeCallbacks = null;
     mocks.getCsrfToken.mockResolvedValue('csrf-token');
     Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
   });
@@ -112,6 +119,42 @@ describe('CollaborationWorkspace session isolation', () => {
     fireEvent.click(screen.getByRole('button', { name: /beta/i }));
 
     await waitFor(() => expect(screen.getByPlaceholderText(/message beta/i)).toHaveValue(''));
+    vi.unstubAllGlobals();
+  });
+
+  it('lets a current silent realtime refresh resolve an earlier visible loading state', async () => {
+    let alphaMessageCalls = 0;
+    let alphaMemberCalls = 0;
+    const never = new Promise<Response>(() => undefined);
+
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/collaborations') return Promise.resolve(json({ collaborations: sessions }));
+      if (url.includes('/alpha/messages')) {
+        alphaMessageCalls += 1;
+        return alphaMessageCalls === 1
+          ? never
+          : Promise.resolve(json({ messages: [message('alpha', 'm-fresh', 'Fresh realtime message')] }));
+      }
+      if (url.includes('/alpha/members')) {
+        alphaMemberCalls += 1;
+        return alphaMemberCalls === 1 ? never : Promise.resolve(json(memberBody));
+      }
+      if (url.includes('/beta/messages')) return Promise.resolve(json({ messages: [] }));
+      if (url.includes('/beta/members')) return Promise.resolve(json(memberBody));
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<CollaborationWorkspace />);
+
+    await waitFor(() => expect(screen.getByText(/loading conversation/i)).toBeInTheDocument());
+    expect(mocks.realtimeCallbacks).not.toBeNull();
+
+    act(() => mocks.realtimeCallbacks?.onMessageCreated());
+
+    await waitFor(() => expect(screen.getByText('Fresh realtime message')).toBeInTheDocument());
+    expect(screen.queryByText(/loading conversation/i)).not.toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 });
