@@ -64,7 +64,13 @@ type AcademyExecution = {
   stdout: string;
   stderr: string;
   exitCode: number;
-  risk?: 'read-only' | 'changes-system';
+  risk: 'read-only' | 'changes-system';
+  executionId: string;
+  evidenceId: string;
+  provenance: 'browser-observed' | 'server-executed' | 'provider-attested' | 'learner-provided';
+  executionReceiptId: string;
+  terminalSessionId: string;
+  surface: 'academy';
 };
 type PracticeResult = {
   execution: AcademyExecution;
@@ -99,7 +105,7 @@ function executeInVisibleTerminal(labInstanceId: string, command: string) {
 
     window.addEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
     window.dispatchEvent(new CustomEvent<AiTerminalRunRequest>(AI_TERMINAL_RUN_EVENT, {
-      detail: { requestId, labInstanceId, command },
+      detail: { requestId, labInstanceId, command, surface: 'academy' },
     }));
   });
 }
@@ -304,32 +310,34 @@ export default function AcademyPage() {
     const practice = activeLesson.practice;
     setBusy('practice');
     try {
-      const approvalToken = await getCsrfToken();
-      const approvalResponse = await fetch(`/api/labs/instances/${runningLab.id}/ai/terminal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': approvalToken },
-        body: JSON.stringify({ action: 'authorize', command: practice.command, approved: true }),
-      });
-      if (!approvalResponse.ok) throw new Error(await apiError(approvalResponse, 'The Academy checkpoint command was not authorized'));
-
-      toast.info('Running the approved checkpoint in the visible Academy terminal…');
+      toast.info('Binding the approved checkpoint to the live terminal session and running it visibly…');
       const terminalResult = await executeInVisibleTerminal(runningLab.id, practice.command);
+      if (terminalResult.error) throw new Error(terminalResult.error);
+      if (
+        terminalResult.surface !== 'academy' ||
+        !terminalResult.executionId ||
+        !terminalResult.evidenceId ||
+        !terminalResult.executionReceiptId ||
+        !terminalResult.terminalSessionId ||
+        !terminalResult.provenance ||
+        (terminalResult.risk !== 'read-only' && terminalResult.risk !== 'changes-system')
+      ) {
+        throw new Error('The Academy terminal returned incomplete bound execution evidence.');
+      }
 
-      const recordToken = await getCsrfToken();
-      const recordResponse = await fetch(`/api/labs/instances/${runningLab.id}/ai/terminal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': recordToken },
-        body: JSON.stringify({
-          action: 'record',
-          command: practice.command,
-          stdout: terminalResult.stdout,
-          stderr: terminalResult.stderr,
-          exitCode: terminalResult.exitCode,
-        }),
-      });
-      if (!recordResponse.ok) throw new Error(await apiError(recordResponse, 'The command ran, but Oxsig could not record its evidence'));
-      const recordBody = await recordResponse.json() as { execution: AcademyExecution };
-      const execution = recordBody.execution;
+      const execution: AcademyExecution = {
+        command: terminalResult.command,
+        stdout: terminalResult.stdout,
+        stderr: terminalResult.stderr,
+        exitCode: terminalResult.exitCode,
+        risk: terminalResult.risk,
+        executionId: terminalResult.executionId,
+        evidenceId: terminalResult.evidenceId,
+        provenance: terminalResult.provenance,
+        executionReceiptId: terminalResult.executionReceiptId,
+        terminalSessionId: terminalResult.terminalSessionId,
+        surface: 'academy',
+      };
       setPracticeResults((current) => ({ ...current, [activeLesson.id]: { execution } }));
 
       const evaluationToken = await getCsrfToken();
@@ -338,6 +346,8 @@ export default function AcademyPage() {
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': evaluationToken },
         body: JSON.stringify({
           action: 'evaluate',
+          evidenceId: execution.evidenceId,
+          labInstanceId: runningLab.id,
           courseTitle: course.title,
           lessonTitle: activeLesson.title,
           instruction: practice.instruction,
@@ -355,8 +365,8 @@ export default function AcademyPage() {
         [activeLesson.id]: { execution, evaluation: evaluationBody.evaluation },
       }));
       setInstructorCollapsed(false);
-      if (evaluationBody.evaluation.status === 'passed') toast.success('Checkpoint verified from real terminal evidence.');
-      else toast.info('The instructor found something to review in the real terminal evidence.');
+      if (evaluationBody.evaluation.status === 'passed') toast.success('Checkpoint verified from exact bound terminal evidence.');
+      else toast.info('The instructor found something to review in the exact terminal evidence.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Academy checkpoint execution failed');
     } finally {
@@ -596,7 +606,7 @@ export default function AcademyPage() {
                       <InteractiveSsmTerminal key={runningLab.id} labInstanceId={runningLab.id} machineLabel={runningLab.name} />
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
                         <p className="max-w-2xl text-[11px] leading-5 text-muted-foreground">
-                          The checkpoint command above is never run silently. Clicking the button explicitly authorizes it, runs it visibly in this persistent shell, records the real output, and returns that evidence to the Academy instructor.
+                          The checkpoint command above is never run silently. Clicking the button explicitly authorizes it, binds a one-time receipt to this exact active SSM session, runs it visibly, persists browser-observed output, and evaluates only that exact evidence record.
                         </p>
                         <Button onClick={() => void runPractice()} disabled={busy === 'practice' || !terminalConnected}>
                           {busy === 'practice' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
@@ -618,12 +628,13 @@ export default function AcademyPage() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2 font-semibold">
                           {currentPracticeResult.evaluation.status === 'passed' ? <ShieldCheck className="h-5 w-5 text-primary" /> : <Bot className="h-5 w-5 text-amber-600" />}
-                          Real evidence review
+                          Exact evidence review
                         </div>
                         <Badge variant={currentPracticeResult.evaluation.status === 'passed' ? 'default' : 'outline'}>{currentPracticeResult.evaluation.status === 'passed' ? 'Verified' : 'Needs attention'}</Badge>
                       </div>
                       <p className="mt-3 text-sm font-medium">{currentPracticeResult.evaluation.summary}</p>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">{currentPracticeResult.evaluation.feedback}</p>
+                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">browser-observed · evidence {currentPracticeResult.execution.evidenceId.slice(0, 8)}… · SSM {currentPracticeResult.execution.terminalSessionId.slice(0, 18)}…</p>
                       {currentPracticeResult.evaluation.nextStep && <p className="mt-3 border-t pt-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">Next step:</span> {currentPracticeResult.evaluation.nextStep}</p>}
                     </div>
                   )}
