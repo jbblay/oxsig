@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Boxes, CloudCog, FileCog } from 'lucide-react';
+import { Boxes, CloudCog, FileCog, ShieldCheck } from 'lucide-react';
+import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
 import InfrastructureDesigner from '@/components/labs/InfrastructureDesigner';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
@@ -9,12 +10,13 @@ import LabTopologyPersistenceBridge from '@/components/labs/LabTopologyPersisten
 import { Button } from '@/components/ui/button';
 
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
-type WorkspaceMode = 'runtime' | 'designer' | 'planner';
+type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence';
 
 export default function CyberLabWorkspace() {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
   const [designerMounted, setDesignerMounted] = React.useState(false);
   const [plannerMounted, setPlannerMounted] = React.useState(false);
+  const [evidenceMounted, setEvidenceMounted] = React.useState(false);
 
   React.useEffect(() => {
     const saved = window.localStorage.getItem(MODE_KEY);
@@ -26,11 +28,16 @@ export default function CyberLabWorkspace() {
       setPlannerMounted(true);
       setMode('planner');
     }
+    if (saved === 'evidence') {
+      setEvidenceMounted(true);
+      setMode('evidence');
+    }
   }, []);
 
   const selectMode = (next: WorkspaceMode) => {
     if (next === 'designer') setDesignerMounted(true);
     if (next === 'planner') setPlannerMounted(true);
+    if (next === 'evidence') setEvidenceMounted(true);
     setMode(next);
     window.localStorage.setItem(MODE_KEY, next);
   };
@@ -47,7 +54,10 @@ export default function CyberLabWorkspace() {
         <Button size="sm" variant={mode === 'planner' ? 'default' : 'ghost'} onClick={() => selectMode('planner')}>
           <FileCog className="mr-1.5 h-4 w-4" />Deployment Plan
         </Button>
-        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime. Each boundary remains explicit.</p>
+        <Button size="sm" variant={mode === 'evidence' ? 'default' : 'ghost'} onClick={() => selectMode('evidence')}>
+          <ShieldCheck className="mr-1.5 h-4 w-4" />Evidence Review
+        </Button>
+        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime → evidence. Each boundary remains explicit.</p>
       </div>
 
       <div className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
@@ -65,6 +75,12 @@ export default function CyberLabWorkspace() {
       {plannerMounted && (
         <div className={mode === 'planner' ? 'block' : 'hidden'} aria-hidden={mode !== 'planner'}>
           <DeploymentPlanner />
+        </div>
+      )}
+
+      {evidenceMounted && (
+        <div className={mode === 'evidence' ? 'block' : 'hidden'} aria-hidden={mode !== 'evidence'}>
+          <DeploymentEvidenceReview />
         </div>
       )}
     </>
