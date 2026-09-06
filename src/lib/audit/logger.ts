@@ -58,4 +58,6 @@ export const AUDIT_ACTIONS = {
   LAB_SESSION_START: 'lab.session.start',
   LAB_SESSION_START_FAILED: 'lab.session.start.failed',
   LAB_SESSION_END: 'lab.session.end',
+  DEPLOYMENT_EXECUTE: 'deployment.execute',
+  DEPLOYMENT_EXECUTE_FAILED: 'deployment.execute.failed',
 } as const;

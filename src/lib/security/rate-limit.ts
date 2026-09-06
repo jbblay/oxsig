@@ -35,6 +35,7 @@ export const RATE_LIMITS = {
   API_DOCUMENTS: { maxRequests: 50, windowMs: 60 * 1000 },
   API_SIGNATURES: { maxRequests: 30, windowMs: 60 * 1000 },
   PUBLIC: { maxRequests: 200, windowMs: 60 * 1000 },
+  LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000 },
 } as const;
 
 function getClientId(request: NextRequest): string {
@@ -59,15 +60,20 @@ function normalizedPath(request: NextRequest): string {
 /**
  * Build the opaque shared bucket key. Query strings are deliberately excluded
  * so callers cannot evade a limit by adding arbitrary query parameters.
+ *
+ * `bucketScope` lets multiple endpoints intentionally share one policy bucket.
+ * This is useful for cost-bearing operations exposed through more than one
+ * product surface, such as normal lab creation and Designer deployment.
  */
 export function buildRateLimitBucketKey(
   request: NextRequest,
   config: RateLimitConfig,
-  identifier?: string
+  identifier?: string,
+  bucketScope?: string
 ): string {
   const clientId = identifier || getClientId(request);
   const material = [
-    normalizedPath(request),
+    bucketScope?.trim() || normalizedPath(request),
     clientId,
     String(config.maxRequests),
     String(config.windowMs),
@@ -143,7 +149,8 @@ function limitedResponse(config: RateLimitConfig, bucket: ConsumedBucket): NextR
 export async function checkRateLimit(
   request: NextRequest,
   config: RateLimitConfig,
-  identifier?: string
+  identifier?: string,
+  bucketScope?: string
 ): Promise<NextResponse | null> {
   if (!Number.isFinite(config.maxRequests) || config.maxRequests < 1) {
     throw new Error('Rate-limit maxRequests must be at least 1');
@@ -152,7 +159,7 @@ export async function checkRateLimit(
     throw new Error('Rate-limit windowMs must be at least 1');
   }
 
-  const key = buildRateLimitBucketKey(request, config, identifier);
+  const key = buildRateLimitBucketKey(request, config, identifier, bucketScope);
   let bucket: ConsumedBucket;
 
   if (isDatabaseConfigured()) {

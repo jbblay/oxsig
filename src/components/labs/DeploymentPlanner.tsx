@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  CloudCog,
   FileCog,
   KeyRound,
   Loader2,
@@ -61,6 +62,20 @@ type ReceiptView = {
   issuedAt: string;
 };
 
+type DeploymentView = {
+  executionId: string;
+  authorizationId: string;
+  alreadyStarted: boolean;
+  instance: {
+    id: string;
+    slug: string;
+    name: string;
+    status: string;
+    expiresAt: string;
+    metadata: Record<string, unknown>;
+  };
+};
+
 const PHASE_LABELS: Record<DeploymentPlan['actions'][number]['phase'], string> = {
   network: 'Network segments',
   compute: 'Compute workloads',
@@ -75,8 +90,10 @@ export default function DeploymentPlanner() {
   const [error, setError] = React.useState<string | null>(null);
   const [authorization, setAuthorization] = React.useState<AuthorizationView | null>(null);
   const [receipt, setReceipt] = React.useState<ReceiptView | null>(null);
+  const [deployment, setDeployment] = React.useState<DeploymentView | null>(null);
   const [authorizing, setAuthorizing] = React.useState(false);
   const [issuingReceipt, setIssuingReceipt] = React.useState(false);
+  const [startingDeployment, setStartingDeployment] = React.useState(false);
 
   const generatePlan = React.useCallback(async () => {
     setLoading(true);
@@ -93,6 +110,7 @@ export default function DeploymentPlanner() {
       setResult(body as PlanResponse);
       setAuthorization(null);
       setReceipt(null);
+      setDeployment(null);
     } catch (planError) {
       const message = planError instanceof Error ? planError.message : 'Could not generate a deployment plan';
       setError(message);
@@ -121,6 +139,7 @@ export default function DeploymentPlanner() {
       if (!response.ok) throw new Error(body.error || 'Could not authorize the deployment plan');
       setAuthorization(body.authorization as AuthorizationView);
       setReceipt(null);
+      setDeployment(null);
       toast.success('Exact deployment plan authorized');
     } catch (authorizationError) {
       const message = authorizationError instanceof Error ? authorizationError.message : 'Could not authorize the deployment plan';
@@ -149,6 +168,7 @@ export default function DeploymentPlanner() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Could not issue the execution receipt');
       setReceipt(body.receipt as ReceiptView);
+      setDeployment(null);
       setAuthorization((current) => current ? { ...current, state: 'receipt_issued' } : current);
       toast.success('One-time execution receipt issued');
     } catch (receiptError) {
@@ -160,6 +180,43 @@ export default function DeploymentPlanner() {
     }
   }, [authorization]);
 
+  const startControlledDeployment = React.useCallback(async () => {
+    if (!receipt || !authorization) return;
+    const approved = window.confirm(
+      `Start a real cloud lab for ${receipt.target.labSlug}? This creates provider infrastructure and may incur cloud cost until the lab is destroyed or expires.`
+    );
+    if (!approved) return;
+
+    setStartingDeployment(true);
+    setError(null);
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch('/api/labs/infrastructure-plan/execute', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-csrf-token': csrf,
+        },
+        body: JSON.stringify({
+          authorizationId: receipt.authorizationId,
+          executionId: receipt.executionId,
+        }),
+        cache: 'no-store',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not start the controlled deployment');
+      setDeployment(body as DeploymentView);
+      setAuthorization((current) => current ? { ...current, state: 'executing' } : current);
+      toast.success(body.alreadyStarted ? 'Deployment was already started' : 'Controlled cloud deployment started');
+    } catch (deploymentError) {
+      const message = deploymentError instanceof Error ? deploymentError.message : 'Could not start the controlled deployment';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setStartingDeployment(false);
+    }
+  }, [authorization, receipt]);
+
   const groupedActions = React.useMemo(() => {
     if (!result) return [];
     return (Object.keys(PHASE_LABELS) as Array<keyof typeof PHASE_LABELS>)
@@ -170,19 +227,21 @@ export default function DeploymentPlanner() {
       .filter((group) => group.actions.length > 0);
   }, [result]);
 
+  const busy = loading || authorizing || issuingReceipt || startingDeployment;
+
   return (
     <div className="space-y-4 pb-10">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold md:text-3xl">Deployment Planner</h1>
-            <Badge variant="secondary">Proposal v1</Badge>
+            <Badge variant="secondary">Controlled execution v1</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Compile the saved Infrastructure Designer blueprint—including explicit OS, access, architecture, and resource intent—into a reviewable deployment contract. Authorization and execution receipts are explicit stages; this surface still never provisions AWS resources or changes live lab state.
+            Compile the saved Infrastructure Designer blueprint into a reviewable deployment contract. OXSIG revalidates the exact saved plan at authorization, receipt issuance, and execution. A real provider VM is created only after explicit authorization, a one-time receipt, and a final cost-bearing start action.
           </p>
         </div>
-        <Button onClick={() => void generatePlan()} disabled={loading || authorizing || issuingReceipt}>
+        <Button onClick={() => void generatePlan()} disabled={busy || Boolean(deployment)}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <FileCog className="mr-2 h-4 w-4" />}
           {result ? 'Regenerate plan' : 'Generate deployment plan'}
         </Button>
@@ -193,7 +252,7 @@ export default function DeploymentPlanner() {
           <FileCog className="mx-auto h-10 w-10 text-muted-foreground/50" />
           <p className="mt-3 font-semibold">Blueprint → explicit proposal</p>
           <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            OXSIG will read your persisted blueprint, re-run validation on the server, identify workloads, runtime mappings, network functions, segments, links, and the ordered actions a future authorized deployment would require.
+            OXSIG reads your persisted blueprint, re-runs validation on the server, identifies workloads, runtime mappings, network functions, segments, links, and the ordered actions deployment would require.
           </p>
         </div>
       )}
@@ -220,7 +279,7 @@ export default function DeploymentPlanner() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold">Proposed execution sequence</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Nothing below executes automatically. Each action records whether the current runtime can perform it.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Actions remain proposals until the controlled adapter consumes a matching receipt.</p>
                   </div>
                   <Badge variant="outline">{result.plan.actions.length} actions</Badge>
                 </div>
@@ -274,11 +333,11 @@ export default function DeploymentPlanner() {
                   </Badge>
                 </div>
                 <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                  Approval is server-side and bound to this exact plan hash. Changing the saved design invalidates it before a receipt can be issued.
+                  Approval is server-side and bound to this exact plan hash. Changing the saved design invalidates the authorization or receipt before provider execution.
                 </p>
 
                 {!authorization && (
-                  <Button className="mt-3 w-full" variant="outline" onClick={() => void authorizePlan()} disabled={authorizing || loading}>
+                  <Button className="mt-3 w-full" variant="outline" onClick={() => void authorizePlan()} disabled={busy}>
                     {authorizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
                     Authorize exact plan
                   </Button>
@@ -305,7 +364,7 @@ export default function DeploymentPlanner() {
                     )}
 
                     {authorization.state === 'authorized' && authorization.executionSupport.supported && !receipt && (
-                      <Button className="w-full" onClick={() => void issueExecutionReceipt()} disabled={issuingReceipt}>
+                      <Button className="w-full" onClick={() => void issueExecutionReceipt()} disabled={busy}>
                         {issuingReceipt ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
                         Issue one-time execution receipt
                       </Button>
@@ -313,12 +372,27 @@ export default function DeploymentPlanner() {
                   </div>
                 )}
 
-                {receipt && (
-                  <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+                {receipt && !deployment && (
+                  <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold"><KeyRound className="h-3.5 w-3.5" />Receipt issued</div>
                     <p className="mt-2 break-all font-mono text-[10px]">{receipt.executionId}</p>
                     <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                      Reserved for {receipt.target.labSlug}. No VM, network, or AWS resource has been created or changed. The future execution adapter must consume this receipt before provider execution begins.
+                      Reserved for {receipt.target.labSlug}. No provider resource exists yet. Starting the controlled deployment below creates a real cloud VM and can incur provider cost until it is destroyed or expires.
+                    </p>
+                    <Button className="mt-3 w-full" variant="destructive" onClick={() => void startControlledDeployment()} disabled={busy}>
+                      {startingDeployment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CloudCog className="mr-2 h-4 w-4" />}
+                      Start real cloud VM
+                    </Button>
+                  </div>
+                )}
+
+                {deployment && (
+                  <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold"><CloudCog className="h-3.5 w-3.5" />Controlled deployment started</div>
+                    <p className="mt-2 font-mono text-[10px]">Lab {deployment.instance.id}</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">{deployment.instance.name} · {deployment.instance.status}</p>
+                    <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                      The receipt is consumed and bound to this lab allocation. Switch to Runtime Lab to observe cloud state, open terminal/desktop access when ready, and manage lifecycle.
                     </p>
                   </div>
                 )}

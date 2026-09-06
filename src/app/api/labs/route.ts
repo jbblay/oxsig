@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
 import { createLabVm, describeLabVmStates, destroyLabVm, labCapabilities } from '@/lib/labs/aws-runtime';
@@ -131,6 +132,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
     }
 
+    const requestLimit = await checkRateLimit(
+      req,
+      { maxRequests: 20, windowMs: 60_000 },
+      user.id
+    );
+    if (requestLimit) return requestLimit;
+
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid lab request' }, { status: 400 });
 
@@ -185,6 +193,14 @@ export async function POST(request: NextRequest) {
     if ((active.rows[0]?.count || 0) >= 1) {
       return NextResponse.json({ error: 'One active cloud lab is allowed per account at a time. Stop or destroy the current lab first.' }, { status: 409 });
     }
+
+    const costLimit = await checkRateLimit(
+      req,
+      RATE_LIMITS.LAB_PROVISION,
+      user.id,
+      'lab-provision'
+    );
+    if (costLimit) return costLimit;
 
     const definition = await pool.query(
       `INSERT INTO lab_definitions (slug, name, category, description, difficulty, runtime_kind, definition, enabled)
