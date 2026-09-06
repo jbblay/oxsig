@@ -1,8 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('server-only', () => ({}));
-
-import { terminalFrameRequiresControlRevalidation } from './route';
+import { describe, expect, it } from 'vitest';
+import { terminalFrameRequiresControlRevalidation } from '@/lib/labs/terminal-bridge-frame';
 
 function ssmFrame(messageType: string) {
   const frame = Buffer.alloc(120);
