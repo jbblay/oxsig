@@ -79,6 +79,27 @@ export async function assertLiveWorkspaceTerminalAuthorization(args: {
     throw new LiveWorkspaceError('The shared terminal control lease is no longer active.', 403, 'TERMINAL_CONTROL_LEASE_INACTIVE');
   }
 
+  const ownership = await args.pool.query(
+    `SELECT 1
+       FROM live_workspace_resources resource
+       JOIN collaborations collaboration ON collaboration.id=resource.collaboration_id
+       JOIN lab_instances lab ON lab.id=resource.resource_id
+      WHERE resource.id=$1
+        AND resource.collaboration_id=$2
+        AND resource.resource_id=$3
+        AND resource.resource_type='lab-instance'
+        AND resource.status='attached'
+        AND resource.resource_owner_id=collaboration.owner_id
+        AND lab.owner_id=collaboration.owner_id
+        AND lab.status <> 'destroyed'
+        AND (CASE WHEN lab.metadata->>'accessMode'='desktop' THEN 'desktop' ELSE 'terminal' END)='terminal'
+      LIMIT 1`,
+    [authorization.bindingId, authorization.collaborationId, authorization.labInstanceId]
+  );
+  if (!ownership.rowCount) {
+    throw new LiveWorkspaceError('The shared terminal lab ownership or attachment is no longer valid.', 403, 'TERMINAL_LAB_AUTHORIZATION_CHANGED');
+  }
+
   return lease;
 }
 
