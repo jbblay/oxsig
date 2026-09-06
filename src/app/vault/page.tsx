@@ -20,6 +20,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -131,6 +132,7 @@ export default function VaultPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<VaultItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const [kindFilter, setKindFilter] = React.useState<'all' | VaultKind>('all');
@@ -138,14 +140,16 @@ export default function VaultPage() {
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [editor, setEditor] = React.useState<EditorState>(() => blankEditor());
+  const [baselineEditor, setBaselineEditor] = React.useState<EditorState>(() => blankEditor());
 
   const load = React.useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setItems(await listVaultItems());
     } catch (error) {
       console.error('Failed to load Vault:', error);
-      toast.error(error instanceof Error ? error.message : 'Vault could not be loaded');
+      setLoadError(error instanceof Error ? error.message : 'Vault could not be loaded');
     } finally {
       setLoading(false);
     }
@@ -159,6 +163,21 @@ export default function VaultPage() {
     () => items.find((item) => item.id === activeId) || null,
     [activeId, items]
   );
+
+  const dirty = React.useMemo(
+    () => JSON.stringify(editor) !== JSON.stringify(baselineEditor),
+    [baselineEditor, editor]
+  );
+
+  React.useEffect(() => {
+    if (!dirty) return;
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', preventUnload);
+    return () => window.removeEventListener('beforeunload', preventUnload);
+  }, [dirty]);
 
   const filtered = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -180,16 +199,27 @@ export default function VaultPage() {
     pinned: items.filter((item) => item.pinned).length,
   }), [items]);
 
+  function canDiscardChanges() {
+    return !dirty || window.confirm('Discard your unsaved Vault changes?');
+  }
+
   function selectItem(item: VaultItem) {
+    if (!creating && activeId === item.id) return;
+    if (!canDiscardChanges()) return;
+    const next = itemEditor(item);
     setCreating(false);
     setActiveId(item.id);
-    setEditor(itemEditor(item));
+    setEditor(next);
+    setBaselineEditor(next);
   }
 
   function startCreate(kind: VaultKind = 'command') {
+    if (!canDiscardChanges()) return;
+    const next = blankEditor(kind);
     setActiveId(null);
     setCreating(true);
-    setEditor(blankEditor(kind));
+    setEditor(next);
+    setBaselineEditor(next);
   }
 
   async function createItem() {
@@ -208,10 +238,12 @@ export default function VaultPage() {
         tags: parseTags(editor.tags),
         sourceType: 'manual',
       });
+      const next = itemEditor(created);
       setItems((current) => [created, ...current]);
       setCreating(false);
       setActiveId(created.id);
-      setEditor(itemEditor(created));
+      setEditor(next);
+      setBaselineEditor(next);
       toast.success('Saved to your Vault.');
     } catch (error) {
       console.error('Failed to create Vault item:', error);
@@ -233,8 +265,10 @@ export default function VaultPage() {
         language: editor.language.trim() || null,
         tags: parseTags(editor.tags),
       });
+      const next = itemEditor(updated);
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setEditor(itemEditor(updated));
+      setEditor(next);
+      setBaselineEditor(next);
       toast.success('Vault item updated.');
     } catch (error) {
       console.error('Failed to update Vault item:', error);
@@ -265,9 +299,12 @@ export default function VaultPage() {
     setSaving(true);
     try {
       await updateVaultItem(active.id, { archived: true });
+      const next = blankEditor();
       setItems((current) => current.filter((item) => item.id !== active.id));
       setActiveId(null);
       setCreating(false);
+      setEditor(next);
+      setBaselineEditor(next);
       toast.success('Moved out of the active Vault.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not archive Vault item');
@@ -281,9 +318,12 @@ export default function VaultPage() {
     setSaving(true);
     try {
       await deleteVaultItem(active.id);
+      const next = blankEditor();
       setItems((current) => current.filter((item) => item.id !== active.id));
       setActiveId(null);
       setCreating(false);
+      setEditor(next);
+      setBaselineEditor(next);
       toast.success('Vault item deleted.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not delete Vault item');
@@ -293,6 +333,10 @@ export default function VaultPage() {
   }
 
   function handoff(item: VaultItem, destination: 'lab' | 'board' | 'collaboration') {
+    if (dirty) {
+      toast.error('Save or cancel your Vault changes before continuing to another workspace.');
+      return;
+    }
     const payload = {
       version: 1,
       itemId: item.id,
@@ -334,6 +378,22 @@ export default function VaultPage() {
       toast.success('Copied from Vault.');
     } catch {
       toast.error('The browser could not copy this item.');
+    }
+  }
+
+  function cancelEditor() {
+    if (creating) {
+      const next = blankEditor();
+      setCreating(false);
+      setActiveId(null);
+      setEditor(next);
+      setBaselineEditor(next);
+      return;
+    }
+    if (active) {
+      const next = itemEditor(active);
+      setEditor(next);
+      setBaselineEditor(next);
     }
   }
 
@@ -382,7 +442,7 @@ export default function VaultPage() {
             <Card key={label as string}>
               <CardContent className="flex items-center gap-3 p-4">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><StatIcon className="h-4 w-4" /></div>
-                <div><p className="text-2xl font-semibold leading-none">{value as number}</p><p className="mt-1 text-xs text-muted-foreground">{label as string}</p></div>
+                <div><p className="text-2xl font-semibold leading-none">{loadError ? '—' : value as number}</p><p className="mt-1 text-xs text-muted-foreground">{label as string}</p></div>
               </CardContent>
             </Card>
           );
@@ -396,7 +456,7 @@ export default function VaultPage() {
               <div className="flex flex-col gap-3 md:flex-row">
                 <div className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search commands, topics, tags or content" className="pl-9" />
+                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search commands, topics, tags or content" className="pl-9" aria-label="Search Vault" />
                 </div>
                 <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as 'all' | VaultKind)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="Filter Vault by type">
                   <option value="all">All knowledge</option>
@@ -411,6 +471,15 @@ export default function VaultPage() {
 
           {loading ? (
             <Card><CardContent className="flex items-center justify-center py-20 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading your technical memory…</CardContent></Card>
+          ) : loadError ? (
+            <Card className="border-destructive/30">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <LibraryBig className="h-8 w-8 text-muted-foreground/50" />
+                <h2 className="mt-3 font-semibold">Your Vault could not be loaded.</h2>
+                <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
+                <Button className="mt-4" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Try again</Button>
+              </CardContent>
+            </Card>
           ) : filtered.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-16 text-center">
@@ -427,7 +496,7 @@ export default function VaultPage() {
                 const snippet = firstUsefulLine(item);
                 const selected = activeId === item.id;
                 return (
-                  <button key={item.id} type="button" onClick={() => selectItem(item)} className={`group rounded-xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${selected ? 'border-primary/60 bg-primary/5 shadow-sm' : 'bg-card'}`}>
+                  <button key={item.id} type="button" aria-pressed={selected} onClick={() => selectItem(item)} className={`group rounded-xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${selected ? 'border-primary/60 bg-primary/5 shadow-sm' : 'bg-card'}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground group-hover:bg-primary/10 group-hover:text-primary"><Icon className="h-4 w-4" /></div>
                       <div className="min-w-0 flex-1">
@@ -475,9 +544,12 @@ export default function VaultPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-primary"><ActiveKindIcon className="h-5 w-5" /></div>
-                    <div className="min-w-0"><CardTitle className="truncate text-lg">{creating ? 'Capture knowledge' : active?.title}</CardTitle><CardDescription>{creating ? VAULT_KIND_DESCRIPTIONS[editor.kind] : 'Edit the knowledge object, then continue it somewhere useful.'}</CardDescription></div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2"><CardTitle className="truncate text-lg">{creating ? 'Capture knowledge' : active?.title}</CardTitle>{dirty && <Badge variant="outline" className="text-[9px]">Unsaved changes</Badge>}</div>
+                      <CardDescription>{creating ? VAULT_KIND_DESCRIPTIONS[editor.kind] : 'Edit the knowledge object, then continue it somewhere useful.'}</CardDescription>
+                    </div>
                   </div>
-                  {!creating && active && <Button size="icon" variant="ghost" disabled={saving} onClick={() => void togglePin(active)} title={active.pinned ? 'Unpin' : 'Pin'}>{active.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
+                  {!creating && active && <Button size="icon" variant="ghost" disabled={saving} onClick={() => void togglePin(active)} title={active.pinned ? 'Unpin' : 'Pin'} aria-label={active.pinned ? 'Unpin Vault item' : 'Pin Vault item'}>{active.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 p-4">
@@ -491,8 +563,8 @@ export default function VaultPage() {
                 <label className="block space-y-1.5 text-xs font-medium">Tags<Input value={editor.tags} onChange={(event) => setEditor((current) => ({ ...current, tags: event.target.value }))} placeholder="nmap, enumeration, networking" disabled={saving} /><span className="block font-normal text-muted-foreground">Comma-separated, up to 12 tags.</span></label>
 
                 <div className="flex flex-wrap gap-2 border-t pt-4">
-                  {creating ? <Button onClick={() => void createItem()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save to Vault</Button> : <Button onClick={() => void saveActive()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save changes</Button>}
-                  <Button variant="outline" onClick={() => { setCreating(false); if (active) setEditor(itemEditor(active)); else setActiveId(null); }} disabled={saving}>Cancel</Button>
+                  {creating ? <Button onClick={() => void createItem()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save to Vault</Button> : <Button onClick={() => void saveActive()} disabled={saving || !editor.title.trim() || !dirty}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save changes</Button>}
+                  <Button variant="outline" onClick={cancelEditor} disabled={saving}>{dirty ? 'Discard changes' : 'Cancel'}</Button>
                 </div>
 
                 {!creating && active && (
