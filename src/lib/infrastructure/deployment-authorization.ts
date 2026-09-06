@@ -9,6 +9,7 @@ export const DEPLOYMENT_AUTHORIZATION_TTL_MINUTES = 15;
 
 export const DEPLOYMENT_AUTHORIZATION_STATES = [
   'authorized',
+  'receipt_issued',
   'executing',
   'evidence_recorded',
   'analyzed',
@@ -41,6 +42,7 @@ export type DeploymentAuthorizationRecord = {
   state: DeploymentAuthorizationState;
   executionId?: string;
   labInstanceId?: string;
+  receiptIssuedAt?: string;
   executionStartedAt?: string;
   evidenceRecordedAt?: string;
   analyzedAt?: string;
@@ -80,6 +82,7 @@ function mapRow(row: Record<string, unknown>): DeploymentAuthorizationRecord {
     state: z.enum(DEPLOYMENT_AUTHORIZATION_STATES).parse(row.state),
     ...(row.execution_id ? { executionId: String(row.execution_id) } : {}),
     ...(row.lab_instance_id ? { labInstanceId: String(row.lab_instance_id) } : {}),
+    ...(row.receipt_issued_at ? { receiptIssuedAt: iso(row.receipt_issued_at) } : {}),
     ...(row.execution_started_at ? { executionStartedAt: iso(row.execution_started_at) } : {}),
     ...(row.evidence_recorded_at ? { evidenceRecordedAt: iso(row.evidence_recorded_at) } : {}),
     ...(row.analyzed_at ? { analyzedAt: iso(row.analyzed_at) } : {}),
@@ -97,6 +100,17 @@ export class DeploymentAuthorizationConflictError extends Error {
   }
 }
 
+async function expireInactiveAuthorizations(client: { query: (text: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> }, ownerId: string) {
+  await client.query(
+    `UPDATE deployment_authorizations
+        SET state='expired', updated_at=NOW()
+      WHERE owner_id=$1
+        AND state IN ('authorized','receipt_issued')
+        AND expires_at <= NOW()`,
+    [ownerId]
+  );
+}
+
 export async function createDeploymentAuthorization(input: {
   ownerId: string;
   planId: string;
@@ -109,24 +123,21 @@ export async function createDeploymentAuthorization(input: {
     const owner = await client.query(`SELECT id FROM users WHERE id=$1 FOR UPDATE`, [input.ownerId]);
     if (!owner.rows[0]) throw new Error('Authorization owner does not exist.');
 
-    await client.query(
-      `UPDATE deployment_authorizations
-          SET state='expired', updated_at=NOW()
-        WHERE owner_id=$1
-          AND state='authorized'
-          AND expires_at <= NOW()`,
-      [input.ownerId]
-    );
+    await expireInactiveAuthorizations(client, input.ownerId);
 
-    const executing = await client.query(
-      `SELECT id
+    const claimed = await client.query(
+      `SELECT id, state
          FROM deployment_authorizations
-        WHERE owner_id=$1 AND state='executing'
+        WHERE owner_id=$1 AND state IN ('receipt_issued','executing')
         LIMIT 1`,
       [input.ownerId]
     );
-    if (executing.rows[0]) {
-      throw new DeploymentAuthorizationConflictError('A deployment execution is already in progress for this account.');
+    if (claimed.rows[0]) {
+      throw new DeploymentAuthorizationConflictError(
+        claimed.rows[0].state === 'executing'
+          ? 'A deployment execution is already in progress for this account.'
+          : 'A one-time deployment execution receipt is already active for this account.'
+      );
     }
 
     await client.query(
@@ -165,14 +176,7 @@ export async function getDeploymentAuthorizationForPlan(
   planHash: string
 ): Promise<DeploymentAuthorizationRecord | null> {
   return transaction(async (client) => {
-    await client.query(
-      `UPDATE deployment_authorizations
-          SET state='expired', updated_at=NOW()
-        WHERE owner_id=$1
-          AND state='authorized'
-          AND expires_at <= NOW()`,
-      [ownerId]
-    );
+    await expireInactiveAuthorizations(client, ownerId);
 
     const result = await client.query(
       `SELECT *
@@ -192,12 +196,7 @@ export async function getDeploymentAuthorizationById(
   authorizationId: string
 ): Promise<DeploymentAuthorizationRecord | null> {
   return transaction(async (client) => {
-    await client.query(
-      `UPDATE deployment_authorizations
-          SET state='expired', updated_at=NOW()
-        WHERE id=$1 AND owner_id=$2 AND state='authorized' AND expires_at <= NOW()`,
-      [authorizationId, ownerId]
-    );
+    await expireInactiveAuthorizations(client, ownerId);
 
     const result = await client.query(
       `SELECT * FROM deployment_authorizations WHERE id=$1 AND owner_id=$2 LIMIT 1`,
@@ -212,12 +211,7 @@ export async function claimDeploymentExecutionReceipt(
   authorizationId: string
 ): Promise<DeploymentExecutionReceipt> {
   return transaction(async (client) => {
-    await client.query(
-      `UPDATE deployment_authorizations
-          SET state='expired', updated_at=NOW()
-        WHERE id=$1 AND owner_id=$2 AND state='authorized' AND expires_at <= NOW()`,
-      [authorizationId, ownerId]
-    );
+    await expireInactiveAuthorizations(client, ownerId);
 
     const locked = await client.query(
       `SELECT *
@@ -235,7 +229,9 @@ export async function claimDeploymentExecutionReceipt(
       throw new DeploymentAuthorizationConflictError(
         authorization.state === 'expired'
           ? 'Deployment authorization has expired. Generate and authorize the plan again.'
-          : 'Deployment authorization has already been consumed or is no longer active.'
+          : authorization.state === 'receipt_issued'
+            ? 'A one-time execution receipt has already been issued for this authorization.'
+            : 'Deployment authorization has already been consumed or is no longer active.'
       );
     }
 
@@ -251,9 +247,9 @@ export async function claimDeploymentExecutionReceipt(
 
     const updated = await client.query(
       `UPDATE deployment_authorizations
-          SET state='executing',
+          SET state='receipt_issued',
               execution_id=gen_random_uuid(),
-              execution_started_at=NOW(),
+              receipt_issued_at=NOW(),
               updated_at=NOW()
         WHERE id=$1 AND owner_id=$2 AND state='authorized'
         RETURNING *`,
@@ -264,7 +260,7 @@ export async function claimDeploymentExecutionReceipt(
     }
 
     const claimed = mapRow(updated.rows[0]);
-    if (!claimed.executionId || !claimed.executionStartedAt || !claimed.executionSupport.target) {
+    if (!claimed.executionId || !claimed.receiptIssuedAt || !claimed.executionSupport.target) {
       throw new Error('Deployment execution receipt could not be created.');
     }
 
@@ -275,7 +271,7 @@ export async function claimDeploymentExecutionReceipt(
       planHash: claimed.planHash,
       adapter: 'existing-lab-vm',
       target: claimed.executionSupport.target,
-      issuedAt: claimed.executionStartedAt,
+      issuedAt: claimed.receiptIssuedAt,
     };
   });
 }
