@@ -11,9 +11,10 @@ CREATE TABLE IF NOT EXISTS deployment_authorizations (
     source_design_updated_at TIMESTAMPTZ NOT NULL,
     execution_support JSONB NOT NULL DEFAULT '{}'::jsonb,
     state VARCHAR(32) NOT NULL DEFAULT 'authorized'
-        CHECK (state IN ('authorized','executing','evidence_recorded','analyzed','cancelled','expired','failed')),
+        CHECK (state IN ('authorized','receipt_issued','executing','evidence_recorded','analyzed','cancelled','expired','failed')),
     execution_id UUID,
     lab_instance_id UUID REFERENCES lab_instances(id) ON DELETE SET NULL,
+    receipt_issued_at TIMESTAMPTZ,
     execution_started_at TIMESTAMPTZ,
     evidence_recorded_at TIMESTAMPTZ,
     analyzed_at TIMESTAMPTZ,
@@ -22,8 +23,7 @@ CREATE TABLE IF NOT EXISTS deployment_authorizations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (expires_at > created_at),
-    CHECK ((state <> 'executing') OR execution_id IS NOT NULL),
-    CHECK ((state NOT IN ('evidence_recorded','analyzed')) OR execution_id IS NOT NULL)
+    CHECK ((state NOT IN ('receipt_issued','executing','evidence_recorded','analyzed')) OR execution_id IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_deployment_authorizations_owner_created
@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_deployment_authorizations_owner_plan_hash
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_deployment_authorizations_one_active_owner
     ON deployment_authorizations(owner_id)
-    WHERE state IN ('authorized','executing');
+    WHERE state IN ('authorized','receipt_issued','executing');
 
 COMMENT ON TABLE deployment_authorizations IS
     'Server-authoritative, expiring learner approval bound to one deterministic infrastructure deployment plan hash';
