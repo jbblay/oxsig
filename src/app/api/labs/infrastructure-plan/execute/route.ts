@@ -44,13 +44,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
     }
 
-    const rateLimit = await checkRateLimit(
+    const requestLimit = await checkRateLimit(
       req,
-      RATE_LIMITS.LAB_PROVISION,
-      user.id,
-      'lab-provision'
+      { maxRequests: 20, windowMs: 60_000 },
+      user.id
     );
-    if (rateLimit) return rateLimit;
+    if (requestLimit) return requestLimit;
 
     const parsed = executeSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
@@ -105,6 +104,14 @@ export async function POST(request: NextRequest) {
           { status: 409, headers: { 'Cache-Control': 'no-store' } }
         );
       }
+
+      const costLimit = await checkRateLimit(
+        req,
+        RATE_LIMITS.LAB_PROVISION,
+        user.id,
+        'lab-provision'
+      );
+      if (costLimit) return costLimit;
 
       const executed = await executeControlledDeployment({
         ownerId: user.id,
