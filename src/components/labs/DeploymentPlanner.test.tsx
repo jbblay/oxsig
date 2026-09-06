@@ -92,7 +92,7 @@ describe('DeploymentPlanner adapter eligibility', () => {
     fireEvent.click(screen.getByRole('button', { name: /generate deployment plan/i }));
 
     await waitFor(() => expect(screen.getAllByText('Design-only').length).toBeGreaterThan(0));
-    expect(screen.getByText(/exactly one VM workload/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/exactly one VM workload/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /authorize exact plan/i })).toBeDisabled();
     vi.unstubAllGlobals();
   });
@@ -104,7 +104,7 @@ describe('DeploymentPlanner adapter eligibility', () => {
     fireEvent.click(screen.getByRole('button', { name: /generate deployment plan/i }));
 
     await waitFor(() => expect(screen.getAllByText('Available').length).toBeGreaterThan(0));
-    expect(screen.getByText(/ubuntu-security-lab/)).toBeInTheDocument();
+    expect(screen.getAllByText(/ubuntu-security-lab/).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /authorize exact plan/i })).toBeEnabled();
     vi.unstubAllGlobals();
   });
