@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CircleDot, Keyboard, Loader2, Monitor, RefreshCw, Unplug } from "lucide-react";
+import { CircleDot, Keyboard, Loader2, Monitor, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SsmBrowserPortChannel } from "@/lib/labs/ssm-port-browser-channel";
@@ -9,12 +9,26 @@ import { RfbClient } from "@/lib/labs/vnc-client";
 import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
+type AccessEvidenceState = "pending" | "recording" | "recorded" | "unavailable" | "error";
 
 type DesktopSession = {
   sessionId: string;
   bridgePath: string;
   tokenValue: string;
   platform: "linux" | "windows";
+  accessEvidence?:
+    | {
+        eligible: true;
+        ticket: string;
+        evidenceExecutionId: string;
+        expiresAt: string;
+        ttlMs: number;
+        prerequisiteGuestEvidenceId: string;
+      }
+    | {
+        eligible: false;
+        reason: string;
+      };
 };
 
 class DesktopRequestError extends Error {
@@ -66,6 +80,7 @@ export default function InteractiveSsmDesktop({
   const [statusDetail, setStatusDetail] = React.useState("Preparing the private browser desktop.");
   const [platform, setPlatform] = React.useState<"linux" | "windows" | null>(null);
   const [desktopSize, setDesktopSize] = React.useState<string | null>(null);
+  const [accessEvidenceState, setAccessEvidenceState] = React.useState<AccessEvidenceState>("pending");
 
   const clearRetryTimer = React.useCallback(() => {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
@@ -131,6 +146,7 @@ export default function InteractiveSsmDesktop({
     }
     setState("connecting");
     setError(null);
+    setAccessEvidenceState("pending");
     setStatusDetail(recovery ? "Requesting a fresh private desktop tunnel." : "Checking the desktop service on the lab VM.");
 
     try {
@@ -151,11 +167,13 @@ export default function InteractiveSsmDesktop({
       const session = body as DesktopSession;
       setPlatform(session.platform);
       sessionIdRef.current = session.sessionId;
+      let ssmChannelReady = false;
 
       const channel = new SsmBrowserPortChannel({
         onData: (data) => rfbRef.current?.feed(data),
         onReady: () => {
           if (generation !== generationRef.current) return;
+          ssmChannelReady = true;
           setStatusDetail("Private SSM tunnel connected. Negotiating the browser desktop display.");
         },
         onError: (message) => {
@@ -170,7 +188,7 @@ export default function InteractiveSsmDesktop({
       });
 
       const rfb = new RfbClient(canvas, (bytes) => channel.send(bytes), {
-        onConnected: ({ width, height }) => {
+        onConnected: ({ width, height, name }) => {
           if (generation !== generationRef.current) return;
           transportRetriesRef.current = 0;
           bootstrapRetriesRef.current = 0;
@@ -179,6 +197,41 @@ export default function InteractiveSsmDesktop({
           setError(null);
           setStatusDetail("Connected through AWS Systems Manager. No inbound VNC or RDP port is exposed.");
           canvas.focus();
+
+          const offer = session.accessEvidence;
+          if (!offer?.eligible || !ssmChannelReady) {
+            setAccessEvidenceState("unavailable");
+            return;
+          }
+
+          setAccessEvidenceState("recording");
+          void fetch(`/api/labs/instances/${labInstanceId}/access-path-evidence`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrf,
+            },
+            body: JSON.stringify({
+              ticket: offer.ticket,
+              observation: {
+                ssmChannelReady: true,
+                rfbHandshakeComplete: true,
+                rfbProtocolVersion: "RFB 003.008",
+                desktopName: name.slice(0, 255),
+                framebuffer: { width, height },
+              },
+            }),
+            cache: "no-store",
+          }).then(async (evidenceResponse) => {
+            if (generation !== generationRef.current) return;
+            if (!evidenceResponse.ok) {
+              setAccessEvidenceState("error");
+              return;
+            }
+            setAccessEvidenceState("recorded");
+          }).catch(() => {
+            if (generation === generationRef.current) setAccessEvidenceState("error");
+          });
         },
         onResize: (width, height) => setDesktopSize(`${width}×${height}`),
         onError: (message) => {
@@ -266,6 +319,13 @@ export default function InteractiveSsmDesktop({
             {statusLabel}
           </Badge>
           {desktopSize && <Badge variant="outline" className="text-[9px]">{desktopSize}</Badge>}
+          {accessEvidenceState === "recorded" && (
+            <Badge variant="secondary" className="text-[9px]"><ShieldCheck className="mr-1 h-3 w-3" />Access evidence recorded</Badge>
+          )}
+          {accessEvidenceState === "recording" && (
+            <Badge variant="outline" className="text-[9px]"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Recording evidence</Badge>
+          )}
+          {accessEvidenceState === "error" && <Badge variant="outline" className="text-[9px]">Evidence retry on next session</Badge>}
         </div>
         <div className="flex flex-wrap gap-2">
           {platform === "windows" && state === "connected" && (
@@ -337,7 +397,7 @@ export default function InteractiveSsmDesktop({
       </div>
 
       <p className="text-[10px] leading-4 text-muted-foreground">
-        Desktop pixels, keyboard, and pointer events travel through the authenticated same-origin Oxsig WebSocket bridge and AWS Systems Manager port forwarding. The VNC service is loopback-only on the lab VM.
+        Desktop pixels, keyboard, and pointer events travel through the authenticated same-origin Oxsig WebSocket bridge and AWS Systems Manager port forwarding. The VNC service is loopback-only on the lab VM. When prior guest-service evidence is ready, Oxsig records the successful browser RFB handshake as browser-observed access-path evidence.
       </p>
     </div>
   );
