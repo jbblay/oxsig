@@ -132,6 +132,8 @@ export default function AcademyPracticeWorkspace({
       const predictionBody = await predictionResponse.json() as { reflection: AcademyLearningReflection };
       setReflectionId(predictionBody.reflection.id);
       setReflection(predictionBody.reflection);
+      setExecution(null);
+      setEvaluation(null);
       setUnderstanding(null);
       setExplanation('');
 
@@ -253,7 +255,7 @@ export default function AcademyPracticeWorkspace({
           onChange={(event) => setPrediction(event.target.value.slice(0, 2000))}
           placeholder="I expect this command to… because…"
           className="mt-3 min-h-[82px] resize-none"
-          disabled={busy !== null || reflection?.status === 'reflected'}
+          disabled={busy !== null || Boolean(execution) || reflection?.status === 'reflected'}
         />
       </div>
 
@@ -263,7 +265,7 @@ export default function AcademyPracticeWorkspace({
         <p className="max-w-2xl text-[11px] leading-5 text-muted-foreground">
           The prediction is persisted before execution. The approved command is then bound to this exact active SSM session and evaluated from its exact evidence record.
         </p>
-        <Button onClick={() => void runPractice()} disabled={busy !== null || !terminalConnected || prediction.trim().length < 3 || reflection?.status === 'reflected'}>
+        <Button onClick={() => void runPractice()} disabled={busy !== null || !terminalConnected || prediction.trim().length < 3 || Boolean(evaluation) || reflection?.status === 'reflected'}>
           {busy === 'practice' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           {busy === 'practice' ? 'Running & evaluating…' : terminalConnected ? 'Capture prediction & run' : 'Waiting for terminal'}
         </Button>
@@ -278,7 +280,7 @@ export default function AcademyPracticeWorkspace({
             <Badge variant="outline" className="text-[10px]">exact evidence {execution.evidenceId.slice(0, 8)}…</Badge>
           </div>
           <div className="rounded-xl bg-muted/30 p-3 text-xs leading-5">
-            <span className="font-medium">Your prediction:</span> {prediction.trim()}
+            <span className="font-medium">Your prediction:</span> {reflection?.prediction || prediction.trim()}
           </div>
           <Textarea
             value={explanation}
