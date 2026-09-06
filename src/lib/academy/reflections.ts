@@ -131,6 +131,7 @@ export async function createAcademyPrediction(input: {
        evidence_bound_at=NULL,
        evaluation_started_at=NULL,
        reflected_at=NULL,
+       created_at=NOW(),
        updated_at=NOW()
      WHERE academy_learning_reflections.owner_id=EXCLUDED.owner_id
        AND academy_learning_reflections.status='predicted'
@@ -321,10 +322,14 @@ async function understandingSummary(client: Pool | PoolClient, args: {
 }): Promise<AcademyUnderstandingSummary> {
   const requiredPractices = requiredPracticeCount(args.course);
   const result = await client.query(
-    `SELECT COUNT(DISTINCT lesson_id)::int AS reflected,
+    `SELECT COUNT(*)::int AS reflected,
             COALESCE(AVG(explanation_score), 0)::float AS average_score
-       FROM academy_learning_reflections
-      WHERE course_id=$1 AND owner_id=$2 AND status='reflected'`,
+       FROM (
+         SELECT DISTINCT ON (lesson_id) lesson_id, explanation_score
+           FROM academy_learning_reflections
+          WHERE course_id=$1 AND owner_id=$2 AND status='reflected'
+          ORDER BY lesson_id, reflected_at DESC NULLS LAST, created_at DESC
+       ) latest`,
     [args.courseId, args.ownerId]
   );
   const reflectedPractices = Math.min(requiredPractices, Number(result.rows[0]?.reflected) || 0);
@@ -442,5 +447,28 @@ export async function getAcademyUnderstanding(ownerId: string, courseId: string)
     ownerId,
     courseId,
     course: asCourse(courseResult.rows[0].course_data),
+  });
+}
+
+export async function getAcademyUnderstandingForReflection(
+  ownerId: string,
+  reflectionId: string
+): Promise<AcademyUnderstandingSummary> {
+  const result = await getPool().query(
+    `SELECT r.course_id, c.course_data
+       FROM academy_learning_reflections r
+       JOIN academy_courses c ON c.id=r.course_id AND c.owner_id=r.owner_id
+      WHERE r.id=$1 AND r.owner_id=$2
+      LIMIT 1`,
+    [reflectionId, ownerId]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new AcademyReflectionError('Academy reflection not found.', 'REFLECTION_NOT_FOUND', 404);
+  }
+  return understandingSummary(getPool(), {
+    ownerId,
+    courseId: String(row.course_id),
+    course: asCourse(row.course_data),
   });
 }
