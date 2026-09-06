@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   validateCsrfToken: vi.fn(),
   checkRateLimit: vi.fn(),
+  answerAdaptiveQuestion: vi.fn(),
   evaluateAcademyPractice: vi.fn(),
+  recordAcademyQuestion: vi.fn(),
   recordAcademyPractice: vi.fn(),
   getTerminalEvidenceForAnalysis: vi.fn(),
   storeExecutionEvidenceAnalysis: vi.fn(),
@@ -17,17 +19,19 @@ vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/analytics/posthog', () => ({ captureProductEvent: mocks.captureProductEvent }));
+vi.mock('@/lib/academy/adaptive-question', () => ({
+  answerAdaptiveAcademyQuestion: mocks.answerAdaptiveQuestion,
+}));
 vi.mock('@/lib/academy/server', () => ({
   academyRequestSchema: {
     safeParse: (value: unknown) => ({ success: true, data: value }),
   },
-  answerAcademyQuestion: vi.fn(),
   generateAcademyCourse: vi.fn(),
   evaluateAcademyPractice: mocks.evaluateAcademyPractice,
 }));
 vi.mock('@/lib/academy/persistence', () => ({
   createAcademyCourse: vi.fn(),
-  recordAcademyQuestion: vi.fn(),
+  recordAcademyQuestion: mocks.recordAcademyQuestion,
   recordAcademyPractice: mocks.recordAcademyPractice,
 }));
 vi.mock('@/lib/execution-evidence/server', () => ({
@@ -100,7 +104,7 @@ function evaluationRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('Academy checkpoint evidence evaluation', () => {
+describe('Academy request evidence and adaptive instruction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAuth.mockImplementation(async (
@@ -109,6 +113,10 @@ describe('Academy checkpoint evidence evaluation', () => {
     ) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
+    mocks.answerAdaptiveQuestion.mockResolvedValue({
+      answer: 'The daemon coordinates Docker engine operations.',
+      suggestedAction: 'Relate the daemon to the client/server model.',
+    });
     mocks.getTerminalEvidenceForAnalysis.mockResolvedValue(evidence());
     mocks.evaluateAcademyPractice.mockResolvedValue(evaluation);
     mocks.storeExecutionEvidenceAnalysis.mockResolvedValue(evidence({
@@ -117,8 +125,33 @@ describe('Academy checkpoint evidence evaluation', () => {
       analysis: evaluation,
       model: 'test-model',
     }));
+    mocks.recordAcademyQuestion.mockResolvedValue(undefined);
     mocks.recordAcademyPractice.mockResolvedValue(undefined);
     mocks.captureProductEvent.mockResolvedValue(undefined);
+  });
+
+  it('routes learner questions through the server-derived adaptive instructor policy', async () => {
+    const response = await POST(request({
+      action: 'ask',
+      question: 'What does the Docker daemon do?',
+      courseTitle: 'Docker Basics',
+      lessonTitle: 'Client and daemon',
+      lessonContext: 'browser-supplied context that must not determine the adaptive policy',
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.answerAdaptiveQuestion).toHaveBeenCalledWith({
+      ownerId: user.id,
+      question: 'What does the Docker daemon do?',
+      courseTitle: 'Docker Basics',
+      lessonTitle: 'Client and daemon',
+    });
+    expect(mocks.answerAdaptiveQuestion).not.toHaveBeenCalledWith(expect.objectContaining({
+      lessonContext: expect.anything(),
+    }));
+    expect(mocks.recordAcademyQuestion).toHaveBeenCalled();
+    expect(body.answer.answer).toContain('daemon');
   });
 
   it('requires exact lab and evidence identifiers before loading terminal evidence', async () => {
