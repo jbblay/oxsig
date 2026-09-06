@@ -21,6 +21,10 @@ describe('terminal bridge shared-control frame classification', () => {
     expect(terminalFrameRequiresControlRevalidation(ssmFrame('acknowledge'))).toBe(false);
   });
 
+  it('fails closed for unknown complete binary browser frames', () => {
+    expect(terminalFrameRequiresControlRevalidation(ssmFrame('unexpected_type'))).toBe(true);
+  });
+
   it('fails closed for malformed binary browser frames', () => {
     expect(terminalFrameRequiresControlRevalidation(Buffer.from([1, 2, 3]))).toBe(true);
   });
