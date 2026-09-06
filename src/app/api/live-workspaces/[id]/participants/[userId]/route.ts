@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
+import { revokeControlForParticipant } from '@/lib/live-workspace/control';
 import { assignLiveWorkspaceRole, LiveWorkspaceError } from '@/lib/live-workspace/server';
 
 export const runtime = 'nodejs';
@@ -26,13 +27,23 @@ export async function PATCH(
     if (!parsed.success) return NextResponse.json({ error: 'Choose instructor, learner, or observer' }, { status: 400 });
 
     try {
+      const pool = getPool();
       const assigned = await assignLiveWorkspaceRole({
-        pool: getPool(),
+        pool,
         collaborationId: id,
         actorId: user.id,
         targetUserId: userId,
         role: parsed.data.role,
       });
+      if (parsed.data.role === 'observer') {
+        await revokeControlForParticipant({
+          queryable: pool,
+          collaborationId: id,
+          participantId: userId,
+          actorId: user.id,
+          reason: 'role_became_observer',
+        });
+      }
       return NextResponse.json({ participant: { userId, ...assigned } }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       if (error instanceof LiveWorkspaceError) {
