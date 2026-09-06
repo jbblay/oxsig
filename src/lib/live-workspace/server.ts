@@ -26,6 +26,13 @@ export type LiveWorkspaceAccess = {
   capabilities: LiveWorkspaceCapabilities;
 };
 
+export type LiveWorkspaceAttachableResource = {
+  id: string;
+  type: LiveWorkspaceResourceType;
+  label: string;
+  accessMode: 'terminal' | 'desktop' | null;
+};
+
 export class LiveWorkspaceError extends Error {
   constructor(message: string, public readonly status = 409, public readonly code = 'LIVE_WORKSPACE_CONFLICT') {
     super(message);
@@ -183,6 +190,52 @@ export async function listLiveWorkspaceParticipants(pool: Pool, collaborationId:
       capabilities: capabilitiesForLiveWorkspaceRole(role),
     };
   });
+}
+
+export async function listOwnerAttachableResources(
+  queryable: Pool | PoolClient,
+  ownerId: string
+): Promise<LiveWorkspaceAttachableResource[]> {
+  const result = await queryable.query(
+    `SELECT resource.id, resource.type, resource.label, resource.access_mode
+       FROM (
+         SELECT li.id,
+                'lab-instance'::text AS type,
+                COALESCE(ld.name, ld.slug, 'Cyber Lab')::text AS label,
+                CASE WHEN li.metadata->>'accessMode' = 'desktop' THEN 'desktop' ELSE 'terminal' END::text AS access_mode,
+                li.created_at AS sort_at
+           FROM lab_instances li
+           JOIN lab_definitions ld ON ld.id = li.definition_id
+          WHERE li.owner_id = $1
+            AND li.status <> 'destroyed'
+         UNION ALL
+         SELECT course.id,
+                'academy-course'::text AS type,
+                COALESCE(NULLIF(course.course_data->>'title', ''), 'Academy course')::text AS label,
+                NULL::text AS access_mode,
+                course.updated_at AS sort_at
+           FROM academy_courses course
+          WHERE course.owner_id = $1
+            AND course.status = 'active'
+         UNION ALL
+         SELECT design.owner_id AS id,
+                'infrastructure-design'::text AS type,
+                COALESCE(NULLIF(design.design->>'name', ''), NULLIF(design.design->>'title', ''), 'Infrastructure design')::text AS label,
+                NULL::text AS access_mode,
+                design.updated_at AS sort_at
+           FROM infrastructure_designs design
+          WHERE design.owner_id = $1
+       ) resource
+      ORDER BY resource.sort_at DESC, resource.type, resource.label`,
+    [ownerId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    type: row.type as LiveWorkspaceResourceType,
+    label: row.label as string,
+    accessMode: row.access_mode === 'desktop' ? 'desktop' : row.access_mode === 'terminal' ? 'terminal' : null,
+  }));
 }
 
 export async function assertOwnerResource(
