@@ -11,6 +11,7 @@ import * as Sentry from '@sentry/nextjs';
 import { WebSocket } from 'ws';
 import { getPool } from '@/lib/db/pool';
 import { terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
+import { terminalFrameRequiresControlRevalidation } from '@/lib/labs/terminal-bridge-frame';
 import { verifyTerminalBridgeTicket } from '@/lib/labs/terminal-bridge-ticket.js';
 import {
   assertLiveWorkspaceTerminalAuthorization,
@@ -161,26 +162,6 @@ function dataBytes(data: WebSocketData): number {
   const unknownData: unknown = data;
   if (ArrayBuffer.isView(unknownData)) return unknownData.byteLength;
   return 0;
-}
-
-function dataBuffer(data: WebSocketData): Buffer | null {
-  if (typeof data === 'string') return null;
-  if (Buffer.isBuffer(data)) return data;
-  if (Array.isArray(data)) return Buffer.concat(data.map((part) => Buffer.from(part)));
-  if (data instanceof ArrayBuffer) return Buffer.from(data);
-  const unknownData: unknown = data;
-  if (ArrayBuffer.isView(unknownData)) {
-    return Buffer.from(unknownData.buffer, unknownData.byteOffset, unknownData.byteLength);
-  }
-  return null;
-}
-
-export function terminalFrameRequiresControlRevalidation(data: WebSocketData): boolean {
-  const buffer = dataBuffer(data);
-  if (!buffer) return false;
-  if (buffer.byteLength < 120) return true;
-  const messageType = buffer.subarray(4, 36).toString('utf8').replace(/\0/g, '').trim();
-  return messageType === 'input_stream_data';
 }
 
 function closeQuietly(socket: { readyState: number; close(code?: number, reason?: string): void }, code = 1000, reason = '') {
