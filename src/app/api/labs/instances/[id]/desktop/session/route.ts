@@ -4,8 +4,12 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
+import { getGuestServiceReadinessEvidence } from '@/lib/execution-evidence/guest-service-readiness';
+import { getDeploymentAuthorizationById } from '@/lib/infrastructure/deployment-authorization';
+import { guestServiceReadinessPayloadSchema } from '@/lib/infrastructure/guest-service-readiness-evidence';
 import { ensureDesktopRuntime, inspectDesktopService, startDesktopPortSession, type DesktopPlatform } from '@/lib/labs/desktop-runtime';
 import { terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
+import { createDesktopAccessEvidenceTicket } from '@/lib/labs/desktop-access-evidence-ticket';
 import { createTerminalBridgeTicket, terminalBridgeTicketTtlMs } from '@/lib/labs/terminal-bridge-ticket.js';
 import { getLabTerminalDiagnostics, type LabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
@@ -131,6 +135,73 @@ async function validateDesktopReady(instance: LabRow) {
   return { externalId: instance.runtime_external_id, platform, diagnostics };
 }
 
+type DesktopSessionResult = Awaited<ReturnType<typeof startDesktopPortSession>>;
+
+async function buildAccessEvidenceOffer(input: {
+  ownerId: string;
+  labInstanceId: string;
+  runtimeExternalId: string;
+  platform: DesktopPlatform;
+  session: DesktopSessionResult;
+}) {
+  try {
+    const guestEvidence = await getGuestServiceReadinessEvidence({
+      ownerId: input.ownerId,
+      labInstanceId: input.labInstanceId,
+    });
+    const guest = guestServiceReadinessPayloadSchema.parse(guestEvidence.payload);
+    if (!guest.readiness.guestServiceReady || guest.readiness.state !== 'ready') {
+      return { eligible: false as const, reason: 'Capture a ready guest-service evidence record before recording end-to-end access evidence.' };
+    }
+
+    const authorization = await getDeploymentAuthorizationById(input.ownerId, guestEvidence.deploymentAuthorizationId);
+    const target = authorization?.executionSupport.target;
+    if (
+      !authorization ||
+      !['evidence_recorded', 'analyzed'].includes(authorization.state) ||
+      !authorization.executionId ||
+      authorization.labInstanceId !== input.labInstanceId ||
+      authorization.planId !== guest.planId ||
+      authorization.planHash !== guest.planHash ||
+      authorization.executionId !== guest.deploymentExecutionId ||
+      !target ||
+      target.accessMode !== 'desktop' ||
+      target.nodeId !== guest.target.nodeId ||
+      target.labSlug !== guest.target.labSlug
+    ) {
+      return { eligible: false as const, reason: 'The latest guest-service evidence does not match the active controlled desktop deployment.' };
+    }
+
+    const issued = createDesktopAccessEvidenceTicket({
+      ownerId: input.ownerId,
+      labInstanceId: input.labInstanceId,
+      deploymentAuthorizationId: authorization.id,
+      deploymentExecutionId: authorization.executionId,
+      planId: authorization.planId,
+      planHash: authorization.planHash,
+      prerequisiteGuestEvidenceId: guestEvidence.id,
+      sessionId: input.session.sessionId,
+      target: input.runtimeExternalId,
+      platform: input.platform,
+      port: input.session.port,
+    });
+
+    return {
+      eligible: true as const,
+      ticket: issued.ticket,
+      evidenceExecutionId: issued.evidenceExecutionId,
+      expiresAt: issued.expiresAt,
+      ttlMs: issued.ttlMs,
+      prerequisiteGuestEvidenceId: guestEvidence.id,
+    };
+  } catch {
+    return {
+      eligible: false as const,
+      reason: 'Capture guest-service readiness evidence first to enable browser access-path evidence.',
+    };
+  }
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return requireAuth(request, async (req, user) => {
     if (!(await validateCsrfToken(req))) return failure(403, 'CSRF_FAILED', 'Invalid or missing CSRF token.', 'request');
@@ -153,6 +224,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         sessionId: session.sessionId,
         target: ready.externalId!,
       });
+      const accessEvidence = await buildAccessEvidenceOffer({
+        ownerId: user.id,
+        labInstanceId: id,
+        runtimeExternalId: ready.externalId!,
+        platform: ready.platform!,
+        session,
+      });
 
       await logAudit({
         userId: user.id,
@@ -168,6 +246,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
           region: session.region,
           port: session.port,
           websocketAuth: 'server-bridge-sigv4-header',
+          accessEvidenceEligible: accessEvidence.eligible,
+          ...(accessEvidence.eligible ? { prerequisiteGuestEvidenceId: accessEvidence.prerequisiteGuestEvidenceId } : {}),
         },
       });
 
@@ -182,6 +262,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         port: session.port,
         platform: ready.platform,
         diagnostics: ready.diagnostics,
+        accessEvidence,
       });
     } catch (error) {
       return failure(503, 'DESKTOP_SESSION_START_FAILED', error instanceof Error ? error.message : 'Could not start the private browser desktop.', 'ssm-session', ready.diagnostics);
