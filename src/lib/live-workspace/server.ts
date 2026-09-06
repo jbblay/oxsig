@@ -98,11 +98,8 @@ export async function getLiveWorkspaceAccess(
             c.name,
             c.description,
             c.owner_id,
-            c.status AS collaboration_status,
-            lw.status AS workspace_status,
             CASE WHEN c.owner_id = $2 THEN true ELSE false END AS is_owner,
-            lwp.role AS live_role,
-            cm.status AS member_status
+            lwp.role AS live_role
      FROM collaborations c
      JOIN live_workspaces lw ON lw.collaboration_id = c.id
      LEFT JOIN collaboration_members cm
@@ -137,38 +134,42 @@ export async function getLiveWorkspaceAccess(
 
 export async function listLiveWorkspaceParticipants(pool: Pool, collaborationId: string) {
   const result = await pool.query(
-    `SELECT u.id,
-            u.display_name,
-            u.email,
-            u.avatar_url,
-            c.owner_id,
-            CASE
-              WHEN u.id = c.owner_id THEN 'owner'
-              WHEN lwp.role IN ('instructor','learner','observer') THEN lwp.role
-              ELSE 'observer'
-            END AS live_role
-     FROM collaborations c
-     JOIN users u ON u.id = c.owner_id
-     LEFT JOIN live_workspace_participants lwp
-       ON lwp.collaboration_id = c.id AND lwp.user_id = u.id AND lwp.status = 'active'
-     WHERE c.id = $1
-     UNION ALL
-     SELECT u.id,
-            u.display_name,
-            u.email,
-            u.avatar_url,
-            c.owner_id,
-            CASE
-              WHEN lwp.role IN ('instructor','learner','observer') THEN lwp.role
-              ELSE 'observer'
-            END AS live_role
-     FROM collaborations c
-     JOIN collaboration_members cm ON cm.collaboration_id = c.id AND cm.status = 'active'
-     JOIN users u ON u.id = cm.user_id
-     LEFT JOIN live_workspace_participants lwp
-       ON lwp.collaboration_id = c.id AND lwp.user_id = u.id AND lwp.status = 'active'
-     WHERE c.id = $1 AND u.id <> c.owner_id
-     ORDER BY live_role = 'owner' DESC, display_name NULLS LAST, email NULLS LAST`,
+    `SELECT participant.id,
+            participant.display_name,
+            participant.email,
+            participant.avatar_url,
+            participant.owner_id,
+            participant.live_role
+     FROM (
+       SELECT u.id,
+              u.display_name,
+              u.email,
+              u.avatar_url,
+              c.owner_id,
+              'owner'::text AS live_role,
+              0 AS sort_order
+       FROM collaborations c
+       JOIN users u ON u.id = c.owner_id
+       WHERE c.id = $1
+       UNION ALL
+       SELECT u.id,
+              u.display_name,
+              u.email,
+              u.avatar_url,
+              c.owner_id,
+              CASE
+                WHEN lwp.role IN ('instructor','learner','observer') THEN lwp.role
+                ELSE 'observer'
+              END AS live_role,
+              1 AS sort_order
+       FROM collaborations c
+       JOIN collaboration_members cm ON cm.collaboration_id = c.id AND cm.status = 'active'
+       JOIN users u ON u.id = cm.user_id
+       LEFT JOIN live_workspace_participants lwp
+         ON lwp.collaboration_id = c.id AND lwp.user_id = u.id AND lwp.status = 'active'
+       WHERE c.id = $1 AND u.id <> c.owner_id
+     ) participant
+     ORDER BY participant.sort_order, participant.display_name NULLS LAST, participant.email NULLS LAST`,
     [collaborationId]
   );
   return result.rows.map((row) => {
