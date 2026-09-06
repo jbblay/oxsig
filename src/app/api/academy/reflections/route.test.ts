@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createAcademyPrediction: vi.fn(),
   claimAcademyReflection: vi.fn(),
   completeAcademyReflection: vi.fn(),
+  getAcademyUnderstandingForReflection: vi.fn(),
   releaseAcademyReflectionClaim: vi.fn(),
   evaluateAcademyReflection: vi.fn(),
 }));
@@ -29,6 +30,7 @@ vi.mock('@/lib/academy/reflections', () => ({
   createAcademyPrediction: mocks.createAcademyPrediction,
   claimAcademyReflection: mocks.claimAcademyReflection,
   completeAcademyReflection: mocks.completeAcademyReflection,
+  getAcademyUnderstandingForReflection: mocks.getAcademyUnderstandingForReflection,
   releaseAcademyReflectionClaim: mocks.releaseAcademyReflectionClaim,
 }));
 
@@ -91,6 +93,14 @@ const reflectionEvaluation = {
   nextStep: null,
 };
 
+const understanding = {
+  reflectedPractices: 1,
+  requiredPractices: 2,
+  averageReflectionScore: 88,
+  score: 44,
+  status: 'developing',
+};
+
 describe('Academy learning reflections API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -105,14 +115,9 @@ describe('Academy learning reflections API', () => {
     mocks.evaluateAcademyReflection.mockResolvedValue(reflectionEvaluation);
     mocks.completeAcademyReflection.mockResolvedValue({
       reflection: { ...claim.reflection, status: 'reflected', evaluation: reflectionEvaluation, explanationScore: 88 },
-      understanding: {
-        reflectedPractices: 1,
-        requiredPractices: 2,
-        averageReflectionScore: 88,
-        score: 44,
-        status: 'developing',
-      },
+      understanding,
     });
+    mocks.getAcademyUnderstandingForReflection.mockResolvedValue(understanding);
     mocks.releaseAcademyReflectionClaim.mockResolvedValue(undefined);
   });
 
@@ -196,7 +201,7 @@ describe('Academy learning reflections API', () => {
     expect(body.understanding.score).toBe(44);
   });
 
-  it('reuses an already reflected record without another AI provider call', async () => {
+  it('reuses an already reflected record with durable understanding and no AI provider call', async () => {
     mocks.claimAcademyReflection.mockResolvedValue({
       existing: { ...predicted, evidenceId, status: 'reflected', evaluation: reflectionEvaluation, explanationScore: 88 },
     });
@@ -211,6 +216,8 @@ describe('Academy learning reflections API', () => {
 
     expect(response.status).toBe(200);
     expect(body.replayed).toBe(true);
+    expect(body.understanding).toEqual(understanding);
+    expect(mocks.getAcademyUnderstandingForReflection).toHaveBeenCalledWith(user.id, reflectionId);
     expect(mocks.evaluateAcademyReflection).not.toHaveBeenCalled();
     expect(mocks.completeAcademyReflection).not.toHaveBeenCalled();
   });
