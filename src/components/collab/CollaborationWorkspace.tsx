@@ -201,7 +201,7 @@ export default function CollaborationWorkspace() {
       if (silent) console.warn('[oxsig] Collaboration reconciliation deferred:', error);
       else setConversationError(message);
     } finally {
-      if (!silent && requestId === conversationRequestRef.current && activeIdRef.current === id) {
+      if (requestId === conversationRequestRef.current && activeIdRef.current === id) {
         setMessagesLoading(false);
       }
     }
