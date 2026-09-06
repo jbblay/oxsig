@@ -14,10 +14,44 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getCsrfToken } from '@/lib/security/csrf-client';
-import type {
-  DeploymentEvidenceAnalysis,
-  DeploymentEvidenceFacts,
-} from '@/lib/infrastructure/deployment-evidence-interpreter';
+
+type DeploymentEvidenceAnalysis = {
+  summary: string;
+  observations: string[];
+  interpretation: string;
+  learningPoints: string[];
+  nextStep: string;
+  limitations: string[];
+};
+
+type DeploymentEvidenceFacts = {
+  provenance: 'provider-attested';
+  attestationScope: 'provider-allocation';
+  provider: 'aws-ec2';
+  externalId: string;
+  labEventId: string;
+  authorizationId: string;
+  executionId: string;
+  labInstanceId: string;
+  planId: string;
+  planHash: string;
+  nodeId: string;
+  labSlug: string;
+  accessMode: 'terminal' | 'desktop';
+  workload: {
+    label: string;
+    kind: 'client' | 'server';
+    hostname?: string;
+    role?: string;
+    runtimeProfileLabel?: string;
+    architecture?: string;
+    resourceClass?: string;
+    intendedAccessMode?: string;
+  };
+  executionStartedAt?: string;
+  evidenceRecordedAt: string;
+  limitations: string[];
+};
 
 type EvidenceResponse = {
   analysis: DeploymentEvidenceAnalysis;
