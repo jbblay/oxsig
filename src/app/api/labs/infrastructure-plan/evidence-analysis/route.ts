@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
+import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
@@ -20,7 +21,7 @@ import {
 export const runtime = 'nodejs';
 
 const requestSchema = z.object({
-  authorizationId: z.string().uuid(),
+  authorizationId: z.string().uuid().optional(),
 }).strict();
 
 function noStoreJson(body: unknown, init?: { status?: number }) {
@@ -28,6 +29,20 @@ function noStoreJson(body: unknown, init?: { status?: number }) {
     status: init?.status,
     headers: { 'Cache-Control': 'no-store' },
   });
+}
+
+async function resolveAuthorizationId(ownerId: string, requestedId?: string) {
+  if (requestedId) return requestedId;
+  const latest = await getPool().query(
+    `SELECT id
+       FROM deployment_authorizations
+      WHERE owner_id=$1
+        AND state IN ('evidence_recorded','analyzed')
+      ORDER BY evidence_recorded_at DESC NULLS LAST, created_at DESC
+      LIMIT 1`,
+    [ownerId]
+  );
+  return latest.rows[0]?.id ? String(latest.rows[0].id) : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -45,7 +60,12 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const authorization = await getDeploymentAuthorizationById(user.id, parsed.data.authorizationId);
+      const authorizationId = await resolveAuthorizationId(user.id, parsed.data.authorizationId);
+      if (!authorizationId) {
+        return noStoreJson({ error: 'No deployment evidence is ready for interpretation yet' }, { status: 404 });
+      }
+
+      const authorization = await getDeploymentAuthorizationById(user.id, authorizationId);
       if (!authorization) {
         return noStoreJson({ error: 'Deployment authorization not found' }, { status: 404 });
       }
