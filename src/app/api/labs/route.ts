@@ -132,13 +132,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
     }
 
-    const rateLimit = await checkRateLimit(
+    const requestLimit = await checkRateLimit(
       req,
-      RATE_LIMITS.LAB_PROVISION,
-      user.id,
-      'lab-provision'
+      { maxRequests: 20, windowMs: 60_000 },
+      user.id
     );
-    if (rateLimit) return rateLimit;
+    if (requestLimit) return requestLimit;
 
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid lab request' }, { status: 400 });
@@ -194,6 +193,14 @@ export async function POST(request: NextRequest) {
     if ((active.rows[0]?.count || 0) >= 1) {
       return NextResponse.json({ error: 'One active cloud lab is allowed per account at a time. Stop or destroy the current lab first.' }, { status: 409 });
     }
+
+    const costLimit = await checkRateLimit(
+      req,
+      RATE_LIMITS.LAB_PROVISION,
+      user.id,
+      'lab-provision'
+    );
+    if (costLimit) return costLimit;
 
     const definition = await pool.query(
       `INSERT INTO lab_definitions (slug, name, category, description, difficulty, runtime_kind, definition, enabled)
