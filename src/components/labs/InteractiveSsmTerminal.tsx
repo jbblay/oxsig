@@ -16,6 +16,11 @@ import {
   type AiTerminalRunResult,
   type AiTerminalState,
 } from "@/lib/labs/ai-terminal-events";
+import {
+  persistTerminalExecution,
+  prepareTerminalExecution,
+  type PreparedTerminalExecution,
+} from "@/lib/labs/terminal-execution-client";
 import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
@@ -35,10 +40,12 @@ type SessionResponse = {
 
 type ActiveAiRun = {
   request: AiTerminalRunRequest;
+  receipt: PreparedTerminalExecution;
   startMarker: string;
   endMarkerBase: string;
   buffer: string;
   started: boolean;
+  finalizing: boolean;
   timeout: ReturnType<typeof setTimeout> | null;
 };
 
@@ -60,6 +67,10 @@ function cleanTerminalEvidence(value: string) {
     .replace(/\x1B(?:[@-_][0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g, "")
     .replace(/\r/g, "")
     .trim();
+}
+
+function runLabel(surface: AiTerminalRunRequest["surface"]) {
+  return surface === "academy" ? "Academy checkpoint" : "AI Practitioner command";
 }
 
 export default function InteractiveSsmTerminal({
@@ -84,6 +95,7 @@ export default function InteractiveSsmTerminal({
   const reconnectAttemptRef = React.useRef(0);
   const connectRef = React.useRef<(recovery?: boolean) => Promise<void>>(async () => undefined);
   const activeAiRunRef = React.useRef<ActiveAiRun | null>(null);
+  const aiRunStartingRef = React.useRef(false);
   const outputDecoderRef = React.useRef(new TextDecoder());
   const [terminalReady, setTerminalReady] = React.useState(false);
   const [state, setState] = React.useState<ConnectionState>("connecting");
@@ -111,7 +123,11 @@ export default function InteractiveSsmTerminal({
 
   const emitTerminalState = React.useCallback((connected: boolean) => {
     window.dispatchEvent(new CustomEvent<AiTerminalState>(AI_TERMINAL_STATE_EVENT, {
-      detail: { labInstanceId, connected },
+      detail: {
+        labInstanceId,
+        connected,
+        sessionId: connected ? sessionIdRef.current : null,
+      },
     }));
   }, [labInstanceId]);
 
@@ -132,8 +148,73 @@ export default function InteractiveSsmTerminal({
       stdout: cleanTerminalEvidence(active.buffer),
       stderr: message,
       exitCode: -1,
+      executionId: active.receipt.executionId,
+      evidenceId: active.receipt.evidenceId,
+      provenance: active.receipt.provenance,
+      executionReceiptId: active.receipt.executionReceiptId,
+      terminalSessionId: active.receipt.sessionId,
+      surface: active.receipt.surface,
       error: message,
     });
+  }, [finishAiRun, labInstanceId]);
+
+  const persistAndFinishAiRun = React.useCallback(async (
+    active: ActiveAiRun,
+    stdout: string,
+    stderr: string,
+    exitCode: number
+  ) => {
+    if (active.finalizing || activeAiRunRef.current !== active) return;
+    active.finalizing = true;
+    if (active.timeout) clearTimeout(active.timeout);
+    active.timeout = null;
+
+    try {
+      const execution = await persistTerminalExecution({
+        labInstanceId,
+        receipt: active.receipt,
+        command: active.request.command,
+        stdout,
+        stderr,
+        exitCode,
+      });
+      setStatusDetail(`${runLabel(active.request.surface)} completed and its session-bound browser evidence was recorded.`);
+      finishAiRun({
+        requestId: active.request.requestId,
+        labInstanceId,
+        command: execution.command,
+        stdout: execution.stdout,
+        stderr: execution.stderr,
+        exitCode: execution.exitCode,
+        executionId: execution.executionId,
+        evidenceId: execution.evidenceId,
+        provenance: execution.provenance,
+        executionReceiptId: execution.executionReceiptId,
+        terminalSessionId: execution.terminalSessionId,
+        surface: execution.surface,
+        risk: execution.risk,
+      });
+    } catch (persistError) {
+      const message = persistError instanceof Error
+        ? persistError.message
+        : "The visible command ran, but Oxsig could not persist its bound evidence.";
+      setStatusDetail(message);
+      finishAiRun({
+        requestId: active.request.requestId,
+        labInstanceId,
+        command: active.request.command,
+        stdout,
+        stderr: stderr || message,
+        exitCode,
+        executionId: active.receipt.executionId,
+        evidenceId: active.receipt.evidenceId,
+        provenance: active.receipt.provenance,
+        executionReceiptId: active.receipt.executionReceiptId,
+        terminalSessionId: active.receipt.sessionId,
+        surface: active.receipt.surface,
+        error: message,
+      });
+    }
   }, [finishAiRun, labInstanceId]);
 
   const handleChannelOutput = React.useCallback((data: Uint8Array) => {
@@ -157,6 +238,7 @@ export default function InteractiveSsmTerminal({
       active.buffer = active.buffer.slice(startIndex + active.startMarker.length).replace(/^[\r\n]+/, "");
     }
 
+    if (active.finalizing) return;
     const endIndex = active.buffer.indexOf(active.endMarkerBase);
     if (endIndex < 0) return;
 
@@ -170,16 +252,14 @@ export default function InteractiveSsmTerminal({
     if (remainder) terminalRef.current?.write(remainder);
 
     const exitCode = Number.parseInt(exitMatch[1], 10);
-    setStatusDetail(`AI Practitioner command completed in the visible terminal with exit ${exitCode}.`);
-    finishAiRun({
-      requestId: active.request.requestId,
-      labInstanceId,
-      command: active.request.command,
-      stdout: cleanTerminalEvidence(rawOutput),
-      stderr: "",
-      exitCode: Number.isFinite(exitCode) ? exitCode : -1,
-    });
-  }, [finishAiRun, labInstanceId]);
+    setStatusDetail(`${runLabel(active.request.surface)} completed in the visible terminal with exit ${exitCode}; recording bound evidence…`);
+    void persistAndFinishAiRun(
+      active,
+      cleanTerminalEvidence(rawOutput),
+      "",
+      Number.isFinite(exitCode) ? exitCode : -1
+    );
+  }, [persistAndFinishAiRun]);
 
   const endServerSession = React.useCallback(async (keepalive = false) => {
     const currentSessionId = sessionIdRef.current;
@@ -227,9 +307,10 @@ export default function InteractiveSsmTerminal({
     generationRef.current += 1;
     intentionalCloseRef.current = true;
     reconnectAttemptRef.current = 0;
+    aiRunStartingRef.current = false;
     clearHandshakeTimer();
     clearReconnectTimer();
-    failActiveAiRun("The interactive terminal disconnected before the AI command completed.");
+    failActiveAiRun("The interactive terminal disconnected before the approved command completed.");
     channelRef.current?.close();
     channelRef.current = null;
     await endServerSession(false);
@@ -249,8 +330,9 @@ export default function InteractiveSsmTerminal({
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     intentionalCloseRef.current = true;
+    aiRunStartingRef.current = false;
     clearHandshakeTimer();
-    failActiveAiRun("The terminal reconnected before the AI command completed.");
+    failActiveAiRun("The terminal reconnected before the approved command completed.");
     channelRef.current?.close();
     channelRef.current = null;
     await endServerSession(false);
@@ -312,6 +394,7 @@ export default function InteractiveSsmTerminal({
         onError: (message) => {
           if (generation !== generationRef.current) return;
           clearHandshakeTimer();
+          aiRunStartingRef.current = false;
           failActiveAiRun(message);
           setState("error");
           setError(message);
@@ -324,7 +407,8 @@ export default function InteractiveSsmTerminal({
         onClose: (reason) => {
           if (generation !== generationRef.current || intentionalCloseRef.current) return;
           clearHandshakeTimer();
-          failActiveAiRun(reason || "The terminal session closed before the AI command completed.");
+          aiRunStartingRef.current = false;
+          failActiveAiRun(reason || "The terminal session closed before the approved command completed.");
           setBridgeTicketExpiresAt(null);
           emitTerminalState(false);
           void endServerSession(true).finally(() => {
@@ -378,75 +462,101 @@ export default function InteractiveSsmTerminal({
       emitTerminalState(state === "connected" && Boolean(channelRef.current?.isReady()));
     };
 
-    const runApprovedCommand = (event: Event) => {
-      const request = (event as CustomEvent<AiTerminalRunRequest>).detail;
-      if (!request || request.labInstanceId !== labInstanceId) return;
-
-      const channel = channelRef.current;
-      if (state !== "connected" || !channel?.isReady()) {
-        window.dispatchEvent(new CustomEvent<AiTerminalRunResult>(AI_TERMINAL_RESULT_EVENT, {
-          detail: {
-            requestId: request.requestId,
-            labInstanceId,
-            command: request.command,
-            stdout: "",
-            stderr: "Open and connect the interactive terminal before approving an AI command.",
-            exitCode: -1,
-            error: "Open and connect the interactive terminal before approving an AI command.",
-          },
-        }));
-        return;
-      }
-
-      if (activeAiRunRef.current) {
-        window.dispatchEvent(new CustomEvent<AiTerminalRunResult>(AI_TERMINAL_RESULT_EVENT, {
-          detail: {
-            requestId: request.requestId,
-            labInstanceId,
-            command: request.command,
-            stdout: "",
-            stderr: "Another AI command is already running in this terminal.",
-            exitCode: -1,
-            error: "Another AI command is already running in this terminal.",
-          },
-        }));
-        return;
-      }
-
-      const markerId = request.requestId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 80) || `${Date.now()}`;
-      const startMarker = `__OXSIG_AI_BEGIN_${markerId}__`;
-      const endMarkerBase = `__OXSIG_AI_END_${markerId}__:`;
-      const commandBase64 = utf8Base64(request.command);
-
-      terminalRef.current?.writeln(`\r\n[AI Practitioner approved] $ ${request.command}`);
-      setStatusDetail("AI Practitioner command is running in this visible terminal.");
-
-      const active: ActiveAiRun = {
-        request,
-        startMarker,
-        endMarkerBase,
-        buffer: "",
-        started: false,
-        timeout: null,
-      };
-      active.timeout = setTimeout(() => {
-        if (activeAiRunRef.current !== active) return;
-        channelRef.current?.sendInput("\x03");
-        terminalRef.current?.writeln("\r\n[AI Practitioner command timed out after 45 seconds]");
-        setStatusDetail("AI Practitioner command timed out; captured terminal evidence will be explained.");
-        finishAiRun({
+    const emitRunError = (request: AiTerminalRunRequest, message: string) => {
+      window.dispatchEvent(new CustomEvent<AiTerminalRunResult>(AI_TERMINAL_RESULT_EVENT, {
+        detail: {
           requestId: request.requestId,
           labInstanceId,
           command: request.command,
-          stdout: cleanTerminalEvidence(active.buffer),
-          stderr: "The interactive command timed out or required further input.",
+          stdout: "",
+          stderr: message,
           exitCode: -1,
-        });
-      }, 45_000);
-      activeAiRunRef.current = active;
+          surface: request.surface,
+          error: message,
+        },
+      }));
+    };
 
-      const shellLine = `__oxsig_id='${markerId}'; __oxsig_cmd="$(printf '%s' '${commandBase64}' | base64 -d)"; printf '\\n__OXSIG_AI_BEGIN_%s__\\n' "$__oxsig_id"; eval "$__oxsig_cmd"; __oxsig_rc=$?; printf '\\n__OXSIG_AI_END_%s__:%s\\n' "$__oxsig_id" "$__oxsig_rc"\r`;
-      channel.sendInput(shellLine);
+    const runApprovedCommand = (event: Event) => {
+      const request = (event as CustomEvent<AiTerminalRunRequest>).detail;
+      if (!request || request.labInstanceId !== labInstanceId) return;
+      if (request.surface !== "ai-practitioner" && request.surface !== "academy") return;
+
+      void (async () => {
+        const channel = channelRef.current;
+        const currentSessionId = sessionIdRef.current;
+        if (state !== "connected" || !channel?.isReady() || !currentSessionId) {
+          emitRunError(request, "Open and connect the interactive terminal before approving a learning command.");
+          return;
+        }
+        if (activeAiRunRef.current || aiRunStartingRef.current) {
+          emitRunError(request, "Another approved command is already running in this terminal.");
+          return;
+        }
+
+        aiRunStartingRef.current = true;
+        try {
+          setStatusDetail(`Binding ${runLabel(request.surface).toLowerCase()} to the active SSM session…`);
+          const receipt = await prepareTerminalExecution({
+            labInstanceId,
+            surface: request.surface,
+            command: request.command,
+            sessionId: currentSessionId,
+          });
+
+          const liveChannel = channelRef.current;
+          if (
+            state !== "connected" ||
+            !liveChannel?.isReady() ||
+            sessionIdRef.current !== currentSessionId ||
+            receipt.sessionId !== currentSessionId
+          ) {
+            throw new Error("The terminal session changed while Oxsig was binding the execution receipt. Approve the command again on the current session.");
+          }
+
+          const markerId = receipt.executionReceiptId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 80);
+          const startMarker = `__OXSIG_AI_BEGIN_${markerId}__`;
+          const endMarkerBase = `__OXSIG_AI_END_${markerId}__:`;
+          const commandBase64 = utf8Base64(request.command);
+          const label = runLabel(request.surface);
+
+          terminalRef.current?.writeln(`\r\n[${label} approved] $ ${request.command}`);
+          setStatusDetail(`${label} is running visibly in SSM session ${currentSessionId.slice(0, 18)}…`);
+
+          const active: ActiveAiRun = {
+            request,
+            receipt,
+            startMarker,
+            endMarkerBase,
+            buffer: "",
+            started: false,
+            finalizing: false,
+            timeout: null,
+          };
+          active.timeout = setTimeout(() => {
+            if (activeAiRunRef.current !== active || active.finalizing) return;
+            channelRef.current?.sendInput("\x03");
+            terminalRef.current?.writeln(`\r\n[${label} timed out after 45 seconds]`);
+            setStatusDetail(`${label} timed out; recording the browser-observed output against its bound receipt…`);
+            void persistAndFinishAiRun(
+              active,
+              cleanTerminalEvidence(active.buffer),
+              "The interactive command timed out or required further input.",
+              -1
+            );
+          }, 45_000);
+          activeAiRunRef.current = active;
+
+          const shellLine = `__oxsig_id='${markerId}'; __oxsig_cmd="$(printf '%s' '${commandBase64}' | base64 -d)"; printf '\\n__OXSIG_AI_BEGIN_%s__\\n' "$__oxsig_id"; eval "$__oxsig_cmd"; __oxsig_rc=$?; printf '\\n__OXSIG_AI_END_%s__:%s\\n' "$__oxsig_id" "$__oxsig_rc"\r`;
+          liveChannel.sendInput(shellLine);
+        } catch (runError) {
+          const message = runError instanceof Error ? runError.message : "Oxsig could not start the approved terminal command.";
+          emitRunError(request, message);
+          setStatusDetail(message);
+        } finally {
+          aiRunStartingRef.current = false;
+        }
+      })();
     };
 
     window.addEventListener(AI_TERMINAL_QUERY_EVENT, answerStateQuery);
@@ -455,7 +565,7 @@ export default function InteractiveSsmTerminal({
       window.removeEventListener(AI_TERMINAL_QUERY_EVENT, answerStateQuery);
       window.removeEventListener(AI_TERMINAL_RUN_EVENT, runApprovedCommand);
     };
-  }, [emitTerminalState, finishAiRun, labInstanceId, state]);
+  }, [emitTerminalState, labInstanceId, persistAndFinishAiRun, state]);
 
   React.useEffect(() => {
     let disposed = false;
@@ -486,7 +596,7 @@ export default function InteractiveSsmTerminal({
       terminal.writeln("Persistent shell via AWS Systems Manager. No SSH port is open.\r\n");
 
       dataDisposable = terminal.onData((data) => {
-        if (activeAiRunRef.current && data !== "\x03") return;
+        if ((activeAiRunRef.current || aiRunStartingRef.current) && data !== "\x03") return;
         channelRef.current?.sendInput(data);
       });
       resizeObserver = new ResizeObserver(() => {
@@ -508,7 +618,8 @@ export default function InteractiveSsmTerminal({
       clearHandshakeTimer();
       clearReconnectTimer();
       reconnectAttemptRef.current = 0;
-      failActiveAiRun("The interactive terminal closed before the AI command completed.");
+      aiRunStartingRef.current = false;
+      failActiveAiRun("The interactive terminal closed before the approved command completed.");
       emitTerminalState(false);
       generationRef.current += 1;
       intentionalCloseRef.current = true;
@@ -572,7 +683,7 @@ export default function InteractiveSsmTerminal({
         />
       </div>
       <p className="text-[10px] text-muted-foreground">
-        The shell stays persistent while its SSM transport remains connected. If a serverless WebSocket transport is interrupted, Oxsig makes up to three bounded recovery attempts using a fresh SSM shell; shell-local state such as the working directory or exported variables can reset after recovery. Approved AI Practitioner commands run visibly and their real terminal output is sent back for explanation.
+        The shell stays persistent while its SSM transport remains connected. If a serverless WebSocket transport is interrupted, Oxsig makes up to three bounded recovery attempts using a fresh SSM shell; shell-local state such as the working directory or exported variables can reset after recovery. Approved learning commands are bound to the exact active SSM session before they run visibly; their browser-observed output is persisted against a one-time execution receipt before AI explanation or Academy evaluation.
       </p>
     </div>
   );
