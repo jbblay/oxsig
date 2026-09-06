@@ -1,7 +1,12 @@
 import 'server-only';
 
 import { z } from 'zod';
-import type { AcademyCourse, AcademyPracticeEvaluation, AcademyQuestionAnswer } from './types';
+import type {
+  AcademyCourse,
+  AcademyPracticeEvaluation,
+  AcademyQuestionAnswer,
+  AcademyReflectionEvaluation,
+} from './types';
 
 export const academyRequestSchema = z.discriminatedUnion('action', [
   z.object({
@@ -69,7 +74,16 @@ const evaluationSchema = z.object({
   nextStep: z.string().max(700).nullable(),
 }).strict();
 
-function academyModel() {
+const reflectionEvaluationSchema = z.object({
+  score: z.number().int().min(0).max(100),
+  status: z.enum(['developing', 'demonstrated']),
+  predictionComparison: z.string().min(1).max(1000),
+  explanationFeedback: z.string().min(1).max(2200),
+  evidenceConnection: z.string().min(1).max(1200),
+  nextStep: z.string().max(700).nullable(),
+}).strict();
+
+export function academyModel() {
   return process.env.OXSIG_AI_MODEL?.trim() || 'gpt-5.4-mini';
 }
 
@@ -201,6 +215,20 @@ const EVALUATION_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
+const REFLECTION_EVALUATION_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    score: { type: 'integer', minimum: 0, maximum: 100 },
+    status: { type: 'string', enum: ['developing', 'demonstrated'] },
+    predictionComparison: { type: 'string' },
+    explanationFeedback: { type: 'string' },
+    evidenceConnection: { type: 'string' },
+    nextStep: { type: ['string', 'null'] },
+  },
+  required: ['score', 'status', 'predictionComparison', 'explanationFeedback', 'evidenceConnection', 'nextStep'],
+  additionalProperties: false,
+};
+
 export async function generateAcademyCourse(prompt: string): Promise<AcademyCourse> {
   const instructions = `You are Oxsig Academy's curriculum generator. Turn the learner request into a compact, practical technical course.
 
@@ -282,4 +310,39 @@ Judge only from the supplied command, exit code, stdout, stderr, lesson instruct
   const parsed = evaluationSchema.safeParse(raw);
   if (!parsed.success) throw new Error('AI generated an invalid Academy practice evaluation');
   return parsed.data;
+}
+
+export async function evaluateAcademyReflection(args: {
+  courseTitle: string;
+  lessonTitle: string;
+  instruction: string;
+  expected: string;
+  prediction: string;
+  explanation: string;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  practiceEvaluation: Record<string, unknown>;
+}): Promise<AcademyReflectionEvaluation> {
+  const instructions = `You are the Oxsig Academy instructor assessing whether a learner understands a practical result they actually observed.
+
+The learner made a prediction before execution and then wrote an explanation after Oxsig captured and evaluated the exact terminal evidence. Assess conceptual understanding, not writing polish. Ground every judgment in the supplied prediction, command, real stdout/stderr/exit code, and the prior Academy practice evaluation. Do not invent evidence. Reward a learner who correctly explains cause, mechanism, and what the evidence means, even if their prediction was initially wrong and they corrected their model afterward. Do not reward merely repeating output without explaining it.
+
+Score from 0 to 100. Scores 70 or above represent demonstrated understanding for this checkpoint; lower scores are developing. Explain how the prediction compared with reality, what the explanation got right or missed, how it connects to the evidence, and one next step when useful.`;
+
+  const raw = await callStructured<AcademyReflectionEvaluation>({
+    name: 'oxsig_academy_learning_reflection',
+    instructions,
+    input: `COURSE: ${args.courseTitle}\nLESSON: ${args.lessonTitle}\n\nPRACTICE INSTRUCTION\n${args.instruction}\n\nEXPECTED RESULT\n${args.expected}\n\nLEARNER PREDICTION CAPTURED BEFORE EXECUTION\n${args.prediction}\n\nEXACT COMMAND\n${args.command}\n\nREAL EXIT CODE\n${args.exitCode}\n\nREAL STDOUT\n${args.stdout || '(empty)'}\n\nREAL STDERR\n${args.stderr || '(empty)'}\n\nACADEMY PRACTICE EVALUATION\n${JSON.stringify(args.practiceEvaluation)}\n\nLEARNER EXPLANATION AFTER OBSERVING EVIDENCE\n${args.explanation}`,
+    schema: REFLECTION_EVALUATION_JSON_SCHEMA,
+    maxOutputTokens: 1800,
+  });
+
+  const parsed = reflectionEvaluationSchema.safeParse(raw);
+  if (!parsed.success) throw new Error('AI generated an invalid Academy learner-reflection evaluation');
+  return {
+    ...parsed.data,
+    status: parsed.data.score >= 70 ? 'demonstrated' : 'developing',
+  };
 }
