@@ -30,6 +30,18 @@ describe('buildRateLimitBucketKey', () => {
     expect(userA).not.toBe(stricter);
   });
 
+  it('lets separate routes share one named cost bucket', () => {
+    const directCreate = new NextRequest('https://oxsig.example/api/labs');
+    const designerExecute = new NextRequest('https://oxsig.example/api/labs/infrastructure-plan/execute');
+
+    expect(buildRateLimitBucketKey(directCreate, config, 'user-a', 'lab-provision')).toBe(
+      buildRateLimitBucketKey(designerExecute, config, 'user-a', 'lab-provision')
+    );
+    expect(buildRateLimitBucketKey(directCreate, config, 'user-a')).not.toBe(
+      buildRateLimitBucketKey(designerExecute, config, 'user-a')
+    );
+  });
+
   it('stores only a fixed-size opaque SHA-256 bucket identifier', () => {
     const request = new NextRequest('https://oxsig.example/api/storyboards');
     const key = buildRateLimitBucketKey(request, config, 'sensitive-user-id');
