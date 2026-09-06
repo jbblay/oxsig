@@ -1,14 +1,19 @@
 import 'server-only';
 
+import type { Pool, PoolClient } from 'pg';
 import { getPool, transaction } from '@/lib/db/pool';
 import type {
   AcademyCourse,
   AcademyLearningReflection,
+  AcademyLesson,
+  AcademyPractice,
   AcademyReflectionEvaluation,
   AcademyUnderstandingSummary,
 } from './types';
 
 const EVALUATION_CLAIM_STALE_MS = 5 * 60 * 1000;
+
+type PracticeLesson = AcademyLesson & { practice: AcademyPractice };
 
 export class AcademyReflectionError extends Error {
   constructor(
@@ -81,7 +86,7 @@ async function activeCourseForOwner(ownerId: string) {
   return result.rows[0] || null;
 }
 
-function resolvePractice(course: AcademyCourse, courseTitle: string, lessonTitle: string) {
+function resolvePractice(course: AcademyCourse, courseTitle: string, lessonTitle: string): PracticeLesson {
   if (course.title !== courseTitle) {
     throw new AcademyReflectionError('The active Academy course changed before this prediction was saved.', 'COURSE_CHANGED');
   }
@@ -92,7 +97,7 @@ function resolvePractice(course: AcademyCourse, courseTitle: string, lessonTitle
   if (!lesson.practice) {
     throw new AcademyReflectionError('This Academy lesson has no practical execution to predict.', 'PRACTICE_NOT_FOUND');
   }
-  return lesson;
+  return lesson as PracticeLesson;
 }
 
 export async function createAcademyPrediction(input: {
@@ -213,7 +218,7 @@ export async function claimAcademyReflection(input: {
       throw new AcademyReflectionError('The Academy course changed before this reflection was completed.', 'COURSE_CHANGED');
     }
     const course = asCourse(courseResult.rows[0].course_data);
-    const lesson = course.lessons.find((item) => item.id === row!.lesson_id);
+    const lesson = course.lessons.find((item) => item.id === row.lesson_id);
     if (!lesson?.practice || lesson.practice.command !== row.command) {
       throw new AcademyReflectionError('The practical lesson changed after the prediction was captured.', 'PRACTICE_CHANGED');
     }
@@ -259,6 +264,17 @@ export async function claimAcademyReflection(input: {
       );
     }
 
+    const alreadyBound = await client.query(
+      `SELECT id
+         FROM academy_learning_reflections
+        WHERE owner_id=$1 AND evidence_id=$2 AND id<>$3
+        LIMIT 1`,
+      [input.ownerId, input.evidenceId, row.id]
+    );
+    if (alreadyBound.rows[0]) {
+      throw new AcademyReflectionError('This execution evidence is already bound to another learner reflection.', 'EVIDENCE_ALREADY_REFLECTED');
+    }
+
     const explanation = input.explanation.trim();
     const claimed = await client.query(
       `UPDATE academy_learning_reflections
@@ -298,7 +314,7 @@ export async function claimAcademyReflection(input: {
   });
 }
 
-async function understandingSummary(client: { query: (sql: string, values?: unknown[]) => Promise<{ rows: any[] }> }, args: {
+async function understandingSummary(client: Pool | PoolClient, args: {
   ownerId: string;
   courseId: string;
   course: AcademyCourse;
