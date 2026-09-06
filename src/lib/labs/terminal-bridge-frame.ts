@@ -13,14 +13,14 @@ function dataBuffer(data: WebSocketData): Buffer | null {
 }
 
 /**
- * Shared-control authorization applies to terminal input frames. Initial
- * Session Manager open-channel JSON and protocol acknowledgements do not carry
- * user terminal input. Unknown/malformed binary frames fail closed.
+ * The browser's only non-input SSM binary frame is a protocol acknowledgement.
+ * Everything else, including unknown or malformed binary frames, requires live
+ * shared-control authorization before it may be queued or forwarded.
  */
 export function terminalFrameRequiresControlRevalidation(data: WebSocketData): boolean {
   const buffer = dataBuffer(data);
   if (!buffer) return false;
   if (buffer.byteLength < 120) return true;
   const messageType = buffer.subarray(4, 36).toString('utf8').replace(/\0/g, '').trim();
-  return messageType === 'input_stream_data';
+  return messageType !== 'acknowledge';
 }
