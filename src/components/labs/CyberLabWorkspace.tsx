@@ -15,6 +15,16 @@ import { Button } from '@/components/ui/button';
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
 type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness' | 'guest-service' | 'access-path';
 
+const STAGES: Array<{ mode: WorkspaceMode; label: string; longLabel: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { mode: 'designer', label: 'Design', longLabel: 'Infrastructure Designer', icon: Boxes },
+  { mode: 'planner', label: 'Plan', longLabel: 'Deployment Plan', icon: FileCog },
+  { mode: 'runtime', label: 'Runtime', longLabel: 'Runtime Lab', icon: CloudCog },
+  { mode: 'evidence', label: 'Evidence', longLabel: 'Evidence Review', icon: ShieldCheck },
+  { mode: 'readiness', label: 'Readiness', longLabel: 'Runtime Readiness', icon: Activity },
+  { mode: 'guest-service', label: 'Guest service', longLabel: 'Guest Service', icon: MonitorCheck },
+  { mode: 'access-path', label: 'Access path', longLabel: 'Access Path', icon: Route },
+];
+
 export default function CyberLabWorkspace() {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
   const [designerMounted, setDesignerMounted] = React.useState(false);
@@ -65,69 +75,74 @@ export default function CyberLabWorkspace() {
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm">
-        <Button size="sm" variant={mode === 'runtime' ? 'default' : 'ghost'} onClick={() => selectMode('runtime')}>
-          <CloudCog className="mr-1.5 h-4 w-4" />Runtime Lab
-        </Button>
-        <Button size="sm" variant={mode === 'designer' ? 'default' : 'ghost'} onClick={() => selectMode('designer')}>
-          <Boxes className="mr-1.5 h-4 w-4" />Infrastructure Designer
-        </Button>
-        <Button size="sm" variant={mode === 'planner' ? 'default' : 'ghost'} onClick={() => selectMode('planner')}>
-          <FileCog className="mr-1.5 h-4 w-4" />Deployment Plan
-        </Button>
-        <Button size="sm" variant={mode === 'evidence' ? 'default' : 'ghost'} onClick={() => selectMode('evidence')}>
-          <ShieldCheck className="mr-1.5 h-4 w-4" />Evidence Review
-        </Button>
-        <Button size="sm" variant={mode === 'readiness' ? 'default' : 'ghost'} onClick={() => selectMode('readiness')}>
-          <Activity className="mr-1.5 h-4 w-4" />Runtime Readiness
-        </Button>
-        <Button size="sm" variant={mode === 'guest-service' ? 'default' : 'ghost'} onClick={() => selectMode('guest-service')}>
-          <MonitorCheck className="mr-1.5 h-4 w-4" />Guest Service
-        </Button>
-        <Button size="sm" variant={mode === 'access-path' ? 'default' : 'ghost'} onClick={() => selectMode('access-path')}>
-          <Route className="mr-1.5 h-4 w-4" />Access Path
-        </Button>
-        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime → evidence → readiness → guest service → access path. Each boundary remains explicit.</p>
+      <div className="mb-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="oxsig-scrollbar overflow-x-auto p-2" role="tablist" aria-label="Cyber Lab workflow stages">
+          <div className="flex min-w-max items-center gap-1">
+            {STAGES.map((stage, index) => {
+              const Icon = stage.icon;
+              const active = mode === stage.mode;
+              return (
+                <Button
+                  key={stage.mode}
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls={`cyber-lab-${stage.mode}`}
+                  size="sm"
+                  variant={active ? 'default' : 'ghost'}
+                  className="h-9 shrink-0"
+                  onClick={() => selectMode(stage.mode)}
+                  title={stage.longLabel}
+                >
+                  <span className={`mr-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${active ? 'bg-primary-foreground/15' : 'bg-muted'}`}>{index + 1}</span>
+                  <Icon className="mr-1.5 h-4 w-4" />{stage.label}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+        <p className="border-t px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+          Follow the workflow from design to access validation, or jump directly to the stage you need. Each stage preserves its own authorization and evidence boundary.
+        </p>
       </div>
 
-      <div className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
+      <div id="cyber-lab-runtime" role="tabpanel" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
         <LabTopologyPersistenceBridge>
           <LabRuntimePanel />
         </LabTopologyPersistenceBridge>
       </div>
 
       {designerMounted && (
-        <div className={mode === 'designer' ? 'block' : 'hidden'} aria-hidden={mode !== 'designer'}>
+        <div id="cyber-lab-designer" role="tabpanel" className={mode === 'designer' ? 'block' : 'hidden'} aria-hidden={mode !== 'designer'}>
           <InfrastructureDesigner />
         </div>
       )}
 
       {plannerMounted && (
-        <div className={mode === 'planner' ? 'block' : 'hidden'} aria-hidden={mode !== 'planner'}>
+        <div id="cyber-lab-planner" role="tabpanel" className={mode === 'planner' ? 'block' : 'hidden'} aria-hidden={mode !== 'planner'}>
           <DeploymentPlanner />
         </div>
       )}
 
       {evidenceMounted && (
-        <div className={mode === 'evidence' ? 'block' : 'hidden'} aria-hidden={mode !== 'evidence'}>
+        <div id="cyber-lab-evidence" role="tabpanel" className={mode === 'evidence' ? 'block' : 'hidden'} aria-hidden={mode !== 'evidence'}>
           <DeploymentEvidenceReview />
         </div>
       )}
 
       {readinessMounted && (
-        <div className={mode === 'readiness' ? 'block' : 'hidden'} aria-hidden={mode !== 'readiness'}>
+        <div id="cyber-lab-readiness" role="tabpanel" className={mode === 'readiness' ? 'block' : 'hidden'} aria-hidden={mode !== 'readiness'}>
           <RuntimeReadinessReview />
         </div>
       )}
 
       {guestServiceMounted && (
-        <div className={mode === 'guest-service' ? 'block' : 'hidden'} aria-hidden={mode !== 'guest-service'}>
+        <div id="cyber-lab-guest-service" role="tabpanel" className={mode === 'guest-service' ? 'block' : 'hidden'} aria-hidden={mode !== 'guest-service'}>
           <GuestServiceReadinessReview />
         </div>
       )}
 
       {accessPathMounted && (
-        <div className={mode === 'access-path' ? 'block' : 'hidden'} aria-hidden={mode !== 'access-path'}>
+        <div id="cyber-lab-access-path" role="tabpanel" className={mode === 'access-path' ? 'block' : 'hidden'} aria-hidden={mode !== 'access-path'}>
           <AccessPathReadinessReview />
         </div>
       )}

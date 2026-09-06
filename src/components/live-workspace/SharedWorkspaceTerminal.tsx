@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Loader2, PlugZap, TerminalSquare, Unplug } from 'lucide-react';
+import { Circle, Loader2, PlugZap, TerminalSquare, Unplug } from 'lucide-react';
 import type { Terminal as XTermTerminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +41,20 @@ async function responseError(response: Response, fallback: string) {
   return body?.error || fallback;
 }
 
+function stateLabel(state: ConnectionState) {
+  if (state === 'idle') return 'Ready';
+  if (state === 'connecting') return 'Connecting';
+  if (state === 'connected') return 'Connected';
+  if (state === 'closed') return 'Disconnected';
+  return 'Needs attention';
+}
+
+function leaseTime(expiresAt: string, now: number) {
+  const seconds = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 export function SharedWorkspaceTerminal({
   workspaceId,
   bindingId,
@@ -60,7 +74,13 @@ export function SharedWorkspaceTerminal({
   const intentionalCloseRef = React.useRef(false);
   const [terminalReady, setTerminalReady] = React.useState(false);
   const [state, setState] = React.useState<ConnectionState>('idle');
-  const [detail, setDetail] = React.useState('An active terminal lease authorizes you to open this shared shell.');
+  const [detail, setDetail] = React.useState('Ready to connect while your terminal control lease is active.');
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const flushInput = React.useCallback(() => {
     if (inputTimerRef.current) clearTimeout(inputTimerRef.current);
@@ -99,7 +119,7 @@ export function SharedWorkspaceTerminal({
     channelRef.current = null;
     await endServerSession();
     setState('closed');
-    setDetail('Shared terminal disconnected. The control lease remains separate and can still be revoked or expire.');
+    setDetail('Terminal disconnected. Your control lease remains active until you release it, it is revoked, or it expires.');
     terminalRef.current?.writeln(`\r\n${message}\r\n`);
     intentionalCloseRef.current = false;
   }, [endServerSession, flushInput]);
@@ -114,8 +134,8 @@ export function SharedWorkspaceTerminal({
     intentionalCloseRef.current = false;
 
     setState('connecting');
-    setDetail('Validating the active control lease and opening an AWS Systems Manager shell…');
-    terminalRef.current.writeln(`\r\n[Validating Live Workspace terminal control for ${machineLabel}…]`);
+    setDetail('Checking your current control permission and connecting to the lab…');
+    terminalRef.current.writeln(`\r\n[Connecting to ${machineLabel}…]`);
 
     try {
       const csrf = await getCsrfToken();
@@ -132,7 +152,7 @@ export function SharedWorkspaceTerminal({
         !session.sessionId || !session.bridgePath || !session.tokenValue ||
         !session.leaseId || session.bindingId !== bindingId || session.labInstanceId !== labInstanceId
       ) {
-        throw new Error('OXSIG returned an incomplete or mismatched shared terminal session.');
+        throw new Error('Oxsig returned an incomplete or mismatched shared terminal session.');
       }
       sessionRef.current = session;
 
@@ -140,7 +160,7 @@ export function SharedWorkspaceTerminal({
         onOutput: (data) => terminalRef.current?.write(data),
         onReady: (customerMessage) => {
           setState('connected');
-          setDetail('Connected. Every shared input frame is revalidated against the active control lease before AWS receives it.');
+          setDetail('Connected. Oxsig continues checking your control permission while this terminal is open.');
           if (customerMessage) terminalRef.current?.writeln(`\r\n${customerMessage}`);
           requestAnimationFrame(() => {
             fitRef.current?.fit();
@@ -152,14 +172,14 @@ export function SharedWorkspaceTerminal({
         onError: (message) => {
           setState('error');
           setDetail(message);
-          terminalRef.current?.writeln(`\r\n[Shared terminal error: ${message}]\r\n`);
+          terminalRef.current?.writeln(`\r\n[Terminal error: ${message}]\r\n`);
           void endServerSession();
         },
         onClose: (reason) => {
           if (intentionalCloseRef.current) return;
           setState('closed');
-          setDetail(reason || 'The shared terminal transport closed. If the lease was revoked or expired, request control again.');
-          terminalRef.current?.writeln(`\r\n[Shared terminal closed${reason ? `: ${reason}` : ''}]\r\n`);
+          setDetail(reason || 'The terminal connection closed. If your control lease is still active, you can reconnect.');
+          terminalRef.current?.writeln(`\r\n[Terminal closed${reason ? `: ${reason}` : ''}]\r\n`);
           sessionRef.current = null;
           void onAuthorizationChanged();
         },
@@ -174,7 +194,7 @@ export function SharedWorkspaceTerminal({
       const message = error instanceof Error ? error.message : 'Could not start the shared terminal.';
       setState('error');
       setDetail(message);
-      terminalRef.current?.writeln(`\r\n[Shared terminal error: ${message}]\r\n`);
+      terminalRef.current?.writeln(`\r\n[Terminal error: ${message}]\r\n`);
       await endServerSession();
       void onAuthorizationChanged();
     }
@@ -205,7 +225,7 @@ export function SharedWorkspaceTerminal({
       fitRef.current = fit;
       fit.fit();
       terminal.writeln(`OXSIG shared terminal — ${machineLabel}`);
-      terminal.writeln('Input is allowed only while your Live Workspace terminal lease remains active.\r\n');
+      terminal.writeln('Connect when you are ready. Input stops when your control permission ends.\r\n');
 
       dataDisposable = terminal.onData((data) => {
         if (!channelRef.current?.isReady()) return;
@@ -250,31 +270,35 @@ export function SharedWorkspaceTerminal({
     const expires = new Date(leaseExpiresAt).getTime();
     const remaining = expires - Date.now();
     if (remaining <= 0) {
-      if (state === 'connected' || state === 'connecting') void disconnect('[Control lease expired; shared terminal closed]');
+      if (state === 'connected' || state === 'connecting') void disconnect('[Control lease expired; terminal closed]');
       return;
     }
     const timer = window.setTimeout(() => {
-      if (state === 'connected' || state === 'connecting') void disconnect('[Control lease expired; shared terminal closed]');
+      if (state === 'connected' || state === 'connecting') void disconnect('[Control lease expired; terminal closed]');
       void onAuthorizationChanged();
     }, remaining + 250);
     return () => window.clearTimeout(timer);
   }, [disconnect, leaseExpiresAt, onAuthorizationChanged, state]);
 
   const connected = state === 'connected';
+  const reconnecting = state === 'closed' || state === 'error';
 
   return (
     <div className="mt-3 overflow-hidden rounded-xl border bg-black/95">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2 text-white">
-        <div className="flex items-center gap-2 text-xs font-medium">
-          <TerminalSquare className="h-4 w-4" />
-          Shared terminal transport
-          <Badge variant="outline" className="border-white/20 text-[10px] text-white">{state}</Badge>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5 text-white">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+            <TerminalSquare className="h-4 w-4" />
+            <span className="truncate">{machineLabel}</span>
+            <Badge variant="outline" className="gap-1 border-white/20 text-[10px] text-white"><Circle className={`h-2 w-2 ${connected ? 'fill-current' : ''}`} />{stateLabel(state)}</Badge>
+          </div>
+          <p className="mt-1 text-[10px] text-white/55">Control lease · {leaseTime(leaseExpiresAt, now)} remaining</p>
         </div>
         <div className="flex items-center gap-2">
           {!connected ? (
             <Button size="sm" variant="secondary" onClick={() => void connect()} disabled={!terminalReady || state === 'connecting'}>
               {state === 'connecting' ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlugZap className="h-3 w-3" />}
-              Open terminal
+              {state === 'connecting' ? 'Connecting…' : reconnecting ? 'Reconnect' : 'Connect terminal'}
             </Button>
           ) : (
             <Button size="sm" variant="secondary" onClick={() => void disconnect()}>
@@ -283,8 +307,8 @@ export function SharedWorkspaceTerminal({
           )}
         </div>
       </div>
-      <div ref={hostRef} className="h-[340px] w-full p-2" />
-      <p className="border-t border-white/10 px-3 py-2 text-[11px] leading-5 text-white/60">{detail}</p>
+      <div ref={hostRef} className="h-[300px] w-full p-2 sm:h-[360px] lg:h-[420px]" />
+      <p aria-live="polite" className="border-t border-white/10 px-3 py-2 text-[11px] leading-5 text-white/60">{detail}</p>
     </div>
   );
 }
