@@ -105,13 +105,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const costLimit = await checkRateLimit(
-        req,
-        RATE_LIMITS.LAB_PROVISION,
-        user.id,
-        'lab-provision'
-      );
-      if (costLimit) return costLimit;
+      // Charge the shared cloud-launch allowance only when this request can
+      // transition a fresh receipt into a new cost-bearing provider action.
+      // Idempotent retries of an already-started execution stay request-throttled
+      // above, but do not consume another provisioning allowance.
+      if (authorization.state === 'receipt_issued') {
+        const costLimit = await checkRateLimit(
+          req,
+          RATE_LIMITS.LAB_PROVISION,
+          user.id,
+          'lab-provision'
+        );
+        if (costLimit) return costLimit;
+      }
 
       const executed = await executeControlledDeployment({
         ownerId: user.id,
