@@ -38,7 +38,7 @@ import {
 const authorizationId = '4a2e2dc5-b9b5-41b7-8c29-01f565231301';
 const executionId = 'c311694f-2b48-4274-b8ef-c56b4e2927e0';
 const instanceId = '2ff639a0-300d-45dd-a02e-28ebd6df289a';
-const expiresAt = '2026-09-06T01:30:00.000Z';
+const expiresAt = '2099-09-06T01:30:00.000Z';
 const createdAt = '2026-09-06T00:30:00.000Z';
 
 function authorization(overrides: Partial<DeploymentAuthorizationRecord> = {}): DeploymentAuthorizationRecord {
