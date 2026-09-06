@@ -1,5 +1,6 @@
 import type { InfrastructureDesign } from './designer-schema';
 import { validateInfrastructureDesign, type InfrastructureValidationResult } from './designer-validation';
+import { evaluateDeploymentExecutionSupport } from './deployment-execution-support';
 import { deploymentPlanSchema, type DeploymentPlan, type DeploymentPlanAction } from './deployment-plan-schema';
 import { getRuntimeProfile, getRuntimeProfileAvailability, type RuntimeProfileSelection } from './runtime-profile';
 
@@ -132,7 +133,7 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
       segmentId: segment.id,
       description: `Prepare network segment ${segment.cidr} for ${segment.memberNodeIds.length} device${segment.memberNodeIds.length === 1 ? '' : 's'}.`,
       executableNow: false,
-      blocker: 'Multi-segment network orchestration is not implemented yet.',
+      blocker: 'The controlled VM adapter does not allocate custom network segments; this segment remains design intent.',
     });
   }
 
@@ -141,7 +142,7 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
     if (workload.runtimeProfile === 'unspecified') {
       blocker = 'Choose an explicit operating-system/runtime profile before provisioning.';
     } else if (workload.runtimeAdapter.status === 'mapped-available') {
-      blocker = `Runtime profile ${workload.runtimeProfileLabel || workload.runtimeProfile.profileId} is mapped to ${workload.runtimeAdapter.labSlug}; deployment authorization and execution are not enabled in this planner stage.`;
+      blocker = `Runtime profile ${workload.runtimeProfileLabel || workload.runtimeProfile.profileId} is mapped to ${workload.runtimeAdapter.labSlug}; provider execution requires explicit server-side authorization and a one-time execution receipt.`;
     } else {
       blocker = workload.runtimeAdapter.note || 'No controlled runtime adapter is currently available for this profile.';
     }
@@ -165,7 +166,7 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
       nodeId: networkFunction.nodeId,
       description: `Implement ${networkFunction.kind} ${descriptionLabel(networkFunction.label, networkFunction.hostname)}.`,
       executableNow: false,
-      blocker: `No controlled ${networkFunction.kind} execution adapter is registered yet.`,
+      blocker: `The controlled VM adapter does not execute ${networkFunction.kind} nodes; this network function remains design intent.`,
     });
   }
 
@@ -177,7 +178,7 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
       edgeId: link.edgeId,
       description: `Realize the intended link between ${link.source} and ${link.target}.`,
       executableNow: false,
-      blocker: 'Topology links are design intent until a network execution adapter is authorized.',
+      blocker: 'The controlled VM adapter does not execute explicit topology links; this link remains design intent.',
     });
   }
 
@@ -187,7 +188,7 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
     type: 'verify-runtime',
     description: 'Verify deployed addressing, reachability, and runtime state and record evidence against the authorized plan.',
     executableNow: false,
-    blocker: 'Runtime evidence verification belongs to the later authorized execution stage.',
+    blocker: 'Runtime verification begins only after a matching controlled deployment starts and produces bound runtime evidence.',
   });
 
   const blockers = new Set<string>();
@@ -205,17 +206,14 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
     }
   }
 
-  if (networkFunctions.length > 0) blockers.add(`${networkFunctions.length} network function${networkFunctions.length === 1 ? '' : 's'} require controlled execution adapters.`);
-  blockers.add('Deployment Planner v1 is proposal-only and cannot modify AWS or live Cyber Lab runtime state.');
-
   const warnings = new Set(validation.warnings.map((issue) => issue.message));
   for (const workload of workloads) {
     if (!workload.ipv4 || !workload.cidr) {
-      warnings.add(`${workload.label} does not fully specify IPv4 addressing; the learner or a future deployment adapter must resolve it explicitly.`);
+      warnings.add(`${workload.label} does not fully specify IPv4 addressing. The controlled one-VM adapter uses provider-assigned addressing, while design-only topology intent remains explicit in the blueprint.`);
     }
   }
 
-  const plan: DeploymentPlan = {
+  const preliminaryPlan = deploymentPlanSchema.parse({
     version: 1,
     sourceDesignVersion: 1,
     summary: {
@@ -235,7 +233,17 @@ export function compileDeploymentPlan(design: InfrastructureDesign): DeploymentP
       blockers: [...blockers],
       warnings: [...warnings],
     },
-  };
+  });
 
-  return deploymentPlanSchema.parse(plan);
+  const executionSupport = evaluateDeploymentExecutionSupport(preliminaryPlan);
+  executionSupport.reasons.forEach((reason) => blockers.add(reason));
+
+  return deploymentPlanSchema.parse({
+    ...preliminaryPlan,
+    readiness: {
+      executable: executionSupport.supported && blockers.size === 0,
+      blockers: [...blockers],
+      warnings: preliminaryPlan.readiness.warnings,
+    },
+  });
 }
