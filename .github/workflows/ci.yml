@@ -7,6 +7,22 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: oxisg
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oxisg"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CI_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oxsig
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -20,11 +36,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm server:check
       - run: node --check scripts/readiness-check.mjs
+      - name: Apply database migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+      - name: Verify database schema parity
+        run: pnpm db:parity
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
       - run: pnpm prod:check
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
           CLERK_SECRET_KEY: sk_test_dummy
-          DATABASE_URL: postgresql://user:pass@localhost:5432/oxsig
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           CRON_SECRET: ci-cron-secret-0123456789abcdef
           STORAGE_BUCKET: oxsig-ci
           STORAGE_REGION: eu-central-1
@@ -36,7 +60,7 @@ jobs:
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
           CLERK_SECRET_KEY: sk_test_dummy
-          DATABASE_URL: postgresql://user:pass@localhost:5432/oxsig
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           STORAGE_BUCKET: oxsig-ci
           STORAGE_REGION: eu-central-1
           LAB_AWS_ENABLED: 'false'
