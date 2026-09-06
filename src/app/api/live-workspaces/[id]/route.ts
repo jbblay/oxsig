@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { listControlState } from '@/lib/live-workspace/control';
-import { getLiveWorkspaceAccess, listLiveWorkspaceParticipants } from '@/lib/live-workspace/server';
+import {
+  getLiveWorkspaceAccess,
+  listLiveWorkspaceParticipants,
+  listOwnerAttachableResources,
+} from '@/lib/live-workspace/server';
 
 export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
@@ -17,7 +21,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!access) return NextResponse.json({ error: 'Live Workspace not found or access denied' }, { status: 404 });
 
     try {
-      const [participants, resources, control] = await Promise.all([
+      const [participants, resources, control, attachableResources] = await Promise.all([
         listLiveWorkspaceParticipants(pool, id),
         pool.query(
           `SELECT resource.id, resource.resource_type, resource.resource_id, resource.resource_owner_id,
@@ -35,7 +39,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           [id]
         ),
         listControlState({ pool, collaborationId: id, viewerId: user.id }),
+        access.capabilities.manageResources
+          ? listOwnerAttachableResources(pool, access.ownerId)
+          : Promise.resolve([]),
       ]);
+      const attachedKeys = new Set(resources.rows.map((row) => `${row.resource_type}:${row.resource_id}`));
+
       return NextResponse.json({
         viewerId: user.id,
         workspace: access,
@@ -51,9 +60,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           accessMode: row.access_mode || null,
           ownershipTransferred: false,
         })),
+        attachableResources: attachableResources.map((resource) => ({
+          ...resource,
+          attached: attachedKeys.has(`${resource.type}:${resource.id}`),
+        })),
         control: {
           ...control,
-          note: 'Workspace membership and resource visibility do not grant machine input. Only an unexpired server-validated control lease authorizes a future shared transport.',
+          note: 'Machine input requires an active server-validated control lease. Workspace membership or resource visibility alone never grants control.',
         },
       }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
