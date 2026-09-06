@@ -14,6 +14,7 @@ vi.mock('@/lib/db/pool', () => ({
 import {
   authorizeTerminalEvidence,
   executionCommandHash,
+  getDeploymentEvidenceForAnalysis,
   getTerminalEvidenceForAnalysis,
   recordBrowserObservedEvidence,
   storeExecutionEvidenceAnalysis,
@@ -24,6 +25,7 @@ const later = '2026-09-06T01:02:00.000Z';
 const evidenceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const executionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const labId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const authorizationId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 function terminalRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,6 +55,34 @@ function terminalRow(overrides: Record<string, unknown> = {}) {
     updated_at: now,
     ...overrides,
   };
+}
+
+function deploymentRow(overrides: Record<string, unknown> = {}) {
+  return terminalRow({
+    deployment_authorization_id: authorizationId,
+    source: 'deployment',
+    surface: 'infrastructure-designer',
+    provenance: 'provider-attested',
+    state: 'evidence_recorded',
+    command_hash: null,
+    command: null,
+    expires_at: null,
+    execution_started_at: now,
+    evidence_recorded_at: now,
+    payload: {
+      authorizationId,
+      executionId,
+      planId: 'plan_123',
+      planHash: 'a'.repeat(64),
+      provider: 'aws-ec2',
+      externalId: 'i-123',
+      nodeId: 'server-1',
+      labSlug: 'ubuntu-security-lab',
+      accessMode: 'terminal',
+      labEventId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    },
+    ...overrides,
+  });
 }
 
 describe('execution evidence lifecycle', () => {
@@ -149,7 +179,23 @@ describe('execution evidence lifecycle', () => {
     );
   });
 
-  it('stores one analysis and makes analyzed evidence idempotently readable', async () => {
+  it('loads only provider-attested deployment evidence for the owner and authorization', async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [deploymentRow()] });
+
+    const evidence = await getDeploymentEvidenceForAnalysis({
+      ownerId: 'user-1',
+      authorizationId,
+    });
+
+    expect(evidence.provenance).toBe('provider-attested');
+    expect(evidence.deploymentAuthorizationId).toBe(authorizationId);
+    expect(mocks.poolQuery).toHaveBeenCalledWith(
+      expect.stringContaining("provenance='provider-attested'"),
+      ['user-1', authorizationId]
+    );
+  });
+
+  it('stores one terminal analysis and makes analyzed evidence idempotently readable', async () => {
     const analyzed = terminalRow({
       state: 'analyzed',
       stdout: 'Linux lab',
@@ -164,7 +210,7 @@ describe('execution evidence lifecycle', () => {
       if (sql.includes('SELECT *') && sql.includes('FOR UPDATE')) {
         return { rows: [terminalRow({ state: 'evidence_recorded', evidence_recorded_at: now })] };
       }
-      if (sql.includes("state='analyzed'")) return { rows: [analyzed] };
+      if (sql.includes("SET state='analyzed'")) return { rows: [analyzed] };
       throw new Error(`Unexpected SQL: ${sql.slice(0, 100)}`);
     });
     mocks.transaction.mockImplementation(async (handler) => handler({ query }));
@@ -180,5 +226,43 @@ describe('execution evidence lifecycle', () => {
     expect(result.state).toBe('analyzed');
     expect(result.analysisKind).toBe('ai-practitioner');
     expect(result.analysis).toEqual({ summary: 'Linux kernel details were returned.' });
+  });
+
+  it('advances provider evidence and its exact deployment authorization to analyzed atomically', async () => {
+    const analyzed = deploymentRow({
+      state: 'analyzed',
+      analyzed_at: now,
+      analysis_kind: 'deployment',
+      analysis: { summary: 'AWS allocation was confirmed.' },
+      model: 'test-model',
+    });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('SELECT * FROM execution_evidence') && sql.includes('FOR UPDATE')) {
+        return { rows: [deploymentRow()] };
+      }
+      if (sql.includes('UPDATE execution_evidence') && sql.includes("SET state='analyzed'")) {
+        return { rows: [analyzed] };
+      }
+      if (sql.includes('UPDATE deployment_authorizations') && sql.includes("SET state='analyzed'")) {
+        return { rows: [{ id: authorizationId }] };
+      }
+      throw new Error(`Unexpected SQL: ${sql.slice(0, 120)}`);
+    });
+    mocks.transaction.mockImplementation(async (handler) => handler({ query }));
+
+    const result = await storeExecutionEvidenceAnalysis({
+      ownerId: 'user-1',
+      evidenceId,
+      analysisKind: 'deployment',
+      analysis: { summary: 'AWS allocation was confirmed.' },
+      model: 'test-model',
+    });
+
+    expect(result.state).toBe('analyzed');
+    expect(result.analysisKind).toBe('deployment');
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("SET state='analyzed'"),
+      [authorizationId, 'user-1', executionId, labId]
+    );
   });
 });
