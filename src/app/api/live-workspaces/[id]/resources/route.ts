@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
+import { revokeControlForBinding } from '@/lib/live-workspace/control';
 import {
   assertOwnerResource,
   getLiveWorkspaceAccess,
@@ -81,14 +82,32 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       const access = await getLiveWorkspaceAccess(pool, id, user.id);
       if (!access) throw new LiveWorkspaceError('Live Workspace not found or access denied.', 404, 'WORKSPACE_NOT_FOUND');
       if (!access.capabilities.manageResources) throw new LiveWorkspaceError('You cannot detach Live Workspace resources.', 403, 'RESOURCE_MANAGEMENT_DENIED');
-      const result = await pool.query(
-        `UPDATE live_workspace_resources
-         SET status='detached', detached_at=NOW(), updated_at=NOW()
-         WHERE id=$1 AND collaboration_id=$2 AND status='attached'
-         RETURNING id`,
-        [parsed.data.bindingId, id]
-      );
-      if (!result.rowCount) throw new LiveWorkspaceError('Resource binding not found.', 404, 'RESOURCE_BINDING_NOT_FOUND');
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await client.query(
+          `UPDATE live_workspace_resources
+           SET status='detached', detached_at=NOW(), updated_at=NOW()
+           WHERE id=$1 AND collaboration_id=$2 AND status='attached'
+           RETURNING id`,
+          [parsed.data.bindingId, id]
+        );
+        if (!result.rowCount) throw new LiveWorkspaceError('Resource binding not found.', 404, 'RESOURCE_BINDING_NOT_FOUND');
+        await revokeControlForBinding({
+          queryable: client,
+          collaborationId: id,
+          bindingId: parsed.data.bindingId,
+          actorId: user.id,
+          reason: 'resource_detached',
+        });
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
       return NextResponse.json({ detached: true, bindingId: parsed.data.bindingId }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       if (error instanceof LiveWorkspaceError) {
