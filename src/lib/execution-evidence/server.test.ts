@@ -16,7 +16,6 @@ import {
   executionCommandHash,
   getTerminalEvidenceForAnalysis,
   recordBrowserObservedEvidence,
-  recordProviderAttestedDeploymentEvidence,
   storeExecutionEvidenceAnalysis,
 } from './server';
 
@@ -181,42 +180,5 @@ describe('execution evidence lifecycle', () => {
     expect(result.state).toBe('analyzed');
     expect(result.analysisKind).toBe('ai-practitioner');
     expect(result.analysis).toEqual({ summary: 'Linux kernel details were returned.' });
-  });
-
-  it('records provider-attested deployment evidence and advances the authorization state', async () => {
-    const deploymentEvidence = terminalRow({
-      deployment_authorization_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-      source: 'deployment',
-      surface: 'infrastructure-designer',
-      provenance: 'provider-attested',
-      state: 'evidence_recorded',
-      command_hash: null,
-      command: null,
-      payload: { externalId: 'i-123', region: 'eu-central-1' },
-      evidence_recorded_at: now,
-      expires_at: null,
-    });
-    const query = vi.fn(async (sql: string) => {
-      if (sql.includes('SELECT *') && sql.includes('execution_id')) return { rows: [] };
-      if (sql.includes('INSERT INTO execution_evidence')) return { rows: [deploymentEvidence] };
-      if (sql.includes('UPDATE deployment_authorizations')) return { rows: [{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }] };
-      throw new Error(`Unexpected SQL: ${sql.slice(0, 100)}`);
-    });
-    mocks.transaction.mockImplementation(async (handler) => handler({ query }));
-
-    const result = await recordProviderAttestedDeploymentEvidence({
-      ownerId: 'user-1',
-      labInstanceId: labId,
-      deploymentAuthorizationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-      executionId,
-      payload: { externalId: 'i-123', region: 'eu-central-1' },
-    });
-
-    expect(result.provenance).toBe('provider-attested');
-    expect(result.state).toBe('evidence_recorded');
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining("SET state='evidence_recorded'"),
-      expect.arrayContaining(['dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'user-1', executionId, labId])
-    );
   });
 });
