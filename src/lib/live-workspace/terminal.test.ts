@@ -65,11 +65,11 @@ describe('Live Workspace terminal authorization', () => {
     mocks.diagnostics.mockResolvedValue(diagnostics);
   });
 
-  it('revalidates the exact server-bound lease before terminal input is accepted', async () => {
-    const pool = { query: vi.fn() } as any;
+  it('revalidates the exact server-bound lease and current owner-bound attachment before terminal input is accepted', async () => {
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [{ '?column?': 1 }], rowCount: 1 }) } as any;
     await expect(assertLiveWorkspaceTerminalAuthorization({
       pool,
-      authorization: { workspaceId, collaborationId: workspaceId, participantId, bindingId, labInstanceId, leaseId, surface: 'terminal' } as any,
+      authorization: { collaborationId: workspaceId, participantId, bindingId, labInstanceId, leaseId, surface: 'terminal' },
     })).resolves.toMatchObject({ id: leaseId, participantId, bindingId, labInstanceId });
 
     expect(mocks.getActiveControlLease).toHaveBeenCalledWith({
@@ -79,6 +79,11 @@ describe('Live Workspace terminal authorization', () => {
       bindingId,
       surface: 'terminal',
     });
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('resource.resource_owner_id=collaboration.owner_id'), [
+      bindingId,
+      workspaceId,
+      labInstanceId,
+    ]);
   });
 
   it('rejects a stale or substituted lease id even when another lease lookup returns', async () => {
@@ -94,6 +99,15 @@ describe('Live Workspace terminal authorization', () => {
         surface: 'terminal',
       },
     })).rejects.toMatchObject({ code: 'TERMINAL_CONTROL_LEASE_INACTIVE', status: 403 });
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('rejects an already-open shared terminal when current attachment ownership no longer matches the workspace owner', async () => {
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }) } as any;
+    await expect(assertLiveWorkspaceTerminalAuthorization({
+      pool,
+      authorization: { collaborationId: workspaceId, participantId, bindingId, labInstanceId, leaseId, surface: 'terminal' },
+    })).rejects.toMatchObject({ code: 'TERMINAL_LAB_AUTHORIZATION_CHANGED', status: 403 });
   });
 
   it('fails closed before inspecting the lab when the authenticated participant has no active terminal lease', async () => {
