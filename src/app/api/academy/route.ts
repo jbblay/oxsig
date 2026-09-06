@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -22,6 +23,8 @@ import {
 
 export const runtime = 'nodejs';
 
+const idSchema = z.string().uuid();
+
 export async function POST(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
     if (!(await validateCsrfToken(req))) {
@@ -31,7 +34,27 @@ export async function POST(request: NextRequest) {
     const rateLimit = await checkRateLimit(req, { maxRequests: 20, windowMs: 60_000 }, user.id);
     if (rateLimit) return rateLimit;
 
-    const parsed = academyRequestSchema.safeParse(await req.json().catch(() => null));
+    const rawBody = await req.json().catch(() => null) as Record<string, unknown> | null;
+    let exactEvidenceId: string | undefined;
+    let exactLabInstanceId: string | undefined;
+    let schemaBody: Record<string, unknown> | null = rawBody;
+    if (rawBody?.action === 'evaluate') {
+      const parsedEvidenceId = idSchema.safeParse(rawBody.evidenceId);
+      const parsedLabInstanceId = idSchema.safeParse(rawBody.labInstanceId);
+      if (!parsedEvidenceId.success || !parsedLabInstanceId.success) {
+        return NextResponse.json(
+          { error: 'Exact lab and execution evidence identifiers are required for Academy evaluation' },
+          { status: 400 }
+        );
+      }
+      exactEvidenceId = parsedEvidenceId.data;
+      exactLabInstanceId = parsedLabInstanceId.data;
+      schemaBody = { ...rawBody };
+      delete schemaBody.evidenceId;
+      delete schemaBody.labInstanceId;
+    }
+
+    const parsed = academyRequestSchema.safeParse(schemaBody);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid Academy request' }, { status: 400 });
     }
@@ -67,13 +90,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ answer });
       }
 
-      // Keep the browser evidence fields in the request schema for compatibility,
-      // but evaluate only the one-time owner-bound record persisted by Oxsig after
-      // the visible terminal checkpoint completed.
       const evidence = await getTerminalEvidenceForAnalysis({
         ownerId: user.id,
+        labInstanceId: exactLabInstanceId!,
         command: parsed.data.command,
-        surface: 'ai-practitioner',
+        surface: 'academy',
+        evidenceId: exactEvidenceId!,
       });
 
       if (evidence.state === 'analyzed') {

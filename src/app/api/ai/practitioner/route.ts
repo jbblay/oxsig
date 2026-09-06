@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
@@ -18,6 +19,8 @@ import {
 } from '@/lib/execution-evidence/server';
 
 export const runtime = 'nodejs';
+
+const evidenceIdSchema = z.string().uuid();
 
 async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
   const result = await getPool().query(
@@ -50,7 +53,20 @@ export async function POST(request: NextRequest) {
     const rateLimit = await checkRateLimit(req, { maxRequests: 24, windowMs: 60_000 }, user.id);
     if (rateLimit) return rateLimit;
 
-    const parsed = practitionerRequestSchema.safeParse(await req.json().catch(() => null));
+    const rawBody = await req.json().catch(() => null) as Record<string, unknown> | null;
+    let exactEvidenceId: string | undefined;
+    let schemaBody: Record<string, unknown> | null = rawBody;
+    if (rawBody?.action === 'explain') {
+      const parsedEvidenceId = evidenceIdSchema.safeParse(rawBody.evidenceId);
+      if (!parsedEvidenceId.success) {
+        return NextResponse.json({ error: 'An exact execution evidence ID is required for AI explanation' }, { status: 400 });
+      }
+      exactEvidenceId = parsedEvidenceId.data;
+      schemaBody = { ...rawBody };
+      delete schemaBody.evidenceId;
+    }
+
+    const parsed = practitionerRequestSchema.safeParse(schemaBody);
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid AI Practitioner request', details: parsed.error.flatten() }, { status: 400 });
     }
@@ -102,14 +118,12 @@ export async function POST(request: NextRequest) {
       if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
       const { instance, lab } = resolved;
 
-      // The browser payload remains in the request schema for compatibility, but it
-      // is deliberately not used for AI reasoning. The AI consumes the owner-bound,
-      // one-time evidence record that Oxsig persisted after the visible terminal run.
       const evidence = await getTerminalEvidenceForAnalysis({
         ownerId: user.id,
         labInstanceId: instance.id,
         command: parsed.data.command,
         surface: 'ai-practitioner',
+        evidenceId: exactEvidenceId!,
       });
 
       if (evidence.state === 'analyzed') {

@@ -117,7 +117,7 @@ function executeInVisibleTerminal(labInstanceId: string, command: string) {
 
     window.addEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
     window.dispatchEvent(new CustomEvent<AiTerminalRunRequest>(AI_TERMINAL_RUN_EVENT, {
-      detail: { requestId, labInstanceId, command },
+      detail: { requestId, labInstanceId, command, surface: 'ai-practitioner' },
     }));
   });
 }
@@ -255,32 +255,34 @@ export default function AiPractitionerDock() {
     stopVoice();
     setBusy(`run:${entry.id}`);
     try {
-      const approvalToken = await getCsrfToken();
-      const approvalResponse = await fetch(`/api/labs/instances/${instance.id}/ai/terminal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': approvalToken },
-        body: JSON.stringify({ action: 'authorize', command: entry.plan.command, approved: true }),
-      });
-      if (!approvalResponse.ok) throw new Error(await apiError(approvalResponse, 'The command was not authorized'));
-
-      toast.info('Running the approved command in the visible terminal…');
+      toast.info('Binding the approved command to the live terminal session and running it visibly…');
       const terminalResult = await executeInVisibleTerminal(instance.id, entry.plan.command);
+      if (terminalResult.error) throw new Error(terminalResult.error);
+      if (
+        terminalResult.surface !== 'ai-practitioner' ||
+        !terminalResult.executionId ||
+        !terminalResult.evidenceId ||
+        !terminalResult.executionReceiptId ||
+        !terminalResult.terminalSessionId ||
+        !terminalResult.provenance ||
+        (terminalResult.risk !== 'read-only' && terminalResult.risk !== 'changes-system')
+      ) {
+        throw new Error('The terminal returned incomplete bound execution evidence.');
+      }
 
-      const recordToken = await getCsrfToken();
-      const recordResponse = await fetch(`/api/labs/instances/${instance.id}/ai/terminal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': recordToken },
-        body: JSON.stringify({
-          action: 'record',
-          command: entry.plan.command,
-          stdout: terminalResult.stdout,
-          stderr: terminalResult.stderr,
-          exitCode: terminalResult.exitCode,
-        }),
-      });
-      if (!recordResponse.ok) throw new Error(await apiError(recordResponse, 'The terminal ran the command, but Oxsig could not record its evidence'));
-      const recordBody = await recordResponse.json() as { execution: AiPractitionerExecution };
-      const execution = recordBody.execution;
+      const execution: AiPractitionerExecution = {
+        command: terminalResult.command,
+        stdout: terminalResult.stdout,
+        stderr: terminalResult.stderr,
+        exitCode: terminalResult.exitCode,
+        risk: terminalResult.risk,
+        executionId: terminalResult.executionId,
+        evidenceId: terminalResult.evidenceId,
+        provenance: terminalResult.provenance,
+        executionReceiptId: terminalResult.executionReceiptId,
+        terminalSessionId: terminalResult.terminalSessionId,
+        surface: 'ai-practitioner',
+      };
       setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, execution } : item));
 
       const analysisToken = await getCsrfToken();
@@ -289,6 +291,7 @@ export default function AiPractitionerDock() {
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': analysisToken },
         body: JSON.stringify({
           action: 'explain',
+          evidenceId: execution.evidenceId,
           labInstanceId: instance.id,
           prompt: entry.prompt,
           command: execution.command,
@@ -337,12 +340,17 @@ export default function AiPractitionerDock() {
             aiPractitioner: true,
             exitCode: entry.execution.exitCode,
             risk: entry.execution.risk,
+            evidenceId: entry.execution.evidenceId,
+            executionId: entry.execution.executionId,
+            executionReceiptId: entry.execution.executionReceiptId,
+            terminalSessionId: entry.execution.terminalSessionId,
+            evidenceProvenance: entry.execution.provenance,
           },
         }),
       });
       if (!response.ok) throw new Error(await apiError(response, 'Could not save this lesson to Vault'));
       setSavedIds((current) => new Set(current).add(entry.id));
-      toast.success('Real lab evidence saved to Vault.');
+      toast.success('Bound real lab evidence saved to Vault.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not save to Vault');
     } finally {
@@ -419,7 +427,7 @@ export default function AiPractitionerDock() {
                 </div>
                 <div className="flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p>Conversation never executes commands. Lab commands require an explicit click, pass server-side command policy checks, run visibly in your connected terminal, and send the real terminal evidence back for explanation.</p>
+                  <p>Conversation never executes commands. Lab commands require an explicit click, pass server-side command policy checks, bind to the exact active SSM session, run visibly in your terminal, and persist browser-observed evidence before explanation.</p>
                 </div>
                 <div className="space-y-2">
                   {[
@@ -494,13 +502,14 @@ export default function AiPractitionerDock() {
 
                   {entry.execution && (
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between"><p className="text-xs font-medium">Real terminal evidence</p><Badge variant="outline" className="text-[10px]">exit {entry.execution.exitCode}</Badge></div>
+                      <div className="flex items-center justify-between"><p className="text-xs font-medium">Bound terminal evidence</p><Badge variant="outline" className="text-[10px]">exit {entry.execution.exitCode}</Badge></div>
                       <pre className="oxsig-scrollbar max-h-52 overflow-auto rounded-xl border bg-muted/50 p-3 text-xs"><code>{outputText(entry.execution)}</code></pre>
+                      <p className="font-mono text-[10px] text-muted-foreground">browser-observed · evidence {entry.execution.evidenceId.slice(0, 8)}… · SSM {entry.execution.terminalSessionId.slice(0, 18)}…</p>
                     </div>
                   )}
 
                   {entry.execution && !entry.analysis && busy === `run:${entry.id}` && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the terminal evidence…</div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the exact persisted terminal evidence…</div>
                   )}
 
                   {entry.analysis && (

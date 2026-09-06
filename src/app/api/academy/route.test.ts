@@ -45,6 +45,7 @@ import { POST } from './route';
 const user = { id: 'user-1', clerkUserId: 'clerk-1', role: 'user' as const };
 const evidenceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const executionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const labId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 function request(body: unknown) {
   return new NextRequest('http://localhost/api/academy', {
@@ -58,10 +59,10 @@ function evidence(overrides: Record<string, unknown> = {}) {
   return {
     id: evidenceId,
     ownerId: user.id,
-    labInstanceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    labInstanceId: labId,
     executionId,
     source: 'interactive-terminal',
-    surface: 'ai-practitioner',
+    surface: 'academy',
     provenance: 'browser-observed',
     state: 'evidence_recorded',
     command: 'docker ps',
@@ -81,6 +82,23 @@ const evaluation = {
   feedback: 'Review the ledger-backed stderr before retrying.',
   nextStep: 'Inspect Docker service status.',
 };
+
+function evaluationRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    action: 'evaluate',
+    evidenceId,
+    labInstanceId: labId,
+    courseTitle: 'Docker Basics',
+    lessonTitle: 'List containers',
+    instruction: 'List the running containers.',
+    command: 'docker ps',
+    expected: 'A container table or an empty list.',
+    stdout: 'forged-client-success',
+    stderr: '',
+    exitCode: 0,
+    ...overrides,
+  };
+}
 
 describe('Academy checkpoint evidence evaluation', () => {
   beforeEach(() => {
@@ -103,25 +121,24 @@ describe('Academy checkpoint evidence evaluation', () => {
     mocks.captureProductEvent.mockResolvedValue(undefined);
   });
 
-  it('ignores resubmitted browser output and evaluates the persisted evidence record', async () => {
-    const response = await POST(request({
-      action: 'evaluate',
-      courseTitle: 'Docker Basics',
-      lessonTitle: 'List containers',
-      instruction: 'List the running containers.',
-      command: 'docker ps',
-      expected: 'A container table or an empty list.',
-      stdout: 'forged-client-success',
-      stderr: '',
-      exitCode: 0,
-    }));
+  it('requires exact lab and evidence identifiers before loading terminal evidence', async () => {
+    const response = await POST(request(evaluationRequest({ evidenceId: undefined })));
+
+    expect(response.status).toBe(400);
+    expect(mocks.getTerminalEvidenceForAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('ignores resubmitted browser output and evaluates the exact Academy evidence record', async () => {
+    const response = await POST(request(evaluationRequest()));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(mocks.getTerminalEvidenceForAnalysis).toHaveBeenCalledWith({
       ownerId: user.id,
+      labInstanceId: labId,
       command: 'docker ps',
-      surface: 'ai-practitioner',
+      surface: 'academy',
+      evidenceId,
     });
     expect(mocks.evaluateAcademyPractice).toHaveBeenCalledWith(expect.objectContaining({
       command: 'docker ps',
@@ -153,17 +170,7 @@ describe('Academy checkpoint evidence evaluation', () => {
       model: 'stored-model',
     }));
 
-    const response = await POST(request({
-      action: 'evaluate',
-      courseTitle: 'Docker Basics',
-      lessonTitle: 'List containers',
-      instruction: 'List the running containers.',
-      command: 'docker ps',
-      expected: 'A container table or an empty list.',
-      stdout: 'ignored',
-      stderr: '',
-      exitCode: 0,
-    }));
+    const response = await POST(request(evaluationRequest({ stdout: 'ignored' })));
     const body = await response.json();
 
     expect(response.status).toBe(200);
