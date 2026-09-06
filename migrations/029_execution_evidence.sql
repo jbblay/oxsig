@@ -91,13 +91,13 @@ BEGIN
         RAISE EXCEPTION 'deployment execution evidence could not resolve lab owner';
     END IF;
 
-    SELECT authorization.execution_started_at
+    SELECT da.execution_started_at
       INTO v_execution_started_at
-      FROM deployment_authorizations authorization
-     WHERE authorization.id = v_authorization_id
-       AND authorization.owner_id = v_owner_id
-       AND authorization.execution_id = v_execution_id
-       AND authorization.lab_instance_id = NEW.lab_instance_id;
+      FROM deployment_authorizations AS da
+     WHERE da.id = v_authorization_id
+       AND da.owner_id = v_owner_id
+       AND da.execution_id = v_execution_id
+       AND da.lab_instance_id = NEW.lab_instance_id;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'deployment execution evidence does not match the active authorization binding';
