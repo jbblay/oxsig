@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
@@ -72,6 +72,10 @@ describe('checkRateLimit failure policy', () => {
     mocks.isDatabaseConfigured.mockReset();
     mocks.query.mockReset();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('keeps the local availability fallback for ordinary endpoints', async () => {
