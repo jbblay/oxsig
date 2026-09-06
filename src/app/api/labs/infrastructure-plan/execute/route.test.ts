@@ -127,20 +127,41 @@ describe('POST /api/labs/infrastructure-plan/execute', () => {
     expect(mocks.executeControlledDeployment).not.toHaveBeenCalled();
   });
 
-  it('applies the shared cost-bearing lab provision bucket before reading the receipt', async () => {
+  it('applies ordinary abuse throttling before reading the receipt', async () => {
     const limited = NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
-    mocks.checkRateLimit.mockResolvedValue(limited);
+    mocks.checkRateLimit.mockResolvedValueOnce(limited);
 
     const response = await POST(request({ authorizationId, executionId }));
 
     expect(response.status).toBe(429);
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
     expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      { maxRequests: 20, windowMs: 60_000 },
+      user.id
+    );
+    expect(mocks.getDeploymentAuthorizationById).not.toHaveBeenCalled();
+  });
+
+  it('charges the shared cost-bearing bucket only after receipt and plan revalidation', async () => {
+    const limited = NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    mocks.checkRateLimit
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(limited);
+
+    const response = await POST(request({ authorizationId, executionId }));
+
+    expect(response.status).toBe(429);
+    expect(mocks.getDeploymentAuthorizationById).toHaveBeenCalledWith(user.id, authorizationId);
+    expect(mocks.getInfrastructureDesign).toHaveBeenCalledWith(user.id);
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
       expect.any(NextRequest),
       { maxRequests: 2, windowMs: 3_600_000 },
       user.id,
       'lab-provision'
     );
-    expect(mocks.getDeploymentAuthorizationById).not.toHaveBeenCalled();
+    expect(mocks.executeControlledDeployment).not.toHaveBeenCalled();
   });
 
   it('rejects an execution id that does not match the owner-bound authorization', async () => {
@@ -164,6 +185,7 @@ describe('POST /api/labs/infrastructure-plan/execute', () => {
 
     expect(response.status).toBe(409);
     expect(body.error).toContain('design changed');
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
     expect(mocks.executeControlledDeployment).not.toHaveBeenCalled();
   });
 
@@ -173,6 +195,13 @@ describe('POST /api/labs/infrastructure-plan/execute', () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.checkRateLimit).toHaveBeenNthCalledWith(
+      2,
+      expect.any(NextRequest),
+      { maxRequests: 2, windowMs: 3_600_000 },
+      user.id,
+      'lab-provision'
+    );
     expect(mocks.executeControlledDeployment).toHaveBeenCalledWith(expect.objectContaining({
       ownerId: user.id,
       distinctId: user.clerkUserId,
