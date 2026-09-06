@@ -60,6 +60,29 @@ function validDesign(): InfrastructureDesign {
   };
 }
 
+function authorizationRecord(overrides: Record<string, unknown> = {}) {
+  const design = validDesign();
+  const plan = compileDeploymentPlan(design);
+  const identity = getDeploymentPlanIdentity(plan);
+  const support = evaluateDeploymentExecutionSupport(plan);
+  return {
+    id: authorizationId,
+    ownerId: user.id,
+    planId: identity.planId,
+    planHash: identity.planHash,
+    planSnapshot: plan,
+    sourceDesignUpdatedAt: updatedAt,
+    executionSupport: support,
+    state: 'receipt_issued',
+    executionId,
+    receiptIssuedAt: updatedAt,
+    expiresAt: '2026-09-06T00:25:00.000Z',
+    createdAt: updatedAt,
+    updatedAt,
+    ...overrides,
+  };
+}
+
 function request(body: unknown) {
   return new NextRequest('http://localhost/api/labs/infrastructure-plan/execute', {
     method: 'POST',
@@ -80,25 +103,8 @@ describe('POST /api/labs/infrastructure-plan/execute', () => {
     mocks.getRequestMetadata.mockReturnValue({ userAgent: 'vitest' });
 
     const design = validDesign();
-    const plan = compileDeploymentPlan(design);
-    const identity = getDeploymentPlanIdentity(plan);
-    const support = evaluateDeploymentExecutionSupport(plan);
     mocks.getInfrastructureDesign.mockResolvedValue({ design, updatedAt });
-    mocks.getDeploymentAuthorizationById.mockResolvedValue({
-      id: authorizationId,
-      ownerId: user.id,
-      planId: identity.planId,
-      planHash: identity.planHash,
-      planSnapshot: plan,
-      sourceDesignUpdatedAt: updatedAt,
-      executionSupport: support,
-      state: 'receipt_issued',
-      executionId,
-      receiptIssuedAt: updatedAt,
-      expiresAt: '2026-09-06T00:25:00.000Z',
-      createdAt: updatedAt,
-      updatedAt,
-    });
+    mocks.getDeploymentAuthorizationById.mockResolvedValue(authorizationRecord());
     mocks.executeControlledDeployment.mockResolvedValue({
       instance: {
         id: 'lab-1',
@@ -162,6 +168,39 @@ describe('POST /api/labs/infrastructure-plan/execute', () => {
       'lab-provision'
     );
     expect(mocks.executeControlledDeployment).not.toHaveBeenCalled();
+  });
+
+  it('keeps idempotent retries cost-neutral after execution has started', async () => {
+    mocks.getDeploymentAuthorizationById.mockResolvedValue(
+      authorizationRecord({ state: 'executing', labInstanceId: 'lab-1', executionStartedAt: updatedAt })
+    );
+    mocks.executeControlledDeployment.mockResolvedValue({
+      instance: {
+        id: 'lab-1',
+        slug: 'ubuntu-security-lab',
+        name: 'Ubuntu Security Lab',
+        status: 'provisioning',
+        lastError: null,
+        createdAt: updatedAt,
+        startedAt: null,
+        expiresAt: '2026-09-06T01:10:00.000Z',
+        metadata: {},
+      },
+      executionId,
+      authorizationId,
+      alreadyStarted: true,
+    });
+
+    const response = await POST(request({ authorizationId, executionId }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      { maxRequests: 20, windowMs: 60_000 },
+      user.id
+    );
+    expect(mocks.executeControlledDeployment).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an execution id that does not match the owner-bound authorization', async () => {
