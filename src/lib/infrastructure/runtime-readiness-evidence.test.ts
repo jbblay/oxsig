@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeReadinessEvidenceRecord } from '@/lib/execution-evidence/runtime-readiness';
 import type { DeploymentAuthorizationRecord } from './deployment-authorization';
+
+vi.mock('server-only', () => ({}));
+
 import {
   buildRuntimeReadinessFacts,
   buildRuntimeReadinessPayload,
