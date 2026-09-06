@@ -7,6 +7,7 @@ import {
   assertOwnerResource,
   capabilitiesForLiveWorkspaceRole,
   getLiveWorkspaceAccess,
+  listOwnerAttachableResources,
   LiveWorkspaceError,
 } from './server';
 
@@ -98,6 +99,23 @@ describe('Live Workspace foundation policy', () => {
       targetUserId: 'member-2',
       role: 'instructor',
     })).rejects.toMatchObject({ code: 'INSTRUCTOR_ASSIGNMENT_DENIED', status: 403 });
+  });
+
+  it('discovers only owner-scoped resources and preserves their control surface', async () => {
+    const pool = poolWith((_sql, values) => {
+      expect(values).toEqual(['owner-1']);
+      return { rows: [
+        { id: 'lab-1', type: 'lab-instance', label: 'Ubuntu Lab', access_mode: 'terminal' },
+        { id: 'course-1', type: 'academy-course', label: 'Linux networking', access_mode: null },
+        { id: 'owner-1', type: 'infrastructure-design', label: 'Infrastructure design', access_mode: null },
+      ] };
+    });
+
+    await expect(listOwnerAttachableResources(pool, 'owner-1')).resolves.toEqual([
+      { id: 'lab-1', type: 'lab-instance', label: 'Ubuntu Lab', accessMode: 'terminal' },
+      { id: 'course-1', type: 'academy-course', label: 'Linux networking', accessMode: null },
+      { id: 'owner-1', type: 'infrastructure-design', label: 'Infrastructure design', accessMode: null },
+    ]);
   });
 
   it('rejects foreign lab resources instead of attaching them to the workspace owner', async () => {
