@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS live_workspace_control_requests (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (
         (status = 'pending' AND decided_at IS NULL AND decided_by IS NULL)
-        OR status <> 'pending'
+        OR (status <> 'pending' AND decided_at IS NOT NULL)
     )
 );
 
@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS live_workspace_control_leases (
         OR status <> 'revoked'
     )
 );
+
+-- Expired rows are converted to status='expired' before a new grant. This unique
+-- partial index is the database-level backstop preventing two simultaneous active
+-- controllers for the same attached lab surface.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_live_workspace_control_leases_one_active_controller
+    ON live_workspace_control_leases(resource_binding_id, surface)
+    WHERE status = 'active';
 
 CREATE INDEX IF NOT EXISTS idx_live_workspace_control_leases_workspace
     ON live_workspace_control_leases(collaboration_id, status, expires_at ASC);
