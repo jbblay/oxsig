@@ -60,8 +60,32 @@ function design(overrides: Partial<InfrastructureDesign> = {}): InfrastructureDe
   };
 }
 
+function bareUbuntuDesign(): InfrastructureDesign {
+  return {
+    version: 1,
+    nodes: [
+      {
+        id: 'server-1',
+        type: 'infrastructure',
+        position: { x: 0, y: 0 },
+        data: {
+          kind: 'server',
+          label: 'Ubuntu Server',
+          runtimeProfile: {
+            profileId: 'ubuntu-24-04',
+            architecture: 'x86_64',
+            resourceClass: 'lab-small',
+            accessMode: 'terminal',
+          },
+        },
+      },
+    ],
+    edges: [],
+  };
+}
+
 describe('compileDeploymentPlan', () => {
-  it('turns a valid blueprint into a deterministic proposal without executing it', () => {
+  it('turns a valid multi-node blueprint into deterministic design intent with explicit adapter blockers', () => {
     const first = compileDeploymentPlan(design());
     const second = compileDeploymentPlan(design());
 
@@ -103,8 +127,23 @@ describe('compileDeploymentPlan', () => {
     });
     expect(first.readiness.executable).toBe(false);
     expect(first.readiness.blockers.join(' ')).not.toContain('need an explicit operating-system/runtime profile');
-    expect(first.readiness.blockers.join(' ')).toContain('proposal-only');
+    expect(first.readiness.blockers.join(' ')).toContain('exactly one VM workload');
+    expect(first.readiness.blockers.join(' ')).toContain('router, switch, or firewall');
+    expect(first.readiness.blockers.join(' ')).toContain('explicit topology links');
+    expect(first.readiness.blockers.join(' ')).toContain('custom network segments');
+    expect(first.readiness.blockers.join(' ')).not.toContain('proposal-only');
     expect(first.actions.every((action) => action.executableNow === false)).toBe(true);
+  });
+
+  it('marks a bare supported one-VM plan adapter-ready without bypassing authorization', () => {
+    const plan = compileDeploymentPlan(bareUbuntuDesign());
+
+    expect(plan.summary).toMatchObject({ workloads: 1, networkFunctions: 0, segments: 0, links: 0 });
+    expect(plan.readiness.executable).toBe(true);
+    expect(plan.readiness.blockers).toEqual([]);
+    expect(plan.actions.every((action) => action.executableNow === false)).toBe(true);
+    expect(plan.actions.find((action) => action.type === 'provision-workload')?.blocker).toContain('authorization');
+    expect(plan.actions.find((action) => action.type === 'provision-workload')?.blocker).toContain('one-time execution receipt');
   });
 
   it('keeps a missing runtime profile explicit instead of inferring an operating system', () => {

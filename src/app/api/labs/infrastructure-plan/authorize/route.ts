@@ -55,6 +55,16 @@ export async function POST(request: NextRequest) {
       }
 
       const executionSupport = evaluateDeploymentExecutionSupport(plan);
+      if (!executionSupport.supported) {
+        return NextResponse.json(
+          {
+            error: 'This deployment plan is outside the current controlled execution adapter scope.',
+            reasons: executionSupport.reasons,
+          },
+          { status: 409, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+
       const authorization = await createDeploymentAuthorization({
         ownerId: user.id,
         planId: identity.planId,

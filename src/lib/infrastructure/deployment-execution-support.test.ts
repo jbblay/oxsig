@@ -50,11 +50,11 @@ describe('evaluateDeploymentExecutionSupport', () => {
 
     expect(support.supported).toBe(false);
     expect(support.adapter).toBe('none');
-    expect(support.reasons.join(' ')).toContain('hostname');
+    expect(support.reasons.join(' ')).toContain('hostnames');
     expect(support.reasons.join(' ')).toContain('role/service');
   });
 
-  it('blocks multi-node topology execution until orchestration adapters exist', () => {
+  it('keeps multi-node topology outside the current one-VM execution contract', () => {
     const first = ubuntuServer('server-1');
     const second = ubuntuServer('server-2');
     second.position = { x: 200, y: 0 };
@@ -66,6 +66,6 @@ describe('evaluateDeploymentExecutionSupport', () => {
 
     expect(support.supported).toBe(false);
     expect(support.reasons.join(' ')).toContain('exactly one VM workload');
-    expect(support.reasons.join(' ')).toContain('Topology link orchestration');
+    expect(support.reasons.join(' ')).toContain('explicit topology links');
   });
 });

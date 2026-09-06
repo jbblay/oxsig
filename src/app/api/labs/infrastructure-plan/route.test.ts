@@ -22,7 +22,7 @@ function request() {
   return new NextRequest('http://localhost/api/labs/infrastructure-plan', { method: 'POST' });
 }
 
-function validDesign(): InfrastructureDesign {
+function supportedDesign(): InfrastructureDesign {
   return {
     version: 1,
     nodes: [
@@ -32,12 +32,13 @@ function validDesign(): InfrastructureDesign {
         position: { x: 0, y: 0 },
         data: {
           kind: 'server',
-          label: 'Server-01',
-          hostname: 'dc01.lab.local',
-          ipv4: '10.0.0.10',
-          cidr: '10.0.0.0/24',
-          gateway: '10.0.0.1',
-          role: 'AD DS + DNS',
+          label: 'Ubuntu Server',
+          runtimeProfile: {
+            profileId: 'ubuntu-24-04',
+            architecture: 'x86_64',
+            resourceClass: 'lab-small',
+            accessMode: 'terminal',
+          },
         },
       },
     ],
@@ -55,7 +56,7 @@ describe('POST /api/labs/infrastructure-plan', () => {
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.getInfrastructureDesign.mockResolvedValue({
-      design: validDesign(),
+      design: supportedDesign(),
       updatedAt: '2026-09-06T00:00:00.000Z',
     });
   });
@@ -106,19 +107,24 @@ describe('POST /api/labs/infrastructure-plan', () => {
   });
 
   it('refuses to plan a design with semantic validation errors', async () => {
-    const invalid = validDesign();
-    invalid.nodes.push({
-      id: 'client-1',
-      type: 'infrastructure',
-      position: { x: 200, y: 0 },
-      data: {
-        kind: 'client',
-        label: 'Client-01',
-        ipv4: '10.0.0.10',
-        cidr: '10.0.0.0/24',
-      },
-    });
-    invalid.edges.push({ id: 'edge-1', source: 'server-1', target: 'client-1' });
+    const invalid: InfrastructureDesign = {
+      version: 1,
+      nodes: [
+        {
+          id: 'server-1',
+          type: 'infrastructure',
+          position: { x: 0, y: 0 },
+          data: { kind: 'server', label: 'Server-01', ipv4: '10.0.0.10', cidr: '10.0.0.0/24' },
+        },
+        {
+          id: 'client-1',
+          type: 'infrastructure',
+          position: { x: 200, y: 0 },
+          data: { kind: 'client', label: 'Client-01', ipv4: '10.0.0.10', cidr: '10.0.0.0/24' },
+        },
+      ],
+      edges: [{ id: 'edge-1', source: 'server-1', target: 'client-1' }],
+    };
     mocks.getInfrastructureDesign.mockResolvedValue({ design: invalid, updatedAt: '2026-09-06T00:00:00.000Z' });
 
     const response = await POST(request());
@@ -129,7 +135,7 @@ describe('POST /api/labs/infrastructure-plan', () => {
     expect(body.validation.errors.some((issue: { code: string }) => issue.code === 'duplicate-ipv4')).toBe(true);
   });
 
-  it('returns a stable plan identity and a no-store proposal without executing anything', async () => {
+  it('returns stable identity and controlled adapter eligibility without authorizing or executing', async () => {
     const first = await POST(request());
     const firstBody = await first.json();
     const second = await POST(request());
@@ -143,7 +149,17 @@ describe('POST /api/labs/infrastructure-plan', () => {
     expect(firstBody.planHash).toBe(secondBody.planHash);
     expect(firstBody.sourceDesignUpdatedAt).toBe('2026-09-06T00:00:00.000Z');
     expect(firstBody.plan.summary.workloads).toBe(1);
-    expect(firstBody.plan.readiness.executable).toBe(false);
-    expect(firstBody.plan.readiness.blockers.join(' ')).toContain('proposal-only');
+    expect(firstBody.plan.readiness.executable).toBe(true);
+    expect(firstBody.plan.readiness.blockers).toEqual([]);
+    expect(firstBody.executionSupport).toEqual({
+      supported: true,
+      adapter: 'existing-lab-vm',
+      reasons: [],
+      target: {
+        nodeId: 'server-1',
+        labSlug: 'ubuntu-security-lab',
+        accessMode: 'terminal',
+      },
+    });
   });
 });

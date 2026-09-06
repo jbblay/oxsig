@@ -241,7 +241,7 @@ export async function claimDeploymentExecutionReceipt(
       !authorization.executionSupport.target
     ) {
       throw new DeploymentAuthorizationConflictError(
-        authorization.executionSupport.reasons[0] || 'The current runtime cannot execute this authorized plan yet.'
+        authorization.executionSupport.reasons[0] || 'The current controlled runtime cannot execute this authorized plan.'
       );
     }
 

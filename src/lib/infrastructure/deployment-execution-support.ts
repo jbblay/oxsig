@@ -16,16 +16,16 @@ export function evaluateDeploymentExecutionSupport(plan: DeploymentPlan): Deploy
   const reasons: string[] = [];
 
   if (plan.workloads.length !== 1) {
-    reasons.push('The current Cyber Lab runtime can execute exactly one VM workload per account.');
+    reasons.push('The controlled deployment adapter accepts exactly one VM workload per execution receipt.');
   }
   if (plan.networkFunctions.length > 0) {
-    reasons.push('Router, switch, and firewall execution adapters are not implemented yet.');
+    reasons.push('The controlled deployment adapter does not execute router, switch, or firewall nodes.');
   }
   if (plan.links.length > 0) {
-    reasons.push('Topology link orchestration is not implemented yet.');
+    reasons.push('The controlled deployment adapter does not execute explicit topology links.');
   }
   if (plan.segments.length > 0) {
-    reasons.push('Custom network-segment orchestration is not implemented yet.');
+    reasons.push('The controlled deployment adapter does not allocate custom network segments.');
   }
 
   const workload = plan.workloads[0];
@@ -50,10 +50,10 @@ export function evaluateDeploymentExecutionSupport(plan: DeploymentPlan): Deploy
     reasons.push(`The current ${profile.label} adapter only guarantees the ${profile.recommendedResourceClass} resource class.`);
   }
 
-  if (workload.hostname) reasons.push('The current VM adapter does not apply a blueprint hostname yet.');
-  if (workload.role) reasons.push('The current VM adapter does not apply role/service configuration yet.');
+  if (workload.hostname) reasons.push('The controlled VM adapter does not apply blueprint hostnames.');
+  if (workload.role) reasons.push('The controlled VM adapter does not apply role/service configuration.');
   if (workload.ipv4 || workload.cidr || workload.gateway) {
-    reasons.push('The current VM adapter does not apply blueprint static-network addressing yet.');
+    reasons.push('The controlled VM adapter uses its configured provider network and does not apply blueprint static-network addressing.');
   }
 
   if (reasons.length > 0 || !workload.runtimeAdapter.labSlug) {
