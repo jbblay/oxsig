@@ -27,7 +27,7 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
+import AcademyPracticeWorkspace from '@/components/academy/AcademyPracticeWorkspace';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,11 +40,7 @@ import type {
 } from '@/lib/academy/types';
 import {
   AI_TERMINAL_QUERY_EVENT,
-  AI_TERMINAL_RESULT_EVENT,
-  AI_TERMINAL_RUN_EVENT,
   AI_TERMINAL_STATE_EVENT,
-  type AiTerminalRunRequest,
-  type AiTerminalRunResult,
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
 import { getLabsSnapshot } from '@/lib/labs/client';
@@ -82,34 +78,6 @@ async function apiError(response: Response, fallback: string) {
   return body?.error || fallback;
 }
 
-function uid() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function executeInVisibleTerminal(labInstanceId: string, command: string) {
-  return new Promise<AiTerminalRunResult>((resolve, reject) => {
-    const requestId = uid();
-    const timeout = window.setTimeout(() => {
-      window.removeEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
-      reject(new Error('The Academy terminal did not return the checkpoint result in time.'));
-    }, 50_000);
-
-    const onResult = (event: Event) => {
-      const result = (event as CustomEvent<AiTerminalRunResult>).detail;
-      if (!result || result.requestId !== requestId || result.labInstanceId !== labInstanceId) return;
-      window.clearTimeout(timeout);
-      window.removeEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
-      resolve(result);
-    };
-
-    window.addEventListener(AI_TERMINAL_RESULT_EVENT, onResult);
-    window.dispatchEvent(new CustomEvent<AiTerminalRunRequest>(AI_TERMINAL_RUN_EVENT, {
-      detail: { requestId, labInstanceId, command, surface: 'academy' },
-    }));
-  });
-}
-
 function lessonContext(lesson: AcademyLesson) {
   return [
     lesson.summary,
@@ -144,7 +112,7 @@ export default function AcademyPage() {
   const [course, setCourse] = React.useState<AcademyCourse | null>(null);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [completed, setCompleted] = React.useState<Set<string>>(() => new Set());
-  const [busy, setBusy] = React.useState<'generate' | 'ask' | 'practice' | null>(null);
+  const [busy, setBusy] = React.useState<'generate' | 'ask' | null>(null);
   const [question, setQuestion] = React.useState('');
   const [qa, setQa] = React.useState<Record<string, LessonQa[]>>({});
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
@@ -294,86 +262,6 @@ export default function AcademyPage() {
     }
   }
 
-  async function runPractice() {
-    if (!course || !activeLesson?.practice) return;
-    if (!runningLab) {
-      toast.error('Start a Cyber Lab before running this checkpoint.');
-      return;
-    }
-    if (!terminalConnected) {
-      toast.error('Wait for the Academy terminal to connect before running this checkpoint.');
-      return;
-    }
-
-    voiceInput.cancel();
-    stopVoice();
-    const practice = activeLesson.practice;
-    setBusy('practice');
-    try {
-      toast.info('Binding the approved checkpoint to the live terminal session and running it visibly…');
-      const terminalResult = await executeInVisibleTerminal(runningLab.id, practice.command);
-      if (terminalResult.error) throw new Error(terminalResult.error);
-      if (
-        terminalResult.surface !== 'academy' ||
-        !terminalResult.executionId ||
-        !terminalResult.evidenceId ||
-        !terminalResult.executionReceiptId ||
-        !terminalResult.terminalSessionId ||
-        !terminalResult.provenance ||
-        (terminalResult.risk !== 'read-only' && terminalResult.risk !== 'changes-system')
-      ) {
-        throw new Error('The Academy terminal returned incomplete bound execution evidence.');
-      }
-
-      const execution: AcademyExecution = {
-        command: terminalResult.command,
-        stdout: terminalResult.stdout,
-        stderr: terminalResult.stderr,
-        exitCode: terminalResult.exitCode,
-        risk: terminalResult.risk,
-        executionId: terminalResult.executionId,
-        evidenceId: terminalResult.evidenceId,
-        provenance: terminalResult.provenance,
-        executionReceiptId: terminalResult.executionReceiptId,
-        terminalSessionId: terminalResult.terminalSessionId,
-        surface: 'academy',
-      };
-      setPracticeResults((current) => ({ ...current, [activeLesson.id]: { execution } }));
-
-      const evaluationToken = await getCsrfToken();
-      const evaluationResponse = await fetch('/api/academy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': evaluationToken },
-        body: JSON.stringify({
-          action: 'evaluate',
-          evidenceId: execution.evidenceId,
-          labInstanceId: runningLab.id,
-          courseTitle: course.title,
-          lessonTitle: activeLesson.title,
-          instruction: practice.instruction,
-          command: execution.command,
-          expected: practice.expected,
-          stdout: execution.stdout,
-          stderr: execution.stderr,
-          exitCode: execution.exitCode,
-        }),
-      });
-      if (!evaluationResponse.ok) throw new Error(await apiError(evaluationResponse, 'The checkpoint ran, but the Academy instructor could not evaluate it'));
-      const evaluationBody = await evaluationResponse.json() as { evaluation: AcademyPracticeEvaluation };
-      setPracticeResults((current) => ({
-        ...current,
-        [activeLesson.id]: { execution, evaluation: evaluationBody.evaluation },
-      }));
-      setInstructorCollapsed(false);
-      if (evaluationBody.evaluation.status === 'passed') toast.success('Checkpoint verified from exact bound terminal evidence.');
-      else toast.info('The instructor found something to review in the exact terminal evidence.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Academy checkpoint execution failed');
-    } finally {
-      setBusy(null);
-    }
-  }
-
   function toggleNarration() {
     if (!course || !activeLesson) return;
 
@@ -459,7 +347,7 @@ export default function AcademyPage() {
                 disabled={busy === 'generate'}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                <p className="text-xs text-muted-foreground">Roadmap → instructor → visual model → real terminal → evidence → feedback.</p>
+                <p className="text-xs text-muted-foreground">Roadmap → instructor → visual model → predict → real terminal → evidence → explain → improve.</p>
                 <Button onClick={() => void generateCourse()} disabled={busy === 'generate' || prompt.trim().length < 3}>
                   {busy === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   Build my course
@@ -602,18 +490,17 @@ export default function AcademyPage() {
                   </div>
 
                   {runningLab ? (
-                    <div className="rounded-2xl border p-3 sm:p-4">
-                      <InteractiveSsmTerminal key={runningLab.id} labInstanceId={runningLab.id} machineLabel={runningLab.name} />
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                        <p className="max-w-2xl text-[11px] leading-5 text-muted-foreground">
-                          The checkpoint command above is never run silently. Clicking the button explicitly authorizes it, binds a one-time receipt to this exact active SSM session, runs it visibly, persists browser-observed output, and evaluates only that exact evidence record.
-                        </p>
-                        <Button onClick={() => void runPractice()} disabled={busy === 'practice' || !terminalConnected}>
-                          {busy === 'practice' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                          {busy === 'practice' ? 'Running & evaluating…' : terminalConnected ? 'Approve & run checkpoint' : 'Waiting for terminal'}
-                        </Button>
-                      </div>
-                    </div>
+                    <AcademyPracticeWorkspace
+                      key={`${runningLab.id}:${activeLesson.id}`}
+                      course={course}
+                      lesson={activeLesson as AcademyLesson & { practice: NonNullable<AcademyLesson['practice']> }}
+                      runningLab={runningLab}
+                      terminalConnected={terminalConnected}
+                      onResult={(result) => {
+                        setPracticeResults((current) => ({ ...current, [activeLesson.id]: result }));
+                        setInstructorCollapsed(false);
+                      }}
+                    />
                   ) : (
                     <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/10 p-6 text-center">
                       {loadingLab ? <Loader2 className="mb-3 h-7 w-7 animate-spin text-primary" /> : <Terminal className="mb-3 h-8 w-8 text-primary" />}
