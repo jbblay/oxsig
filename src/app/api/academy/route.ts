@@ -14,6 +14,11 @@ import {
   recordAcademyPractice,
   recordAcademyQuestion,
 } from '@/lib/academy/persistence';
+import {
+  ExecutionEvidenceConflictError,
+  getTerminalEvidenceForAnalysis,
+  storeExecutionEvidenceAnalysis,
+} from '@/lib/execution-evidence/server';
 
 export const runtime = 'nodejs';
 
@@ -62,35 +67,89 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ answer });
       }
 
+      // Keep the browser evidence fields in the request schema for compatibility,
+      // but evaluate only the one-time owner-bound record persisted by Oxsig after
+      // the visible terminal checkpoint completed.
+      const evidence = await getTerminalEvidenceForAnalysis({
+        ownerId: user.id,
+        command: parsed.data.command,
+        surface: 'ai-practitioner',
+      });
+
+      if (evidence.state === 'analyzed') {
+        if (evidence.analysisKind !== 'academy' || !evidence.analysis) {
+          throw new ExecutionEvidenceConflictError(
+            'This execution evidence was already analyzed by another learning surface.',
+            'EVIDENCE_ALREADY_ANALYZED'
+          );
+        }
+        return NextResponse.json({
+          evaluation: evidence.analysis,
+          evidence: {
+            id: evidence.id,
+            executionId: evidence.executionId,
+            provenance: evidence.provenance,
+            state: evidence.state,
+          },
+        });
+      }
+
+      const command = evidence.command || parsed.data.command;
+      const exitCode = evidence.exitCode ?? -1;
       const evaluation = await evaluateAcademyPractice({
         courseTitle: parsed.data.courseTitle,
         lessonTitle: parsed.data.lessonTitle,
         instruction: parsed.data.instruction,
-        command: parsed.data.command,
+        command,
         expected: parsed.data.expected,
-        stdout: parsed.data.stdout,
-        stderr: parsed.data.stderr,
-        exitCode: parsed.data.exitCode,
+        stdout: evidence.stdout,
+        stderr: evidence.stderr,
+        exitCode,
       });
+
+      const model = process.env.OXSIG_AI_MODEL?.trim() || 'gpt-5.4-mini';
+      const analyzedEvidence = await storeExecutionEvidenceAnalysis({
+        ownerId: user.id,
+        evidenceId: evidence.id,
+        analysisKind: 'academy',
+        analysis: evaluation as unknown as Record<string, unknown>,
+        model,
+      });
+
       await recordAcademyPractice({
         ownerId: user.id,
         courseTitle: parsed.data.courseTitle,
         lessonTitle: parsed.data.lessonTitle,
-        command: parsed.data.command,
-        stdout: parsed.data.stdout,
-        stderr: parsed.data.stderr,
-        exitCode: parsed.data.exitCode,
+        command,
+        stdout: evidence.stdout,
+        stderr: evidence.stderr,
+        exitCode,
         evaluation,
       });
       await captureProductEvent({
         distinctId: user.clerkUserId || user.id,
         event: 'academy_checkpoint_evaluated',
         properties: {
-          exit_code: parsed.data.exitCode,
+          exit_code: exitCode,
+          evidence_provenance: evidence.provenance,
         },
       });
-      return NextResponse.json({ evaluation });
+      return NextResponse.json({
+        evaluation,
+        evidence: {
+          id: analyzedEvidence.id,
+          executionId: analyzedEvidence.executionId,
+          provenance: analyzedEvidence.provenance,
+          state: analyzedEvidence.state,
+        },
+      });
     } catch (error) {
+      if (error instanceof ExecutionEvidenceConflictError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: 409, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
       const message = error instanceof Error ? error.message : 'AI Academy request failed';
       return NextResponse.json({ error: message.slice(0, 500) }, { status: 502 });
     }
