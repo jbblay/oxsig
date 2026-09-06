@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Clock3, Loader2, Monitor, ShieldCheck, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
+import { SharedWorkspaceTerminal } from '@/components/live-workspace/SharedWorkspaceTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -123,7 +124,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
             <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Control leases</CardTitle>
             <CardDescription>Request, grant and revoke time-bounded authorization. Membership alone never grants machine input.</CardDescription>
           </div>
-          <Badge variant="outline">authorization only · transport disconnected</Badge>
+          <Badge variant="outline">Shared terminal transport v1</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -137,6 +138,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
             : capabilities.eligibleForDesktopControl;
           const canRequest = capabilities.requestControl && eligible && !lease && !ownPending;
           const canRevoke = Boolean(lease && (capabilities.grantControl || lease.participantId === viewerId));
+          const ownsTerminalLease = Boolean(lease && lease.participantId === viewerId && lease.surface === 'terminal');
 
           return (
             <div key={resource.id} className="rounded-xl border p-3">
@@ -185,7 +187,23 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                   <Badge variant="outline">observe only</Badge>
                 )}
               </div>
-              {lease && <p className="mt-2 text-xs text-muted-foreground">Controller: {lease.participantName}. The lease is authoritative authorization; this PR does not forward terminal, keyboard, or mouse input.</p>}
+              {lease && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Controller: {lease.participantName}. {lease.surface === 'terminal'
+                    ? 'Only the authenticated lease holder can open and send input through the shared terminal transport.'
+                    : 'Desktop transport is not connected in this slice.'}
+                </p>
+              )}
+              {ownsTerminalLease && lease && (
+                <SharedWorkspaceTerminal
+                  workspaceId={workspaceId}
+                  bindingId={resource.id}
+                  labInstanceId={resource.resourceId}
+                  machineLabel={resource.label}
+                  leaseExpiresAt={lease.expiresAt}
+                  onAuthorizationChanged={onRefresh}
+                />
+              )}
             </div>
           );
         })}

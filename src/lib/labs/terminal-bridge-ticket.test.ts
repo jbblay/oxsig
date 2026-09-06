@@ -32,6 +32,45 @@ describe('terminal bridge tickets', () => {
     });
   });
 
+  it('encrypts the exact Live Workspace control binding without exposing it in the URL ticket', () => {
+    const workspaceControl = {
+      collaborationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      participantId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      bindingId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      labInstanceId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      leaseId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      surface: 'terminal',
+    };
+    const ticket = createTerminalBridgeTicket({
+      streamUrl: 'wss://ssmmessages.eu-central-1.amazonaws.com/v1/data-channel/session-shared?role=publish_subscribe',
+      region: 'eu-central-1',
+      sessionId: 'session-shared',
+      target: 'i-0123456789abcdef0',
+      workspaceControl,
+    });
+
+    expect(ticket).not.toContain(workspaceControl.collaborationId);
+    expect(ticket).not.toContain(workspaceControl.participantId);
+    expect(ticket).not.toContain(workspaceControl.leaseId);
+    expect(verifyTerminalBridgeTicket(ticket)).toMatchObject({ workspaceControl });
+  });
+
+  it('rejects an incomplete Live Workspace control binding before minting a ticket', () => {
+    expect(() => createTerminalBridgeTicket({
+      streamUrl: 'wss://ssmmessages.eu-central-1.amazonaws.com/v1/data-channel/session-shared?role=publish_subscribe',
+      region: 'eu-central-1',
+      sessionId: 'session-shared',
+      target: 'i-0123456789abcdef0',
+      workspaceControl: {
+        collaborationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        participantId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        bindingId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        labInstanceId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        surface: 'terminal',
+      },
+    })).toThrow('Invalid Live Workspace terminal control binding');
+  });
+
   it('rejects a modified ticket', () => {
     const ticket = createTerminalBridgeTicket({
       streamUrl: 'wss://ssmmessages.eu-central-1.amazonaws.com/v1/data-channel/session-123?role=publish_subscribe',

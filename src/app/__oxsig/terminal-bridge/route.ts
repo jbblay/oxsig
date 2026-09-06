@@ -10,13 +10,20 @@ import {
 import * as Sentry from '@sentry/nextjs';
 import { WebSocket } from 'ws';
 import { getPool } from '@/lib/db/pool';
+import { terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
+import { terminalFrameRequiresControlRevalidation } from '@/lib/labs/terminal-bridge-frame';
 import { verifyTerminalBridgeTicket } from '@/lib/labs/terminal-bridge-ticket.js';
+import {
+  assertLiveWorkspaceTerminalAuthorization,
+  type LiveWorkspaceTerminalAuthorization,
+} from '@/lib/live-workspace/terminal';
 
 export const runtime = 'nodejs';
 
 const MAX_PENDING_BYTES = 1024 * 1024;
 const TICKET_RETENTION_MS = 90_000;
 const AWS_PING_INTERVAL_MS = 5 * 60_000;
+const CONTROL_REVALIDATION_INTERVAL_MS = 2_000;
 
 type BridgeTicketPayload = {
   streamUrl: string;
@@ -24,6 +31,7 @@ type BridgeTicketPayload = {
   sessionId: string;
   target: string;
   exp: number;
+  workspaceControl?: LiveWorkspaceTerminalAuthorization;
 };
 
 function capture(error: unknown, payload?: Partial<BridgeTicketPayload>) {
@@ -32,10 +40,16 @@ function capture(error: unknown, payload?: Partial<BridgeTicketPayload>) {
     scope.setTag('oxsig.runtime', 'vercel-websocket');
     scope.setTag('oxsig.component', 'terminal-bridge');
     if (payload?.sessionId) scope.setTag('oxsig.session_id', payload.sessionId);
+    if (payload?.workspaceControl?.collaborationId) scope.setTag('oxsig.live_workspace', payload.workspaceControl.collaborationId);
+    if (payload?.workspaceControl?.leaseId) scope.setTag('oxsig.control_lease', payload.workspaceControl.leaseId);
     scope.setContext('terminalBridge', {
       sessionId: payload?.sessionId,
       target: payload?.target,
       region: payload?.region,
+      collaborationId: payload?.workspaceControl?.collaborationId,
+      bindingId: payload?.workspaceControl?.bindingId,
+      labInstanceId: payload?.workspaceControl?.labInstanceId,
+      controlLeaseId: payload?.workspaceControl?.leaseId,
     });
     Sentry.captureException(exception);
   });
@@ -101,6 +115,14 @@ async function signedAwsHeaders(streamUrl: string, region: string) {
   }
 }
 
+async function requireWorkspaceControl(payload: BridgeTicketPayload) {
+  if (!payload.workspaceControl) return;
+  await assertLiveWorkspaceTerminalAuthorization({
+    pool: getPool(),
+    authorization: payload.workspaceControl,
+  });
+}
+
 async function consumeTicket(ticket: string): Promise<BridgeTicketPayload> {
   const payload = verifyTerminalBridgeTicket(ticket) as BridgeTicketPayload;
   validateAwsStreamUrl(payload.streamUrl, payload.region);
@@ -119,6 +141,8 @@ async function consumeTicket(ticket: string): Promise<BridgeTicketPayload> {
     }
     throw error;
   }
+
+  await requireWorkspaceControl(payload);
 
   void getPool()
     .query(`DELETE FROM terminal_bridge_ticket_uses WHERE expires_at <= NOW()`)
@@ -157,11 +181,12 @@ export function GET(request: Request) {
   const ticket = new URL(request.url).searchParams.get('ticket');
   if (!ticket) return new Response('Unauthorized', { status: 401 });
 
+  let preverifiedPayload: BridgeTicketPayload;
   try {
     // Reject malformed/expired tickets before upgrading. The one-time replay claim
-    // happens after upgrade so listeners can be attached synchronously, as required
-    // by Vercel's WebSocket runtime.
-    verifyTerminalBridgeTicket(ticket);
+    // and live workspace authorization happen after upgrade so listeners can be
+    // attached synchronously, as required by Vercel's WebSocket runtime.
+    preverifiedPayload = verifyTerminalBridgeTicket(ticket) as BridgeTicketPayload;
   } catch {
     return new Response('Unauthorized', { status: 401 });
   }
@@ -169,45 +194,87 @@ export function GET(request: Request) {
   return experimental_upgradeWebSocket((browserSocket) => {
     let awsSocket: WebSocket | null = null;
     let pingTimer: ReturnType<typeof setInterval> | null = null;
+    let controlTimer: ReturnType<typeof setInterval> | null = null;
+    let controlCheckInFlight = false;
     let pendingBytes = 0;
     const pending: Array<{ data: WebSocketData; isBinary: boolean }> = [];
-    let payload: BridgeTicketPayload | undefined;
+    let payload: BridgeTicketPayload = preverifiedPayload;
     let closed = false;
+    let sharedTerminationStarted = false;
+    let browserForwardChain: Promise<void> = Promise.resolve();
 
-    const stopPings = () => {
+    const stopTimers = () => {
       if (pingTimer) clearInterval(pingTimer);
+      if (controlTimer) clearInterval(controlTimer);
       pingTimer = null;
+      controlTimer = null;
+    };
+
+    const terminateSharedSession = () => {
+      if (!payload.workspaceControl || sharedTerminationStarted) return;
+      sharedTerminationStarted = true;
+      void terminateInteractiveLabSession(payload.target, payload.sessionId).catch((error) => {
+        console.warn('[oxsig] Shared terminal session cleanup failed:', error);
+        capture(error, payload);
+      });
     };
 
     const fail = (error: unknown, browserCode = 1011, browserReason = 'AWS Session Manager bridge failed') => {
       if (closed) return;
       closed = true;
-      stopPings();
+      stopTimers();
       console.error('[oxsig] Vercel terminal bridge failed:', error);
       capture(error, payload);
       closeQuietly(browserSocket, browserCode, browserReason);
       if (awsSocket) closeQuietly(awsSocket, 1011, 'Bridge failed');
+      terminateSharedSession();
+    };
+
+    const revalidateSharedControl = async () => {
+      if (!payload.workspaceControl || controlCheckInFlight || closed) return;
+      controlCheckInFlight = true;
+      try {
+        await requireWorkspaceControl(payload);
+      } finally {
+        controlCheckInFlight = false;
+      }
     };
 
     // Register browser listeners synchronously before any asynchronous ticket or
-    // AWS work so an immediate SSM token/data frame cannot be dropped.
+    // AWS work so an immediate SSM token/data frame cannot be dropped. Shared
+    // input_stream_data frames are serialized through a live lease check before
+    // they can be queued or forwarded upstream.
     browserSocket.on('message', (data: WebSocketData, isBinary: boolean) => {
-      if (awsSocket?.readyState === WebSocket.OPEN) {
-        awsSocket.send(data, { binary: isBinary });
-        return;
-      }
-      pendingBytes += dataBytes(data);
-      if (pendingBytes > MAX_PENDING_BYTES) {
-        fail(new Error('Browser sent too much data before the AWS channel opened.'), 1009, 'Pending terminal data exceeded the limit');
-        return;
-      }
-      pending.push({ data, isBinary });
+      browserForwardChain = browserForwardChain.then(async () => {
+        if (closed) return;
+        if (payload.workspaceControl && terminalFrameRequiresControlRevalidation(data)) {
+          await requireWorkspaceControl(payload);
+        }
+        if (closed) return;
+        if (awsSocket?.readyState === WebSocket.OPEN) {
+          awsSocket.send(data, { binary: isBinary });
+          return;
+        }
+        pendingBytes += dataBytes(data);
+        if (pendingBytes > MAX_PENDING_BYTES) {
+          throw new Error('Browser sent too much data before the AWS channel opened.');
+        }
+        pending.push({ data, isBinary });
+      }).catch((error) => {
+        const authorizationFailure = payload.workspaceControl && error instanceof Error && /lease|control|workspace|participant|attached/i.test(error.message);
+        fail(
+          error,
+          authorizationFailure ? 1008 : 1011,
+          authorizationFailure ? 'Shared terminal control lease is no longer active' : 'Terminal bridge input failed'
+        );
+      });
     });
 
     browserSocket.on('close', () => {
       closed = true;
-      stopPings();
+      stopTimers();
       if (awsSocket) closeQuietly(awsSocket, 1000, 'Browser disconnected');
+      terminateSharedSession();
     });
     browserSocket.on('error', (error: unknown) => {
       fail(error, 1011, 'Browser WebSocket error');
@@ -217,6 +284,15 @@ export function GET(request: Request) {
       try {
         payload = await consumeTicket(ticket);
         if (closed || browserSocket.readyState !== WebSocket.OPEN) return;
+
+        if (payload.workspaceControl) {
+          controlTimer = setInterval(() => {
+            void revalidateSharedControl().catch((error) => {
+              fail(error, 1008, 'Shared terminal control lease is no longer active');
+            });
+          }, CONTROL_REVALIDATION_INTERVAL_MS);
+          controlTimer.unref?.();
+        }
 
         const headers = await signedAwsHeaders(payload.streamUrl, payload.region);
         if (closed || browserSocket.readyState !== WebSocket.OPEN) return;
@@ -247,14 +323,14 @@ export function GET(request: Request) {
         });
         awsSocket.on('close', (code, reason) => {
           closed = true;
-          stopPings();
+          stopTimers();
           closeQuietly(browserSocket, code === 1000 ? 1000 : 1011, reason.toString() || 'AWS channel closed');
         });
         awsSocket.on('error', (error) => {
           fail(error);
         });
       } catch (error) {
-        const replayOrAuthFailure = error instanceof Error && /ticket|Unauthorized|expired/i.test(error.message);
+        const replayOrAuthFailure = error instanceof Error && /ticket|Unauthorized|expired|lease|control|workspace|participant|attached/i.test(error.message);
         fail(error, replayOrAuthFailure ? 1008 : 1011, replayOrAuthFailure ? 'Terminal bridge authorization failed' : 'Terminal bridge setup failed');
       }
     })();

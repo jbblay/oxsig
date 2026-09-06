@@ -210,7 +210,7 @@ export default function LiveWorkspacePage() {
             <div className="flex items-center gap-2"><RadioTower className="h-5 w-5 text-primary" /><h1 className="text-2xl font-semibold">OXSIG Live Workspace</h1></div>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Shared session identity, participants, roles and owner-bound technical resources. Observation and control remain separate: machine control requires an explicit, revocable, time-bounded lease.</p>
           </div>
-          <Badge variant="outline">Control Leases v1 · transport disconnected</Badge>
+          <Badge variant="outline">Shared Terminal Transport v1</Badge>
         </div>
       </section>
 
@@ -248,7 +248,7 @@ export default function LiveWorkspacePage() {
                   <div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{detail.workspace.name}</CardTitle><CardDescription>{detail.workspace.description}</CardDescription></div><Badge>{detail.workspace.role}</Badge></div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-xs leading-5 text-muted-foreground">You can observe shared workspace state according to your role. An active control lease is a separate authorization object and still does not create a terminal/desktop transport in this slice.</p>
+                  <p className="text-xs leading-5 text-muted-foreground">An active terminal control lease now authorizes its exact holder to open the shared terminal transport for the exact attached terminal lab. Observation still grants no input, and desktop transport remains disconnected.</p>
                 </CardContent>
               </Card>
 
