@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -8,12 +8,14 @@ const mocks = vi.hoisted(() => ({
   getPool: vi.fn(),
   getLiveWorkspaceAccess: vi.fn(),
   assertOwnerResource: vi.fn(),
+  revokeControlForBinding: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
+vi.mock('@/lib/live-workspace/control', () => ({ revokeControlForBinding: mocks.revokeControlForBinding }));
 vi.mock('@/lib/live-workspace/server', () => ({
   getLiveWorkspaceAccess: mocks.getLiveWorkspaceAccess,
   assertOwnerResource: mocks.assertOwnerResource,
@@ -22,16 +24,17 @@ vi.mock('@/lib/live-workspace/server', () => ({
   },
 }));
 
-import { POST } from './route';
+import { DELETE, POST } from './route';
 
 const workspaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const labId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ownerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const bindingId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const user = { id: ownerId, clerkUserId: 'clerk-owner', role: 'user' as const };
 
-function request(body: unknown) {
+function request(body: unknown, method = 'POST') {
   return new NextRequest(`http://localhost/api/live-workspaces/${workspaceId}/resources`, {
-    method: 'POST',
+    method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -56,20 +59,29 @@ function access(overrides: Record<string, unknown> = {}) {
 
 describe('Live Workspace resource binding API', () => {
   const query = vi.fn();
+  const clientQuery = vi.fn();
+  const release = vi.fn();
+  const pool = { query, connect: vi.fn().mockResolvedValue({ query: clientQuery, release }) };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    pool.connect.mockResolvedValue({ query: clientQuery, release });
     mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
-    mocks.getPool.mockReturnValue({ query });
+    mocks.getPool.mockReturnValue(pool);
     mocks.getLiveWorkspaceAccess.mockResolvedValue(access());
     mocks.assertOwnerResource.mockResolvedValue({ id: labId, label: 'Ubuntu Lab' });
+    mocks.revokeControlForBinding.mockResolvedValue(undefined);
     query.mockResolvedValue({ rows: [{
-      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      id: bindingId,
       resource_type: 'lab-instance', resource_id: labId, resource_owner_id: ownerId,
       attached_by: ownerId, metadata: { label: 'Ubuntu Lab' }, attached_at: new Date().toISOString(),
     }], rowCount: 1 });
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('UPDATE live_workspace_resources')) return { rows: [{ id: bindingId }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
   });
 
   it('rejects resource attachment when the participant lacks owner resource management', async () => {
@@ -101,5 +113,19 @@ describe('Live Workspace resource binding API', () => {
     const response = await POST(request({ resourceType: 'shell-session', resourceId: labId }), { params: Promise.resolve({ id: workspaceId }) });
     expect(response.status).toBe(400);
     expect(mocks.getLiveWorkspaceAccess).not.toHaveBeenCalled();
+  });
+
+  it('revokes active leases and cancels pending requests when a binding detaches', async () => {
+    const response = await DELETE(request({ bindingId }, 'DELETE'), { params: Promise.resolve({ id: workspaceId }) });
+    expect(response.status).toBe(200);
+    expect(mocks.revokeControlForBinding).toHaveBeenCalledWith({
+      queryable: expect.objectContaining({ query: clientQuery }),
+      collaborationId: workspaceId,
+      bindingId,
+      actorId: ownerId,
+      reason: 'resource_detached',
+    });
+    expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(release).toHaveBeenCalled();
   });
 });
