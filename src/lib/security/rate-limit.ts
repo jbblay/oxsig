@@ -35,12 +35,7 @@ interface ConsumedBucket {
 const requestStore = new Map<string, RequestRecord>();
 
 export const RATE_LIMITS = {
-  AUTH_LOGIN: { maxRequests: 5, windowMs: 60 * 1000 },
-  AUTH_REGISTER: { maxRequests: 3, windowMs: 60 * 1000 },
   API_DEFAULT: { maxRequests: 100, windowMs: 60 * 1000 },
-  API_DOCUMENTS: { maxRequests: 50, windowMs: 60 * 1000 },
-  API_SIGNATURES: { maxRequests: 30, windowMs: 60 * 1000 },
-  PUBLIC: { maxRequests: 200, windowMs: 60 * 1000 },
   LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000, failClosed: true },
 } as const satisfies Record<string, RateLimitConfig>;
 
