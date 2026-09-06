@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Activity, Boxes, CloudCog, FileCog, ShieldCheck } from 'lucide-react';
+import { Activity, Boxes, CloudCog, FileCog, MonitorCheck, ShieldCheck } from 'lucide-react';
 import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
+import GuestServiceReadinessReview from '@/components/labs/GuestServiceReadinessReview';
 import InfrastructureDesigner from '@/components/labs/InfrastructureDesigner';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyPersistenceBridge from '@/components/labs/LabTopologyPersistenceBridge';
@@ -11,7 +12,7 @@ import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
 import { Button } from '@/components/ui/button';
 
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
-type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness';
+type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness' | 'guest-service';
 
 export default function CyberLabWorkspace() {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
@@ -19,6 +20,7 @@ export default function CyberLabWorkspace() {
   const [plannerMounted, setPlannerMounted] = React.useState(false);
   const [evidenceMounted, setEvidenceMounted] = React.useState(false);
   const [readinessMounted, setReadinessMounted] = React.useState(false);
+  const [guestServiceMounted, setGuestServiceMounted] = React.useState(false);
 
   React.useEffect(() => {
     const saved = window.localStorage.getItem(MODE_KEY);
@@ -38,6 +40,10 @@ export default function CyberLabWorkspace() {
       setReadinessMounted(true);
       setMode('readiness');
     }
+    if (saved === 'guest-service') {
+      setGuestServiceMounted(true);
+      setMode('guest-service');
+    }
   }, []);
 
   const selectMode = (next: WorkspaceMode) => {
@@ -45,6 +51,7 @@ export default function CyberLabWorkspace() {
     if (next === 'planner') setPlannerMounted(true);
     if (next === 'evidence') setEvidenceMounted(true);
     if (next === 'readiness') setReadinessMounted(true);
+    if (next === 'guest-service') setGuestServiceMounted(true);
     setMode(next);
     window.localStorage.setItem(MODE_KEY, next);
   };
@@ -67,7 +74,10 @@ export default function CyberLabWorkspace() {
         <Button size="sm" variant={mode === 'readiness' ? 'default' : 'ghost'} onClick={() => selectMode('readiness')}>
           <Activity className="mr-1.5 h-4 w-4" />Runtime Readiness
         </Button>
-        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime → evidence → readiness. Each boundary remains explicit.</p>
+        <Button size="sm" variant={mode === 'guest-service' ? 'default' : 'ghost'} onClick={() => selectMode('guest-service')}>
+          <MonitorCheck className="mr-1.5 h-4 w-4" />Guest Service
+        </Button>
+        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime → evidence → readiness → guest service. Each boundary remains explicit.</p>
       </div>
 
       <div className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
@@ -97,6 +107,12 @@ export default function CyberLabWorkspace() {
       {readinessMounted && (
         <div className={mode === 'readiness' ? 'block' : 'hidden'} aria-hidden={mode !== 'readiness'}>
           <RuntimeReadinessReview />
+        </div>
+      )}
+
+      {guestServiceMounted && (
+        <div className={mode === 'guest-service' ? 'block' : 'hidden'} aria-hidden={mode !== 'guest-service'}>
+          <GuestServiceReadinessReview />
         </div>
       )}
     </>
