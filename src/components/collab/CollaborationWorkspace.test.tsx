@@ -1,0 +1,117 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({ getCsrfToken: vi.fn() }));
+
+vi.mock('@/lib/security/csrf-client', () => ({ getCsrfToken: mocks.getCsrfToken }));
+vi.mock('@/lib/collab/use-realtime', () => ({
+  useCollaborationRealtime: () => ({ state: 'connected', onlineCount: 1 }),
+}));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+import CollaborationWorkspace from './CollaborationWorkspace';
+
+const sessions = [
+  {
+    id: 'alpha', name: 'Alpha', description: 'Alpha session', ownerId: 'owner', ownerName: 'Owner',
+    memberCount: 1, lastMessage: '', lastMessageType: null, lastMessageAt: null,
+    createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:00.000Z', isOwner: true,
+  },
+  {
+    id: 'beta', name: 'Beta', description: 'Beta session', ownerId: 'owner', ownerName: 'Owner',
+    memberCount: 1, lastMessage: '', lastMessageType: null, lastMessageAt: null,
+    createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:00.000Z', isOwner: true,
+  },
+];
+
+function json(value: unknown) {
+  return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+function message(collaborationId: string, id: string, text: string) {
+  return {
+    id,
+    collaborationId,
+    text,
+    type: 'text',
+    metadata: {},
+    createdAt: '2026-09-06T10:00:00.000Z',
+    senderId: 'owner',
+    senderName: 'Owner',
+    senderEmail: null,
+    senderAvatar: null,
+    isOwnMessage: true,
+  };
+}
+
+const memberBody = {
+  members: [{ id: 'owner', displayName: 'Owner', email: 'owner@example.com', role: 'owner', isOwner: true }],
+  canInvite: true,
+};
+
+describe('CollaborationWorkspace session isolation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getCsrfToken.mockResolvedValue('csrf-token');
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+  });
+
+  it('ignores a stale conversation response after the user switches sessions', async () => {
+    let resolveAlphaMessages!: (value: Response) => void;
+    let resolveAlphaMembers!: (value: Response) => void;
+    const alphaMessages = new Promise<Response>((resolve) => { resolveAlphaMessages = resolve; });
+    const alphaMembers = new Promise<Response>((resolve) => { resolveAlphaMembers = resolve; });
+
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/collaborations') return Promise.resolve(json({ collaborations: sessions }));
+      if (url.includes('/alpha/messages')) return alphaMessages;
+      if (url.includes('/alpha/members')) return alphaMembers;
+      if (url.includes('/beta/messages')) return Promise.resolve(json({ messages: [message('beta', 'm-beta', 'Beta message')] }));
+      if (url.includes('/beta/members')) return Promise.resolve(json(memberBody));
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<CollaborationWorkspace />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /beta/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /beta/i }));
+    await waitFor(() => expect(screen.getByText('Beta message')).toBeInTheDocument());
+
+    await act(async () => {
+      resolveAlphaMessages(json({ messages: [message('alpha', 'm-alpha', 'Alpha message')] }));
+      resolveAlphaMembers(json(memberBody));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Beta message')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha message')).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it('clears the composer draft when switching to another session', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/collaborations') return Promise.resolve(json({ collaborations: sessions }));
+      if (url.includes('/alpha/messages')) return Promise.resolve(json({ messages: [message('alpha', 'm-alpha', 'Alpha message')] }));
+      if (url.includes('/alpha/members')) return Promise.resolve(json(memberBody));
+      if (url.includes('/beta/messages')) return Promise.resolve(json({ messages: [message('beta', 'm-beta', 'Beta message')] }));
+      if (url.includes('/beta/members')) return Promise.resolve(json(memberBody));
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<CollaborationWorkspace />);
+
+    await waitFor(() => expect(screen.getByText('Alpha message')).toBeInTheDocument());
+    const alphaComposer = screen.getByPlaceholderText(/message alpha/i);
+    fireEvent.change(alphaComposer, { target: { value: 'Draft for Alpha' } });
+    expect(alphaComposer).toHaveValue('Draft for Alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /beta/i }));
+
+    await waitFor(() => expect(screen.getByPlaceholderText(/message beta/i)).toHaveValue(''));
+    vi.unstubAllGlobals();
+  });
+});
