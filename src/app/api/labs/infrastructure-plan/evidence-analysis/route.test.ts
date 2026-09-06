@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
+  poolQuery: vi.fn(),
   validateCsrfToken: vi.fn(),
   checkRateLimit: vi.fn(),
   getAuthorization: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
+vi.mock('@/lib/db/pool', () => ({ getPool: () => ({ query: mocks.poolQuery }) }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/infrastructure/deployment-authorization', () => ({
@@ -116,6 +118,7 @@ describe('POST /api/labs/infrastructure-plan/evidence-analysis', () => {
       req: NextRequest,
       handler: (req: NextRequest, currentUser: typeof user) => Promise<NextResponse>
     ) => handler(req, user));
+    mocks.poolQuery.mockResolvedValue({ rows: [{ id: authorizationId }] });
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.getAuthorization.mockResolvedValue(authorization);
@@ -147,7 +150,19 @@ describe('POST /api/labs/infrastructure-plan/evidence-analysis', () => {
     expect(mocks.getEvidence).not.toHaveBeenCalled();
   });
 
-  it('refuses interpretation until the authorization has provider evidence', async () => {
+  it('finds the latest owner-bound provider evidence when no authorization ID is supplied', async () => {
+    const response = await POST(request({}));
+
+    expect(response.status).toBe(200);
+    expect(mocks.poolQuery).toHaveBeenCalledWith(
+      expect.stringContaining("state IN ('evidence_recorded','analyzed')"),
+      [user.id]
+    );
+    expect(mocks.getAuthorization).toHaveBeenCalledWith(user.id, authorizationId);
+    expect(mocks.getEvidence).toHaveBeenCalledWith({ ownerId: user.id, authorizationId });
+  });
+
+  it('refuses interpretation until an explicitly requested authorization has provider evidence', async () => {
     mocks.getAuthorization.mockResolvedValue({ ...authorization, state: 'executing' });
 
     const response = await POST(request({ authorizationId }));
@@ -155,6 +170,7 @@ describe('POST /api/labs/infrastructure-plan/evidence-analysis', () => {
 
     expect(response.status).toBe(409);
     expect(body.code).toBe('DEPLOYMENT_EVIDENCE_NOT_READY');
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
     expect(mocks.getEvidence).not.toHaveBeenCalled();
     expect(mocks.interpret).not.toHaveBeenCalled();
   });
