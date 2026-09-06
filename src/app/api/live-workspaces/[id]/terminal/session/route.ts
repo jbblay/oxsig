@@ -53,6 +53,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const parsed = startSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return json({ error: 'A valid attached lab binding is required', code: 'TERMINAL_BINDING_INVALID' }, 400);
 
+    let startedSession: Awaited<ReturnType<typeof startInteractiveLabSession>> | null = null;
+    let startedRuntimeExternalId: string | null = null;
+
     try {
       const target = await prepareLiveWorkspaceTerminal({
         pool: getPool(),
@@ -61,7 +64,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         bindingId: parsed.data.bindingId,
       });
 
+      startedRuntimeExternalId = target.runtimeExternalId;
       const session = await startInteractiveLabSession(target.runtimeExternalId);
+      startedSession = session;
       const ticketTtlMs = terminalBridgeTicketTtlMs();
       const bridgeTicket = createTerminalBridgeTicket({
         streamUrl: session.streamUrl,
@@ -106,6 +111,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         diagnostics: target.diagnostics,
       });
     } catch (error) {
+      if (startedSession && startedRuntimeExternalId) {
+        await terminateInteractiveLabSession(startedRuntimeExternalId, startedSession.sessionId).catch((cleanupError) => {
+          console.warn('Could not clean up partially started shared terminal session:', cleanupError);
+        });
+      }
       if (error instanceof LiveWorkspaceError) return errorResponse(error);
       await logAudit({
         userId: user.id,
