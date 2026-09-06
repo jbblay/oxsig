@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { Link2, Loader2, Monitor, Plus, RadioTower, Terminal, UsersRound } from 'lucide-react';
+import { Link2, Loader2, Plus, RadioTower, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
+import { ControlLeasePanel, type LiveWorkspaceControlState } from '@/components/live-workspace/ControlLeasePanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,13 +42,15 @@ type Resource = {
   resourceId: string;
   resourceOwnerId: string;
   label: string;
+  accessMode: 'terminal' | 'desktop' | null;
   ownershipTransferred: false;
 };
 type Detail = {
+  viewerId: string;
   workspace: WorkspaceListItem;
   participants: Participant[];
   resources: Resource[];
-  control: { terminalLeaseActive: false; desktopLeaseActive: false; note: string };
+  control: LiveWorkspaceControlState;
 };
 
 async function apiError(response: Response, fallback: string) {
@@ -108,7 +111,7 @@ export default function LiveWorkspacePage() {
       const body = await response.json() as { workspace: WorkspaceListItem };
       await loadList();
       setSelectedId(body.workspace.id);
-      toast.success('Live Workspace created. Shared input remains disabled until a future control lease is granted.');
+      toast.success('Live Workspace created. Joining or observing does not grant terminal or desktop control.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not create Live Workspace');
     } finally {
@@ -189,6 +192,7 @@ export default function LiveWorkspacePage() {
       });
       if (!response.ok) throw new Error(await apiError(response, 'Could not detach resource'));
       await loadDetail(selectedId);
+      toast.success('Resource detached. Any active control lease for it was revoked.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not detach resource');
     } finally {
@@ -204,9 +208,9 @@ export default function LiveWorkspacePage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2"><RadioTower className="h-5 w-5 text-primary" /><h1 className="text-2xl font-semibold">OXSIG Live Workspace</h1></div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Shared session identity, participants, roles and owner-bound technical resources. Foundation v1 deliberately separates observation from control: no participant gets terminal or desktop input merely by joining.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Shared session identity, participants, roles and owner-bound technical resources. Observation and control remain separate: machine control requires an explicit, revocable, time-bounded lease.</p>
           </div>
-          <Badge variant="outline">Foundation v1 · control leases disabled</Badge>
+          <Badge variant="outline">Control Leases v1 · transport disconnected</Badge>
         </div>
       </section>
 
@@ -243,12 +247,19 @@ export default function LiveWorkspacePage() {
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{detail.workspace.name}</CardTitle><CardDescription>{detail.workspace.description}</CardDescription></div><Badge>{detail.workspace.role}</Badge></div>
                 </CardHeader>
-                <CardContent className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border p-3"><div className="flex items-center gap-2 text-sm font-semibold"><Terminal className="h-4 w-4" /> Shared terminal</div><p className="mt-2 text-xs text-muted-foreground">No active input lease. Role eligibility: {detail.workspace.capabilities.eligibleForTerminalControl ? 'eligible for a future lease' : 'observe only'}.</p></div>
-                  <div className="rounded-xl border p-3"><div className="flex items-center gap-2 text-sm font-semibold"><Monitor className="h-4 w-4" /> Shared desktop</div><p className="mt-2 text-xs text-muted-foreground">No active control lease. Role eligibility: {detail.workspace.capabilities.eligibleForDesktopControl ? 'eligible for a future lease' : 'observe only'}.</p></div>
-                  <p className="sm:col-span-2 text-[11px] leading-5 text-muted-foreground">{detail.control.note}</p>
+                <CardContent>
+                  <p className="text-xs leading-5 text-muted-foreground">You can observe shared workspace state according to your role. An active control lease is a separate authorization object and still does not create a terminal/desktop transport in this slice.</p>
                 </CardContent>
               </Card>
+
+              <ControlLeasePanel
+                workspaceId={detail.workspace.id}
+                viewerId={detail.viewerId}
+                capabilities={detail.workspace.capabilities}
+                resources={detail.resources}
+                control={detail.control}
+                onRefresh={() => loadDetail(detail.workspace.id)}
+              />
 
               <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> Participants</CardTitle><CardDescription>Observe is not control. Generic invitees enter as observers until explicitly promoted.</CardDescription></CardHeader>
@@ -265,7 +276,7 @@ export default function LiveWorkspacePage() {
                             <option value="observer">observer</option><option value="learner">learner</option><option value="instructor">instructor</option>
                           </select>
                         )}
-                        <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'may request control later' : 'observe only'}</span>
+                        <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'may request control' : 'observe only'}</span>
                       </div>
                     </div>
                   ))}
@@ -284,7 +295,7 @@ export default function LiveWorkspacePage() {
                   )}
                   {detail.resources.length === 0 && <p className="text-xs text-muted-foreground">No resources attached yet.</p>}
                   {detail.resources.map((resource) => (
-                    <div key={resource.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{resource.label}</p><p className="font-mono text-[10px] text-muted-foreground">{resource.type} · {resource.resourceId}</p></div><div className="flex items-center gap-2"><Badge variant="outline">ownership retained</Badge>{detail.workspace.capabilities.manageResources && <Button size="sm" variant="ghost" disabled={busy === `resource:${resource.id}`} onClick={() => void detachResource(resource.id)}>Detach</Button>}</div></div>
+                    <div key={resource.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{resource.label}</p><p className="font-mono text-[10px] text-muted-foreground">{resource.type} · {resource.resourceId}{resource.accessMode ? ` · ${resource.accessMode}` : ''}</p></div><div className="flex items-center gap-2"><Badge variant="outline">ownership retained</Badge>{detail.workspace.capabilities.manageResources && <Button size="sm" variant="ghost" disabled={busy === `resource:${resource.id}`} onClick={() => void detachResource(resource.id)}>Detach</Button>}</div></div>
                   ))}
                 </CardContent>
               </Card>

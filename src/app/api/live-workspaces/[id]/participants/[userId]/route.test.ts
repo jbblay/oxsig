@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(),
-  getPool: vi.fn(), assignLiveWorkspaceRole: vi.fn(),
+  getPool: vi.fn(), assignLiveWorkspaceRole: vi.fn(), revokeControlForParticipant: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
+vi.mock('@/lib/live-workspace/control', () => ({ revokeControlForParticipant: mocks.revokeControlForParticipant }));
 vi.mock('@/lib/live-workspace/server', () => ({
   assignLiveWorkspaceRole: mocks.assignLiveWorkspaceRole,
   LiveWorkspaceError: class LiveWorkspaceError extends Error {
@@ -30,16 +31,19 @@ function request(body: unknown) {
 }
 
 describe('Live Workspace participant role API', () => {
+  const pool = { query: vi.fn() };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
-    mocks.getPool.mockReturnValue({ query: vi.fn() });
+    mocks.getPool.mockReturnValue(pool);
     mocks.assignLiveWorkspaceRole.mockResolvedValue({
       role: 'learner',
       capabilities: { observe: true, collaborate: true, requestControl: true, grantControl: false, manageParticipants: false, manageResources: false, eligibleForTerminalControl: true, eligibleForDesktopControl: true },
     });
+    mocks.revokeControlForParticipant.mockResolvedValue(undefined);
   });
 
   it('accepts only the strict Live Workspace role set and never accepts owner from the browser', async () => {
@@ -52,7 +56,21 @@ describe('Live Workspace participant role API', () => {
     const response = await PATCH(request({ role: 'learner' }), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
     expect(response.status).toBe(200);
     expect(mocks.assignLiveWorkspaceRole).toHaveBeenCalledWith({
-      pool: expect.anything(), collaborationId: workspaceId, actorId: user.id, targetUserId: targetId, role: 'learner',
+      pool, collaborationId: workspaceId, actorId: user.id, targetUserId: targetId, role: 'learner',
+    });
+    expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
+  });
+
+  it('revokes leases and cancels pending requests when a participant becomes observer', async () => {
+    mocks.assignLiveWorkspaceRole.mockResolvedValue({ role: 'observer', capabilities: {} });
+    const response = await PATCH(request({ role: 'observer' }), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
+    expect(response.status).toBe(200);
+    expect(mocks.revokeControlForParticipant).toHaveBeenCalledWith({
+      queryable: pool,
+      collaborationId: workspaceId,
+      participantId: targetId,
+      actorId: user.id,
+      reason: 'role_became_observer',
     });
   });
 });
