@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getInfrastructureDesign } from '@/lib/infrastructure/designer-persistence';
 import { compileDeploymentPlan, DeploymentPlanCompileError } from '@/lib/infrastructure/deployment-plan-compiler';
+import { evaluateDeploymentExecutionSupport } from '@/lib/infrastructure/deployment-execution-support';
 import { getDeploymentPlanIdentity } from '@/lib/infrastructure/deployment-plan-identity';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const plan = compileDeploymentPlan(state.design);
+      const executionSupport = evaluateDeploymentExecutionSupport(plan);
       const identity = getDeploymentPlanIdentity(plan);
       return NextResponse.json(
         {
@@ -31,6 +33,7 @@ export async function POST(request: NextRequest) {
           sourceDesignUpdatedAt: state.updatedAt,
           generatedAt: new Date().toISOString(),
           plan,
+          executionSupport,
         },
         { headers: { 'Cache-Control': 'no-store' } }
       );
