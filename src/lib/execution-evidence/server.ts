@@ -14,6 +14,7 @@ export const EVIDENCE_PROVENANCE = [
 export type EvidenceProvenance = (typeof EVIDENCE_PROVENANCE)[number];
 export type EvidenceSurface = 'ai-practitioner' | 'academy' | 'infrastructure-designer';
 export type EvidenceState = 'authorized' | 'executing' | 'evidence_recorded' | 'analyzed' | 'failed' | 'expired';
+export type EvidenceAnalysisKind = 'ai-practitioner' | 'academy' | 'deployment';
 
 const TERMINAL_RECEIPT_TTL_SECONDS = 120;
 const evidenceStateSchema = z.enum(['authorized', 'executing', 'evidence_recorded', 'analyzed', 'failed', 'expired']);
@@ -86,6 +87,20 @@ function mapRow(row: Record<string, any>): ExecutionEvidenceRecord {
   };
 }
 
+function assertAnalysisSurface(row: Record<string, any>, analysisKind: EvidenceAnalysisKind) {
+  const valid =
+    (analysisKind === 'ai-practitioner' && row.source === 'interactive-terminal' && row.surface === 'ai-practitioner') ||
+    (analysisKind === 'academy' && row.source === 'interactive-terminal' && row.surface === 'academy') ||
+    (analysisKind === 'deployment' && row.source === 'deployment' && row.surface === 'infrastructure-designer' && row.provenance === 'provider-attested');
+
+  if (!valid) {
+    throw new ExecutionEvidenceConflictError(
+      'Execution evidence does not belong to the requested analysis surface.',
+      'EVIDENCE_ANALYSIS_SURFACE_MISMATCH'
+    );
+  }
+}
+
 export function executionCommandHash(command: string) {
   return createHash('sha256').update(command.trim(), 'utf8').digest('hex');
 }
@@ -121,7 +136,6 @@ export async function authorizeTerminalEvidence(input: {
   return transaction(async (client) => {
     await expireTerminalReceipts(client, input.ownerId, input.labInstanceId);
 
-    // A repeated approval for the same command supersedes an unused earlier receipt.
     await client.query(
       `UPDATE execution_evidence
           SET state='expired', updated_at=NOW()
@@ -299,10 +313,38 @@ export async function getTerminalEvidenceForAnalysis(input: {
   return mapRow(row);
 }
 
+export async function getDeploymentEvidenceForAnalysis(input: {
+  ownerId: string;
+  authorizationId: string;
+}) {
+  const result = await getPool().query(
+    `SELECT *
+       FROM execution_evidence
+      WHERE owner_id=$1
+        AND deployment_authorization_id=$2
+        AND source='deployment'
+        AND surface='infrastructure-designer'
+        AND provenance='provider-attested'
+        AND state IN ('evidence_recorded','analyzed')
+      ORDER BY evidence_recorded_at DESC NULLS LAST, created_at DESC
+      LIMIT 1`,
+    [input.ownerId, input.authorizationId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    throw new ExecutionEvidenceConflictError(
+      'No provider-attested deployment evidence is ready for this authorization.',
+      'DEPLOYMENT_EVIDENCE_NOT_FOUND'
+    );
+  }
+  return mapRow(row);
+}
+
 export async function storeExecutionEvidenceAnalysis(input: {
   ownerId: string;
   evidenceId: string;
-  analysisKind: 'ai-practitioner' | 'academy';
+  analysisKind: EvidenceAnalysisKind;
   analysis: Record<string, unknown>;
   model: string;
 }) {
@@ -315,6 +357,8 @@ export async function storeExecutionEvidenceAnalysis(input: {
     if (!row) {
       throw new ExecutionEvidenceConflictError('Execution evidence was not found.', 'EVIDENCE_NOT_FOUND');
     }
+
+    assertAnalysisSurface(row, input.analysisKind);
 
     if (row.state === 'analyzed') {
       if (String(row.analysis_kind || '') !== input.analysisKind || !row.analysis) {
@@ -344,12 +388,54 @@ export async function storeExecutionEvidenceAnalysis(input: {
         RETURNING *`,
       [input.analysisKind, JSON.stringify(input.analysis), input.model, input.evidenceId, input.ownerId]
     );
-    if (!updated.rows[0]) {
+    const analyzedRow = updated.rows[0];
+    if (!analyzedRow) {
       throw new ExecutionEvidenceConflictError(
         'Execution evidence was analyzed by another request.',
         'EVIDENCE_ALREADY_ANALYZED'
       );
     }
-    return mapRow(updated.rows[0]);
+
+    if (input.analysisKind === 'deployment') {
+      const authorizationId = analyzedRow.deployment_authorization_id;
+      const labInstanceId = analyzedRow.lab_instance_id;
+      const executionId = analyzedRow.execution_id;
+      if (!authorizationId || !labInstanceId || !executionId) {
+        throw new ExecutionEvidenceConflictError(
+          'Deployment evidence is missing its authorization binding.',
+          'DEPLOYMENT_EVIDENCE_BINDING_MISSING'
+        );
+      }
+
+      const transitioned = await client.query(
+        `UPDATE deployment_authorizations
+            SET state='analyzed', analyzed_at=COALESCE(analyzed_at,NOW()), updated_at=NOW()
+          WHERE id=$1
+            AND owner_id=$2
+            AND execution_id=$3
+            AND lab_instance_id=$4
+            AND state='evidence_recorded'
+          RETURNING id`,
+        [authorizationId, input.ownerId, executionId, labInstanceId]
+      );
+
+      if (!transitioned.rows[0]) {
+        const current = await client.query(
+          `SELECT state
+             FROM deployment_authorizations
+            WHERE id=$1 AND owner_id=$2 AND execution_id=$3 AND lab_instance_id=$4
+            LIMIT 1`,
+          [authorizationId, input.ownerId, executionId, labInstanceId]
+        );
+        if (String(current.rows[0]?.state || '') !== 'analyzed') {
+          throw new ExecutionEvidenceConflictError(
+            'Deployment authorization could not advance to analyzed state.',
+            'DEPLOYMENT_ANALYSIS_STATE_MISMATCH'
+          );
+        }
+      }
+    }
+
+    return mapRow(analyzedRow);
   });
 }
