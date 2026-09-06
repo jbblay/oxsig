@@ -9,6 +9,11 @@ import {
   truncatePractitionerEvidence,
   validatePractitionerCommand,
 } from '@/lib/ai-practitioner/server';
+import {
+  authorizeTerminalEvidence,
+  ExecutionEvidenceConflictError,
+  recordBrowserObservedEvidence,
+} from '@/lib/execution-evidence/server';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +25,7 @@ const terminalExecutionSchema = z.discriminatedUnion('action', [
   }).strict(),
   z.object({
     action: z.literal('record'),
+    executionId: z.string().uuid().optional(),
     command: z.string().trim().min(1).max(1000),
     stdout: z.string().max(25000).default(''),
     stderr: z.string().max(25000).default(''),
@@ -78,64 +84,110 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
     const { instance, lab } = resolved;
 
-    if (parsed.data.action === 'authorize') {
+    try {
+      if (parsed.data.action === 'authorize') {
+        const evidence = await authorizeTerminalEvidence({
+          ownerId: user.id,
+          labInstanceId: instance.id,
+          command: parsed.data.command,
+          surface: 'ai-practitioner',
+          metadata: {
+            risk: validation.risk,
+            platform: lab.platform,
+            shell: lab.shell,
+            executionMode: 'interactive-terminal',
+          },
+        });
+
+        await getPool().query(
+          `INSERT INTO ai_practitioner_events (
+             owner_id, lab_instance_id, event_type, command, metadata
+           ) VALUES ($1,$2,'execution-approved',$3,$4::jsonb)`,
+          [
+            user.id,
+            instance.id,
+            parsed.data.command,
+            JSON.stringify({
+              risk: validation.risk,
+              platform: lab.platform,
+              shell: lab.shell,
+              executionMode: 'interactive-terminal',
+              executionId: evidence.executionId,
+              evidenceId: evidence.id,
+              provenance: evidence.provenance,
+            }),
+          ]
+        );
+
+        return NextResponse.json({
+          authorization: {
+            command: parsed.data.command,
+            risk: validation.risk,
+            labInstanceId: instance.id,
+            executionId: evidence.executionId,
+            evidenceId: evidence.id,
+            expiresAt: evidence.expiresAt,
+            provenance: evidence.provenance,
+          },
+        });
+      }
+
+      const stdout = truncatePractitionerEvidence(parsed.data.stdout);
+      const stderr = truncatePractitionerEvidence(parsed.data.stderr);
+      const evidence = await recordBrowserObservedEvidence({
+        ownerId: user.id,
+        labInstanceId: instance.id,
+        command: parsed.data.command,
+        executionId: parsed.data.executionId,
+        stdout,
+        stderr,
+        exitCode: parsed.data.exitCode,
+      });
+
       await getPool().query(
         `INSERT INTO ai_practitioner_events (
-           owner_id, lab_instance_id, event_type, command, metadata
-         ) VALUES ($1,$2,'execution-approved',$3,$4::jsonb)`,
+           owner_id, lab_instance_id, event_type, command, stdout, stderr, exit_code, metadata
+         ) VALUES ($1,$2,'execution',$3,$4,$5,$6,$7::jsonb)`,
         [
           user.id,
           instance.id,
-          parsed.data.command,
+          evidence.command,
+          evidence.stdout,
+          evidence.stderr,
+          evidence.exitCode,
           JSON.stringify({
             risk: validation.risk,
             platform: lab.platform,
             shell: lab.shell,
             executionMode: 'interactive-terminal',
+            executionId: evidence.executionId,
+            evidenceId: evidence.id,
+            provenance: evidence.provenance,
+            receiptBinding: parsed.data.executionId ? 'explicit' : 'compatible-command-bound',
           }),
         ]
       );
 
       return NextResponse.json({
-        authorization: {
-          command: parsed.data.command,
+        execution: {
+          command: evidence.command,
+          stdout: evidence.stdout,
+          stderr: evidence.stderr,
+          exitCode: evidence.exitCode,
           risk: validation.risk,
-          labInstanceId: instance.id,
+          executionId: evidence.executionId,
+          evidenceId: evidence.id,
+          provenance: evidence.provenance,
         },
       });
+    } catch (error) {
+      if (error instanceof ExecutionEvidenceConflictError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: 409, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+      throw error;
     }
-
-    const stdout = truncatePractitionerEvidence(parsed.data.stdout);
-    const stderr = truncatePractitionerEvidence(parsed.data.stderr);
-
-    await getPool().query(
-      `INSERT INTO ai_practitioner_events (
-         owner_id, lab_instance_id, event_type, command, stdout, stderr, exit_code, metadata
-       ) VALUES ($1,$2,'execution',$3,$4,$5,$6,$7::jsonb)`,
-      [
-        user.id,
-        instance.id,
-        parsed.data.command,
-        stdout,
-        stderr,
-        parsed.data.exitCode,
-        JSON.stringify({
-          risk: validation.risk,
-          platform: lab.platform,
-          shell: lab.shell,
-          executionMode: 'interactive-terminal',
-        }),
-      ]
-    );
-
-    return NextResponse.json({
-      execution: {
-        command: parsed.data.command,
-        stdout,
-        stderr,
-        exitCode: parsed.data.exitCode,
-        risk: validation.risk,
-      },
-    });
   });
 }
