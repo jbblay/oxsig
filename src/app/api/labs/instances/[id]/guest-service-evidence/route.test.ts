@@ -24,9 +24,15 @@ vi.mock('@/lib/infrastructure/deployment-authorization', () => ({
 }));
 vi.mock('@/lib/execution-evidence/runtime-readiness', () => ({
   getRuntimeReadinessEvidence: mocks.getRuntimeEvidence,
+  RuntimeReadinessEvidenceConflictError: class RuntimeReadinessEvidenceConflictError extends Error {
+    constructor(message: string, readonly code: string) { super(message); }
+  },
 }));
 vi.mock('@/lib/infrastructure/runtime-readiness-evidence', () => ({
   buildRuntimeReadinessFacts: mocks.buildRuntimeFacts,
+  RuntimeReadinessInterpretationError: class RuntimeReadinessInterpretationError extends Error {
+    constructor(message: string, readonly code: string) { super(message); }
+  },
 }));
 vi.mock('@/lib/labs/desktop-runtime', () => ({
   inspectDesktopService: mocks.inspectDesktopService,
