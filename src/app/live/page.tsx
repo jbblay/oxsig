@@ -85,6 +85,8 @@ async function apiError(response: Response, fallback: string) {
 export default function LiveWorkspacePage() {
   const [workspaces, setWorkspaces] = React.useState<WorkspaceListItem[]>([]);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const selectedIdRef = React.useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const [detail, setDetail] = React.useState<Detail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -112,7 +114,7 @@ export default function LiveWorkspacePage() {
     const response = await fetch(`/api/live-workspaces/${id}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(await apiError(response, 'Could not load Live Workspace'));
     const next = await response.json() as Detail;
-    setDetail(next);
+    if (selectedIdRef.current === id) setDetail(next);
     return next;
   }, []);
 
@@ -132,9 +134,14 @@ export default function LiveWorkspacePage() {
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
-    void loadDetail(selectedId)
-      .catch((error) => setDetailError(error instanceof Error ? error.message : 'Could not load Live Workspace'))
-      .finally(() => setDetailLoading(false));
+    const requestedId = selectedId;
+    void loadDetail(requestedId)
+      .catch((error) => {
+        if (selectedIdRef.current === requestedId) setDetailError(error instanceof Error ? error.message : 'Could not load Live Workspace');
+      })
+      .finally(() => {
+        if (selectedIdRef.current === requestedId) setDetailLoading(false);
+      });
   }, [loadDetail, selectedId]);
 
   React.useEffect(() => {
@@ -303,7 +310,7 @@ export default function LiveWorkspacePage() {
           {detailLoading ? (
             <Card><CardContent className="flex min-h-80 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading workspace…</CardContent></Card>
           ) : detailError ? (
-            <Card className="border-destructive/30"><CardContent className="flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><p className="font-medium">This workspace could not be opened.</p><p className="max-w-md text-sm text-muted-foreground">{detailError}</p>{selectedId && <Button variant="outline" onClick={() => { setDetailError(null); setDetailLoading(true); void loadDetail(selectedId).catch((error) => setDetailError(error instanceof Error ? error.message : 'Could not load Live Workspace')).finally(() => setDetailLoading(false)); }}><RefreshCw className="h-4 w-4" /> Try again</Button>}</CardContent></Card>
+            <Card className="border-destructive/30"><CardContent className="flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><p className="font-medium">This workspace could not be opened.</p><p className="max-w-md text-sm text-muted-foreground">{detailError}</p>{selectedId && <Button variant="outline" onClick={() => { const retryId = selectedId; setDetailError(null); setDetailLoading(true); void loadDetail(retryId).catch((error) => { if (selectedIdRef.current === retryId) setDetailError(error instanceof Error ? error.message : 'Could not load Live Workspace'); }).finally(() => { if (selectedIdRef.current === retryId) setDetailLoading(false); }); }}><RefreshCw className="h-4 w-4" /> Try again</Button>}</CardContent></Card>
           ) : !detail ? (
             <Card><CardContent className="flex min-h-80 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"><RadioTower className="h-7 w-7 opacity-50" /><span>{workspaces.length ? 'Select a Live Workspace.' : 'Create your first Live Workspace to begin.'}</span></CardContent></Card>
           ) : (
