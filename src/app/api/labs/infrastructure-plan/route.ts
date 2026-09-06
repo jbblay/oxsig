@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getInfrastructureDesign } from '@/lib/infrastructure/designer-persistence';
 import { compileDeploymentPlan, DeploymentPlanCompileError } from '@/lib/infrastructure/deployment-plan-compiler';
+import { getDeploymentPlanIdentity } from '@/lib/infrastructure/deployment-plan-identity';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -24,11 +24,10 @@ export async function POST(request: NextRequest) {
 
     try {
       const plan = compileDeploymentPlan(state.design);
-      const digest = createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+      const identity = getDeploymentPlanIdentity(plan);
       return NextResponse.json(
         {
-          planId: `plan_${digest.slice(0, 24)}`,
-          planHash: digest,
+          ...identity,
           sourceDesignUpdatedAt: state.updatedAt,
           generatedAt: new Date().toISOString(),
           plan,
