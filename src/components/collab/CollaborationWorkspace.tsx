@@ -131,6 +131,7 @@ export default function CollaborationWorkspace() {
   const [canInvite, setCanInvite] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [messagesLoading, setMessagesLoading] = React.useState(false);
+  const [conversationError, setConversationError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [draft, setDraft] = React.useState('');
@@ -148,6 +149,8 @@ export default function CollaborationWorkspace() {
   const recordingStreamRef = React.useRef<MediaStream | null>(null);
   const chunksRef = React.useRef<Blob[]>([]);
   const recordTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeIdRef = React.useRef<string | null>(null);
+  const conversationRequestRef = React.useRef(0);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
 
@@ -158,7 +161,11 @@ export default function CollaborationWorkspace() {
       if (!response.ok) throw new Error(body.error || 'Could not load collaboration sessions');
       const next = (body.collaborations || []) as Collaboration[];
       setSessions(next);
-      setActiveId((current) => current && next.some((session) => session.id === current) ? current : next[0]?.id || null);
+      setActiveId((current) => {
+        const nextId = current && next.some((session) => session.id === current) ? current : next[0]?.id || null;
+        activeIdRef.current = nextId;
+        return nextId;
+      });
     } catch (error) {
       if (!silent) toast.error(error instanceof Error ? error.message : 'Could not load collaboration sessions');
     } finally {
@@ -167,7 +174,11 @@ export default function CollaborationWorkspace() {
   }, []);
 
   const loadConversation = React.useCallback(async (id: string, silent = false) => {
-    if (!silent) setMessagesLoading(true);
+    const requestId = ++conversationRequestRef.current;
+    if (!silent) {
+      setMessagesLoading(true);
+      setConversationError(null);
+    }
     try {
       const [messageResponse, memberResponse] = await Promise.all([
         fetch(`/api/collaborations/${id}/messages?limit=150`, { cache: 'no-store' }),
@@ -179,13 +190,20 @@ export default function CollaborationWorkspace() {
       ]);
       if (!messageResponse.ok) throw new Error(messageBody.error || 'Could not load messages');
       if (!memberResponse.ok) throw new Error(memberBody.error || 'Could not load members');
+      if (requestId !== conversationRequestRef.current || activeIdRef.current !== id) return;
       setMessages((messageBody.messages || []) as CollaborationMessage[]);
       setMembers((memberBody.members || []) as Member[]);
       setCanInvite(Boolean(memberBody.canInvite));
+      setConversationError(null);
     } catch (error) {
-      if (!silent) toast.error(error instanceof Error ? error.message : 'Could not load conversation');
+      if (requestId !== conversationRequestRef.current || activeIdRef.current !== id) return;
+      const message = error instanceof Error ? error.message : 'Could not load conversation';
+      if (silent) console.warn('[oxsig] Collaboration reconciliation deferred:', error);
+      else setConversationError(message);
     } finally {
-      if (!silent) setMessagesLoading(false);
+      if (!silent && requestId === conversationRequestRef.current && activeIdRef.current === id) {
+        setMessagesLoading(false);
+      }
     }
   }, []);
 
@@ -214,13 +232,26 @@ export default function CollaborationWorkspace() {
   }, [loadSessions]);
 
   React.useEffect(() => {
+    activeIdRef.current = activeId;
+    conversationRequestRef.current += 1;
+    setMessages([]);
+    setMembers([]);
+    setCanInvite(false);
+    setConversationError(null);
+    setDraft('');
+    setComposerMode('text');
+    setInviteEmail('');
+
     if (!activeId) {
-      setMessages([]);
-      setMembers([]);
+      setMessagesLoading(false);
       return;
     }
-    void loadConversation(activeId);
 
+    void loadConversation(activeId);
+  }, [activeId, loadConversation]);
+
+  React.useEffect(() => {
+    if (!activeId) return;
     // Realtime is the primary transport when configured. Keep a slow poll as a
     // reconciliation safety net; without Ably, preserve the existing fallback.
     const intervalMs = realtime.state === 'connected' ? 30_000 : 3500;
@@ -242,6 +273,16 @@ export default function CollaborationWorkspace() {
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
+  const chooseSession = (id: string) => {
+    if (id === activeId) return;
+    if (recording) {
+      toast.error('Stop the voice recording before switching sessions.');
+      return;
+    }
+    activeIdRef.current = id;
+    setActiveId(id);
+  };
+
   const createSession = async () => {
     const name = newSessionName.trim();
     if (!name) return;
@@ -256,6 +297,7 @@ export default function CollaborationWorkspace() {
       if (!response.ok) throw new Error(body.error || 'Could not create session');
       const created = body.collaboration as Collaboration;
       setSessions((current) => [created, ...current]);
+      activeIdRef.current = created.id;
       setActiveId(created.id);
       setNewSessionName('');
       setShowNewSession(false);
@@ -270,9 +312,10 @@ export default function CollaborationWorkspace() {
     type: CollaborationMessage['type'] = 'text',
     metadata: Record<string, unknown> = {}
   ) => {
-    if (!activeId) throw new Error('Choose a collaboration session first');
+    const targetId = activeId;
+    if (!targetId) throw new Error('Choose a collaboration session first');
     const csrf = await getCsrfToken();
-    const response = await fetch(`/api/collaborations/${activeId}/messages`, {
+    const response = await fetch(`/api/collaborations/${targetId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
       body: JSON.stringify({ text, type, metadata }),
@@ -280,7 +323,9 @@ export default function CollaborationWorkspace() {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Could not send message');
     const message = body.message as CollaborationMessage;
-    setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+    if (activeIdRef.current === targetId) {
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+    }
     void loadSessions(true);
     return message;
   }, [activeId, loadSessions]);
@@ -292,8 +337,10 @@ export default function CollaborationWorkspace() {
     setSending(true);
     try {
       await sendMessage(text, composerMode === 'explain' ? 'explain' : 'text');
-      setDraft('');
-      setComposerMode('text');
+      if (activeIdRef.current === activeId) {
+        setDraft('');
+        setComposerMode('text');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not send message');
     } finally {
@@ -413,18 +460,19 @@ export default function CollaborationWorkspace() {
 
   const inviteMember = async () => {
     if (!activeId || !inviteEmail.trim() || inviting) return;
+    const targetId = activeId;
     setInviting(true);
     try {
       const csrf = await getCsrfToken();
-      const response = await fetch(`/api/collaborations/${activeId}/members`, {
+      const response = await fetch(`/api/collaborations/${targetId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
         body: JSON.stringify({ email: inviteEmail.trim() }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Could not add member');
-      setInviteEmail('');
-      await loadConversation(activeId, true);
+      if (activeIdRef.current === targetId) setInviteEmail('');
+      await loadConversation(targetId, true);
       await loadSessions(true);
       toast.success(body.message || `${body.member?.displayName || 'Member'} added`);
     } catch (error) {
@@ -465,6 +513,7 @@ export default function CollaborationWorkspace() {
               onChange={(event) => setNewSessionName(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void createSession(); }}
               placeholder="Session name, e.g. Network Security Study Group"
+              aria-label="New collaboration session name"
               maxLength={80}
             />
             <div className="flex gap-2">
@@ -501,7 +550,8 @@ export default function CollaborationWorkspace() {
                 <button
                   type="button"
                   key={session.id}
-                  onClick={() => setActiveId(session.id)}
+                  aria-pressed={active}
+                  onClick={() => chooseSession(session.id)}
                   className={`w-full rounded-xl border px-3 py-3 text-left transition-all duration-200 ${active ? 'border-primary/30 bg-gradient-to-r from-blue-500/10 to-purple-500/10 shadow-sm' : 'border-transparent hover:bg-muted/60'}`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -549,7 +599,14 @@ export default function CollaborationWorkspace() {
 
               <div className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5">
                 {messagesLoading ? (
-                  <div className="flex min-h-[360px] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                  <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading conversation…</div>
+                ) : conversationError ? (
+                  <div className="flex min-h-[360px] flex-col items-center justify-center p-6 text-center">
+                    <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+                    <p className="mt-3 text-sm font-semibold">This conversation could not be loaded.</p>
+                    <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
+                    <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="h-3.5 w-3.5" />Try again</Button>
+                  </div>
                 ) : messages.length === 0 ? (
                   <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
                     <Sparkles className="h-8 w-8 text-muted-foreground/50" />
@@ -704,7 +761,7 @@ export default function CollaborationWorkspace() {
               {canInvite && (
                 <div className="space-y-2 rounded-xl border bg-background/60 p-3">
                   <div className="flex items-center gap-2 text-xs font-medium"><UserPlus className="h-3.5 w-3.5" />Add someone</div>
-                  <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="member@example.com" type="email" className="h-9" />
+                  <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="member@example.com" type="email" className="h-9" aria-label="Member email" />
                   <Button size="sm" className="w-full" variant="outline" onClick={() => void inviteMember()} disabled={!inviteEmail.trim() || inviting}>
                     {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Add member
                   </Button>
