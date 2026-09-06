@@ -29,13 +29,29 @@ function decodeBase64UrlStrict(part, label) {
   return decoded;
 }
 
+function validWorkspaceControl(value) {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return (
+    typeof value.collaborationId === 'string' && value.collaborationId.length > 0 &&
+    typeof value.participantId === 'string' && value.participantId.length > 0 &&
+    typeof value.bindingId === 'string' && value.bindingId.length > 0 &&
+    typeof value.labInstanceId === 'string' && value.labInstanceId.length > 0 &&
+    typeof value.leaseId === 'string' && value.leaseId.length > 0 &&
+    value.surface === 'terminal'
+  );
+}
+
 export function terminalBridgeTicketTtlMs(ttlMs = DEFAULT_TTL_MS) {
   return resolveTicketTtlMs(ttlMs);
 }
 
-export function createTerminalBridgeTicket({ streamUrl, region, sessionId, target, ttlMs = DEFAULT_TTL_MS }) {
+export function createTerminalBridgeTicket({ streamUrl, region, sessionId, target, workspaceControl, ttlMs = DEFAULT_TTL_MS }) {
   if (!streamUrl || !region || !sessionId || !target) {
     throw new Error('A complete Session Manager session is required for a terminal bridge ticket.');
+  }
+  if (!validWorkspaceControl(workspaceControl)) {
+    throw new Error('Invalid Live Workspace terminal control binding.');
   }
 
   const ttl = resolveTicketTtlMs(ttlMs);
@@ -45,6 +61,7 @@ export function createTerminalBridgeTicket({ streamUrl, region, sessionId, targe
     region,
     sessionId,
     target,
+    workspaceControl,
     nonce: randomBytes(18).toString('base64url'),
     exp: Date.now() + ttl,
   }), 'utf8');
@@ -91,7 +108,8 @@ export function verifyTerminalBridgeTicket(ticket) {
     typeof payload.sessionId !== 'string' ||
     typeof payload.target !== 'string' ||
     typeof payload.nonce !== 'string' ||
-    typeof payload.exp !== 'number'
+    typeof payload.exp !== 'number' ||
+    !validWorkspaceControl(payload.workspaceControl)
   ) {
     throw new Error('Incomplete terminal bridge ticket.');
   }
