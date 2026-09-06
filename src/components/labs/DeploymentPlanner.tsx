@@ -20,14 +20,6 @@ import { Button } from '@/components/ui/button';
 import type { DeploymentPlan } from '@/lib/infrastructure/deployment-plan-schema';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
-type PlanResponse = {
-  planId: string;
-  planHash: string;
-  sourceDesignUpdatedAt: string;
-  generatedAt: string;
-  plan: DeploymentPlan;
-};
-
 type ExecutionSupport = {
   supported: boolean;
   adapter: 'existing-lab-vm' | 'none';
@@ -37,6 +29,15 @@ type ExecutionSupport = {
     labSlug: string;
     accessMode: 'terminal' | 'desktop';
   };
+};
+
+type PlanResponse = {
+  planId: string;
+  planHash: string;
+  sourceDesignUpdatedAt: string;
+  generatedAt: string;
+  plan: DeploymentPlan;
+  executionSupport: ExecutionSupport;
 };
 
 type AuthorizationView = {
@@ -121,7 +122,7 @@ export default function DeploymentPlanner() {
   }, []);
 
   const authorizePlan = React.useCallback(async () => {
-    if (!result) return;
+    if (!result || !result.executionSupport.supported) return;
     setAuthorizing(true);
     setError(null);
     try {
@@ -235,10 +236,10 @@ export default function DeploymentPlanner() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold md:text-3xl">Deployment Planner</h1>
-            <Badge variant="secondary">Controlled execution v1</Badge>
+            <Badge variant="secondary">Controlled execution v2</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Compile the saved Infrastructure Designer blueprint into a reviewable deployment contract. OXSIG revalidates the exact saved plan at authorization, receipt issuance, and execution. A real provider VM is created only after explicit authorization, a one-time receipt, and a final cost-bearing start action.
+            Compile the saved Infrastructure Designer blueprint into a reviewable deployment contract. OXSIG checks current controlled-adapter scope before authorization, then revalidates the exact saved plan at authorization, receipt issuance, and execution. A real provider VM is created only after explicit authorization, a one-time receipt, and a final cost-bearing start action.
           </p>
         </div>
         <Button onClick={() => void generatePlan()} disabled={busy || Boolean(deployment)}>
@@ -250,9 +251,9 @@ export default function DeploymentPlanner() {
       {!result && !loading && (
         <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
           <FileCog className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 font-semibold">Blueprint → explicit proposal</p>
+          <p className="mt-3 font-semibold">Blueprint → explicit deployment contract</p>
           <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            OXSIG reads your persisted blueprint, re-runs validation on the server, identifies workloads, runtime mappings, network functions, segments, links, and the ordered actions deployment would require.
+            OXSIG reads your persisted blueprint, re-runs validation on the server, identifies workloads, runtime mappings, network functions, segments, links, and whether the current controlled one-VM adapter can execute the exact plan.
           </p>
         </div>
       )}
@@ -270,7 +271,7 @@ export default function DeploymentPlanner() {
             <Metric icon={Network} label="Network functions" value={result.plan.summary.networkFunctions} />
             <Metric icon={Network} label="Segments" value={result.plan.summary.segments} />
             <Metric icon={Network} label="Links" value={result.plan.summary.links} />
-            <Metric icon={result.plan.readiness.executable ? CheckCircle2 : ShieldAlert} label="Planner readiness" value={result.plan.readiness.executable ? 'Ready' : 'Blocked'} />
+            <Metric icon={result.executionSupport.supported ? CheckCircle2 : ShieldAlert} label="Controlled adapter" value={result.executionSupport.supported ? 'Available' : 'Design-only'} />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -327,17 +328,38 @@ export default function DeploymentPlanner() {
 
               <div className="rounded-2xl border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">Controlled adapter scope</p>
+                  <Badge variant={result.executionSupport.supported ? 'default' : 'secondary'} className="text-[9px]">
+                    {result.executionSupport.supported ? 'Available' : 'Design-only'}
+                  </Badge>
+                </div>
+                {result.executionSupport.supported && result.executionSupport.target ? (
+                  <div className="mt-3 rounded-xl bg-emerald-500/10 p-3 text-xs leading-5 text-emerald-700 dark:text-emerald-300">
+                    Controlled adapter available: <span className="font-mono">{result.executionSupport.target.labSlug}</span> · {result.executionSupport.target.accessMode}. Authorization can bind this exact plan to a one-time execution receipt.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-[11px] leading-5 text-muted-foreground">This blueprint remains valid design intent, but the current controlled runtime will not create an authorization for it.</p>
+                    {result.executionSupport.reasons.map((reason) => (
+                      <div key={reason} className="rounded-xl bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{reason}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border bg-card p-4">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2"><LockKeyhole className="h-4 w-4" /><p className="font-semibold">Authorization</p></div>
                   <Badge variant={authorization ? 'default' : 'outline'} className="text-[9px]">
                     {authorization ? authorization.state.replace('_', ' ') : 'Not authorized'}
                   </Badge>
                 </div>
                 <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                  Approval is server-side and bound to this exact plan hash. Changing the saved design invalidates the authorization or receipt before provider execution.
+                  Only a plan inside the current controlled adapter scope can be authorized for provider execution. Approval is server-side and bound to this exact plan hash; changing the saved design invalidates the authorization or receipt before provider execution.
                 </p>
 
                 {!authorization && (
-                  <Button className="mt-3 w-full" variant="outline" onClick={() => void authorizePlan()} disabled={busy}>
+                  <Button className="mt-3 w-full" variant="outline" onClick={() => void authorizePlan()} disabled={busy || !result.executionSupport.supported}>
                     {authorizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
                     Authorize exact plan
                   </Button>
@@ -352,11 +374,11 @@ export default function DeploymentPlanner() {
 
                     {authorization.executionSupport.supported && authorization.executionSupport.target ? (
                       <div className="rounded-xl bg-emerald-500/10 p-3 text-xs leading-5 text-emerald-700 dark:text-emerald-300">
-                        Controlled adapter available: <span className="font-mono">{authorization.executionSupport.target.labSlug}</span> · {authorization.executionSupport.target.accessMode}
+                        Authorized adapter: <span className="font-mono">{authorization.executionSupport.target.labSlug}</span> · {authorization.executionSupport.target.accessMode}
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium">Execution adapter not ready for this plan</p>
+                        <p className="text-xs font-medium">Authorized adapter contract is no longer executable</p>
                         {authorization.executionSupport.reasons.map((reason) => (
                           <div key={reason} className="rounded-xl bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{reason}</div>
                         ))}
@@ -434,7 +456,7 @@ export default function DeploymentPlanner() {
                   {result.plan.readiness.blockers.map((blocker) => (
                     <div key={blocker} className="rounded-xl bg-destructive/8 p-3 text-xs leading-5 text-destructive"><ShieldAlert className="mr-1.5 inline h-3.5 w-3.5" />{blocker}</div>
                   ))}
-                  {result.plan.readiness.blockers.length === 0 && <p className="text-xs text-muted-foreground">No blockers detected.</p>}
+                  {result.plan.readiness.blockers.length === 0 && <p className="text-xs text-muted-foreground">No adapter blockers detected. Authorization and a one-time receipt are still required before provider execution.</p>}
                 </div>
               </div>
 
