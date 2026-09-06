@@ -44,3 +44,34 @@ export type AcademyPracticeEvaluation = {
   feedback: string;
   nextStep: string | null;
 };
+
+export type AcademyReflectionEvaluation = {
+  score: number;
+  status: 'developing' | 'demonstrated';
+  predictionComparison: string;
+  explanationFeedback: string;
+  evidenceConnection: string;
+  nextStep: string | null;
+};
+
+export type AcademyUnderstandingSummary = {
+  reflectedPractices: number;
+  requiredPractices: number;
+  averageReflectionScore: number;
+  score: number;
+  status: 'not_started' | 'developing' | 'demonstrated';
+};
+
+export type AcademyLearningReflection = {
+  id: string;
+  lessonId: string;
+  command: string;
+  prediction: string;
+  evidenceId: string | null;
+  explanation: string | null;
+  evaluation: AcademyReflectionEvaluation | null;
+  explanationScore: number | null;
+  status: 'predicted' | 'evaluating' | 'reflected';
+  createdAt: string;
+  reflectedAt: string | null;
+};
