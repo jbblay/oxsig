@@ -27,27 +27,37 @@ import { POST } from './route';
 const user = { id: 'user-1', role: 'user' as const };
 const updatedAt = '2026-09-06T00:10:00.000Z';
 
+function ubuntuNode(id: string, x = 0): InfrastructureDesign['nodes'][number] {
+  return {
+    id,
+    type: 'infrastructure',
+    position: { x, y: 0 },
+    data: {
+      kind: 'server',
+      label: id === 'server-1' ? 'Ubuntu Server' : 'Ubuntu Peer',
+      runtimeProfile: {
+        profileId: 'ubuntu-24-04',
+        architecture: 'x86_64',
+        resourceClass: 'lab-small',
+        accessMode: 'terminal',
+      },
+    },
+  };
+}
+
 function validDesign(): InfrastructureDesign {
   return {
     version: 1,
-    nodes: [
-      {
-        id: 'server-1',
-        type: 'infrastructure',
-        position: { x: 0, y: 0 },
-        data: {
-          kind: 'server',
-          label: 'Ubuntu Server',
-          runtimeProfile: {
-            profileId: 'ubuntu-24-04',
-            architecture: 'x86_64',
-            resourceClass: 'lab-small',
-            accessMode: 'terminal',
-          },
-        },
-      },
-    ],
+    nodes: [ubuntuNode('server-1')],
     edges: [],
+  };
+}
+
+function unsupportedDesign(): InfrastructureDesign {
+  return {
+    version: 1,
+    nodes: [ubuntuNode('server-1'), ubuntuNode('server-2', 200)],
+    edges: [{ id: 'edge-1', source: 'server-1', target: 'server-2' }],
   };
 }
 
@@ -114,7 +124,24 @@ describe('POST /api/labs/infrastructure-plan/authorize', () => {
     expect(mocks.createDeploymentAuthorization).not.toHaveBeenCalled();
   });
 
-  it('stores approval of the exact server-compiled plan without executing infrastructure', async () => {
+  it('rejects a valid but unsupported topology before creating authorization state', async () => {
+    const design = unsupportedDesign();
+    mocks.getInfrastructureDesign.mockResolvedValue({ design, updatedAt });
+    const plan = compileDeploymentPlan(design);
+    const identity = getDeploymentPlanIdentity(plan);
+
+    const response = await POST(request({ planHash: identity.planHash, confirm: true }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(body.error).toContain('outside the current controlled execution adapter scope');
+    expect(body.reasons.join(' ')).toContain('exactly one VM workload');
+    expect(body.reasons.join(' ')).toContain('explicit topology links');
+    expect(mocks.createDeploymentAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('stores approval of the exact server-compiled supported plan without executing infrastructure', async () => {
     const plan = compileDeploymentPlan(validDesign());
     const identity = getDeploymentPlanIdentity(plan);
 
