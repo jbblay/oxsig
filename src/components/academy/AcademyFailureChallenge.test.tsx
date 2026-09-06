@@ -32,7 +32,8 @@ describe('AcademyFailureChallenge', () => {
   });
 
   it('does not call the mutation API when explicit browser confirmation is declined', () => {
-    const confirmMock = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirmMock = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirmMock);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -45,7 +46,7 @@ describe('AcademyFailureChallenge', () => {
   });
 
   it('sends only the curated template with literal confirm true and exposes the isolated workspace', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.stubGlobal('confirm', vi.fn(() => true));
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body || '{}'));
       expect(body).toEqual({
