@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   terminateInteractiveLabSession: vi.fn(),
   createTicket: vi.fn(),
   ticketTtl: vi.fn(),
+  getGuestEvidence: vi.fn(),
+  getAuthorization: vi.fn(),
+  parseGuestPayload: vi.fn(),
+  createAccessTicket: vi.fn(),
   logAudit: vi.fn(),
   requestMetadata: vi.fn(),
 }));
@@ -21,6 +25,15 @@ vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: () => ({ query: mocks.poolQuery }) }));
+vi.mock('@/lib/execution-evidence/guest-service-readiness', () => ({
+  getGuestServiceReadinessEvidence: mocks.getGuestEvidence,
+}));
+vi.mock('@/lib/infrastructure/deployment-authorization', () => ({
+  getDeploymentAuthorizationById: mocks.getAuthorization,
+}));
+vi.mock('@/lib/infrastructure/guest-service-readiness-evidence', () => ({
+  guestServiceReadinessPayloadSchema: { parse: mocks.parseGuestPayload },
+}));
 vi.mock('@/lib/labs/desktop-runtime', () => ({
   ensureDesktopRuntime: mocks.ensureDesktopRuntime,
   inspectDesktopService: mocks.inspectDesktopService,
@@ -28,6 +41,9 @@ vi.mock('@/lib/labs/desktop-runtime', () => ({
 }));
 vi.mock('@/lib/labs/aws-runtime', () => ({
   terminateInteractiveLabSession: mocks.terminateInteractiveLabSession,
+}));
+vi.mock('@/lib/labs/desktop-access-evidence-ticket', () => ({
+  createDesktopAccessEvidenceTicket: mocks.createAccessTicket,
 }));
 vi.mock('@/lib/labs/terminal-bridge-ticket.js', () => ({
   createTerminalBridgeTicket: mocks.createTicket,
@@ -46,6 +62,9 @@ import { POST } from './route';
 
 const user = { id: 'user-1', role: 'user' as const };
 const labId = '11111111-1111-4111-8111-111111111111';
+const authorizationId = '22222222-2222-4222-8222-222222222222';
+const deploymentExecutionId = '33333333-3333-4333-8333-333333333333';
+const guestEvidenceId = '44444444-4444-4444-8444-444444444444';
 const context = { params: Promise.resolve({ id: labId }) };
 const lab = {
   id: labId,
@@ -67,6 +86,24 @@ const diagnostics = {
   platformName: 'Ubuntu',
   platformVersion: '24.04',
   ready: true,
+};
+const guestPayload = {
+  readiness: { guestServiceReady: true, state: 'ready' },
+  planId: 'plan_123',
+  planHash: 'a'.repeat(64),
+  deploymentExecutionId,
+  target: { nodeId: 'server-1', labSlug: 'ubuntu-server', accessMode: 'desktop' },
+};
+const authorization = {
+  id: authorizationId,
+  state: 'analyzed',
+  executionId: deploymentExecutionId,
+  labInstanceId: labId,
+  planId: 'plan_123',
+  planHash: 'a'.repeat(64),
+  executionSupport: {
+    target: { nodeId: 'server-1', labSlug: 'ubuntu-server', accessMode: 'desktop' },
+  },
 };
 
 function request() {
@@ -95,6 +132,18 @@ describe('POST /api/labs/instances/[id]/desktop/session', () => {
     });
     mocks.createTicket.mockReturnValue('bridge-ticket');
     mocks.ticketTtl.mockReturnValue(60_000);
+    mocks.getGuestEvidence.mockResolvedValue({
+      id: guestEvidenceId,
+      deploymentAuthorizationId: authorizationId,
+    });
+    mocks.parseGuestPayload.mockReturnValue(guestPayload);
+    mocks.getAuthorization.mockResolvedValue(authorization);
+    mocks.createAccessTicket.mockReturnValue({
+      ticket: 'access-evidence-ticket',
+      evidenceExecutionId: '55555555-5555-4555-8555-555555555555',
+      expiresAt: '2099-09-06T04:01:00.000Z',
+      ttlMs: 120_000,
+    });
     mocks.requestMetadata.mockReturnValue({ userAgent: 'vitest' });
     mocks.logAudit.mockResolvedValue(undefined);
   });
@@ -112,13 +161,50 @@ describe('POST /api/labs/instances/[id]/desktop/session', () => {
     expect(mocks.startDesktopPortSession).not.toHaveBeenCalled();
   });
 
-  it('starts the private desktop tunnel only after the guest service inspection is ready', async () => {
+  it('starts the private desktop tunnel and issues an evidence offer bound to that session', async () => {
     const response = await POST(request(), context);
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(mocks.inspectDesktopService).toHaveBeenCalledWith(lab.runtime_external_id, 'linux');
     expect(mocks.startDesktopPortSession).toHaveBeenCalledWith(lab.runtime_external_id, 'linux');
-    expect(body).toMatchObject({ sessionId: 'session-1', port: 5901, platform: 'linux' });
+    expect(mocks.createAccessTicket).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: user.id,
+      labInstanceId: labId,
+      deploymentAuthorizationId: authorizationId,
+      deploymentExecutionId,
+      planId: 'plan_123',
+      planHash: 'a'.repeat(64),
+      prerequisiteGuestEvidenceId: guestEvidenceId,
+      sessionId: 'session-1',
+      target: lab.runtime_external_id,
+      platform: 'linux',
+      port: 5901,
+    }));
+    expect(body).toMatchObject({
+      sessionId: 'session-1',
+      port: 5901,
+      platform: 'linux',
+      accessEvidence: {
+        eligible: true,
+        ticket: 'access-evidence-ticket',
+        prerequisiteGuestEvidenceId: guestEvidenceId,
+      },
+    });
+  });
+
+  it('keeps a working desktop available when prerequisite evidence is absent', async () => {
+    mocks.getGuestEvidence.mockRejectedValue(new Error('No guest evidence'));
+
+    const response = await POST(request(), context);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.startDesktopPortSession).toHaveBeenCalledTimes(1);
+    expect(body.accessEvidence).toMatchObject({
+      eligible: false,
+      reason: expect.stringContaining('guest-service readiness evidence'),
+    });
+    expect(mocks.createAccessTicket).not.toHaveBeenCalled();
   });
 });
