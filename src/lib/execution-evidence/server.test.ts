@@ -104,8 +104,8 @@ describe('execution evidence lifecycle', () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("state='expired'")) return { rows: [] };
       if (sql.includes('SELECT *') && sql.includes('FOR UPDATE')) return { rows: [terminalRow()] };
-      if (sql.includes("state='executing'")) return { rows: [{ id: evidenceId }] };
-      if (sql.includes("state='evidence_recorded'")) return { rows: [recorded] };
+      if (sql.includes("SET state='evidence_recorded'")) return { rows: [recorded] };
+      if (sql.includes("SET state='executing'")) return { rows: [{ id: evidenceId }] };
       throw new Error(`Unexpected SQL: ${sql.slice(0, 100)}`);
     });
     mocks.transaction.mockImplementation(async (handler) => handler({ query }));
