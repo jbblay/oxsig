@@ -4,7 +4,7 @@
  * Production requests coordinate through PostgreSQL so limits survive
  * serverless cold starts and apply consistently across application instances.
  * A small in-memory bucket remains as an availability fallback for ordinary
- * endpoints. Cost-bearing or security-sensitive callers can opt into
+ * endpoints. Cost-bearing or security-sensitive policies can opt into
  * fail-closed behavior so a shared-limiter outage never weakens their policy.
  */
 
@@ -15,6 +15,7 @@ import { getPool, isDatabaseConfigured } from '@/lib/db/pool';
 export interface RateLimitConfig {
   maxRequests: number;
   windowMs: number;
+  failClosed?: boolean;
 }
 
 export interface RateLimitOptions {
@@ -40,8 +41,8 @@ export const RATE_LIMITS = {
   API_DOCUMENTS: { maxRequests: 50, windowMs: 60 * 1000 },
   API_SIGNATURES: { maxRequests: 30, windowMs: 60 * 1000 },
   PUBLIC: { maxRequests: 200, windowMs: 60 * 1000 },
-  LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000 },
-} as const;
+  LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000, failClosed: true },
+} as const satisfies Record<string, RateLimitConfig>;
 
 function getClientId(request: NextRequest): string {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -179,20 +180,21 @@ export async function checkRateLimit(
   }
 
   const key = buildRateLimitBucketKey(request, config, identifier, bucketScope);
+  const failClosed = options.failClosed ?? config.failClosed ?? false;
   let bucket: ConsumedBucket;
 
   if (isDatabaseConfigured()) {
     try {
       bucket = await consumeDatabaseBucket(key, config);
     } catch (error) {
-      if (options.failClosed) {
+      if (failClosed) {
         console.error('Shared rate limiter unavailable; protected operation denied:', error);
         return unavailableResponse();
       }
       console.error('Shared rate limiter unavailable; using local fallback:', error);
       bucket = consumeMemoryBucket(key, config);
     }
-  } else if (options.failClosed) {
+  } else if (failClosed) {
     console.error('Shared rate limiter unavailable; protected operation denied because DATABASE_URL is not configured.');
     return unavailableResponse();
   } else {
