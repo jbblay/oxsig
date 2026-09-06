@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Activity, Boxes, CloudCog, FileCog, MonitorCheck, ShieldCheck } from 'lucide-react';
+import { Activity, Boxes, CloudCog, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
+import AccessPathReadinessReview from '@/components/labs/AccessPathReadinessReview';
 import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
 import GuestServiceReadinessReview from '@/components/labs/GuestServiceReadinessReview';
@@ -12,7 +13,7 @@ import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
 import { Button } from '@/components/ui/button';
 
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
-type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness' | 'guest-service';
+type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness' | 'guest-service' | 'access-path';
 
 export default function CyberLabWorkspace() {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
@@ -21,6 +22,7 @@ export default function CyberLabWorkspace() {
   const [evidenceMounted, setEvidenceMounted] = React.useState(false);
   const [readinessMounted, setReadinessMounted] = React.useState(false);
   const [guestServiceMounted, setGuestServiceMounted] = React.useState(false);
+  const [accessPathMounted, setAccessPathMounted] = React.useState(false);
 
   React.useEffect(() => {
     const saved = window.localStorage.getItem(MODE_KEY);
@@ -44,6 +46,10 @@ export default function CyberLabWorkspace() {
       setGuestServiceMounted(true);
       setMode('guest-service');
     }
+    if (saved === 'access-path') {
+      setAccessPathMounted(true);
+      setMode('access-path');
+    }
   }, []);
 
   const selectMode = (next: WorkspaceMode) => {
@@ -52,6 +58,7 @@ export default function CyberLabWorkspace() {
     if (next === 'evidence') setEvidenceMounted(true);
     if (next === 'readiness') setReadinessMounted(true);
     if (next === 'guest-service') setGuestServiceMounted(true);
+    if (next === 'access-path') setAccessPathMounted(true);
     setMode(next);
     window.localStorage.setItem(MODE_KEY, next);
   };
@@ -77,7 +84,10 @@ export default function CyberLabWorkspace() {
         <Button size="sm" variant={mode === 'guest-service' ? 'default' : 'ghost'} onClick={() => selectMode('guest-service')}>
           <MonitorCheck className="mr-1.5 h-4 w-4" />Guest Service
         </Button>
-        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime → evidence → readiness → guest service. Each boundary remains explicit.</p>
+        <Button size="sm" variant={mode === 'access-path' ? 'default' : 'ghost'} onClick={() => selectMode('access-path')}>
+          <Route className="mr-1.5 h-4 w-4" />Access Path
+        </Button>
+        <p className="ml-auto px-2 text-[11px] text-muted-foreground">Design → plan → authorize → runtime → evidence → readiness → guest service → access path. Each boundary remains explicit.</p>
       </div>
 
       <div className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
@@ -113,6 +123,12 @@ export default function CyberLabWorkspace() {
       {guestServiceMounted && (
         <div className={mode === 'guest-service' ? 'block' : 'hidden'} aria-hidden={mode !== 'guest-service'}>
           <GuestServiceReadinessReview />
+        </div>
+      )}
+
+      {accessPathMounted && (
+        <div className={mode === 'access-path' ? 'block' : 'hidden'} aria-hidden={mode !== 'access-path'}>
+          <AccessPathReadinessReview />
         </div>
       )}
     </>
