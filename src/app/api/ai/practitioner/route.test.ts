@@ -111,9 +111,25 @@ describe('AI Practitioner evidence analysis', () => {
     }));
   });
 
-  it('ignores resubmitted browser output and analyzes the server-stored evidence record', async () => {
+  it('requires an exact evidence ID before loading terminal evidence', async () => {
     const response = await POST(request({
       action: 'explain',
+      labInstanceId: labId,
+      prompt: 'What happened?',
+      command: 'uname -a',
+      stdout: 'forged-client-output',
+      stderr: '',
+      exitCode: 0,
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.getTerminalEvidenceForAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('ignores resubmitted browser output and analyzes the exact server-stored evidence record', async () => {
+    const response = await POST(request({
+      action: 'explain',
+      evidenceId,
       labInstanceId: labId,
       prompt: 'What happened?',
       command: 'uname -a',
@@ -129,6 +145,7 @@ describe('AI Practitioner evidence analysis', () => {
       labInstanceId: labId,
       command: 'uname -a',
       surface: 'ai-practitioner',
+      evidenceId,
     });
     expect(mocks.explainPractitionerEvidence).toHaveBeenCalledWith(expect.objectContaining({
       command: 'uname -a',
@@ -151,7 +168,7 @@ describe('AI Practitioner evidence analysis', () => {
     });
   });
 
-  it('reuses an already analyzed evidence record without another AI provider call', async () => {
+  it('reuses an already analyzed exact evidence record without another AI provider call', async () => {
     mocks.getTerminalEvidenceForAnalysis.mockResolvedValue(evidence({
       state: 'analyzed',
       analysisKind: 'ai-practitioner',
@@ -161,6 +178,7 @@ describe('AI Practitioner evidence analysis', () => {
 
     const response = await POST(request({
       action: 'explain',
+      evidenceId,
       labInstanceId: labId,
       prompt: 'Explain again',
       command: 'uname -a',
