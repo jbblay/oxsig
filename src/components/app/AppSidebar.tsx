@@ -164,6 +164,7 @@ function SidebarContent({
             variant="ghost"
             className={cn(compact ? 'h-9 w-9' : 'h-9 px-2.5')}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle theme"
             title="Toggle theme"
           >
             <Sun className="h-4 w-4 dark:hidden" />
@@ -175,6 +176,7 @@ function SidebarContent({
             variant="ghost"
             className={cn(compact ? 'h-9 w-9' : 'h-9 px-2.5 text-muted-foreground')}
             onClick={() => void logout()}
+            aria-label="Sign out"
             title="Sign out"
           >
             <LogOut className="h-4 w-4" />
@@ -201,7 +203,7 @@ export default function AppSidebar({
     <>
       <aside
         className={cn(
-          'hidden min-h-screen shrink-0 border-r border-sidebar-border/70 bg-sidebar/90 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-300 ease-in-out md:flex',
+          'sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border/70 bg-sidebar/90 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-300 ease-in-out md:flex',
           collapsed ? 'w-[76px]' : 'w-[268px]'
         )}
       >
