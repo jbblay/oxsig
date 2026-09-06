@@ -3,8 +3,9 @@
  *
  * Production requests coordinate through PostgreSQL so limits survive
  * serverless cold starts and apply consistently across application instances.
- * A small in-memory bucket remains only as an availability fallback when the
- * database is not configured or a rate-limit query itself fails.
+ * A small in-memory bucket remains as an availability fallback for ordinary
+ * endpoints. Cost-bearing or security-sensitive policies can opt into
+ * fail-closed behavior so a shared-limiter outage never weakens their policy.
  */
 
 import { createHash } from 'node:crypto';
@@ -14,6 +15,11 @@ import { getPool, isDatabaseConfigured } from '@/lib/db/pool';
 export interface RateLimitConfig {
   maxRequests: number;
   windowMs: number;
+  failClosed?: boolean;
+}
+
+export interface RateLimitOptions {
+  failClosed?: boolean;
 }
 
 interface RequestRecord {
@@ -35,8 +41,8 @@ export const RATE_LIMITS = {
   API_DOCUMENTS: { maxRequests: 50, windowMs: 60 * 1000 },
   API_SIGNATURES: { maxRequests: 30, windowMs: 60 * 1000 },
   PUBLIC: { maxRequests: 200, windowMs: 60 * 1000 },
-  LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000 },
-} as const;
+  LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000, failClosed: true },
+} as const satisfies Record<string, RateLimitConfig>;
 
 function getClientId(request: NextRequest): string {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -146,11 +152,25 @@ function limitedResponse(config: RateLimitConfig, bucket: ConsumedBucket): NextR
   );
 }
 
+function unavailableResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: 'Rate Limit Unavailable',
+      message: 'This protected operation is temporarily unavailable because its shared safety limit could not be verified.',
+    },
+    {
+      status: 503,
+      headers: { 'Cache-Control': 'no-store' },
+    }
+  );
+}
+
 export async function checkRateLimit(
   request: NextRequest,
   config: RateLimitConfig,
   identifier?: string,
-  bucketScope?: string
+  bucketScope?: string,
+  options: RateLimitOptions = {}
 ): Promise<NextResponse | null> {
   if (!Number.isFinite(config.maxRequests) || config.maxRequests < 1) {
     throw new Error('Rate-limit maxRequests must be at least 1');
@@ -160,15 +180,23 @@ export async function checkRateLimit(
   }
 
   const key = buildRateLimitBucketKey(request, config, identifier, bucketScope);
+  const failClosed = options.failClosed ?? config.failClosed ?? false;
   let bucket: ConsumedBucket;
 
   if (isDatabaseConfigured()) {
     try {
       bucket = await consumeDatabaseBucket(key, config);
     } catch (error) {
+      if (failClosed) {
+        console.error('Shared rate limiter unavailable; protected operation denied:', error);
+        return unavailableResponse();
+      }
       console.error('Shared rate limiter unavailable; using local fallback:', error);
       bucket = consumeMemoryBucket(key, config);
     }
+  } else if (failClosed) {
+    console.error('Shared rate limiter unavailable; protected operation denied because DATABASE_URL is not configured.');
+    return unavailableResponse();
   } else {
     bucket = consumeMemoryBucket(key, config);
   }

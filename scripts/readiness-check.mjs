@@ -3,6 +3,7 @@ import process from 'node:process';
 import { EC2Client, DescribeSecurityGroupsCommand, DescribeSubnetsCommand } from '@aws-sdk/client-ec2';
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import pg from 'pg';
+import { describeSchemaParity, inspectSchemaParity } from './schema-parity-lib.mjs';
 
 const { Pool } = pg;
 const args = new Set(process.argv.slice(2));
@@ -94,6 +95,30 @@ async function checkDatabase() {
     record('Database', 'UNREACHABLE', error instanceof Error ? error.message : 'PostgreSQL connection failed.', { critical: true });
     await pool.end().catch(() => undefined);
     return null;
+  }
+}
+
+async function checkDatabaseSchema(databasePool) {
+  if (!databasePool) {
+    record('Database schema', 'UNREACHABLE', 'Database schema parity could not be verified.', { critical: true });
+    return;
+  }
+
+  try {
+    const parity = await inspectSchemaParity(databasePool);
+    record(
+      'Database schema',
+      parity.ready ? 'READY' : 'DEGRADED',
+      describeSchemaParity(parity),
+      { critical: true }
+    );
+  } catch (error) {
+    record(
+      'Database schema',
+      'UNREACHABLE',
+      error instanceof Error ? error.message : 'Database schema parity check failed.',
+      { critical: true }
+    );
   }
 }
 
@@ -309,6 +334,7 @@ function checkOptionalLimits() {
 }
 
 const databasePool = await checkDatabase();
+await checkDatabaseSchema(databasePool);
 checkClerk();
 await checkStorage();
 const labsReady = await checkLabs();

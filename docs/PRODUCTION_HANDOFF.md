@@ -1,6 +1,6 @@
 # OXSIG Production Handoff
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 This file exists so a fresh ChatGPT/session or maintainer can resume OXSIG from repository truth rather than conversation history.
 
@@ -14,7 +14,9 @@ PR #59, `Productionize terminal WebSocket transport for Vercel`, passed exact-he
 
 PR #60, `Final runtime hardening before production configuration`, passed exact-head CI and was merged into `main` as `c2d24b2dc6fcc96a5185cf1f3cce64ddb353105b`. PR #61 then recorded that handoff in canonical main.
 
-The current production implementation extends that baseline with the genuine browser-desktop path described below. Always verify the current `main` head and exact-head CI before treating any SHA named in historical notes as canonical.
+PR #88, `Live Workspace Foundation v1`, passed exact-head CI at `cc8735eadd018b98f0906fa6cb0d37e1485c7728` and was merged into canonical `main` as `91433a0ffbd99e244b61d01d52fc923650cd672a`.
+
+The current production implementation extends that baseline with the genuine browser-desktop path and Live Workspace foundation described below. Always verify the current `main` head and exact-head CI before treating any SHA named in historical notes as canonical.
 
 ## Terminal transport state
 
@@ -43,7 +45,7 @@ Linux desktop uses TigerVNC with `-localhost`; Windows uses TightVNC configured 
 
 OXSIG's browser SSM client currently identifies as version `1.0.0`. This is deliberate for the desktop port tunnel: current amazon-ssm-agent selects its basic byte-stream port forwarding path for client versions below `1.1.70`; newer client versions trigger the native plugin's smux transport. A protocol test locks this compatibility assumption. Do not increase the browser SSM ClientVersion without reviewing both terminal and desktop transports.
 
-Desktop transport also performs bounded recovery with a fresh SSM session after unexpected tunnel interruption. A live deployed Windows/Kali desktop test is still required as part of production validation; CI proves the application contract, type safety, tests, and build, not the external AWS/VNC runtime.
+Desktop transport also performs bounded recovery with a fresh SSM session after unexpected tunnel interruption. A live deployed Windows/Kali desktop test is still required as part of production validation; CI proves the application contract, type safety, tests, build, and database migration compatibility, not the external AWS/VNC runtime.
 
 ## Lab UI consistency
 
@@ -51,19 +53,29 @@ The Lab Inspector and Lab Dock are the single lifecycle surface for terminal and
 
 ## Production work already implemented
 
-The codebase contains the major production architecture: Clerk auth, Neon persistence, Academy durable courses/progress/Q&A/practice/sessions/mastery/history, AI Practitioner integration, collaboration invitations and Ably realtime fallback, Sentry observability, PostHog analytics foundation, shared PostgreSQL rate limiting, scheduled lab cleanup, durable lab topology, private S3 storage, Storyboard direct-to-S3 audio and legacy migration, AWS EC2/SSM lab runtime, same-origin terminal and desktop bridging, session-ticket replay protection, reproducible pnpm lockfile CI, production configuration checks, and readiness diagnostics.
+The codebase contains the major production architecture: Clerk auth, Neon persistence, Academy durable courses/progress/Q&A/practice/sessions/mastery/history, Adaptive Instructor and failure/remediation learning flows, AI Practitioner integration, collaboration invitations and Ably realtime fallback, Live Workspace role/resource foundations, Sentry observability, PostHog analytics foundation, shared PostgreSQL rate limiting, scheduled lab cleanup, durable lab topology, private S3 storage, Storyboard direct-to-S3 audio and legacy migration, AWS EC2/SSM lab runtime, same-origin terminal and desktop bridging, session-ticket replay protection, reproducible pnpm lockfile CI, production configuration checks, database schema-parity verification, and readiness diagnostics.
 
 Academy mastery scoring is defined so courses with required practice use a 70/30 lesson/practice weighting, while courses with no required practice derive the full score from lesson completion and start at zero rather than receiving an artificial practice contribution.
 
 ## Database state
 
-Latest tracked schema migration: `026_storyboard_audio_storage.sql`.
+At canonical `main` `91433a0ffbd99e244b61d01d52fc923650cd672a`, the latest tracked schema migration is `036_live_workspace_foundation.sql`.
 
-Repository state is not proof that a deployed Neon database has applied migrations. Apply outstanding migrations in the target environment with:
+Do not use the migration number written in this document as a release gate. Repository state is not proof that a deployed Neon database has applied the migrations required by the current checkout. Apply outstanding migrations in the target environment with:
 
 ```bash
 pnpm db:migrate
 ```
+
+Then require repository/database parity with:
+
+```bash
+pnpm db:parity
+```
+
+`pnpm db:parity` derives the numbered migration set from `migrations/`, compares it with `oxisg_schema_migrations`, and fails when repository migrations are pending or when the database contains migration history absent from the checkout. `pnpm readiness -- --strict` also treats schema mismatch as a critical failure.
+
+CI starts a real PostgreSQL service, applies the complete migration chain, and requires `pnpm db:parity` before typecheck, tests, and the production build. This proves migration compatibility from an empty CI database; it does not prove that a specific deployed Neon database has been migrated.
 
 Storyboard legacy database audio migration is a separate data operation and runs only after migration 026:
 
@@ -138,7 +150,7 @@ pnpm dev:up
 These are environment/operator/live-validation tasks rather than unfinished feature architecture:
 
 - Configure production Vercel environment values without committing secrets.
-- Apply all outstanding Neon migrations through 026.
+- Apply all outstanding Neon migrations with `pnpm db:migrate`, then require `pnpm db:parity` to pass against the production database.
 - Run `pnpm storyboards:migrate-audio` when legacy BYTEA recordings exist.
 - Configure and verify production AWS IAM/OIDC identity, least-privilege permissions, S3, EC2, SSM, subnet, security group, instance profile, and `AWS-StartPortForwardingSession` permission.
 - Activate/verify the Kali Marketplace image if Kali desktop is intended to be publicly available at launch.
@@ -148,13 +160,13 @@ These are environment/operator/live-validation tasks rather than unfinished feat
 - Live-test a Windows desktop profile end-to-end: provision -> desktop bootstrap -> SSM port session -> browser RFB -> keyboard/pointer -> disconnect/reconnect -> stop/destroy.
 - Live-test Kali desktop after Marketplace activation if it is enabled for release.
 - Live-test Storyboard S3 upload/playback and legacy-audio migration results.
-- Live-test collaboration invitations, realtime/fallback behavior, and attachments.
+- Live-test collaboration invitations, realtime/fallback behavior, attachments, and the Live Workspace foundation.
 - Exercise terminal and desktop recovery under forced/unexpected WebSocket interruption.
-- Enable/verify a `main` branch protection/ruleset requiring CI. The current GitHub app connection cannot independently read the administrative branch-protection endpoint.
+- Enable/verify a `main` branch protection/ruleset requiring CI and blocking direct pushes. As of the 2026-09-06 audit, GitHub reported `main` as unprotected.
 - Perform final production smoke/E2E validation and assign the release score only from canonical `main` plus live evidence.
 
 ## Final audit rule
 
 Separate code verification from live configuration verification. A committed integration is not proof that an external provider is configured, a database migration is applied, a cloud permission is correct, or a production E2E path works.
 
-Target final audit flow: canonical main and CI; auth/security boundaries; database/migrations; Clerk; Academy/AI Practitioner; AWS labs and SSM terminal/desktop; S3/Storyboard/Vault/collaboration media; Resend/Ably/Sentry/PostHog/OpenAI; scheduler/cleanup; dependency reproducibility; production health/readiness; live E2E; documentation; final release score out of 100.
+Target final audit flow: canonical main and CI; auth/security boundaries; database/migrations and schema parity; Clerk; Academy/AI Practitioner; AWS labs and SSM terminal/desktop; S3/Storyboard/Vault/collaboration media; Resend/Ably/Sentry/PostHog/OpenAI; scheduler/cleanup; dependency reproducibility; production health/readiness; live E2E; documentation; final release score out of 100.

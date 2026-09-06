@@ -8,7 +8,7 @@
     "dev:up": "bash scripts/dev-up.sh",
     "build": "next build",
     "start": "node scripts/start-production.mjs --prod",
-    "server:check": "node --check server.mjs && node --check scripts/start-production.mjs && node --check scripts/env-loader.mjs && node --check scripts/elevenlabs-voices-lib.mjs && node --check scripts/elevenlabs-voices.mjs",
+    "server:check": "node --check server.mjs && node --check scripts/start-production.mjs && node --check scripts/env-loader.mjs && node --check scripts/elevenlabs-voices-lib.mjs && node --check scripts/elevenlabs-voices.mjs && node --check scripts/schema-parity-lib.mjs && node --check scripts/schema-parity-check.mjs",
     "prod:check": "node scripts/production-check-runner.mjs",
     "readiness": "node scripts/readiness-check.mjs",
     "elevenlabs:voices": "node scripts/elevenlabs-voices.mjs",
@@ -17,6 +17,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "node scripts/migrate.mjs",
+    "db:parity": "node scripts/schema-parity-check.mjs",
     "storyboards:migrate-audio": "node scripts/migrate-storyboard-audio.mjs"
   },
   "dependencies": {
