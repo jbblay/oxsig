@@ -39,7 +39,7 @@ function mapLearnerDefinition(lab: LabDefinition): LearnerLabDefinition {
     estimatedCpu: lab.estimatedCpu,
     objectives: lab.objectives,
     available: lab.available,
-    availabilityNote: lab.availabilityNote,
+    availabilityNote: lab.available ? lab.availabilityNote : 'This lab profile is not activated on this deployment yet.',
   };
 }
 
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
     if (!lab.available) {
       return NextResponse.json(
         {
-          error: lab.availabilityNote || `${lab.name} is not enabled yet`,
+          error: 'This lab profile is not activated on this deployment yet.',
           code: 'LAB_PROFILE_UNAVAILABLE',
         },
         { status: 409 }
