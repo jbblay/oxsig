@@ -23,7 +23,7 @@ type CapabilityState = {
   id: string;
   title: string;
   outcome: string;
-  evidence: string;
+  evidenceRequirement: string;
   practiceLabel: string;
   order: number;
   status: 'not_started' | 'in_progress' | 'demonstrated';
@@ -182,15 +182,14 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
                     onClick={() => setSelectedId(capability.id)}
                     className={cn(
                       'relative z-10 flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      active && 'bg-background shadow-sm ring-1 ring-border',
-                      !active && 'hover:bg-background/60'
+                      active ? 'bg-background shadow-sm ring-1 ring-border' : 'hover:bg-background/60'
                     )}
                     aria-expanded={active}
                   >
                     <span className={cn(
                       'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-background transition-all',
                       demonstrated && 'border-emerald-500/50 bg-emerald-500/15 text-emerald-600',
-                      inProgress && 'border-sky-500/55 bg-sky-500/10 text-sky-600 shadow-[0_0_20px_-10px_rgba(14,165,233,0.85)]',
+                      inProgress && 'border-sky-500/55 bg-sky-500/10 text-sky-600 shadow-[0_0_20px_-10px_rgba(14,165,233,0.85)]'
                     )}>
                       {demonstrated ? <Check className="h-4 w-4" /> : inProgress ? <span className="h-2.5 w-2.5 rounded-full bg-sky-500 motion-safe:animate-pulse" /> : <Circle className="h-3.5 w-3.5" />}
                     </span>
@@ -223,7 +222,7 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
               </div>
               <div className="rounded-2xl border bg-background/65 p-4">
                 <p className="text-xs font-semibold">What counts as evidence</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{selected.evidence}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{selected.evidenceRequirement}</p>
               </div>
             </div>
 
