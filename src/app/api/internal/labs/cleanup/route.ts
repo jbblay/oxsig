@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db/pool';
@@ -135,7 +136,7 @@ export async function GET(request: NextRequest) {
           await client.query(
             `INSERT INTO lab_events (lab_instance_id,event_type,source,payload)
              VALUES ($1,'expired_cleanup','scheduler',$2)`,
-            [row.id, JSON.stringify({
+            [row.id, stringifyPostgresJson({
               provider: 'aws-ec2',
               externalId: candidate.externalId,
               status,
@@ -159,7 +160,7 @@ export async function GET(request: NextRequest) {
             await client.query(
              `INSERT INTO lab_events (lab_instance_id,event_type,source,payload)
               VALUES ($1,'expired_cleanup_missing_instance','scheduler',$2)`,
-             [row.id, JSON.stringify({
+             [row.id, stringifyPostgresJson({
                provider: 'aws-ec2',
                externalId: candidate.externalId,
                status: 'destroyed',
@@ -207,7 +208,7 @@ export async function GET(request: NextRequest) {
         await client.query(
          `INSERT INTO lab_events (lab_instance_id,event_type,source,payload)
           VALUES ($1,'expired_cleanup_runtime_missing','scheduler',$2)`,
-         [updated.id, JSON.stringify({
+         [updated.id, stringifyPostgresJson({
            provider: 'aws-ec2',
            status: 'failed',
            reason: 'runtime_external_id_missing',

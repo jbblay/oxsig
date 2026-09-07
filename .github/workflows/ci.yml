@@ -56,6 +56,10 @@ jobs:
           OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
       - run: pnpm typecheck
       - run: pnpm test:run
+      - name: Verify PostgreSQL parameter boundary
+        run: pnpm exec vitest run src/lib/db/pool.integration.test.ts
+        env:
+          OXSIG_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
       - run: pnpm build
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k

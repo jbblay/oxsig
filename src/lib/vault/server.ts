@@ -1,9 +1,19 @@
 import 'server-only';
 
 import { z } from 'zod';
+import { InvalidPostgresJsonKeyError, sanitizePostgresJsonValue } from '@/lib/db/postgres-safe';
 import { VAULT_KINDS, type VaultItem } from './types';
 
 const sourceTypes = ['manual', 'collaboration', 'board', 'lab'] as const;
+
+const metadataSchema = z.record(z.string(), z.unknown()).superRefine((value, context) => {
+  try {
+    sanitizePostgresJsonValue(value);
+  } catch (error) {
+    if (!(error instanceof InvalidPostgresJsonKeyError)) throw error;
+    context.addIssue({ code: z.ZodIssueCode.custom, message: error.message });
+  }
+});
 
 export const vaultCreateSchema = z.object({
   kind: z.enum(VAULT_KINDS),
@@ -15,7 +25,7 @@ export const vaultCreateSchema = z.object({
   pinned: z.boolean().optional().default(false),
   sourceType: z.enum(sourceTypes).nullable().optional().default('manual'),
   sourceId: z.string().trim().max(255).nullable().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional().default({}),
+  metadata: metadataSchema.optional().default({}),
 }).strict();
 
 export const vaultUpdateSchema = z.object({
@@ -29,7 +39,7 @@ export const vaultUpdateSchema = z.object({
   archived: z.boolean().optional(),
   sourceType: z.enum(sourceTypes).nullable().optional(),
   sourceId: z.string().trim().max(255).nullable().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: metadataSchema.optional(),
 }).strict();
 
 export function normalizeVaultTags(tags: string[]) {

@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import 'server-only';
 
 import { captureProductEvent } from '@/lib/analytics/posthog';
@@ -268,7 +269,7 @@ export async function executeControlledDeployment(input: {
           lab.description,
           lab.difficulty,
           lab.runtime,
-          JSON.stringify({
+          stringifyPostgresJson({
             objectives: lab.objectives,
             osFamily: lab.osFamily,
             platform: lab.platform,
@@ -289,7 +290,7 @@ export async function executeControlledDeployment(input: {
           definition.rows[0].id,
           input.ownerId,
           LAB_TTL_MINUTES,
-          JSON.stringify({
+          stringifyPostgresJson({
             source: 'infrastructure-designer',
             authorizationId: authorization.id,
             executionId: input.executionId,
@@ -365,7 +366,7 @@ export async function executeControlledDeployment(input: {
         RETURNING *`,
       [
         provisioned.externalId,
-        JSON.stringify({
+        stringifyPostgresJson({
           region: provisioned.region,
           imageId: provisioned.imageId,
           instanceType: provisioned.instanceType,
@@ -384,7 +385,7 @@ export async function executeControlledDeployment(input: {
        VALUES ($1,'deployment_execution_started',$2)`,
       [
         prepared.instanceId,
-        JSON.stringify({
+        stringifyPostgresJson({
           authorizationId: authorization.id,
           executionId: input.executionId,
           planId: authorization.planId,

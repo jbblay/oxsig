@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
               user.id,
               instance.id,
               parsed.data.command,
-              JSON.stringify({
+              stringifyPostgresJson({
                 risk: validation.risk,
                 platform: lab.platform,
                 shell: lab.shell,
@@ -228,7 +229,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
             evidence.stdout,
             evidence.stderr,
             evidence.exitCode,
-            JSON.stringify({
+            stringifyPostgresJson({
               risk: validation.risk,
               platform: lab.platform,
               shell: lab.shell,

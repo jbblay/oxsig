@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
@@ -180,7 +181,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           data.description || null,
           data.status,
           data.durationMs,
-          JSON.stringify(data.events),
+          stringifyPostgresJson(data.events),
           materializedAudio?.key || null,
           materializedAudio?.etag || null,
           materializedAudio?.mimeType || null,

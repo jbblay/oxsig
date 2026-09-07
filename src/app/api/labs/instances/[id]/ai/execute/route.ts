@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
           stdout,
           stderr,
           exitCode,
-          JSON.stringify({ risk: validation.risk, platform: lab.platform, shell: lab.shell }),
+          stringifyPostgresJson({ risk: validation.risk, platform: lab.platform, shell: lab.shell }),
         ]
       );
 

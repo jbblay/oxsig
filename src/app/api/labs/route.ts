@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -253,7 +254,7 @@ export async function POST(request: NextRequest) {
         lab.description,
         lab.difficulty,
         lab.runtime,
-        JSON.stringify({
+        stringifyPostgresJson({
           objectives: lab.objectives,
           osFamily: lab.osFamily,
           platform: lab.platform,
@@ -302,7 +303,7 @@ export async function POST(request: NextRequest) {
          RETURNING *`,
         [
           provisioned.externalId,
-          JSON.stringify({
+          stringifyPostgresJson({
             region: provisioned.region,
             imageId: provisioned.imageId,
             instanceType: provisioned.instanceType,
@@ -320,7 +321,7 @@ export async function POST(request: NextRequest) {
          VALUES ($1,'provisioned',$2)`,
         [
           instanceId,
-          JSON.stringify({
+          stringifyPostgresJson({
             provider: 'aws-ec2',
             externalId: provisioned.externalId,
             osFamily: provisioned.osFamily,

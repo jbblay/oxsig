@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import 'server-only';
 
 import { z } from 'zod';
@@ -160,9 +161,9 @@ export async function createDeploymentAuthorization(input: {
         input.ownerId,
         input.planId,
         input.planHash,
-        JSON.stringify(deploymentPlanSchema.parse(input.plan)),
+        stringifyPostgresJson(deploymentPlanSchema.parse(input.plan)),
         input.sourceDesignUpdatedAt,
-        JSON.stringify(executionSupportSchema.parse(input.executionSupport)),
+        stringifyPostgresJson(executionSupportSchema.parse(input.executionSupport)),
         DEPLOYMENT_AUTHORIZATION_TTL_MINUTES,
       ]
     );

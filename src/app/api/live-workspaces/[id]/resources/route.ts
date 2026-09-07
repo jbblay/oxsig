@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                        resource_owner_id=EXCLUDED.resource_owner_id, metadata=EXCLUDED.metadata,
                        updated_at=NOW()
          RETURNING id, resource_type, resource_id, resource_owner_id, attached_by, metadata, attached_at`,
-        [id, parsed.data.resourceType, resource.id, access.ownerId, user.id, JSON.stringify({ label: resource.label })]
+        [id, parsed.data.resourceType, resource.id, access.ownerId, user.id, stringifyPostgresJson({ label: resource.label })]
       );
       const row = result.rows[0];
       return NextResponse.json({

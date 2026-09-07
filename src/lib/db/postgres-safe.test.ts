@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  InvalidPostgresJsonKeyError,
+  sanitizePostgresJsonValue,
   sanitizePostgresParameter,
   sanitizePostgresParameters,
   sanitizePostgresText,
@@ -8,50 +10,54 @@ import {
 
 describe('postgres-safe serialization', () => {
   it('replaces actual NUL code points in text with a visible escape', () => {
-    expect(sanitizePostgresText(`a\u0000b`)).toBe('a\\0b');
+    expect(sanitizePostgresText('a\u0000b')).toBe('a\\0b');
   });
 
-  it('removes PostgreSQL-incompatible NUL code points from nested JSON strings', () => {
-    const serialized = stringifyPostgresJson({
-      command: `tr '\u0000' '\n'`,
-      nested: { stdout: `left\u0000right` },
-    });
-
-    expect(serialized).not.toContain('\\u0000');
-    expect(JSON.parse(serialized)).toEqual({
-      command: "tr '\\0' '\n'",
-      nested: { stdout: 'left\\0right' },
-    });
+  it('serializes nested JSON values explicitly without NUL characters', () => {
+    const serialized = stringifyPostgresJson({ nested: [{ stdout: 'left\u0000right' }] });
+    expect(JSON.parse(serialized)).toEqual({ nested: [{ stdout: 'left\\0right' }] });
+    expect(sanitizePostgresParameter(serialized)).toBe(serialized);
   });
 
-  it('repairs already-serialized JSON that contains a JSON NUL escape', () => {
-    const serialized = JSON.stringify({ stdout: `left\u0000right` });
-    const safe = sanitizePostgresParameter(serialized);
-
-    expect(safe).not.toContain('\\u0000');
-    expect(JSON.parse(safe)).toEqual({ stdout: 'left\\0right' });
+  it.each([
+    String.raw`{ "n": 9007199254740993, "example": "\\u0000" }`,
+    String.raw`{"duplicate":1,"duplicate":2,"example":"\\u0000"}`,
+    String.raw`{"n":9007199254740993,"value":"\u0000"}`,
+    String.raw`{"example":"\\\\u0000"}`,
+    String.raw`not JSON: \u0000`,
+  ])('preserves text parameter bytes instead of interpreting JSON: %s', (text) => {
+    expect(sanitizePostgresParameter(text)).toBe(text);
   });
 
-  it('sanitizes nested parameter arrays and plain objects at the database boundary', () => {
-    const values = sanitizePostgresParameters([
-      `plain\u0000text`,
-      { nested: `object\u0000text` },
-      [`array\u0000text`],
+  it.each([
+    { ['bad\u0000key']: 'value' },
+    { nested: [{ ['bad\u0000key']: 'value' }] },
+    { ['bad\u0000key']: 1, ['bad\\0key']: 2 },
+  ])('rejects NUL keys without renaming or discarding data', (value) => {
+    expect(() => stringifyPostgresJson(value)).toThrow(InvalidPostgresJsonKeyError);
+    expect(() => sanitizePostgresJsonValue(value)).toThrow(InvalidPostgresJsonKeyError);
+    expect(() => sanitizePostgresParameter(value)).toThrow(InvalidPostgresJsonKeyError);
+  });
+
+  it('handles toJSON output before checking JSON keys and values', () => {
+    expect(JSON.parse(stringifyPostgresJson({ toJSON: () => ({ text: 'a\u0000b' }) })))
+      .toEqual({ text: 'a\\0b' });
+    expect(() => stringifyPostgresJson({ toJSON: () => ({ ['bad\u0000key']: 1 }) }))
+      .toThrow(InvalidPostgresJsonKeyError);
+  });
+
+  it('sanitizes nested parameter arrays and plain objects without mutating inputs', () => {
+    const input = ['plain\u0000text', { nested: 'object\u0000text' }, ['array\u0000text']];
+    expect(sanitizePostgresParameters(input)).toEqual([
+      'plain\\0text', { nested: 'object\\0text' }, ['array\\0text'],
     ]);
-
-    expect(values).toEqual([
-      'plain\\0text',
-      { nested: 'object\\0text' },
-      ['array\\0text'],
-    ]);
+    expect(input[0]).toBe('plain\u0000text');
   });
 
-  it('does not reinterpret binary Buffer parameters', () => {
+  it('preserves binary Buffer and Date parameters', () => {
     const binary = Buffer.from([0, 1, 2, 255]);
-    const sanitized = sanitizePostgresParameter(binary);
-
-    expect(sanitized).toBe(binary);
-    expect(Buffer.isBuffer(sanitized)).toBe(true);
-    expect([...sanitized]).toEqual([0, 1, 2, 255]);
+    const date = new Date('2026-01-01T00:00:00Z');
+    expect(sanitizePostgresParameter(binary)).toBe(binary);
+    expect(sanitizePostgresParameter(date)).toBe(date);
   });
 });

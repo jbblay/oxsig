@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -96,7 +97,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       await pool.query(
         `INSERT INTO lab_events (lab_instance_id,event_type,payload)
          VALUES ($1,$2,$3)`,
-        [id, action, JSON.stringify({ provider: 'aws-ec2', externalId })]
+        [id, action, stringifyPostgresJson({ provider: 'aws-ec2', externalId })]
       );
 
       const auditAction = {

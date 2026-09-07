@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -208,7 +209,7 @@ export async function POST(
         [
           id,
           member.id,
-          JSON.stringify({ read: true, write: true, admin: false }),
+          stringifyPostgresJson({ read: true, write: true, admin: false }),
           user.id,
         ]
       );
