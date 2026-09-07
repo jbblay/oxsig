@@ -47,6 +47,129 @@ CREATE INDEX IF NOT EXISTS idx_learning_capability_evidence_enrollment
 CREATE INDEX IF NOT EXISTS idx_learning_capability_evidence_owner
     ON learning_capability_evidence(owner_id, result, created_at DESC);
 
+-- V1 bridges the existing evidence-grounded Academy into the capability model without
+-- allowing browser page state or the legacy "Mark complete" control to manufacture evidence.
+CREATE OR REPLACE FUNCTION sync_program_process_practice_evidence()
+RETURNS TRIGGER AS $$
+DECLARE
+    enrollment UUID;
+BEGIN
+    IF COALESCE(NEW.evaluation->>'status', '') <> 'passed' THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT e.id INTO enrollment
+      FROM learning_path_enrollments e
+      JOIN academy_courses c
+        ON c.id = NEW.course_id
+       AND c.owner_id = NEW.owner_id
+     WHERE e.owner_id = NEW.owner_id
+       AND e.path_id = 'program-becomes-process'
+       AND e.path_version = 1
+       AND e.status = 'active'
+       AND c.source_prompt = 'OXSIG curated path:program-becomes-process@1'
+     LIMIT 1;
+
+    IF enrollment IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    INSERT INTO learning_capability_evidence (
+        enrollment_id, owner_id, capability_id, source_type, source_id,
+        result, score, evidence, demonstrated_at, updated_at
+    ) VALUES (
+        enrollment, NEW.owner_id, NEW.lesson_id, 'academy-practice', NEW.id,
+        'demonstrated', NULL,
+        jsonb_build_object('courseId', NEW.course_id, 'labInstanceId', NEW.lab_instance_id),
+        NOW(), NOW()
+    )
+    ON CONFLICT (owner_id, capability_id, source_type, source_id)
+    DO UPDATE SET
+        result = 'demonstrated',
+        evidence = EXCLUDED.evidence,
+        demonstrated_at = COALESCE(learning_capability_evidence.demonstrated_at, NOW()),
+        updated_at = NOW();
+
+    UPDATE learning_path_enrollments
+       SET active_capability_id = NEW.lesson_id,
+           last_activity_at = NOW(),
+           updated_at = NOW()
+     WHERE id = enrollment;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_program_process_practice_evidence ON academy_practice_attempts;
+CREATE TRIGGER trg_program_process_practice_evidence
+AFTER INSERT OR UPDATE OF evaluation ON academy_practice_attempts
+FOR EACH ROW EXECUTE FUNCTION sync_program_process_practice_evidence();
+
+CREATE OR REPLACE FUNCTION sync_program_process_reflection_evidence()
+RETURNS TRIGGER AS $$
+DECLARE
+    enrollment UUID;
+    evidence_result VARCHAR(20);
+BEGIN
+    IF NEW.status <> 'reflected' OR NEW.explanation_score IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT e.id INTO enrollment
+      FROM learning_path_enrollments e
+      JOIN academy_courses c
+        ON c.id = NEW.course_id
+       AND c.owner_id = NEW.owner_id
+     WHERE e.owner_id = NEW.owner_id
+       AND e.path_id = 'program-becomes-process'
+       AND e.path_version = 1
+       AND e.status = 'active'
+       AND c.source_prompt = 'OXSIG curated path:program-becomes-process@1'
+     LIMIT 1;
+
+    IF enrollment IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    evidence_result := CASE WHEN NEW.explanation_score >= 70 THEN 'demonstrated' ELSE 'attempted' END;
+
+    INSERT INTO learning_capability_evidence (
+        enrollment_id, owner_id, capability_id, source_type, source_id,
+        result, score, evidence, demonstrated_at, updated_at
+    ) VALUES (
+        enrollment, NEW.owner_id, NEW.lesson_id, 'academy-reflection', NEW.id,
+        evidence_result, NEW.explanation_score,
+        jsonb_build_object('courseId', NEW.course_id, 'executionEvidenceId', NEW.evidence_id),
+        CASE WHEN evidence_result = 'demonstrated' THEN NOW() ELSE NULL END,
+        NOW()
+    )
+    ON CONFLICT (owner_id, capability_id, source_type, source_id)
+    DO UPDATE SET
+        result = EXCLUDED.result,
+        score = EXCLUDED.score,
+        evidence = EXCLUDED.evidence,
+        demonstrated_at = CASE
+            WHEN EXCLUDED.result = 'demonstrated'
+            THEN COALESCE(learning_capability_evidence.demonstrated_at, NOW())
+            ELSE NULL
+        END,
+        updated_at = NOW();
+
+    UPDATE learning_path_enrollments
+       SET active_capability_id = NEW.lesson_id,
+           last_activity_at = NOW(),
+           updated_at = NOW()
+     WHERE id = enrollment;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_program_process_reflection_evidence ON academy_learning_reflections;
+CREATE TRIGGER trg_program_process_reflection_evidence
+AFTER INSERT OR UPDATE OF status, explanation_score ON academy_learning_reflections
+FOR EACH ROW EXECUTE FUNCTION sync_program_process_reflection_evidence();
+
 COMMENT ON TABLE learning_path_enrollments IS
     'User enrollment in a stable curated OXSIG capability path; path definitions are versioned in application code.';
 COMMENT ON TABLE learning_capability_evidence IS
