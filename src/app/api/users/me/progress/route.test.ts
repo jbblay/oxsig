@@ -29,7 +29,7 @@ function activityRows() {
   ];
 }
 
-function installQueryMock(options: { ledgerMissing?: boolean } = {}) {
+function installQueryMock(options: { ledgerMissing?: boolean; capabilityLedgerMissing?: boolean } = {}) {
   let ledgerFailed = false;
   mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
     expect(params).toEqual([user.id]);
@@ -55,6 +55,14 @@ function installQueryMock(options: { ledgerMissing?: boolean } = {}) {
     }
     if (sql.includes('runtime_minutes')) {
       return { rows: [{ runtime_minutes: 190 }] };
+    }
+    if (sql.includes('learning_capability_evidence')) {
+      if (options.capabilityLedgerMissing) {
+        const error = new Error('relation does not exist') as Error & { code: string };
+        error.code = '42P01';
+        throw error;
+      }
+      return { rows: [{ demonstrated: 2 }] };
     }
     if (sql.includes('learning_activity_days')) {
       if (options.ledgerMissing && !ledgerFailed) {
@@ -89,7 +97,7 @@ describe('learner progress summary', () => {
     vi.useRealTimers();
   });
 
-  it('returns owner-scoped real analytics, rewards and badge progress', async () => {
+  it('returns owner-scoped analytics and rewards without treating lesson completion as capability proof', async () => {
     const response = await GET(request());
     const body = await response.json();
 
@@ -129,20 +137,25 @@ describe('learner progress summary', () => {
       total: 2,
     });
     expect(body.progress.rewards).toMatchObject({
-      xp: 2975,
-      level: 3,
-      levelName: 'Practitioner',
-      levelFloorXp: 1500,
-      nextLevelXp: 3000,
-      levelProgressPercent: 98,
-      badgesEarned: 7,
+      xp: 1325,
+      level: 2,
+      levelName: 'Learner',
+      levelFloorXp: 500,
+      nextLevelXp: 1500,
+      levelProgressPercent: 83,
+      badgesEarned: 5,
+    });
+    expect(body.progress.rewards.badges.find((badge: { id: string }) => badge.id === 'first-capability')).toMatchObject({
+      earned: true,
+      current: 2,
+      target: 1,
     });
     expect(body.progress.rewards.badges.find((badge: { id: string }) => badge.id === 'seven-day-streak')).toMatchObject({
       earned: false,
       current: 3,
       target: 7,
     });
-    expect(mocks.query).toHaveBeenCalledTimes(6);
+    expect(mocks.query).toHaveBeenCalledTimes(7);
   });
 
   it('reads both Academy and Cyber Lab daily ledger counters', async () => {
@@ -151,6 +164,16 @@ describe('learner progress summary', () => {
     const ledgerCall = mocks.query.mock.calls.find(([sql]) => String(sql).includes('learning_activity_days'));
     expect(ledgerCall?.[0]).toContain('academy_actions > 0');
     expect(ledgerCall?.[0]).toContain('lab_actions > 0');
+  });
+
+  it('requires either an assessment or both practice and reflection for demonstrated capability rewards', async () => {
+    await GET(request());
+
+    const capabilityCall = mocks.query.mock.calls.find(([sql]) => String(sql).includes('learning_capability_evidence'));
+    expect(capabilityCall?.[0]).toContain("source_type='assessment'");
+    expect(capabilityCall?.[0]).toContain("source_type='academy-practice'");
+    expect(capabilityCall?.[0]).toContain("source_type='academy-reflection'");
+    expect(capabilityCall?.[0]).toContain('assessment OR (practice AND reflection)');
   });
 
   it('bounds recorded lab runtime with persisted stopped state and lifecycle events', async () => {
@@ -186,6 +209,23 @@ describe('learner progress summary', () => {
 
     expect(response.status).toBe(200);
     expect(body.progress.activity).toMatchObject({ streakDays: 3, longestStreakDays: 3, activeDays: 4 });
-    expect(mocks.query).toHaveBeenCalledTimes(7);
+    expect(mocks.query).toHaveBeenCalledTimes(8);
+  });
+
+  it('keeps capability rewards at zero when migration 039 is not applied yet', async () => {
+    vi.clearAllMocks();
+    mocks.requireAuth.mockImplementation(async (
+      req: NextRequest,
+      handler: (req: NextRequest, currentUser: typeof user) => Promise<NextResponse>
+    ) => handler(req, user));
+    mocks.checkRateLimit.mockResolvedValue(null);
+    installQueryMock({ capabilityLedgerMissing: true });
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.progress.rewards.badges.find((badge: { id: string }) => badge.id === 'first-capability').earned).toBe(false);
+    expect(body.progress.rewards.xp).toBe(825);
   });
 });
