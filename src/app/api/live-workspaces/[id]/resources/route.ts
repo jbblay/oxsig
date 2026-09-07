@@ -14,7 +14,7 @@ import {
 export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
 const attachSchema = z.object({
-  resourceType: z.enum(['lab-instance', 'academy-course', 'infrastructure-design']),
+  resourceType: z.enum(['lab-instance', 'academy-course', 'infrastructure-design', 'storyboard', 'vault-item']),
   resourceId: z.string().uuid(),
 }).strict();
 const detachSchema = z.object({ bindingId: z.string().uuid() }).strict();
