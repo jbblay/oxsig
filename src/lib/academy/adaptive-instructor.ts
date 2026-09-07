@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import type {
   AcademyAdaptiveInstructorStatus,
   AcademyCourse,
@@ -475,8 +476,8 @@ export async function createAcademyInstructorIntervention(args: {
       context.understandingScore,
       context.latestReflectionScore,
       context.latestPracticeStatus,
-      JSON.stringify(content),
-      model,
+      stringifyPostgresJson(content),
+      sanitizePostgresText(model),
     ]
   );
 
