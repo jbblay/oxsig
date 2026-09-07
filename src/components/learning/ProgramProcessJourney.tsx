@@ -41,6 +41,7 @@ type PathState = {
     id: string;
     status: string;
     activeCapabilityId: string | null;
+    recommendedCapabilityId: string | null;
     enrolledAt: string;
     lastActivityAt: string;
     completedAt: string | null;
@@ -71,7 +72,7 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
       if (!response.ok) throw new Error('OXSIG could not load your reference journey');
       const body = await response.json() as { state: PathState };
       setState(body.state);
-      setSelectedId((current) => current || body.state.enrollment?.activeCapabilityId || body.state.capabilities[0]?.id || null);
+      setSelectedId((current) => current || body.state.enrollment?.recommendedCapabilityId || body.state.enrollment?.activeCapabilityId || body.state.capabilities[0]?.id || null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Reference journey could not be loaded');
     } finally {
@@ -94,8 +95,9 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'OXSIG could not start this learning journey');
-      setState(body.state as PathState);
-      setSelectedId((body.state as PathState).enrollment?.activeCapabilityId || (body.state as PathState).capabilities[0]?.id || null);
+      const nextState = body.state as PathState;
+      setState(nextState);
+      setSelectedId(nextState.enrollment?.recommendedCapabilityId || nextState.enrollment?.activeCapabilityId || nextState.capabilities[0]?.id || null);
       toast.success('Reference journey started with zero assumed progress.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Reference journey could not be started');
@@ -172,6 +174,7 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
               const active = capability.id === selected?.id;
               const demonstrated = capability.status === 'demonstrated';
               const inProgress = capability.status === 'in_progress';
+              const recommended = state.enrollment?.recommendedCapabilityId === capability.id;
               return (
                 <div key={capability.id} className="relative">
                   {index < state.capabilities.length - 1 && (
@@ -189,13 +192,13 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
                     <span className={cn(
                       'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-background transition-all',
                       demonstrated && 'border-emerald-500/50 bg-emerald-500/15 text-emerald-600',
-                      inProgress && 'border-sky-500/55 bg-sky-500/10 text-sky-600 shadow-[0_0_20px_-10px_rgba(14,165,233,0.85)]'
+                      (inProgress || recommended) && 'border-sky-500/55 bg-sky-500/10 text-sky-600 shadow-[0_0_20px_-10px_rgba(14,165,233,0.85)]'
                     )}>
-                      {demonstrated ? <Check className="h-4 w-4" /> : inProgress ? <span className="h-2.5 w-2.5 rounded-full bg-sky-500 motion-safe:animate-pulse" /> : <Circle className="h-3.5 w-3.5" />}
+                      {demonstrated ? <Check className="h-4 w-4" /> : inProgress || recommended ? <span className="h-2.5 w-2.5 rounded-full bg-sky-500 motion-safe:animate-pulse" /> : <Circle className="h-3.5 w-3.5" />}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{capability.order}. {capability.title}</span>
-                      <span className={cn('mt-0.5 block text-[10px]', demonstrated ? 'text-emerald-600' : inProgress ? 'text-sky-600' : 'text-muted-foreground')}>{statusLabel(capability.status)}</span>
+                      <span className={cn('mt-0.5 block text-[10px]', demonstrated ? 'text-emerald-600' : inProgress || recommended ? 'text-sky-600' : 'text-muted-foreground')}>{recommended && !demonstrated ? 'Recommended next' : statusLabel(capability.status)}</span>
                     </span>
                     <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', active && 'rotate-180')} />
                   </button>
