@@ -20,6 +20,58 @@ function request() {
   return new NextRequest('http://localhost/api/users/me/progress');
 }
 
+function activityRows() {
+  return [
+    { day: '2026-09-03', academy: 1, labs: 0 },
+    { day: '2026-09-05', academy: 1, labs: 0 },
+    { day: '2026-09-06', academy: 1, labs: 1 },
+    { day: '2026-09-07', academy: 1, labs: 0 },
+  ];
+}
+
+function installQueryMock(options: { ledgerMissing?: boolean } = {}) {
+  let ledgerFailed = false;
+  mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
+    expect(params).toEqual([user.id]);
+    if (sql.includes('COUNT(c.id)::int AS courses')) {
+      return {
+        rows: [{
+          courses: 3,
+          mastered_courses: 1,
+          completed_lessons: 14,
+          passed_practices: 3,
+          average_mastery: 72,
+        }],
+      };
+    }
+    if (sql.includes("c.status = 'active'")) {
+      return { rows: [{ title: 'Linux Networking', completed_lessons: 4, total_lessons: 8, score: 58 }] };
+    }
+    if (sql.includes("COUNT(*) FILTER (WHERE started_at IS NOT NULL)")) {
+      return { rows: [{ started: 5, running: 1 }] };
+    }
+    if (sql.includes("i.status NOT IN ('destroyed', 'failed')")) {
+      return { rows: [{ name: 'Ubuntu Practice Lab', status: 'running', expires_at: new Date('2026-09-07T13:00:00.000Z') }] };
+    }
+    if (sql.includes('runtime_minutes')) {
+      return { rows: [{ runtime_minutes: 190 }] };
+    }
+    if (sql.includes('learning_activity_days')) {
+      if (options.ledgerMissing && !ledgerFailed) {
+        ledgerFailed = true;
+        const error = new Error('relation does not exist') as Error & { code: string };
+        error.code = '42P01';
+        throw error;
+      }
+      return { rows: activityRows() };
+    }
+    if (sql.includes('WITH learning_days AS')) {
+      return { rows: activityRows() };
+    }
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+}
+
 describe('learner progress summary', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -30,65 +82,67 @@ describe('learner progress summary', () => {
       handler: (req: NextRequest, currentUser: typeof user) => Promise<NextResponse>
     ) => handler(req, user));
     mocks.checkRateLimit.mockResolvedValue(null);
-    mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
-      expect(params).toEqual([user.id]);
-      if (sql.includes('COUNT(c.id)::int AS courses')) {
-        return { rows: [{ courses: 3, mastered_courses: 1, completed_lessons: 14, average_mastery: 72 }] };
-      }
-      if (sql.includes("c.status = 'active'")) {
-        return { rows: [{ title: 'Linux Networking', completed_lessons: 4, total_lessons: 8, score: 58 }] };
-      }
-      if (sql.includes("COUNT(*) FILTER (WHERE started_at IS NOT NULL)")) {
-        return { rows: [{ started: 5, running: 1 }] };
-      }
-      if (sql.includes("i.status NOT IN ('destroyed', 'failed')")) {
-        return { rows: [{ name: 'Ubuntu Practice Lab', status: 'running', expires_at: new Date('2026-09-07T13:00:00.000Z') }] };
-      }
-      if (sql.includes('activity_days')) {
-        return { rows: [{ day: '2026-09-07' }, { day: '2026-09-06' }, { day: '2026-09-05' }, { day: '2026-09-03' }] };
-      }
-      throw new Error(`Unexpected query: ${sql}`);
-    });
+    installQueryMock();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('returns owner-scoped learning, lab and streak statistics', async () => {
+  it('returns owner-scoped real analytics, rewards and badge progress', async () => {
     const response = await GET(request());
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(body.progress).toEqual({
-      academy: {
-        courses: 3,
-        masteredCourses: 1,
-        completedLessons: 14,
-        averageMastery: 72,
-        activeCourse: {
-          title: 'Linux Networking',
-          completedLessons: 4,
-          totalLessons: 8,
-          score: 58,
-        },
-      },
-      labs: {
-        started: 5,
-        running: 1,
-        activeLab: {
-          name: 'Ubuntu Practice Lab',
-          status: 'running',
-          expiresAt: '2026-09-07T13:00:00.000Z',
-        },
-      },
-      activity: {
-        streakDays: 3,
-        activeDays: 4,
+    expect(body.progress.academy).toEqual({
+      courses: 3,
+      masteredCourses: 1,
+      completedLessons: 14,
+      passedPractices: 3,
+      averageMastery: 72,
+      activeCourse: {
+        title: 'Linux Networking',
+        completedLessons: 4,
+        totalLessons: 8,
+        score: 58,
       },
     });
-    expect(mocks.query).toHaveBeenCalledTimes(5);
+    expect(body.progress.labs).toEqual({
+      started: 5,
+      running: 1,
+      runtimeMinutes: 190,
+      activeLab: {
+        name: 'Ubuntu Practice Lab',
+        status: 'running',
+        expiresAt: '2026-09-07T13:00:00.000Z',
+      },
+    });
+    expect(body.progress.activity.streakDays).toBe(3);
+    expect(body.progress.activity.longestStreakDays).toBe(3);
+    expect(body.progress.activity.activeDays).toBe(4);
+    expect(body.progress.activity.history).toHaveLength(14);
+    expect(body.progress.activity.history.find((day: { date: string }) => day.date === '2026-09-06')).toEqual({
+      date: '2026-09-06',
+      academy: 1,
+      labs: 1,
+      total: 2,
+    });
+    expect(body.progress.rewards).toMatchObject({
+      xp: 2975,
+      level: 3,
+      levelName: 'Practitioner',
+      levelFloorXp: 1500,
+      nextLevelXp: 3000,
+      levelProgressPercent: 98,
+      badgesEarned: 7,
+    });
+    expect(body.progress.rewards.badges.find((badge: { id: string }) => badge.id === 'seven-day-streak')).toMatchObject({
+      earned: false,
+      current: 3,
+      target: 7,
+    });
+    expect(mocks.query).toHaveBeenCalledTimes(6);
   });
 
   it('passes the authenticated user id to the rate limit and every database query', async () => {
@@ -100,5 +154,22 @@ describe('learner progress summary', () => {
       user.id
     );
     for (const call of mocks.query.mock.calls) expect(call[1]).toEqual([user.id]);
+  });
+
+  it('falls back to existing durable activity when migration 038 is not applied yet', async () => {
+    vi.clearAllMocks();
+    mocks.requireAuth.mockImplementation(async (
+      req: NextRequest,
+      handler: (req: NextRequest, currentUser: typeof user) => Promise<NextResponse>
+    ) => handler(req, user));
+    mocks.checkRateLimit.mockResolvedValue(null);
+    installQueryMock({ ledgerMissing: true });
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.progress.activity).toMatchObject({ streakDays: 3, longestStreakDays: 3, activeDays: 4 });
+    expect(mocks.query).toHaveBeenCalledTimes(7);
   });
 });
