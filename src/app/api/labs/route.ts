@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
         rows = await syncAwsInstances(rows);
       } catch (error) {
         console.error('Cyber Lab AWS reconciliation failed', error);
-        reconciliationWarning = 'Cloud state could not be reconciled. Refresh after AWS access is available.';
+        reconciliationWarning = 'Lab status could not be refreshed. Try again in a moment or open Diagnostics for technical details.';
       }
     }
 
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
 
     const capabilities = await labCapabilities();
     if (!capabilities.configured) {
-      return NextResponse.json({ error: capabilities.reason || 'AWS lab runtime is unavailable' }, { status: 503 });
+      return NextResponse.json({ error: capabilities.reason || 'Lab service is unavailable on this deployment' }, { status: 503 });
     }
 
     const pool = getPool();
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
       [user.id]
     );
     if ((active.rows[0]?.count || 0) >= 1) {
-      return NextResponse.json({ error: 'One active cloud lab is allowed per account at a time. Stop or destroy the current lab first.' }, { status: 409 });
+      return NextResponse.json({ error: 'One running lab is allowed per account at a time. Stop or destroy the current lab first.' }, { status: 409 });
     }
 
     const costLimit = await checkRateLimit(
@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       if (error?.code === '23505' && error?.constraint === ONE_LAB_INDEX) {
         return NextResponse.json(
-          { error: 'A cloud lab allocation already exists for this account. Wait for cleanup or destroy it before creating another.' },
+          { error: 'A lab allocation already exists for this account. Wait for cleanup or destroy it before creating another.' },
           { status: 409 }
         );
       }
