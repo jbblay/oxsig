@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
     const rateLimit = await checkRateLimit(req, { maxRequests: 60, windowMs: 60_000 }, user.id);
     if (rateLimit) return rateLimit;
     const state = await getAcademyState(user.id);
+    if (state) await recordLearningActivity(user.id, 'academy');
     return NextResponse.json({ state }, { headers: { 'Cache-Control': 'no-store' } });
   });
 }
