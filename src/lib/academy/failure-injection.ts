@@ -2,6 +2,7 @@ import 'server-only';
 
 import { randomUUID } from 'crypto';
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
 import { executeLabCommand } from '@/lib/labs/aws-runtime';
 import type { AcademyCourse } from './types';
@@ -114,8 +115,8 @@ function evidence(check: FailureEvidence['check'], result: { stdout?: string; st
   return {
     provenance: 'server-executed',
     check,
-    stdout: (result.stdout || '').slice(0, 12000),
-    stderr: (result.stderr || '').slice(0, 12000),
+    stdout: sanitizePostgresText((result.stdout || '').slice(0, 12000)),
+    stderr: sanitizePostgresText((result.stderr || '').slice(0, 12000)),
     exitCode: result.exitCode ?? 1,
     observedAt: new Date().toISOString(),
   };
@@ -260,7 +261,7 @@ export async function injectAcademyFailure(args: {
            injected_at=NOW(), updated_at=NOW()
        WHERE id=$3 AND owner_id=$4 AND state='preparing'
        RETURNING *`,
-      [JSON.stringify(preEvidence), JSON.stringify(faultEvidence), attemptId, args.ownerId]
+      [stringifyPostgresJson(preEvidence), stringifyPostgresJson(faultEvidence), attemptId, args.ownerId]
     );
     if (!updated.rows[0]) throw new Error('Failure attempt state changed before injection could be recorded');
     return toAttempt(updated.rows[0] as AttemptRow);
@@ -279,10 +280,10 @@ export async function injectAcademyFailure(args: {
            failure_reason=$4, updated_at=NOW()
        WHERE id=$5 AND owner_id=$6`,
       [
-        preEvidence ? JSON.stringify(preEvidence) : null,
-        faultEvidence ? JSON.stringify(faultEvidence) : null,
-        cleanupEvidence ? JSON.stringify(cleanupEvidence) : null,
-        error instanceof Error ? error.message.slice(0, 1000) : 'Failure injection failed',
+        preEvidence ? stringifyPostgresJson(preEvidence) : null,
+        faultEvidence ? stringifyPostgresJson(faultEvidence) : null,
+        cleanupEvidence ? stringifyPostgresJson(cleanupEvidence) : null,
+        sanitizePostgresText(error instanceof Error ? error.message.slice(0, 1000) : 'Failure injection failed'),
         attemptId,
         args.ownerId,
       ]
@@ -308,7 +309,7 @@ export async function verifyAcademyFailureRemediation(args: {
          updated_at=NOW()
      WHERE id=$3 AND owner_id=$4
      RETURNING *`,
-    [remediated ? 'remediated' : 'injected', JSON.stringify(verification), args.attemptId, args.ownerId]
+    [remediated ? 'remediated' : 'injected', stringifyPostgresJson(verification), args.attemptId, args.ownerId]
   );
   return toAttempt(updated.rows[0] as AttemptRow);
 }
@@ -326,7 +327,7 @@ export async function cleanupAcademyFailure(args: {
      SET state='cleaned', cleanup_evidence=$1::jsonb, cleaned_at=NOW(), updated_at=NOW()
      WHERE id=$2 AND owner_id=$3
      RETURNING *`,
-    [JSON.stringify(cleanup), args.attemptId, args.ownerId]
+    [stringifyPostgresJson(cleanup), args.attemptId, args.ownerId]
   );
   return toAttempt(updated.rows[0] as AttemptRow);
 }
