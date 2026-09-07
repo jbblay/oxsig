@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { VAULT_KINDS, type VaultKind } from '@/lib/vault/types';
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
     if (pinned) clauses.push('pinned = true');
     if (q) {
-      params.push(`%${q}%`);
+      params.push(`%${sanitizePostgresText(q)}%`);
       const index = params.length;
       clauses.push(`(
         title ILIKE $${index}
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     const item = parsed.data;
-    const tags = normalizeVaultTags(item.tags);
+    const tags = normalizeVaultTags(item.tags).map(sanitizePostgresText);
     const result = await getPool().query(
       `INSERT INTO vault_items (
          owner_id, kind, title, summary, body, language, tags,
@@ -86,15 +87,15 @@ export async function POST(request: NextRequest) {
       [
         user.id,
         item.kind,
-        item.title,
-        item.summary,
-        item.body,
-        item.language || null,
+        sanitizePostgresText(item.title),
+        sanitizePostgresText(item.summary),
+        sanitizePostgresText(item.body),
+        item.language ? sanitizePostgresText(item.language) : null,
         tags,
         item.pinned,
-        item.sourceType || 'manual',
-        item.sourceId || null,
-        JSON.stringify(item.metadata || {}),
+        sanitizePostgresText(item.sourceType || 'manual'),
+        item.sourceId ? sanitizePostgresText(item.sourceId) : null,
+        stringifyPostgresJson(item.metadata || {}),
       ]
     );
 

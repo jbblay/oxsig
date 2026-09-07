@@ -1,4 +1,5 @@
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { recordLearningActivity } from '@/lib/learning/activity';
 
 export interface AuditLogEntry {
@@ -23,12 +24,12 @@ export async function logAudit(entry: AuditLogEntry): Promise<void> {
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [
         entry.userId || null,
-        entry.action,
-        entry.resourceType || null,
-        entry.resourceId || null,
-        entry.ipAddress || null,
-        entry.userAgent || null,
-        entry.metadata ? JSON.stringify(entry.metadata) : null,
+        sanitizePostgresText(entry.action),
+        entry.resourceType ? sanitizePostgresText(entry.resourceType) : null,
+        entry.resourceId ? sanitizePostgresText(entry.resourceId) : null,
+        entry.ipAddress ? sanitizePostgresText(entry.ipAddress) : null,
+        entry.userAgent ? sanitizePostgresText(entry.userAgent) : null,
+        entry.metadata ? stringifyPostgresJson(entry.metadata) : null,
       ]
     );
   } catch (error) {

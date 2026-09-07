@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import type {
   AcademyCourse,
   AcademyPracticeEvaluation,
@@ -217,7 +218,11 @@ export async function createAcademyCourse(
       `INSERT INTO academy_courses (owner_id, source_prompt, course_data, status)
        VALUES ($1, $2, $3::jsonb, 'active')
        RETURNING id`,
-      [ownerId, sourcePrompt.slice(0, 2000), JSON.stringify(course)]
+      [
+        ownerId,
+        sanitizePostgresText(sourcePrompt).slice(0, 2000),
+        stringifyPostgresJson(course),
+      ]
     );
     const courseId = inserted.rows[0].id as string;
 
@@ -453,7 +458,7 @@ export async function updateAcademyProgress(
            completed_lesson_ids = EXCLUDED.completed_lesson_ids,
            updated_at = NOW()
      WHERE academy_progress.owner_id = EXCLUDED.owner_id`,
-    [current.id, ownerId, activeIndex, JSON.stringify(completed)]
+    [current.id, ownerId, activeIndex, stringifyPostgresJson(completed)]
   );
 
   await getPool().query(
@@ -513,7 +518,13 @@ export async function recordAcademyQuestion(args: {
   await getPool().query(
     `INSERT INTO academy_questions (course_id, owner_id, lesson_id, question, answer)
      VALUES ($1, $2, $3, $4, $5::jsonb)`,
-    [current.id, args.ownerId, lessonId, args.question, JSON.stringify(args.answer)]
+    [
+      current.id,
+      args.ownerId,
+      lessonId,
+      sanitizePostgresText(args.question),
+      stringifyPostgresJson(args.answer),
+    ]
   );
   await touchAcademySession(args.ownerId, current.id as string);
 }
@@ -546,11 +557,11 @@ export async function recordAcademyPractice(args: {
       args.ownerId,
       lessonId,
       args.labInstanceId || null,
-      args.command,
-      args.stdout,
-      args.stderr,
+      sanitizePostgresText(args.command),
+      sanitizePostgresText(args.stdout),
+      sanitizePostgresText(args.stderr),
       args.exitCode,
-      JSON.stringify(args.evaluation),
+      stringifyPostgresJson(args.evaluation),
     ]
   );
 

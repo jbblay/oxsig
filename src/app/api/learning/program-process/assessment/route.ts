@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { recordLearningActivity } from '@/lib/learning/activity';
 import {
   isProgramProcessCapabilityId,
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
           practice.id,
           demonstrated ? 'demonstrated' : 'attempted',
           evaluation.score,
-          JSON.stringify({
+          stringifyPostgresJson({
             practiceAttemptId: practice.id,
             feedback: evaluation.feedback,
             evidenceConnection: evaluation.evidenceConnection,

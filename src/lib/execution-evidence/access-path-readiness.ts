@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 import { getPool, transaction } from '@/lib/db/pool';
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 
 const stateSchema = z.enum(['evidence_recorded', 'analyzed']);
 
@@ -91,7 +92,7 @@ export async function recordAccessPathReadinessEvidence(input: {
       input.labInstanceId,
       input.deploymentAuthorizationId,
       input.executionId,
-      JSON.stringify(input.payload),
+      stringifyPostgresJson(input.payload),
     ]
   );
 
@@ -210,7 +211,7 @@ export async function storeAccessPathReadinessAnalysis(input: {
           AND owner_id=$4
           AND state='evidence_recorded'
         RETURNING *`,
-      [JSON.stringify(input.analysis), input.model, input.evidenceId, input.ownerId]
+      [stringifyPostgresJson(input.analysis), input.model, input.evidenceId, input.ownerId]
     );
 
     if (updated.rows[0]) return mapRow(updated.rows[0]);

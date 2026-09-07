@@ -23,6 +23,21 @@ type EvidenceRow = {
   score: number | null;
 };
 
+function replaceNullBytes<T>(value: T): T {
+  if (typeof value === 'string') {
+    return value.replace(/\u0000/g, '\\0') as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceNullBytes(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, replaceNullBytes(item)])
+    ) as T;
+  }
+  return value;
+}
+
 async function loadPathState(ownerId: string) {
   const pool = getPool();
   let enrollment: Record<string, unknown> | null = null;
@@ -167,7 +182,11 @@ export async function POST(request: NextRequest) {
     );
     const alreadyUsingReferenceCourse = activeCourseResult.rows[0]?.source_prompt === PROGRAM_PROCESS_SOURCE_PROMPT;
     if (!alreadyUsingReferenceCourse) {
-      await createAcademyCourse(user.id, PROGRAM_PROCESS_SOURCE_PROMPT, buildProgramProcessAcademyCourse());
+      // PostgreSQL jsonb cannot store U+0000. The curated process-context lab intentionally
+      // describes a NUL-delimited /proc environment stream, so persist the shell escape
+      // sequence (\\0) rather than an actual NUL code point.
+      const course = replaceNullBytes(buildProgramProcessAcademyCourse());
+      await createAcademyCourse(user.id, PROGRAM_PROCESS_SOURCE_PROMPT, course);
     }
 
     await recordLearningActivity(user.id, 'academy');

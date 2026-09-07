@@ -3,6 +3,7 @@ import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getPool, transaction } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 
 export const EVIDENCE_PROVENANCE = [
   'browser-observed',
@@ -129,7 +130,7 @@ export async function authorizeTerminalEvidence(input: {
   surface: 'ai-practitioner' | 'academy';
   metadata?: Record<string, unknown>;
 }) {
-  const command = input.command.trim();
+  const command = sanitizePostgresText(input.command.trim());
   const commandHash = executionCommandHash(command);
   const executionId = randomUUID();
 
@@ -164,7 +165,7 @@ export async function authorizeTerminalEvidence(input: {
         input.surface,
         commandHash,
         command,
-        JSON.stringify(input.metadata || {}),
+        stringifyPostgresJson(input.metadata || {}),
         TERMINAL_RECEIPT_TTL_SECONDS,
       ]
     );
@@ -182,7 +183,7 @@ export async function recordBrowserObservedEvidence(input: {
   stderr: string;
   exitCode: number;
 }) {
-  const command = input.command.trim();
+  const command = sanitizePostgresText(input.command.trim());
   const commandHash = executionCommandHash(command);
 
   return transaction(async (client) => {
@@ -253,7 +254,13 @@ export async function recordBrowserObservedEvidence(input: {
           AND owner_id=$5
           AND state='executing'
         RETURNING *`,
-      [input.stdout, input.stderr, input.exitCode, row.id, input.ownerId]
+      [
+        sanitizePostgresText(input.stdout),
+        sanitizePostgresText(input.stderr),
+        input.exitCode,
+        row.id,
+        input.ownerId,
+      ]
     );
     if (!recorded.rows[0]) {
       throw new ExecutionEvidenceConflictError(
@@ -273,7 +280,7 @@ export async function getTerminalEvidenceForAnalysis(input: {
   labInstanceId?: string;
   evidenceId?: string;
 }) {
-  const command = input.command.trim();
+  const command = sanitizePostgresText(input.command.trim());
   const commandHash = executionCommandHash(command);
   const params: unknown[] = [input.ownerId, input.surface, commandHash];
   let cursor = 4;
@@ -386,7 +393,13 @@ export async function storeExecutionEvidenceAnalysis(input: {
               updated_at=NOW()
         WHERE id=$4 AND owner_id=$5 AND state='evidence_recorded'
         RETURNING *`,
-      [input.analysisKind, JSON.stringify(input.analysis), input.model, input.evidenceId, input.ownerId]
+      [
+        input.analysisKind,
+        stringifyPostgresJson(input.analysis),
+        sanitizePostgresText(input.model),
+        input.evidenceId,
+        input.ownerId,
+      ]
     );
     const analyzedRow = updated.rows[0];
     if (!analyzedRow) {

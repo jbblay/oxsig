@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createHash, randomUUID } from 'node:crypto';
 import { transaction } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { ExecutionEvidenceConflictError } from './server';
 
 export type TerminalEvidenceSurface = 'ai-practitioner' | 'academy';
@@ -45,7 +46,7 @@ export async function beginBoundTerminalExecution(input: {
   terminalSessionId: string;
   target: string;
 }) {
-  const command = input.command.trim();
+  const command = sanitizePostgresText(input.command.trim());
   const hash = commandHash(command);
   const executionReceiptId = randomUUID();
 
@@ -92,8 +93,8 @@ export async function beginBoundTerminalExecution(input: {
 
     const binding = {
       executionReceiptId,
-      terminalSessionId: input.terminalSessionId,
-      terminalTarget: input.target,
+      terminalSessionId: sanitizePostgresText(input.terminalSessionId),
+      terminalTarget: sanitizePostgresText(input.target),
       executionReceiptIssuedAt: new Date().toISOString(),
     };
     const started = await client.query(
@@ -109,7 +110,7 @@ export async function beginBoundTerminalExecution(input: {
         RETURNING *`,
       [
         TERMINAL_EXECUTION_TTL_SECONDS,
-        JSON.stringify(binding),
+        stringifyPostgresJson(binding),
         row.id,
         input.ownerId,
       ]
@@ -124,7 +125,7 @@ export async function beginBoundTerminalExecution(input: {
     return {
       ...mapRow(started.rows[0]),
       executionReceiptId,
-      terminalSessionId: input.terminalSessionId,
+      terminalSessionId: binding.terminalSessionId,
     };
   });
 }
@@ -141,8 +142,9 @@ export async function recordBoundTerminalEvidence(input: {
   stderr: string;
   exitCode: number;
 }) {
-  const command = input.command.trim();
+  const command = sanitizePostgresText(input.command.trim());
   const hash = commandHash(command);
+  const terminalSessionId = sanitizePostgresText(input.terminalSessionId);
 
   return transaction(async (client) => {
     const locked = await client.query(
@@ -179,7 +181,7 @@ export async function recordBoundTerminalEvidence(input: {
         'EXECUTION_RECEIPT_MISMATCH'
       );
     }
-    if (payload.terminalSessionId !== input.terminalSessionId) {
+    if (payload.terminalSessionId !== terminalSessionId) {
       throw new ExecutionEvidenceConflictError(
         'The terminal session does not match the bound execution receipt.',
         'EXECUTION_SESSION_MISMATCH'
@@ -220,7 +222,13 @@ export async function recordBoundTerminalEvidence(input: {
           AND owner_id=$5
           AND state='executing'
         RETURNING *`,
-      [input.stdout, input.stderr, input.exitCode, row.id, input.ownerId]
+      [
+        sanitizePostgresText(input.stdout),
+        sanitizePostgresText(input.stderr),
+        input.exitCode,
+        row.id,
+        input.ownerId,
+      ]
     );
     if (!recorded.rows[0]) {
       throw new ExecutionEvidenceConflictError(

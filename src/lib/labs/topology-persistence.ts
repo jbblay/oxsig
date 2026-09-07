@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { getPool } from '@/lib/db/pool';
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { labTopologySchema, type LabTopology } from './topology-schema';
 
 export type PersistedLabTopology = {
@@ -33,7 +34,7 @@ export async function saveLabTopology(ownerId: string, topology: LabTopology): P
      ON CONFLICT (owner_id)
      DO UPDATE SET topology = EXCLUDED.topology, updated_at = NOW()
      RETURNING topology, updated_at`,
-    [ownerId, JSON.stringify(validated)]
+    [ownerId, stringifyPostgresJson(validated)]
   );
 
   const row = result.rows[0];

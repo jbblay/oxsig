@@ -217,7 +217,7 @@ export function buildProgramProcessAcademyCourse(): AcademyCourse {
         practice: {
           title: 'Inspect descriptors and environment',
           instruction: 'Predict what descriptors 0, 1 and 2 point to in this terminal. Inspect them and sample the environment, then explain how a shell redirection could change descriptor 1 before exec.',
-          command: "ls -l /proc/$$/fd/0 /proc/$$/fd/1 /proc/$$/fd/2; printf '%s\n' '--- environment sample ---'; tr '\0' '\n' </proc/$$/environ | head -n 8",
+          command: String.raw`ls -l /proc/$$/fd/0 /proc/$$/fd/1 /proc/$$/fd/2; printf '%s\n' '--- environment sample ---'; tr '\0' '\n' </proc/$$/environ | head -n 8`,
           expected: 'The standard descriptors resolve to terminal/session resources and environment entries are visible. Explain descriptor inheritance rather than describing stdout as a special file built into the program.',
           labRequired: true,
         },
