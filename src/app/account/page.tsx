@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
+  BrainCircuit,
   GraduationCap,
   Loader2,
   RefreshCw,
   RotateCcw,
   Save,
+  ShieldCheck,
   Trash2,
   User,
 } from 'lucide-react';
@@ -32,6 +34,18 @@ import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Profile = { id: string; displayName: string; email?: string; bio?: string; avatarUrl?: string; role?: string };
+type CapabilityPathState = {
+  path: { id: string; version: number; title: string; description: string };
+  enrollment: null | { recommendedCapabilityId: string | null };
+  demonstratedCount: number;
+  totalCapabilities: number;
+  progressPercent: number;
+  capabilities: Array<{
+    id: string;
+    title: string;
+    status: 'not_started' | 'in_progress' | 'demonstrated';
+  }>;
+};
 
 const UI_PREFERENCE_KEYS = [
   'oxsig:app-sidebar:v1',
@@ -50,6 +64,7 @@ export default function AccountPage() {
   const { isAuthenticated, isLoading: authLoading, profileError, refresh } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [progress, setProgress] = useState<LearnerProgressSummary | null>(null);
+  const [capabilityPath, setCapabilityPath] = useState<CapabilityPathState | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,6 +85,14 @@ export default function AccountPage() {
     if (body?.progress) setProgress(body.progress as LearnerProgressSummary);
   }, [isAuthenticated]);
 
+  const loadCapabilityPath = useCallback(async () => {
+    if (!isAuthenticated) return;
+    const response = await fetch('/api/learning/program-process', { cache: 'no-store' });
+    if (!response.ok) return;
+    const body = await response.json().catch(() => ({}));
+    if (body?.state) setCapabilityPath(body.state as CapabilityPathState);
+  }, [isAuthenticated]);
+
   const load = useCallback(async () => {
     if (!isAuthenticated) return;
     setLoading(true);
@@ -81,14 +104,14 @@ export default function AccountPage() {
       setProfile(next);
       setDisplayName(next.displayName || '');
       setBio(next.bio || '');
-      await loadProgress();
+      await Promise.all([loadProgress(), loadCapabilityPath()]);
     } catch (error) {
       setProfile(null);
       setLoadError(error instanceof Error ? error.message : 'Could not load profile');
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, loadProgress]);
+  }, [isAuthenticated, loadCapabilityPath, loadProgress]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -141,8 +164,8 @@ export default function AccountPage() {
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Academy reset failed');
       for (const key of ACADEMY_LOCAL_KEYS) window.localStorage.removeItem(key);
       setResetDialogOpen(false);
-      await loadProgress();
-      toast.success('AI Academy is back to a clean slate');
+      await Promise.all([loadProgress(), loadCapabilityPath()]);
+      toast.success('AI Academy and capability journey are back to a clean slate');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Academy reset failed');
     } finally {
@@ -151,19 +174,51 @@ export default function AccountPage() {
   }
 
   if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin" /></div>;
-  if (!isAuthenticated) return <Card className="mx-auto max-w-md"><CardHeader><CardTitle>My progress</CardTitle><CardDescription>Sign in to view your learning analytics, rewards and account.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent></Card>;
+  if (!isAuthenticated) return <Card className="mx-auto max-w-md"><CardHeader><CardTitle>My progress</CardTitle><CardDescription>Sign in to view your learning analytics, demonstrated capabilities and account.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent></Card>;
+
+  const nextCapability = capabilityPath?.capabilities.find((item) => item.id === capabilityPath.enrollment?.recommendedCapabilityId)
+    || capabilityPath?.capabilities.find((item) => item.status !== 'demonstrated')
+    || null;
 
   return (
     <div className="mx-auto max-w-7xl space-y-7">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2"><User className="h-7 w-7" /><h1 className="text-3xl font-semibold">My progress</h1></div>
-          <p className="mt-1 text-muted-foreground">Real learning activity, unlocks and account controls. Nothing here is demo data.</p>
+          <p className="mt-1 text-muted-foreground">Real capability evidence, learning activity, unlocks and account controls. Nothing here is demo data.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button>
       </div>
 
       {profileError && <Card><CardContent className="pt-6 text-sm text-amber-600">Some profile information is still synchronizing. Your signed-in session remains active.</CardContent></Card>}
+
+      {capabilityPath && (
+        <Card className="overflow-hidden border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-background to-sky-500/5">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-3xl">
+                <div className="flex items-center gap-2"><BrainCircuit className="h-5 w-5 text-emerald-600" /><CardDescription>Demonstrated capability journey</CardDescription></div>
+                <CardTitle className="mt-2">{capabilityPath.path.title}</CardTitle>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{capabilityPath.path.description}</p>
+              </div>
+              <Badge variant={capabilityPath.enrollment ? 'secondary' : 'outline'}>{capabilityPath.enrollment ? 'Enrolled' : 'Not started'}</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div><p className="text-3xl font-semibold">{capabilityPath.demonstratedCount}<span className="text-base font-normal text-muted-foreground">/{capabilityPath.totalCapabilities}</span></p><p className="text-xs text-muted-foreground">capabilities demonstrated</p></div>
+              <p className="text-xl font-semibold">{capabilityPath.progressPercent}%</p>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500" style={{ width: `${Math.max(0, Math.min(100, capabilityPath.progressPercent))}%` }} /></div>
+            <p className="text-xs text-muted-foreground">Only persisted capability evidence moves this progress bar. Reviewing a lesson does not.</p>
+            {nextCapability && <div className="rounded-xl border bg-background/70 p-3 text-sm"><span className="font-medium">Next capability:</span> <span className="text-muted-foreground">{nextCapability.title}</span></div>}
+            <div className="flex flex-wrap gap-2">
+              <Button asChild><Link href="/academy">{capabilityPath.enrollment ? 'Continue in Academy' : 'Start in Academy'}</Link></Button>
+              {capabilityPath.enrollment && <Button variant="outline" asChild><Link href="/academy/prove"><ShieldCheck className="h-4 w-4" /> Prove what I know</Link></Button>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {progress ? (
         <LearningAnalyticsDashboard progress={progress} />
@@ -221,23 +276,24 @@ export default function AccountPage() {
             <Card className="overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-background">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
-                  <div><CardDescription>Current course</CardDescription><CardTitle className="mt-1">{progress.academy.activeCourse.title}</CardTitle></div>
+                  <div><CardDescription>Academy lesson history</CardDescription><CardTitle className="mt-1">{progress.academy.activeCourse.title}</CardTitle></div>
                   <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400"><GraduationCap className="h-5 w-5" /></span>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex items-center justify-between text-xs"><span>{progress.academy.activeCourse.completedLessons}/{progress.academy.activeCourse.totalLessons} lessons</span><span>{progress.academy.activeCourse.score}% mastery</span></div>
+                <div className="flex items-center justify-between text-xs"><span>{progress.academy.activeCourse.completedLessons}/{progress.academy.activeCourse.totalLessons} lesson records</span><span className="text-muted-foreground">Navigation history</span></div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.max(0, Math.min(100, progress.academy.activeCourse.totalLessons > 0 ? (progress.academy.activeCourse.completedLessons / progress.academy.activeCourse.totalLessons) * 100 : 0))}%` }} /></div>
-                <Button asChild className="w-full"><Link href="/academy">Continue course</Link></Button>
+                <p className="text-[10px] leading-4 text-muted-foreground">This is lesson history, not demonstrated mastery. Capability evidence is shown above.</p>
+                <Button asChild className="w-full"><Link href="/academy">Open Academy</Link></Button>
               </CardContent>
             </Card>
           )}
 
           <Card>
-            <CardHeader><CardTitle>How rewards work</CardTitle><CardDescription>OXSIG rewards are deterministic, not manually filled dashboard numbers.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>How rewards work</CardTitle><CardDescription>OXSIG rewards are deterministic and evidence-based.</CardDescription></CardHeader>
             <CardContent className="space-y-2 text-sm leading-6 text-muted-foreground">
-              <p>XP increases from completed lessons, mastered courses, passed practical checkpoints, started labs and recorded active days.</p>
-              <p>Lab runtime is shown as analytics but gives no XP, so leaving a machine running cannot improve your level.</p>
+              <p>XP increases from demonstrated capabilities, distinct passed practical checkpoints, real lab starts and recorded active learning days.</p>
+              <p>Reviewing lessons and leaving a lab running do not generate XP, so navigation or idle runtime cannot manufacture progress.</p>
               <p>Streak badges use your longest recorded streak, so an earned streak milestone does not disappear just because your current streak later resets.</p>
             </CardContent>
           </Card>
@@ -245,25 +301,25 @@ export default function AccountPage() {
       </section>
 
       <Card>
-        <CardHeader><CardTitle>Start fresh</CardTitle><CardDescription>Recover from a confusing layout or deliberately clear your Academy learning history.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Start fresh</CardTitle><CardDescription>Recover from a confusing layout or deliberately return Academy learning state to zero.</CardDescription></CardHeader>
         <CardContent className="grid gap-3 lg:grid-cols-2">
           <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-sm font-semibold">Reset interface</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Restore navigation and Cyber Lab layout preferences to defaults. Courses, labs and saved work remain.</p></div>
+            <div><p className="text-sm font-semibold">Reset interface</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Restore navigation and Cyber Lab layout preferences to defaults. Learning evidence, labs and saved work remain.</p></div>
             <Button variant="outline" className="shrink-0" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset layout</Button>
           </div>
 
           <div className="flex flex-col gap-3 rounded-xl border border-destructive/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-sm font-semibold">Clear AI Academy</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Delete your Academy courses, progress, questions, practice attempts and Academy-derived reward progress. Cyber Lab resources stay untouched.</p></div>
+            <div><p className="text-sm font-semibold">Clear AI Academy</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Delete Academy lesson history, capability enrollment and evidence, questions and practice attempts. Cyber Lab resources and other OXSIG work stay untouched.</p></div>
             <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
               <DialogTrigger asChild><Button variant="outline" className="shrink-0 border-destructive/30 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /> Clear Academy</Button></DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Delete all Academy learning history?</DialogTitle>
-                  <DialogDescription>This cannot be undone. Generated courses, lesson progress, instructor questions and Academy practice history will be permanently deleted. Running Cyber Lab machines and other OXSIG workspaces stay untouched.</DialogDescription>
+                  <DialogTitle>Return Academy learning state to zero?</DialogTitle>
+                  <DialogDescription>This cannot be undone. Academy courses, lesson history, capability enrollment/evidence, instructor questions and Academy practice history will be deleted. Running Cyber Lab machines, Boards, Vault knowledge and Live Workspaces stay untouched.</DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setResetDialogOpen(false)} disabled={deletingAcademy}>Cancel</Button>
-                  <Button variant="destructive" onClick={() => void deleteAcademyHistory()} disabled={deletingAcademy}>{deletingAcademy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Academy history</Button>
+                  <Button variant="destructive" onClick={() => void deleteAcademyHistory()} disabled={deletingAcademy}>{deletingAcademy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Academy learning state</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
