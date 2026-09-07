@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { Pool, PoolClient } from 'pg';
 import { getPool, transaction } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import type {
   AcademyCourse,
   AcademyLearningReflection,
@@ -112,7 +113,8 @@ export async function createAcademyPrediction(input: {
   }
   const course = asCourse(current.course_data);
   const lesson = resolvePractice(course, input.courseTitle, input.lessonTitle);
-  const prediction = input.prediction.trim();
+  const prediction = sanitizePostgresText(input.prediction.trim());
+  const command = sanitizePostgresText(lesson.practice.command);
 
   const result = await getPool().query(
     `INSERT INTO academy_learning_reflections (
@@ -136,7 +138,7 @@ export async function createAcademyPrediction(input: {
      WHERE academy_learning_reflections.owner_id=EXCLUDED.owner_id
        AND academy_learning_reflections.status='predicted'
      RETURNING *`,
-    [current.id, input.ownerId, lesson.id, lesson.practice.command, prediction]
+    [current.id, input.ownerId, lesson.id, command, prediction]
   );
 
   const row = result.rows[0] as ReflectionRow | undefined;
@@ -220,7 +222,7 @@ export async function claimAcademyReflection(input: {
     }
     const course = asCourse(courseResult.rows[0].course_data);
     const lesson = course.lessons.find((item) => item.id === row.lesson_id);
-    if (!lesson?.practice || lesson.practice.command !== row.command) {
+    if (!lesson?.practice || sanitizePostgresText(lesson.practice.command) !== row.command) {
       throw new AcademyReflectionError('The practical lesson changed after the prediction was captured.', 'PRACTICE_CHANGED');
     }
 
@@ -245,7 +247,7 @@ export async function claimAcademyReflection(input: {
         'EVIDENCE_NOT_READY'
       );
     }
-    if (String(evidence.command || '') !== row.command) {
+    if (sanitizePostgresText(String(evidence.command || '')) !== row.command) {
       throw new AcademyReflectionError('The execution evidence does not match the predicted command.', 'EVIDENCE_COMMAND_MISMATCH');
     }
 
@@ -276,7 +278,7 @@ export async function claimAcademyReflection(input: {
       throw new AcademyReflectionError('This execution evidence is already bound to another learner reflection.', 'EVIDENCE_ALREADY_REFLECTED');
     }
 
-    const explanation = input.explanation.trim();
+    const explanation = sanitizePostgresText(input.explanation.trim());
     const claimed = await client.query(
       `UPDATE academy_learning_reflections
           SET status='evaluating',
@@ -401,7 +403,14 @@ export async function completeAcademyReflection(input: {
               updated_at=NOW()
         WHERE id=$4 AND owner_id=$5 AND evidence_id=$6 AND status='evaluating'
         RETURNING *`,
-      [JSON.stringify(evaluation), score, input.model, row.id, input.ownerId, input.evidenceId]
+      [
+        stringifyPostgresJson(evaluation),
+        score,
+        sanitizePostgresText(input.model),
+        row.id,
+        input.ownerId,
+        input.evidenceId,
+      ]
     );
     const reflected = updated.rows[0] as ReflectionRow | undefined;
     if (!reflected) {
