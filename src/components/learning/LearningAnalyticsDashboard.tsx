@@ -82,7 +82,7 @@ function LevelRing({ progress, level }: { progress: number; level: number }) {
 
 function ActivityStrip({ progress }: { progress: LearnerProgressSummary }) {
   return (
-    <div className="grid grid-cols-14 gap-1.5" aria-label="Fourteen day learning activity">
+    <div className="grid grid-cols-[repeat(14,minmax(0,1fr))] gap-1.5" aria-label="Fourteen day learning activity">
       {progress.activity.history.map((day) => {
         const active = day.total > 0;
         const both = day.academy > 0 && day.labs > 0;
