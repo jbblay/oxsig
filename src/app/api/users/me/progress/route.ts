@@ -82,6 +82,12 @@ async function loadLearningActivity(ownerId: string): Promise<Array<Record<strin
 
       UNION
 
+      SELECT activity_date AS day, false AS academy, true AS labs
+      FROM learning_activity_days
+      WHERE owner_id = $1 AND lab_actions > 0
+
+      UNION
+
       SELECT (last_activity_at AT TIME ZONE 'UTC')::date AS day, true AS academy, false AS labs
       FROM academy_sessions
       WHERE owner_id = $1
@@ -198,6 +204,12 @@ export async function GET(request: NextRequest) {
          ), transitions AS (
            SELECT id AS lab_instance_id, started_at AS transition_at, 'run_start'::text AS kind
            FROM owned_labs
+
+           UNION ALL
+
+           SELECT id AS lab_instance_id, stopped_at AS transition_at, 'run_stop'::text AS kind
+           FROM owned_labs
+           WHERE stopped_at IS NOT NULL
 
            UNION ALL
 
