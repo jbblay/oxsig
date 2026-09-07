@@ -29,7 +29,10 @@ export async function POST(request: NextRequest) {
     if (rateLimit) return rateLimit;
 
     const parsed = requestSchema.safeParse(await req.json().catch(() => null));
-    if (!parsed.success || !isProgramProcessCapabilityId(parsed.data?.capabilityId || '')) {
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid capability assessment request' }, { status: 400 });
+    }
+    if (!isProgramProcessCapabilityId(parsed.data.capabilityId)) {
       return NextResponse.json({ error: 'Invalid capability assessment request' }, { status: 400 });
     }
 
