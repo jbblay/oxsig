@@ -6,6 +6,7 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
 import { createLabVm, describeLabVmStates, destroyLabVm, labCapabilities } from '@/lib/labs/aws-runtime';
+import type { LabDefinition, LearnerLabDefinition, LearnerLabRuntimeCapabilities } from '@/lib/labs/types';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 import { captureProductEvent } from '@/lib/analytics/posthog';
 
@@ -19,17 +20,48 @@ const configuredTtl = Number.parseInt(process.env.LAB_AWS_TTL_MINUTES || '60', 1
 const LAB_TTL_MINUTES = Number.isFinite(configuredTtl) ? Math.min(120, Math.max(15, configuredTtl)) : 60;
 const ONE_LAB_INDEX = 'idx_lab_instances_one_nonterminal_per_owner';
 
+function mapLearnerDefinition(lab: LabDefinition): LearnerLabDefinition {
+  return {
+    slug: lab.slug,
+    name: lab.name,
+    shortName: lab.shortName,
+    category: lab.category,
+    description: lab.description,
+    difficulty: lab.difficulty,
+    runtime: lab.runtime,
+    osFamily: lab.osFamily,
+    platform: lab.platform,
+    shell: lab.shell,
+    accessModes: lab.accessModes,
+    defaultAccessMode: lab.defaultAccessMode,
+    defaultCommand: lab.defaultCommand,
+    estimatedMemoryMb: lab.estimatedMemoryMb,
+    estimatedCpu: lab.estimatedCpu,
+    objectives: lab.objectives,
+    available: lab.available,
+    availabilityNote: lab.availabilityNote,
+  };
+}
+
+function mapLearnerCapabilities(capabilities: Awaited<ReturnType<typeof labCapabilities>>): LearnerLabRuntimeCapabilities {
+  return {
+    configured: capabilities.configured,
+    supportsTerminal: capabilities.supportsTerminal,
+  };
+}
+
 function mapInstance(row: Record<string, any>) {
   return {
     id: row.id,
     slug: row.slug,
     name: row.name,
     status: row.status,
-    lastError: row.last_error,
     createdAt: row.created_at,
     startedAt: row.started_at,
     expiresAt: row.expires_at,
-    metadata: row.metadata || {},
+    metadata: {
+      accessMode: row.metadata?.accessMode === 'desktop' ? 'desktop' : 'terminal',
+    },
   };
 }
 
@@ -118,8 +150,8 @@ export async function GET(request: NextRequest) {
 
     const visibleRows = rows.filter((row) => row.status !== 'destroyed');
     return NextResponse.json({
-      catalog: LAB_CATALOG,
-      capabilities,
+      catalog: LAB_CATALOG.map(mapLearnerDefinition),
+      capabilities: mapLearnerCapabilities(capabilities),
       instances: visibleRows.map(mapInstance),
       reconciliationWarning,
     });
@@ -148,8 +180,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: lab.availabilityNote || `${lab.name} is not enabled yet`,
-          code: lab.marketplaceProductCode ? 'MARKETPLACE_ACTIVATION_REQUIRED' : 'LAB_UNAVAILABLE',
-          marketplaceProductCode: lab.marketplaceProductCode,
+          code: 'LAB_PROFILE_UNAVAILABLE',
         },
         { status: 409 }
       );
@@ -178,7 +209,7 @@ export async function POST(request: NextRequest) {
 
     const capabilities = await labCapabilities();
     if (!capabilities.configured) {
-      return NextResponse.json({ error: capabilities.reason || 'Lab service is unavailable on this deployment' }, { status: 503 });
+      return NextResponse.json({ error: 'Lab service is unavailable on this deployment' }, { status: 503 });
     }
 
     const pool = getPool();
@@ -329,16 +360,20 @@ export async function POST(request: NextRequest) {
         try {
           await destroyLabVm(externalId);
         } catch {
-          // The instance remains tagged for scheduled administrative cleanup if AWS cleanup itself fails.
+          // The instance remains tagged for scheduled administrative cleanup if provider cleanup itself fails.
         }
       }
 
-      const message = error instanceof Error ? error.message.slice(0, 500) : 'Lab provisioning failed';
+      const internalMessage = error instanceof Error ? error.message.slice(0, 500) : 'Lab provisioning failed';
       await pool.query(
         `UPDATE lab_instances SET status='failed', last_error=$1, updated_at=NOW() WHERE id=$2`,
-        [message, instanceId]
+        [internalMessage, instanceId]
       );
-      return NextResponse.json({ error: message, instanceId }, { status: 500 });
+      console.error('Cyber Lab provisioning failed', { instanceId, error });
+      return NextResponse.json(
+        { error: 'The lab could not be started. Try again or open Diagnostics for technical details.', code: 'LAB_PROVISION_FAILED' },
+        { status: 500 }
+      );
     }
   });
 }
