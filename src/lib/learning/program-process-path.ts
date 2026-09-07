@@ -195,7 +195,7 @@ export function buildProgramProcessAcademyCourse(): AcademyCourse {
         visual: { title: 'Startup chain', nodes: ['ELF entry', 'dynamic loader if needed', '_start', 'runtime initialization', 'main()'] },
         practice: {
           title: 'Inspect ELF startup metadata',
-          instruction: 'Use tools available on the lab to identify the executable format and, when readelf is available, its entry point. Explain why that entry is not the C main symbol.',
+          instruction: 'Predict whether the executable entry point is the same thing as the C main function. Then use tools available on the lab to identify the executable format and, when readelf is available, its entry point. Explain why that entry is not the C main symbol.',
           command: "exe=$(readlink /proc/$$/exe); file \"$exe\"; if command -v readelf >/dev/null; then readelf -h \"$exe\" | grep 'Entry point'; else echo 'readelf not installed; executable identified above'; fi",
           expected: 'The executable format is identified and the ELF entry point is shown when readelf exists. The explanation should place runtime startup between entry and main.',
           labRequired: true,
