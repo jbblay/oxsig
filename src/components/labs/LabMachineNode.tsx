@@ -16,7 +16,6 @@ export type LabMachineNodeData = {
   category: string;
   osFamily: LabOsFamily;
   platform: LabPlatform;
-  instanceType: string;
   available: boolean;
   availabilityNote?: string;
   status?: LabInstanceStatus | "planned";
