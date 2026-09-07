@@ -1,49 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
+import { requireAuth } from '@/lib/auth/middleware';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
+import { captureProductEvent } from '@/lib/analytics/posthog';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
+import { resolveOwnedRunningLab } from '@/lib/labs/server';
 import {
-  aiPractitionerConfigured,
   aiPractitionerModel,
-  explainPractitionerEvidence,
+  analyzePractitionerExecution,
   planPractitionerStep,
-  practitionerRequestSchema,
 } from '@/lib/ai-practitioner/server';
-import {
-  ExecutionEvidenceConflictError,
-  getTerminalEvidenceForAnalysis,
-  storeExecutionEvidenceAnalysis,
-} from '@/lib/execution-evidence/server';
 
 export const runtime = 'nodejs';
 
-const evidenceIdSchema = z.string().uuid();
+const planSchema = z.object({
+  action: z.literal('plan'),
+  prompt: z.string().trim().min(1).max(4000),
+  labInstanceId: z.string().uuid().nullable().optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().max(4000),
+  })).max(20).default([]),
+});
 
-async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
-  const result = await getPool().query(
-    `SELECT instance.id,
-            definition.slug,
-            instance.status,
-            instance.runtime_provider,
-            instance.runtime_external_id
-     FROM lab_instances instance
-     JOIN lab_definitions definition ON definition.id = instance.definition_id
-     WHERE instance.id = $1 AND instance.owner_id = $2 AND instance.status <> 'destroyed'
-     LIMIT 1`,
-    [labInstanceId, ownerId]
-  );
-  const instance = result.rows[0];
-  if (!instance) return { error: 'Lab instance not found', status: 404 as const };
-  if (instance.status !== 'running') return { error: 'AI Practitioner requires a running Cyber Lab machine for command execution', status: 409 as const };
+const analyzeSchema = z.object({
+  action: z.literal('analyze'),
+  prompt: z.string().trim().min(1).max(4000),
+  command: z.string().max(8000),
+  stdout: z.string().max(120_000),
+  stderr: z.string().max(120_000),
+  exitCode: z.number().int(),
+  labInstanceId: z.string().uuid().nullable().optional(),
+  executionId: z.string().uuid().optional(),
+});
 
-  const lab = LAB_CATALOG.find((item) => item.slug === instance.slug);
-  if (!lab) return { error: 'Lab definition is unavailable', status: 409 as const };
-  return { instance, lab };
-}
+const bodySchema = z.discriminatedUnion('action', [planSchema, analyzeSchema]);
 
 export async function POST(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
@@ -51,32 +45,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
     }
 
-    const rateLimit = await checkRateLimit(req, { maxRequests: 24, windowMs: 60_000 }, user.id);
+    const rateLimit = await checkRateLimit(req, { maxRequests: 20, windowMs: 60_000 }, user.id);
     if (rateLimit) return rateLimit;
 
-    const rawBody = await req.json().catch(() => null) as Record<string, unknown> | null;
-    let exactEvidenceId: string | undefined;
-    let schemaBody: Record<string, unknown> | null = rawBody;
-    if (rawBody?.action === 'explain') {
-      const parsedEvidenceId = evidenceIdSchema.safeParse(rawBody.evidenceId);
-      if (!parsedEvidenceId.success) {
-        return NextResponse.json({ error: 'An exact execution evidence ID is required for AI explanation' }, { status: 400 });
-      }
-      exactEvidenceId = parsedEvidenceId.data;
-      schemaBody = { ...rawBody };
-      delete schemaBody.evidenceId;
-    }
-
-    const parsed = practitionerRequestSchema.safeParse(schemaBody);
+    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid AI Practitioner request', details: parsed.error.flatten() }, { status: 400 });
-    }
-
-    if (!aiPractitionerConfigured()) {
-      return NextResponse.json({
-        error: 'AI Practitioner is not configured on this Oxsig server',
-        code: 'AI_NOT_CONFIGURED',
-      }, { status: 503 });
+      return NextResponse.json({ error: 'Invalid AI Practitioner request' }, { status: 400 });
     }
 
     const model = aiPractitionerModel();
@@ -113,7 +87,7 @@ export async function POST(request: NextRequest) {
             user.id,
             instance?.id ?? null,
             sanitizePostgresText(parsed.data.prompt),
-            sanitizePostgresText(plan.command),
+            plan.command ? sanitizePostgresText(plan.command) : null,
             sanitizePostgresText(model),
             stringifyPostgresJson({ plan }),
           ]
@@ -128,96 +102,58 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const resolved = await resolveOwnedRunningLab(user.id, parsed.data.labInstanceId);
-      if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
-      const { instance, lab } = resolved;
-
-      const evidence = await getTerminalEvidenceForAnalysis({
-        ownerId: user.id,
-        labInstanceId: instance.id,
-        command: parsed.data.command,
-        surface: 'ai-practitioner',
-        evidenceId: exactEvidenceId!,
-      });
-
-      if (evidence.state === 'analyzed') {
-        if (evidence.analysisKind !== 'ai-practitioner' || !evidence.analysis) {
-          throw new ExecutionEvidenceConflictError(
-            'This execution evidence was already analyzed by another learning surface.',
-            'EVIDENCE_ALREADY_ANALYZED'
-          );
-        }
-        return NextResponse.json({
-          analysis: evidence.analysis,
-          model: evidence.model || model,
-          evidence: {
-            id: evidence.id,
-            executionId: evidence.executionId,
-            provenance: evidence.provenance,
-            state: evidence.state,
-          },
-        });
+      let instance: any = null;
+      let lab: (typeof LAB_CATALOG)[number] | null = null;
+      if (parsed.data.labInstanceId) {
+        const resolved = await resolveOwnedRunningLab(user.id, parsed.data.labInstanceId);
+        if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+        instance = resolved.instance;
+        lab = resolved.lab;
       }
 
-      const analysis = await explainPractitionerEvidence({
+      const analysis = await analyzePractitionerExecution({
         prompt: parsed.data.prompt,
-        command: evidence.command || parsed.data.command,
-        stdout: evidence.stdout,
-        stderr: evidence.stderr,
-        exitCode: evidence.exitCode ?? -1,
-        labName: lab.name,
-        platform: lab.platform,
-      });
-
-      const analyzedEvidence = await storeExecutionEvidenceAnalysis({
-        ownerId: user.id,
-        evidenceId: evidence.id,
-        analysisKind: 'ai-practitioner',
-        analysis: analysis as unknown as Record<string, unknown>,
-        model,
+        command: parsed.data.command,
+        stdout: parsed.data.stdout,
+        stderr: parsed.data.stderr,
+        exitCode: parsed.data.exitCode,
+        lab: lab ? { name: lab.name, platform: lab.platform, shell: lab.shell } : null,
       });
 
       await getPool().query(
         `INSERT INTO ai_practitioner_events (
-           owner_id, lab_instance_id, event_type, prompt, command, exit_code, model, metadata
-         ) VALUES ($1,$2,'analysis',$3,$4,$5,$6,$7::jsonb)`,
+           owner_id, lab_instance_id, event_type, prompt, command, stdout, stderr,
+           exit_code, model, metadata
+         ) VALUES ($1,$2,'analysis',$3,$4,$5,$6,$7,$8,$9::jsonb)`,
         [
           user.id,
-          instance.id,
+          instance?.id ?? null,
           sanitizePostgresText(parsed.data.prompt),
-          sanitizePostgresText(evidence.command || parsed.data.command),
-          evidence.exitCode ?? -1,
+          sanitizePostgresText(parsed.data.command),
+          sanitizePostgresText(parsed.data.stdout),
+          sanitizePostgresText(parsed.data.stderr),
+          parsed.data.exitCode,
           sanitizePostgresText(model),
-          stringifyPostgresJson({
-            analysis,
-            evidenceId: evidence.id,
-            executionId: evidence.executionId,
-            provenance: evidence.provenance,
-          }),
+          stringifyPostgresJson({ analysis, executionId: parsed.data.executionId || null }),
         ]
       );
 
-      return NextResponse.json({
-        analysis,
-        model,
-        evidence: {
-          id: analyzedEvidence.id,
-          executionId: analyzedEvidence.executionId,
-          provenance: analyzedEvidence.provenance,
-          state: analyzedEvidence.state,
+      await captureProductEvent({
+        distinctId: user.clerkUserId || user.id,
+        event: 'ai_practitioner_analysis_completed',
+        properties: {
+          labInstanceId: instance?.id ?? null,
+          exitCode: parsed.data.exitCode,
         },
       });
+
+      return NextResponse.json({ analysis, model });
     } catch (error) {
-      if (error instanceof ExecutionEvidenceConflictError) {
-        return NextResponse.json(
-          { error: error.message, code: error.code },
-          { status: 409, headers: { 'Cache-Control': 'no-store' } }
-        );
-      }
       console.error('AI Practitioner request failed:', error);
       return NextResponse.json({
-        error: error instanceof Error ? error.message : 'AI Practitioner failed',
-      }, { status: 502 });
+        error: 'AI Practitioner could not complete this request',
+        code: 'AI_PRACTITIONER_FAILED',
+      }, { status: 500 });
     }
   });
 }
