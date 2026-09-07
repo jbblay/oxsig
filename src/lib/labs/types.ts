@@ -41,6 +41,12 @@ export type LabDefinition = {
   marketplaceProductCode?: string;
 };
 
+/** Learner-facing catalog data. Provider sizing and activation identifiers stay server/operator-side. */
+export type LearnerLabDefinition = Omit<
+  LabDefinition,
+  'recommendedInstanceType' | 'desktopInstanceType' | 'marketplaceProductCode'
+>;
+
 export type LabRuntimeCapabilities = {
   provider: 'unconfigured' | 'docker' | 'vm' | 'aws-ec2';
   configured: boolean;
@@ -49,3 +55,9 @@ export type LabRuntimeCapabilities = {
   supportsTerminal: boolean;
   supportsReset: boolean;
 };
+
+/** Minimal runtime capability contract exposed to ordinary learner surfaces. */
+export type LearnerLabRuntimeCapabilities = Pick<
+  LabRuntimeCapabilities,
+  'configured' | 'supportsTerminal'
+>;
