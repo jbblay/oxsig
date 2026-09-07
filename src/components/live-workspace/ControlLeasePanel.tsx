@@ -158,20 +158,60 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <Badge>{ownsLease ? 'You have control' : 'Control active'}</Badge>
                     <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" /> {remaining(lease.expiresAt, now)} remaining</span>
-                    {canRevoke && <Button size="sm" variant="outline" disabled={busy === `revoke:${lease.id}`} onClick={() => void mutate(`revoke:${lease.id}`, `/api/live-workspaces/${workspaceId}/control-leases/${lease.id}/revoke`, undefined, ownsLease ? 'Control released.' : 'Control revoked.')}>{busy === `revoke:${lease.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : ownsLease ? 'Release control' : 'Revoke control'}</Button>}
+                    {canRevoke && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy === `revoke:${lease.id}`}
+                        onClick={() => void mutate(
+                          `revoke:${lease.id}`,
+                          `/api/live-workspaces/${workspaceId}/control-leases/${lease.id}/revoke`,
+                          undefined,
+                          ownsLease ? 'Control released.' : 'Control revoked.'
+                        )}
+                      >
+                        {busy === `revoke:${lease.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : ownsLease ? 'Release control' : 'Revoke control'}
+                      </Button>
+                    )}
                   </div>
                 ) : ownPending ? (
                   <Badge variant="secondary">Request pending</Badge>
                 ) : canRequest ? (
-                  <Button size="sm" variant="outline" disabled={busy === `request:${resource.id}`} onClick={() => void mutate(`request:${resource.id}`, `/api/live-workspaces/${workspaceId}/control-requests`, { bindingId: resource.id, surface: resource.accessMode }, `${surfaceLabel(resource.accessMode)} control requested.`)}>{busy === `request:${resource.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Request control'}</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === `request:${resource.id}`}
+                    onClick={() => void mutate(
+                      `request:${resource.id}`,
+                      `/api/live-workspaces/${workspaceId}/control-requests`,
+                      { bindingId: resource.id, surface: resource.accessMode },
+                      `${surfaceLabel(resource.accessMode)} control requested.`
+                    )}
+                  >
+                    {busy === `request:${resource.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Request control'}
+                  </Button>
                 ) : (
                   <Badge variant="outline">Observe only</Badge>
                 )}
               </div>
-
-              {lease && <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">Controller: {lease.participantName}.</span>{' '}{lease.surface === 'terminal' ? ownsLease ? 'Open the shared terminal below when you are ready to work.' : 'Only that participant can open and send input through the shared terminal.' : 'Desktop control is authorized, but shared desktop transport is not connected yet.'}</div>}
-
-              {ownsTerminalLease && lease && <SharedWorkspaceTerminal workspaceId={workspaceId} bindingId={resource.id} labInstanceId={resource.resourceId} machineLabel={resource.label} leaseExpiresAt={lease.expiresAt} onAuthorizationChanged={onRefresh} />}
+              {lease && (
+                <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Controller: {lease.participantName}.</span>{' '}
+                  {lease.surface === 'terminal'
+                    ? ownsLease ? 'Open the shared terminal below when you are ready to work.' : 'Only that participant can open and send input through the shared terminal.'
+                    : 'Desktop control is authorized, but shared desktop transport is not connected yet.'}
+                </div>
+              )}
+              {ownsTerminalLease && lease && (
+                <SharedWorkspaceTerminal
+                  workspaceId={workspaceId}
+                  bindingId={resource.id}
+                  labInstanceId={resource.resourceId}
+                  machineLabel={resource.label}
+                  leaseExpiresAt={lease.expiresAt}
+                  onAuthorizationChanged={onRefresh}
+                />
+              )}
             </div>
           );
         })}
@@ -180,14 +220,42 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
           <div className="space-y-3 border-t pt-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div><p className="text-sm font-semibold">Control requests</p><p className="text-xs text-muted-foreground">Approve only the participant who should actively operate the machine.</p></div>
-              <div className="space-y-1"><label htmlFor="control-duration" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Grant for</label><select id="control-duration" className="block h-9 rounded-md border bg-background px-2 text-xs" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}><option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></div>
+              <div className="space-y-1">
+                <label htmlFor="control-duration" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Grant for</label>
+                <select id="control-duration" className="block h-9 rounded-md border bg-background px-2 text-xs" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}>
+                  <option value={5}>5 minutes</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>60 minutes</option>
+                </select>
+              </div>
             </div>
             {pending.map((request) => (
               <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-                <div><p className="text-sm font-semibold">{request.participantName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><SurfaceIcon surface={request.surface} /> {request.labLabel} · {surfaceLabel(request.surface)}</p></div>
+                <div>
+                  <p className="text-sm font-semibold">{request.participantName}</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><SurfaceIcon surface={request.surface} /> {request.labLabel} · {surfaceLabel(request.surface)}</p>
+                </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="ghost" disabled={busy === `deny:${request.id}`} onClick={() => void mutate(`deny:${request.id}`, `/api/live-workspaces/${workspaceId}/control-requests/${request.id}/deny`, undefined, 'Control request denied.')}>Deny</Button>
-                  <Button size="sm" disabled={busy === `approve:${request.id}` || request.participantId === viewerId} title={request.participantId === viewerId ? 'You cannot approve your own control request' : undefined} onClick={() => void mutate(`approve:${request.id}`, `/api/live-workspaces/${workspaceId}/control-requests/${request.id}/approve`, { durationMinutes }, `Control granted for ${durationMinutes} minutes.`)}>{busy === `approve:${request.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : `Grant ${durationMinutes} min`}</Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy === `deny:${request.id}`}
+                    onClick={() => void mutate(`deny:${request.id}`, `/api/live-workspaces/${workspaceId}/control-requests/${request.id}/deny`, undefined, 'Control request denied.')}
+                  >Deny</Button>
+                  <Button
+                    size="sm"
+                    disabled={busy === `approve:${request.id}` || request.participantId === viewerId}
+                    title={request.participantId === viewerId ? 'You cannot approve your own control request' : undefined}
+                    onClick={() => void mutate(
+                      `approve:${request.id}`,
+                      `/api/live-workspaces/${workspaceId}/control-requests/${request.id}/approve`,
+                      { durationMinutes },
+                      `Control granted for ${durationMinutes} minutes.`
+                    )}
+                  >
+                    {busy === `approve:${request.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : `Grant ${durationMinutes} min`}
+                  </Button>
                 </div>
               </div>
             ))}
