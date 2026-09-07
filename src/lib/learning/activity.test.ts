@@ -25,14 +25,26 @@ describe('recordLearningActivity', () => {
     expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining('learning_activity_days'), ['user-1', 0, 1]);
   });
 
-  it('fails open when the analytics table is not available', async () => {
+  it('fails open silently when the analytics table is not available yet', async () => {
     const error = new Error('relation missing') as Error & { code: string };
     error.code = '42P01';
     mocks.query.mockRejectedValue(error);
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await expect(recordLearningActivity('user-1', 'academy')).resolves.toBe(false);
-    expect(consoleSpy).toHaveBeenCalledWith('Learning activity rollup could not be recorded', { kind: 'academy', code: '42P01' });
+    expect(consoleSpy).not.toHaveBeenCalled();
+
+    consoleSpy.mockRestore();
+  });
+
+  it('logs non-rollout failures without exposing the learner id', async () => {
+    const error = new Error('database unavailable') as Error & { code: string };
+    error.code = '08006';
+    mocks.query.mockRejectedValue(error);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(recordLearningActivity('user-1', 'lab')).resolves.toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith('Learning activity rollup could not be recorded', { kind: 'lab', code: '08006' });
 
     consoleSpy.mockRestore();
   });
