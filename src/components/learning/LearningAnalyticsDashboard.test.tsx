@@ -61,7 +61,7 @@ describe('LearningAnalyticsDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: /first lesson/i }));
 
     expect(screen.getByText('Locked')).toBeInTheDocument();
-    expect(screen.getByText('0/1 lesson')).toBeInTheDocument();
+    expect(screen.getAllByText('0/1 lesson').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/persisted OXSIG learning history/i)).toBeInTheDocument();
   });
 });
