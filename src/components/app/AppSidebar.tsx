@@ -28,7 +28,7 @@ const groups = [
   {
     label: 'Workspace',
     items: [
-      { href: '/home', label: 'Home', icon: Home },
+      { href: '/home', label: 'Dashboard', icon: Home },
       { href: '/collab', label: 'Collaborate', icon: MessageCircle },
       { href: '/live', label: 'Live Workspace', icon: RadioTower },
       { href: '/collab/storyboards', label: 'Boards', icon: BookOpen },
