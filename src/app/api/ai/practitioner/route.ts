@@ -80,6 +80,12 @@ export async function POST(request: NextRequest) {
     }
 
     const model = aiPractitionerModel();
+    if (!model) {
+      return NextResponse.json({
+        error: 'AI Practitioner model is not configured on this Oxsig server',
+        code: 'AI_MODEL_NOT_CONFIGURED',
+      }, { status: 503 });
+    }
 
     try {
       if (parsed.data.action === 'plan') {
