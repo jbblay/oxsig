@@ -1,26 +1,33 @@
 'use client';
 
-import { Menu, Sparkles } from 'lucide-react';
+import Link from 'next/link';
+import { Menu } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/lib/auth/use-auth';
 
 function pageMeta(pathname: string) {
-  if (pathname === '/home') return { title: 'Home', description: 'Your Oxsig workspace' };
-  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Generate a roadmap, learn visually, ask questions and move into real lab practice' };
-  if (pathname === '/collab') return { title: 'Collaboration', description: 'Conversation, resources and practice' };
-  if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Visual explanation and recording' };
-  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Share a session, attach owner resources and grant explicit time-bounded control' };
-  if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Capture, connect and reuse technical knowledge' };
-  if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your technical knowledge workspace' };
-  if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Design, launch and operate cloud labs' };
-  if (pathname.startsWith('/account')) return { title: 'Account', description: 'Profile and workspace settings' };
+  if (pathname === '/home') return { title: 'Home', description: 'Choose what you want to learn, practice or continue' };
+  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Choose a topic and learn it step by step' };
+  if (pathname === '/collab') return { title: 'Collaboration', description: 'Talk, share and work through a task together' };
+  if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Explain ideas visually and record walkthroughs' };
+  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Work together in the same live learning environment' };
+  if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Save useful commands, concepts and playbooks' };
+  if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your saved knowledge' };
+  if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Build or open a real temporary practice environment' };
+  if (pathname.startsWith('/account')) return { title: 'Profile', description: 'Your progress, achievements and account settings' };
   return { title: 'Oxsig', description: 'Learn, collaborate and practice' };
+}
+
+function initials(value?: string | null) {
+  const text = value?.trim() || 'O';
+  return text.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'O';
 }
 
 export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const pathname = usePathname();
   const meta = pageMeta(pathname);
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/75 backdrop-blur-xl">
@@ -34,9 +41,20 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
             <p className="truncate text-[11px] text-muted-foreground">{meta.description}</p>
           </div>
         </div>
-        <Badge variant="outline" className="hidden h-7 gap-1.5 border-primary/20 bg-background/70 text-[10px] font-medium sm:flex">
-          <Sparkles className="h-3 w-3 text-primary" />Unified workspace
-        </Badge>
+
+        <Link
+          href="/account"
+          className="group flex min-w-0 items-center gap-2 rounded-xl border border-transparent px-1.5 py-1 transition hover:border-border hover:bg-muted/40"
+          aria-label="Open profile and progress"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-bold">
+            {initials(user?.displayName || user?.email)}
+          </span>
+          <span className="hidden min-w-0 sm:block">
+            <span className="block truncate text-[11px] font-semibold group-hover:text-primary">My progress</span>
+            <span className="block max-w-32 truncate text-[9px] text-muted-foreground">{user?.displayName || 'Profile'}</span>
+          </span>
+        </Link>
       </div>
     </header>
   );
