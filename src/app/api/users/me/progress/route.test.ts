@@ -145,6 +145,22 @@ describe('learner progress summary', () => {
     expect(mocks.query).toHaveBeenCalledTimes(6);
   });
 
+  it('reads both Academy and Cyber Lab daily ledger counters', async () => {
+    await GET(request());
+
+    const ledgerCall = mocks.query.mock.calls.find(([sql]) => String(sql).includes('learning_activity_days'));
+    expect(ledgerCall?.[0]).toContain('academy_actions > 0');
+    expect(ledgerCall?.[0]).toContain('lab_actions > 0');
+  });
+
+  it('bounds recorded lab runtime with persisted stopped state and lifecycle events', async () => {
+    await GET(request());
+
+    const runtimeCall = mocks.query.mock.calls.find(([sql]) => String(sql).includes('runtime_minutes'));
+    expect(runtimeCall?.[0]).toContain("stopped_at AS transition_at");
+    expect(runtimeCall?.[0]).toContain("event.event_type IN ('start', 'stop', 'destroy', 'expired_cleanup')");
+  });
+
   it('passes the authenticated user id to the rate limit and every database query', async () => {
     await GET(request());
 
