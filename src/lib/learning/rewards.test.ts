@@ -4,8 +4,7 @@ import { buildLearningRewards, LEARNING_XP_RULES } from './rewards';
 describe('learning rewards', () => {
   it('starts a new learner at zero XP with every achievement locked', () => {
     const rewards = buildLearningRewards({
-      completedLessons: 0,
-      masteredCourses: 0,
+      demonstratedCapabilities: 0,
       passedPractices: 0,
       labsStarted: 0,
       activeDays: 0,
@@ -20,10 +19,9 @@ describe('learning rewards', () => {
     expect(rewards.badges.every((badge) => !badge.earned)).toBe(true);
   });
 
-  it('derives XP only from persisted learning milestones, never lab runtime', () => {
+  it('derives XP only from persisted evidence-bearing milestones, never lesson clicks or lab runtime', () => {
     const rewards = buildLearningRewards({
-      completedLessons: 2,
-      masteredCourses: 1,
+      demonstratedCapabilities: 2,
       passedPractices: 3,
       labsStarted: 2,
       activeDays: 4,
@@ -31,13 +29,12 @@ describe('learning rewards', () => {
     });
 
     expect(rewards.xp).toBe(
-      (2 * LEARNING_XP_RULES.completedLesson) +
-      LEARNING_XP_RULES.masteredCourse +
+      (2 * LEARNING_XP_RULES.demonstratedCapability) +
       (3 * LEARNING_XP_RULES.passedPractice) +
       (2 * LEARNING_XP_RULES.startedLab) +
       (4 * LEARNING_XP_RULES.activeDay)
     );
-    expect(rewards.badges.find((badge) => badge.id === 'first-lesson')?.earned).toBe(true);
+    expect(rewards.badges.find((badge) => badge.id === 'first-capability')?.earned).toBe(true);
     expect(rewards.badges.find((badge) => badge.id === 'lab-starter')?.earned).toBe(true);
     expect(rewards.badges.find((badge) => badge.id === 'practice-proof')?.earned).toBe(true);
     expect(rewards.badges.find((badge) => badge.id === 'three-day-streak')?.earned).toBe(true);
@@ -46,8 +43,7 @@ describe('learning rewards', () => {
 
   it('keeps streak badges earned from the longest historical streak', () => {
     const rewards = buildLearningRewards({
-      completedLessons: 0,
-      masteredCourses: 0,
+      demonstratedCapabilities: 0,
       passedPractices: 0,
       labsStarted: 0,
       activeDays: 10,
