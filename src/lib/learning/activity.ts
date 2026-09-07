@@ -32,7 +32,6 @@ export async function recordLearningActivity(
     return true;
   } catch (error) {
     console.error('Learning activity rollup could not be recorded', {
-      ownerId,
       kind,
       code: (error as { code?: string } | null)?.code,
     });
