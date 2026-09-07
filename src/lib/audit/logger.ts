@@ -35,7 +35,7 @@ export async function logAudit(entry: AuditLogEntry): Promise<void> {
     console.error('Audit logging failed:', error);
   }
 
-  if (entry.userId && LEARNING_LAB_ACTIONS.has(entry.action)) {
+  if (entry.userId && entry.resourceType === 'lab' && LEARNING_LAB_ACTIONS.has(entry.action)) {
     await recordLearningActivity(entry.userId, 'lab');
   }
 }
