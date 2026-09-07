@@ -8,6 +8,7 @@ import {
   updateAcademyProgress,
 } from '@/lib/academy/persistence';
 import { requireAuth } from '@/lib/auth/middleware';
+import { recordLearningActivity } from '@/lib/learning/activity';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
       parsed.data.course as AcademyCourse,
       parsed.data.progress
     );
+    await recordLearningActivity(user.id, 'academy');
     return NextResponse.json({ state });
   });
 }
@@ -99,6 +101,7 @@ export async function PATCH(request: NextRequest) {
 
     try {
       await updateAcademyProgress(user.id, parsed.data);
+      await recordLearningActivity(user.id, 'academy');
       const state = await getAcademyState(user.id);
       return NextResponse.json({ state });
     } catch (error) {
