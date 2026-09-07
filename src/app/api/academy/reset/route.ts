@@ -20,6 +20,15 @@ export async function DELETE(request: NextRequest) {
       await client.query('BEGIN');
       await client.query('DELETE FROM academy_courses WHERE owner_id = $1', [user.id]);
 
+      // Migration 039 may intentionally lag an application deployment. When the
+      // capability-path model exists, deleting enrollments cascades capability
+      // evidence so "Clear Academy" really returns the learner journey to zero.
+      // Cyber Lab and other product resources are intentionally untouched.
+      const capabilityPaths = await client.query(`SELECT to_regclass('public.learning_path_enrollments') AS relation`);
+      if (capabilityPaths.rows[0]?.relation) {
+        await client.query('DELETE FROM learning_path_enrollments WHERE owner_id = $1', [user.id]);
+      }
+
       // Migration 038 may intentionally lag an application deployment. If the
       // learner activity ledger exists, remove only Academy activity. Lab activity
       // on the same day remains intact.

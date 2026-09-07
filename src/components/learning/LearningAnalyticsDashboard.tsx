@@ -6,11 +6,10 @@ import {
   Activity,
   Award,
   BookOpenCheck,
+  BrainCircuit,
   Clock3,
   Flame,
-  GraduationCap,
   Lock,
-  Medal,
   ShieldCheck,
   Sparkles,
   Target,
@@ -31,12 +30,12 @@ import {
 import type { LearnerProgressSummary, LearningBadgeProgress } from '@/lib/learning/progress-contract';
 
 const badgeVisuals: Record<string, { icon: typeof Award; classes: string }> = {
-  'first-lesson': { icon: BookOpenCheck, classes: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
+  'first-capability': { icon: BrainCircuit, classes: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
   'lab-starter': { icon: Terminal, classes: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
   'practice-proof': { icon: Target, classes: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
   'three-day-streak': { icon: Flame, classes: 'bg-orange-500/15 text-orange-600 dark:text-orange-400' },
-  'ten-lessons': { icon: Medal, classes: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400' },
-  'course-mastery': { icon: Trophy, classes: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+  'four-capabilities': { icon: ShieldCheck, classes: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400' },
+  'eight-capabilities': { icon: Trophy, classes: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
   'lab-explorer': { icon: Zap, classes: 'bg-rose-500/15 text-rose-600 dark:text-rose-400' },
   'seven-day-streak': { icon: Award, classes: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400' },
 };
@@ -180,7 +179,7 @@ export function LearningAnalyticsDashboard({
               </div>
               <h2 className="mt-3 text-2xl font-semibold tracking-tight">Your learning power</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Every point here comes from recorded Academy progress, verified practice, Cyber Lab launches, or active learning days.
+                XP comes only from demonstrated capabilities, distinct passed practical checkpoints, real Cyber Lab starts and recorded active learning days.
               </p>
               <div className="mt-4">
                 <div className="flex items-center justify-between text-xs font-medium">
@@ -226,7 +225,7 @@ export function LearningAnalyticsDashboard({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="border-orange-500/20"><CardContent className="flex items-center gap-3 p-4"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/15 text-orange-600 dark:text-orange-400"><Flame className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.activity.streakDays}</p><p className="text-xs text-muted-foreground">day current streak</p></div></CardContent></Card>
-        <Card className="border-sky-500/20"><CardContent className="flex items-center gap-3 p-4"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400"><BookOpenCheck className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.academy.completedLessons}</p><p className="text-xs text-muted-foreground">lessons completed</p></div></CardContent></Card>
+        <Card className="border-sky-500/20"><CardContent className="flex items-center gap-3 p-4"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400"><BookOpenCheck className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.academy.completedLessons}</p><p className="text-xs text-muted-foreground">lesson history records</p></div></CardContent></Card>
         <Card className="border-emerald-500/20"><CardContent className="flex items-center gap-3 p-4"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"><Terminal className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.labs.started}</p><p className="text-xs text-muted-foreground">labs started</p></div></CardContent></Card>
         <Card className="border-violet-500/20"><CardContent className="flex items-center gap-3 p-4"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-600 dark:text-violet-400"><Clock3 className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{formatRuntime(progress.labs.runtimeMinutes)}</p><p className="text-xs text-muted-foreground">recorded lab runtime</p></div></CardContent></Card>
       </div>
@@ -265,7 +264,7 @@ export function LearningAnalyticsDashboard({
       {!compact && (
         <div className="grid gap-3 sm:grid-cols-3">
           <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-400"><Target className="h-5 w-5" /></span><div><p className="text-xl font-semibold">{progress.academy.passedPractices}</p><p className="text-xs text-muted-foreground">verified practices</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400"><GraduationCap className="h-5 w-5" /></span><div><p className="text-xl font-semibold">{progress.academy.masteredCourses}</p><p className="text-xs text-muted-foreground">courses mastered</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400"><Award className="h-5 w-5" /></span><div><p className="text-xl font-semibold">{progress.rewards.badgesEarned}</p><p className="text-xs text-muted-foreground">badges unlocked</p></div></CardContent></Card>
           <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400"><Activity className="h-5 w-5" /></span><div><p className="text-xl font-semibold">{progress.activity.activeDays}</p><p className="text-xs text-muted-foreground">recorded active days</p></div></CardContent></Card>
         </div>
       )}
@@ -290,7 +289,7 @@ export function LearningAnalyticsDashboard({
                 <div className="rounded-xl border bg-muted/20 p-4">
                   <div className="flex items-center justify-between text-sm font-medium"><span>Milestone progress</span><span>{Math.min(selectedBadge.current, selectedBadge.target)}/{selectedBadge.target} {selectedBadge.unit}</span></div>
                   <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${selectedBadge.earned ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${percentage(selectedBadge.current, selectedBadge.target)}%` }} /></div>
-                  <p className="mt-3 text-xs leading-5 text-muted-foreground">This badge is calculated from your persisted OXSIG learning history. It is not demo data or a manually assigned reward.</p>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">This badge is calculated from persisted OXSIG learning evidence and activity. It is not demo data or a manually assigned reward.</p>
                 </div>
               </>
             );

@@ -38,7 +38,7 @@ const zeroProgress: LearnerProgressSummary = {
     levelProgressPercent: 0,
     badgesEarned: 0,
     badges: [
-      { id: 'first-lesson', title: 'First lesson', description: 'Complete your first Academy lesson.', earned: false, current: 0, target: 1, unit: 'lesson' },
+      { id: 'first-capability', title: 'First proof', description: 'Demonstrate your first technical capability.', earned: false, current: 0, target: 1, unit: 'capability' },
       { id: 'lab-starter', title: 'Lab starter', description: 'Launch your first real Cyber Lab.', earned: false, current: 0, target: 1, unit: 'lab' },
     ],
   },
@@ -58,10 +58,10 @@ describe('LearningAnalyticsDashboard', () => {
   it('lets a learner inspect a locked badge and its real unlock condition', () => {
     render(<LearningAnalyticsDashboard progress={zeroProgress} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /first lesson/i }));
+    fireEvent.click(screen.getByRole('button', { name: /first proof/i }));
 
     expect(screen.getByText('Locked')).toBeInTheDocument();
-    expect(screen.getAllByText('0/1 lesson').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/persisted OXSIG learning history/i)).toBeInTheDocument();
+    expect(screen.getAllByText('0/1 capability').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/persisted OXSIG learning evidence and activity/i)).toBeInTheDocument();
   });
 });

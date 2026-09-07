@@ -7,16 +7,16 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 
 function pageMeta(pathname: string) {
-  if (pathname === '/home') return { title: 'Home', description: 'Choose what you want to learn, practice or continue' };
-  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Choose a topic and learn it step by step' };
+  if (pathname === '/home') return { title: 'Dashboard', description: 'Continue your path, practice, and next demonstrated capability' };
+  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Build capability through teaching, practice, evidence, and feedback' };
   if (pathname === '/collab') return { title: 'Collaboration', description: 'Talk, share and work through a task together' };
   if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Explain ideas visually and record walkthroughs' };
-  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Work together in the same live learning environment' };
+  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Work together around shared learning resources and practice' };
   if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Save useful commands, concepts and playbooks' };
   if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your saved knowledge' };
-  if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Build or open a real temporary practice environment' };
-  if (pathname.startsWith('/account')) return { title: 'Profile', description: 'Your progress, achievements and account settings' };
-  return { title: 'Oxsig', description: 'Learn, collaborate and practice' };
+  if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Open a real temporary practice environment' };
+  if (pathname.startsWith('/account')) return { title: 'My Progress', description: 'Your demonstrated capabilities, activity, achievements and account settings' };
+  return { title: 'OXSIG', description: 'Learn, collaborate and practice' };
 }
 
 function initials(value?: string | null) {
