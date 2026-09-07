@@ -128,6 +128,13 @@ describe('program process reference path', () => {
     expect(mocks.createAcademyCourse).toHaveBeenCalledTimes(1);
     expect(mocks.createAcademyCourse.mock.calls[0][0]).toBe(user.id);
     expect(mocks.createAcademyCourse.mock.calls[0][1]).toBe(PROGRAM_PROCESS_SOURCE_PROMPT);
+
+    const persistedCourse = mocks.createAcademyCourse.mock.calls[0][2];
+    const serializedCourse = JSON.stringify(persistedCourse);
+    expect(serializedCourse).not.toContain('\\u0000');
+    const processContextCommand = persistedCourse.lessons.find((lesson: { id: string }) => lesson.id === 'process-context')?.practice?.command;
+    expect(processContextCommand).toContain("tr '\\0' '\\n'");
+
     expect(mocks.recordLearningActivity).toHaveBeenCalledWith(user.id, 'academy');
     expect(body.state.progressPercent).toBe(0);
     expect(body.state.capabilities[0].status).toBe('in_progress');
