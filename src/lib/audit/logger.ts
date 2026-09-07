@@ -1,4 +1,5 @@
 import { getPool } from '@/lib/db/pool';
+import { recordLearningActivity } from '@/lib/learning/activity';
 
 export interface AuditLogEntry {
   userId?: string;
@@ -9,6 +10,11 @@ export interface AuditLogEntry {
   userAgent?: string;
   metadata?: Record<string, unknown>;
 }
+
+const LEARNING_LAB_ACTIONS = new Set([
+  'lab.command',
+  'lab.session.start',
+]);
 
 export async function logAudit(entry: AuditLogEntry): Promise<void> {
   try {
@@ -27,6 +33,10 @@ export async function logAudit(entry: AuditLogEntry): Promise<void> {
     );
   } catch (error) {
     console.error('Audit logging failed:', error);
+  }
+
+  if (entry.userId && LEARNING_LAB_ACTIONS.has(entry.action)) {
+    await recordLearningActivity(entry.userId, 'lab');
   }
 }
 
