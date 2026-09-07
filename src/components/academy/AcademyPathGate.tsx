@@ -2,11 +2,12 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ArrowRight, BrainCircuit, Compass, Loader2, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const REFERENCE_TITLE = 'How a Program Becomes a Process';
@@ -34,12 +35,17 @@ export default function AcademyPathGate({
   children: React.ReactNode;
   activeCourseTitle: string | null;
 }) {
+  const pathname = usePathname();
   const [state, setState] = React.useState<PathState | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [starting, setStarting] = React.useState(false);
   const [showLegacyMaterial, setShowLegacyMaterial] = React.useState(false);
 
   React.useEffect(() => {
+    if (pathname === '/academy/explore') {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -54,7 +60,7 @@ export default function AcademyPathGate({
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [pathname]);
 
   async function startOrResumeReferenceJourney() {
     setStarting(true);
@@ -73,6 +79,8 @@ export default function AcademyPathGate({
       setStarting(false);
     }
   }
+
+  if (pathname === '/academy/explore') return <>{children}</>;
 
   if (loading && !state) {
     return <div className="mx-auto flex min-h-[60vh] max-w-5xl items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading your Academy journey…</div>;
@@ -110,7 +118,7 @@ export default function AcademyPathGate({
         <section className="overflow-hidden rounded-3xl border bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.14),transparent_38%),linear-gradient(145deg,hsl(var(--background)),hsl(var(--muted)/0.28))] p-6 sm:p-9">
           <Badge className="gap-1.5"><BrainCircuit className="h-3.5 w-3.5" /> Your primary learning journey</Badge>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Continue {state.path.title}</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">Your durable capability progress belongs to this curated journey. The older Academy material below is retained as history, but it does not replace the capability map.</p>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">Your durable capability progress belongs to this curated journey. Older Academy material is retained as history, but it does not replace the capability map.</p>
           <div className="mt-5 flex flex-wrap gap-2">
             <Button onClick={() => void startOrResumeReferenceJourney()} disabled={starting}>
               {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
