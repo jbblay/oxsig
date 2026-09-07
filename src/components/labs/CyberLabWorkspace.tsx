@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Activity, Boxes, CloudCog, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
+import { Activity, Boxes, ChevronDown, CloudCog, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
 import AccessPathReadinessReview from '@/components/labs/AccessPathReadinessReview';
 import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
@@ -14,16 +14,22 @@ import { Button } from '@/components/ui/button';
 
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
 type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness' | 'guest-service' | 'access-path';
+type Stage = { mode: WorkspaceMode; label: string; longLabel: string; icon: React.ComponentType<{ className?: string }> };
 
-const STAGES: Array<{ mode: WorkspaceMode; label: string; longLabel: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { mode: 'designer', label: 'Design', longLabel: 'Infrastructure Designer', icon: Boxes },
-  { mode: 'planner', label: 'Plan', longLabel: 'Deployment Plan', icon: FileCog },
-  { mode: 'runtime', label: 'Runtime', longLabel: 'Runtime Lab', icon: CloudCog },
-  { mode: 'evidence', label: 'Evidence', longLabel: 'Evidence Review', icon: ShieldCheck },
-  { mode: 'readiness', label: 'Readiness', longLabel: 'Runtime Readiness', icon: Activity },
-  { mode: 'guest-service', label: 'Guest service', longLabel: 'Guest Service', icon: MonitorCheck },
-  { mode: 'access-path', label: 'Access path', longLabel: 'Access Path', icon: Route },
+const PRIMARY_STAGES: Stage[] = [
+  { mode: 'runtime', label: 'My Lab', longLabel: 'Open and use your lab', icon: CloudCog },
+  { mode: 'designer', label: 'Build', longLabel: 'Build or change a topology', icon: Boxes },
 ];
+
+const ADVANCED_STAGES: Stage[] = [
+  { mode: 'planner', label: 'Review plan', longLabel: 'Review a deployment plan', icon: FileCog },
+  { mode: 'evidence', label: 'Evidence', longLabel: 'Review deployment evidence', icon: ShieldCheck },
+  { mode: 'readiness', label: 'Runtime checks', longLabel: 'Inspect runtime readiness', icon: Activity },
+  { mode: 'guest-service', label: 'Service checks', longLabel: 'Inspect guest service readiness', icon: MonitorCheck },
+  { mode: 'access-path', label: 'Access checks', longLabel: 'Inspect access path readiness', icon: Route },
+];
+
+const ALL_MODES = new Set<WorkspaceMode>([...PRIMARY_STAGES, ...ADVANCED_STAGES].map((stage) => stage.mode));
 
 export default function CyberLabWorkspace() {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
@@ -35,31 +41,15 @@ export default function CyberLabWorkspace() {
   const [accessPathMounted, setAccessPathMounted] = React.useState(false);
 
   React.useEffect(() => {
-    const saved = window.localStorage.getItem(MODE_KEY);
-    if (saved === 'designer') {
-      setDesignerMounted(true);
-      setMode('designer');
-    }
-    if (saved === 'planner') {
-      setPlannerMounted(true);
-      setMode('planner');
-    }
-    if (saved === 'evidence') {
-      setEvidenceMounted(true);
-      setMode('evidence');
-    }
-    if (saved === 'readiness') {
-      setReadinessMounted(true);
-      setMode('readiness');
-    }
-    if (saved === 'guest-service') {
-      setGuestServiceMounted(true);
-      setMode('guest-service');
-    }
-    if (saved === 'access-path') {
-      setAccessPathMounted(true);
-      setMode('access-path');
-    }
+    const saved = window.localStorage.getItem(MODE_KEY) as WorkspaceMode | null;
+    if (!saved || !ALL_MODES.has(saved)) return;
+    if (saved === 'designer') setDesignerMounted(true);
+    if (saved === 'planner') setPlannerMounted(true);
+    if (saved === 'evidence') setEvidenceMounted(true);
+    if (saved === 'readiness') setReadinessMounted(true);
+    if (saved === 'guest-service') setGuestServiceMounted(true);
+    if (saved === 'access-path') setAccessPathMounted(true);
+    setMode(saved);
   }, []);
 
   const selectMode = (next: WorkspaceMode) => {
@@ -73,41 +63,55 @@ export default function CyberLabWorkspace() {
     window.localStorage.setItem(MODE_KEY, next);
   };
 
+  const renderStage = (stage: Stage) => {
+    const Icon = stage.icon;
+    const active = mode === stage.mode;
+    return (
+      <Button
+        key={stage.mode}
+        role="tab"
+        aria-selected={active}
+        aria-controls={`cyber-lab-${stage.mode}`}
+        size="sm"
+        variant={active ? 'default' : 'ghost'}
+        className="h-9 shrink-0"
+        onClick={() => selectMode(stage.mode)}
+        title={stage.longLabel}
+      >
+        <Icon className="mr-1.5 h-4 w-4" />{stage.label}
+      </Button>
+    );
+  };
+
+  const advancedActive = ADVANCED_STAGES.some((stage) => stage.mode === mode);
+
   return (
     <>
       <div className="mb-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="oxsig-scrollbar overflow-x-auto p-2" role="tablist" aria-label="Cyber Lab workflow stages">
-          <div className="flex min-w-max items-center gap-1">
-            {STAGES.map((stage, index) => {
-              const Icon = stage.icon;
-              const active = mode === stage.mode;
-              return (
-                <Button
-                  key={stage.mode}
-                  role="tab"
-                  aria-selected={active}
-                  aria-controls={`cyber-lab-${stage.mode}`}
-                  size="sm"
-                  variant={active ? 'default' : 'ghost'}
-                  className="h-9 shrink-0"
-                  onClick={() => selectMode(stage.mode)}
-                  title={stage.longLabel}
-                >
-                  <span className={`mr-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${active ? 'bg-primary-foreground/15' : 'bg-muted'}`}>{index + 1}</span>
-                  <Icon className="mr-1.5 h-4 w-4" />{stage.label}
-                </Button>
-              );
-            })}
+        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Lab tools</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Start in My Lab. Use Build only when you want to create or change the environment.</p>
+          </div>
+          <div className="flex items-center gap-1" role="tablist" aria-label="Cyber Lab main tools">
+            {PRIMARY_STAGES.map(renderStage)}
           </div>
         </div>
-        <p className="border-t px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-          Follow the workflow from design to access validation, or jump directly to the stage you need. Each stage preserves its own authorization and evidence boundary.
-        </p>
+
+        <details className="border-t" open={advancedActive || undefined}>
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/30 hover:text-foreground">
+            <span>Advanced checks and deployment tools</span>
+            <ChevronDown className="h-4 w-4" />
+          </summary>
+          <div className="oxsig-scrollbar overflow-x-auto border-t bg-muted/10 p-2" role="tablist" aria-label="Cyber Lab advanced tools">
+            <div className="flex min-w-max items-center gap-1">{ADVANCED_STAGES.map(renderStage)}</div>
+          </div>
+        </details>
       </div>
 
       <div id="cyber-lab-runtime" role="tabpanel" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
         <LabTopologyPersistenceBridge>
-          <LabRuntimePanel />
+          <LabRuntimePanel embedded />
         </LabTopologyPersistenceBridge>
       </div>
 
