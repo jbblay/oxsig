@@ -3,7 +3,7 @@ import 'server-only';
 import type { Pool, PoolClient } from 'pg';
 
 export type LiveWorkspaceRole = 'owner' | 'instructor' | 'learner' | 'observer';
-export type LiveWorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design';
+export type LiveWorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design' | 'storyboard' | 'vault-item';
 
 export type LiveWorkspaceCapabilities = {
   observe: boolean;
@@ -225,6 +225,25 @@ export async function listOwnerAttachableResources(
                 design.updated_at AS sort_at
            FROM infrastructure_designs design
           WHERE design.owner_id = $1
+         UNION ALL
+         SELECT board.id,
+                'storyboard'::text AS type,
+                COALESCE(NULLIF(board.title, ''), 'Board')::text AS label,
+                NULL::text AS access_mode,
+                board.updated_at AS sort_at
+           FROM storyboard_sessions board
+          WHERE board.owner_id = $1
+            AND board.deleted_at IS NULL
+            AND board.status <> 'archived'
+         UNION ALL
+         SELECT vault.id,
+                'vault-item'::text AS type,
+                COALESCE(NULLIF(vault.title, ''), 'Vault item')::text AS label,
+                NULL::text AS access_mode,
+                vault.updated_at AS sort_at
+           FROM vault_items vault
+          WHERE vault.owner_id = $1
+            AND vault.archived = false
        ) resource
       ORDER BY resource.sort_at DESC, resource.type, resource.label`,
     [ownerId]
@@ -267,46 +286,36 @@ export async function assertOwnerResource(
     if (!result.rows[0]) throw new LiveWorkspaceError('The Academy course is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
     return { id: result.rows[0].id, label: result.rows[0].label };
   }
+  if (resourceType === 'infrastructure-design') {
+    const result = await queryable.query(
+      `SELECT owner_id AS id, 'Infrastructure design'::text AS label
+       FROM infrastructure_designs
+       WHERE owner_id = $1 AND owner_id = $2
+       LIMIT 1`,
+      [resourceId, ownerId]
+    );
+    if (!result.rows[0]) throw new LiveWorkspaceError('The Infrastructure Design is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
+    return { id: result.rows[0].id, label: result.rows[0].label };
+  }
+  if (resourceType === 'storyboard') {
+    const result = await queryable.query(
+      `SELECT id, COALESCE(NULLIF(title, ''), 'Board') AS label
+       FROM storyboard_sessions
+       WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL AND status <> 'archived'
+       LIMIT 1`,
+      [resourceId, ownerId]
+    );
+    if (!result.rows[0]) throw new LiveWorkspaceError('The Board is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
+    return { id: result.rows[0].id, label: result.rows[0].label };
+  }
+
   const result = await queryable.query(
-    `SELECT owner_id AS id, 'Infrastructure design'::text AS label
-     FROM infrastructure_designs
-     WHERE owner_id = $1 AND owner_id = $2
+    `SELECT id, COALESCE(NULLIF(title, ''), 'Vault item') AS label
+     FROM vault_items
+     WHERE id = $1 AND owner_id = $2 AND archived = false
      LIMIT 1`,
     [resourceId, ownerId]
   );
-  if (!result.rows[0]) throw new LiveWorkspaceError('The Infrastructure Design is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
+  if (!result.rows[0]) throw new LiveWorkspaceError('The Vault item is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
   return { id: result.rows[0].id, label: result.rows[0].label };
-}
-
-export async function assignLiveWorkspaceRole(args: {
-  pool: Pool;
-  collaborationId: string;
-  actorId: string;
-  targetUserId: string;
-  role: Exclude<LiveWorkspaceRole, 'owner'>;
-}) {
-  const access = await getLiveWorkspaceAccess(args.pool, args.collaborationId, args.actorId);
-  if (!access) throw new LiveWorkspaceError('Live Workspace not found or access denied.', 404, 'WORKSPACE_NOT_FOUND');
-  if (!access.capabilities.manageParticipants) throw new LiveWorkspaceError('You cannot manage Live Workspace participants.', 403, 'PARTICIPANT_MANAGEMENT_DENIED');
-  if (args.targetUserId === access.ownerId) throw new LiveWorkspaceError('The workspace owner role cannot be changed.', 409, 'OWNER_ROLE_IMMUTABLE');
-  if (!access.isOwner && args.role === 'instructor') {
-    throw new LiveWorkspaceError('Only the workspace owner can assign the instructor role.', 403, 'INSTRUCTOR_ASSIGNMENT_DENIED');
-  }
-
-  const member = await args.pool.query(
-    `SELECT 1 FROM collaboration_members
-     WHERE collaboration_id = $1 AND user_id = $2 AND status = 'active'
-     LIMIT 1`,
-    [args.collaborationId, args.targetUserId]
-  );
-  if (!member.rowCount) throw new LiveWorkspaceError('The target user is not an active workspace member.', 404, 'PARTICIPANT_NOT_FOUND');
-
-  await args.pool.query(
-    `INSERT INTO live_workspace_participants (collaboration_id, user_id, role, status, assigned_by)
-     VALUES ($1,$2,$3,'active',$4)
-     ON CONFLICT (collaboration_id, user_id)
-     DO UPDATE SET role = EXCLUDED.role, status = 'active', assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
-    [args.collaborationId, args.targetUserId, args.role, args.actorId]
-  );
-  return { role: args.role, capabilities: capabilitiesForLiveWorkspaceRole(args.role) };
 }
