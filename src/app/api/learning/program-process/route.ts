@@ -68,8 +68,8 @@ async function loadPathState(ownerId: string) {
     const assessmentDemonstrated = rows.some((row) => row.source_type === 'assessment' && row.result === 'demonstrated');
     const demonstrated = assessmentDemonstrated || (practiceDemonstrated && reflectionDemonstrated);
     const hasEvidence = rows.length > 0;
-    const isActive = Boolean(enrollment) && String(enrollment?.active_capability_id || '') === capability.id;
-    const status = demonstrated ? 'demonstrated' : hasEvidence || isActive ? 'in_progress' : 'not_started';
+    const persistedActive = Boolean(enrollment) && String(enrollment?.active_capability_id || '') === capability.id;
+    const status = demonstrated ? 'demonstrated' : hasEvidence || persistedActive ? 'in_progress' : 'not_started';
     const reflectionScores = rows
       .filter((row) => row.source_type === 'academy-reflection' && row.score !== null)
       .map((row) => Number(row.score));
@@ -92,6 +92,9 @@ async function loadPathState(ownerId: string) {
   const progressPercent = capabilities.length > 0
     ? Math.round((demonstratedCount / capabilities.length) * 100)
     : 0;
+  const recommendedCapabilityId = enrollment
+    ? capabilities.find((capability) => capability.status !== 'demonstrated')?.id || null
+    : null;
 
   return {
     path: {
@@ -104,6 +107,7 @@ async function loadPathState(ownerId: string) {
       id: String(enrollment.id),
       status: String(enrollment.status),
       activeCapabilityId: enrollment.active_capability_id ? String(enrollment.active_capability_id) : null,
+      recommendedCapabilityId,
       enrolledAt: new Date(String(enrollment.enrolled_at)).toISOString(),
       lastActivityAt: new Date(String(enrollment.last_activity_at)).toISOString(),
       completedAt: enrollment.completed_at ? new Date(String(enrollment.completed_at)).toISOString() : null,
