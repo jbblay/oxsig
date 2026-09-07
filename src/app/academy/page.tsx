@@ -13,18 +13,17 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  Compass,
   Loader2,
   MessageCircleQuestion,
   Mic,
   Pause,
   Play,
-  RotateCcw,
   ShieldCheck,
   Sparkles,
   Square,
   Terminal,
   Volume2,
-  WandSparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AcademyPracticeWorkspace from '@/components/academy/AcademyPracticeWorkspace';
@@ -51,7 +50,6 @@ import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
 const COURSE_KEY = 'oxsig:academy-course:v1';
 const PROGRESS_KEY = 'oxsig:academy-progress:v1';
-const MAX_PROMPT = 800;
 
 type LessonQa = { question: string; answer: AcademyQuestionAnswer };
 type LabInstance = { id: string; slug: string; name: string; status: string };
@@ -102,17 +100,16 @@ function narrationText(course: AcademyCourse, lesson: AcademyLesson) {
   return parts.join(' ');
 }
 
-function progressPercent(course: AcademyCourse, completed: Set<string>) {
+function reviewPercent(course: AcademyCourse, reviewed: Set<string>) {
   if (!course.lessons.length) return 0;
-  return Math.round((completed.size / course.lessons.length) * 100);
+  return Math.round((reviewed.size / course.lessons.length) * 100);
 }
 
 export default function AcademyPage() {
-  const [prompt, setPrompt] = React.useState('Teach me Docker basics');
   const [course, setCourse] = React.useState<AcademyCourse | null>(null);
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const [completed, setCompleted] = React.useState<Set<string>>(() => new Set());
-  const [busy, setBusy] = React.useState<'generate' | 'ask' | null>(null);
+  const [reviewed, setReviewed] = React.useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = React.useState<'ask' | null>(null);
   const [question, setQuestion] = React.useState('');
   const [qa, setQa] = React.useState<Record<string, LessonQa[]>>({});
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
@@ -142,7 +139,7 @@ export default function AcademyPage() {
       if (savedProgress) {
         const value = JSON.parse(savedProgress) as { activeIndex?: number; completed?: string[] };
         setActiveIndex(Math.max(0, value.activeIndex || 0));
-        setCompleted(new Set(value.completed || []));
+        setReviewed(new Set(value.completed || []));
       }
     } catch {
       window.localStorage.removeItem(COURSE_KEY);
@@ -156,9 +153,9 @@ export default function AcademyPage() {
     if (!hydrated) return;
     if (course) window.localStorage.setItem(COURSE_KEY, JSON.stringify(course));
     else window.localStorage.removeItem(COURSE_KEY);
-    window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ activeIndex, completed: Array.from(completed) }));
+    window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ activeIndex, completed: Array.from(reviewed) }));
     notifyLocalStorageChange(COURSE_KEY);
-  }, [activeIndex, completed, course, hydrated]);
+  }, [activeIndex, reviewed, course, hydrated]);
 
   const loadLab = React.useCallback(async () => {
     try {
@@ -191,42 +188,7 @@ export default function AcademyPage() {
   }, [runningLab?.id]);
 
   const activeLesson = course?.lessons[Math.min(activeIndex, Math.max(0, (course?.lessons.length || 1) - 1))] || null;
-  const progress = course ? progressPercent(course, completed) : 0;
-
-  async function generateCourse(value = prompt) {
-    const request = value.trim();
-    if (request.length < 3) return;
-    if (request.length > MAX_PROMPT) {
-      toast.error(`Keep the course request under ${MAX_PROMPT} characters.`);
-      return;
-    }
-
-    voiceInput.cancel();
-    setBusy('generate');
-    stopVoice();
-    try {
-      const token = await getCsrfToken();
-      const response = await fetch('/api/academy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
-        body: JSON.stringify({ action: 'generate', prompt: request }),
-      });
-      if (!response.ok) throw new Error(await apiError(response, 'Academy could not generate this course'));
-      const body = await response.json() as { course: AcademyCourse };
-      setCourse(body.course);
-      setActiveIndex(0);
-      setCompleted(new Set());
-      setQa({});
-      setQuestion('');
-      setPracticeResults({});
-      setInstructorCollapsed(false);
-      toast.success('Your synchronized AI course is ready.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Academy course generation failed');
-    } finally {
-      setBusy(null);
-    }
-  }
+  const lessonReview = course ? reviewPercent(course, reviewed) : 0;
 
   async function askInstructor() {
     if (!course || !activeLesson || !question.trim()) return;
@@ -273,7 +235,7 @@ export default function AcademyPage() {
     voiceInput.cancel();
     void playVoice(narrationText(course, activeLesson), 'academy-lesson').catch((error) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      toast.error(error instanceof Error ? error.message : 'ElevenLabs narration failed');
+      toast.error(error instanceof Error ? error.message : 'Lesson narration failed');
     });
   }
 
@@ -293,27 +255,14 @@ export default function AcademyPage() {
     setQuestion('');
   }
 
-  function markLessonComplete() {
+  function markLessonReviewed() {
     if (!course || !activeLesson) return;
-    setCompleted((current) => {
+    setReviewed((current) => {
       const next = new Set(current);
       next.add(activeLesson.id);
       return next;
     });
     if (activeIndex < course.lessons.length - 1) selectLesson(activeIndex + 1);
-  }
-
-  function resetCourse() {
-    voiceInput.cancel();
-    stopVoice();
-    setCourse(null);
-    setActiveIndex(0);
-    setCompleted(new Set());
-    setQa({});
-    setPracticeResults({});
-    setInstructorCollapsed(false);
-    window.localStorage.removeItem(COURSE_KEY);
-    window.localStorage.removeItem(PROGRESS_KEY);
   }
 
   if (!hydrated) {
@@ -322,54 +271,20 @@ export default function AcademyPage() {
 
   if (!course || !activeLesson) {
     return (
-      <div className="mx-auto max-w-5xl space-y-8 py-6">
-        <section className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-primary/10 via-background to-purple-500/10 p-6 shadow-sm sm:p-10">
-          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-          <div className="relative max-w-3xl space-y-5">
-            <Badge className="gap-1.5"><WandSparkles className="h-3.5 w-3.5" /> AI-native Academy</Badge>
-            <div className="space-y-3">
-              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">What do you want to learn?</h1>
-              <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">Ask for a topic. Oxsig builds the roadmap, teaches it by voice and visuals, and synchronizes practical lessons with a real Cyber Lab terminal.</p>
-            </div>
-            <div className="rounded-2xl border bg-background/80 p-3 shadow-sm backdrop-blur">
-              <Textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    if (!busy) void generateCourse();
-                  }
-                }}
-                maxLength={MAX_PROMPT}
-                className="min-h-[96px] resize-none border-0 bg-transparent text-base shadow-none focus-visible:ring-0"
-                placeholder="Teach me Docker basics"
-                disabled={busy === 'generate'}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                <p className="text-xs text-muted-foreground">Roadmap → instructor → visual model → predict → real terminal → evidence → explain → improve.</p>
-                <Button onClick={() => void generateCourse()} disabled={busy === 'generate' || prompt.trim().length < 3}>
-                  {busy === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Build my course
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-3">
-          {[
-            ['Docker from zero', 'Containers, images, networking, volumes and a practical first deployment.'],
-            ['Linux networking for cybersecurity', 'Interfaces, routes, sockets, DNS, packet flow and lab inspection.'],
-            ['Teach me systemd', 'Units, dependencies, boot flow, service management and troubleshooting.'],
-          ].map(([title, description]) => (
-            <button key={title} type="button" className="text-left" onClick={() => { setPrompt(`Teach me ${title}`); void generateCourse(`Teach me ${title}`); }} disabled={busy === 'generate'}>
-              <Card className="h-full transition hover:-translate-y-0.5 hover:bg-muted/30 hover:shadow-md">
-                <CardHeader><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
-              </Card>
-            </button>
-          ))}
-        </section>
+      <div className="mx-auto max-w-4xl py-8">
+        <Card>
+          <CardHeader>
+            <Badge variant="secondary" className="mb-2 w-fit gap-1.5"><Compass className="h-3.5 w-3.5" /> Academy navigation</Badge>
+            <CardTitle>No lesson material is active.</CardTitle>
+            <CardDescription>
+              Return to your curated capability journey, or use Explore for a temporary side topic. Academy no longer creates a new durable course from this fallback screen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button asChild><Link href="/home"><ArrowLeft className="h-4 w-4" /> View capability journey</Link></Button>
+            <Button variant="outline" asChild><Link href="/academy/explore"><Compass className="h-4 w-4" /> Explore a side topic</Link></Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -396,23 +311,24 @@ export default function AcademyPage() {
                 <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{course.title}</h1>
                 <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">{course.overview}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={resetCourse}><RotateCcw className="h-4 w-4" /> New course</Button>
+              <Button variant="outline" size="sm" asChild><Link href="/academy/explore"><Compass className="h-4 w-4" /> Explore side topic</Link></Button>
             </div>
           </div>
         </div>
         <div className="mt-4 space-y-2">
-          <div className="flex items-center justify-between text-xs"><span className="font-medium">Course progress</span><span className="text-muted-foreground">{progress}% · {completed.size}/{course.lessons.length} lessons</span></div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${progress}%` }} /></div>
+          <div className="flex items-center justify-between text-xs"><span className="font-medium">Lesson review</span><span className="text-muted-foreground">{lessonReview}% · {reviewed.size}/{course.lessons.length} reviewed</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${lessonReview}%` }} /></div>
+          <p className="text-[10px] text-muted-foreground">This bar tracks lesson navigation only. Capability mastery changes only from persisted evidence.</p>
         </div>
       </section>
 
       <div className={`grid gap-4 ${instructorCollapsed ? 'lg:grid-cols-[260px_minmax(0,1fr)_68px]' : 'lg:grid-cols-[260px_minmax(0,1fr)_360px]'}`}>
         <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Roadmap</CardTitle><CardDescription>Everything on screen follows this lesson marker.</CardDescription></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Lesson map</CardTitle><CardDescription>Reviewed markers help you navigate; they do not claim mastery.</CardDescription></CardHeader>
             <CardContent className="space-y-1">
               {course.lessons.map((lesson, index) => {
-                const done = completed.has(lesson.id);
+                const done = reviewed.has(lesson.id);
                 const active = index === activeIndex;
                 const verified = practiceResults[lesson.id]?.evaluation?.status === 'passed';
                 return (
@@ -428,7 +344,8 @@ export default function AcademyPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block text-xs font-semibold">{lesson.title}</span>
                       <span className="mt-1 line-clamp-2 block text-[10px] leading-4 text-muted-foreground">{lesson.summary}</span>
-                      {verified && <span className="mt-1 inline-flex items-center gap-1 text-[9px] font-medium text-primary"><ShieldCheck className="h-3 w-3" /> Lab verified</span>}
+                      {done && <span className="mt-1 block text-[9px] text-muted-foreground">Reviewed</span>}
+                      {verified && <span className="mt-1 inline-flex items-center gap-1 text-[9px] font-medium text-primary"><ShieldCheck className="h-3 w-3" /> Practical evidence verified</span>}
                     </span>
                   </button>
                 );
@@ -454,15 +371,15 @@ export default function AcademyPage() {
                     {activeLesson.practice && <Badge variant="outline" className="gap-1"><Terminal className="h-3 w-3" /> Hands-on</Badge>}
                     {terminalConnected && runningLab && <Badge className="gap-1"><Circle className="h-2 w-2 fill-current" /> Terminal live</Badge>}
                   </div>
-                  <CardTitle className="text-xl sm:text-2xl">Live workspace — {activeLesson.title}</CardTitle>
-                  <CardDescription className="mt-2">The roadmap, instructor, visual model, terminal and evidence are synchronized to this lesson.</CardDescription>
+                  <CardTitle className="text-xl sm:text-2xl">Learning studio — {activeLesson.title}</CardTitle>
+                  <CardDescription className="mt-2">The instructor, visual model, practice terminal and evidence are synchronized to this lesson.</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-5 p-4 sm:p-5">
               <section className="rounded-2xl border bg-gradient-to-br from-muted/40 to-background p-4">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Visual sync</div>
+                  <div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-primary" /> Visual model</div>
                   <span className="text-[10px] text-muted-foreground">{activeLesson.visual.title}</span>
                 </div>
                 <div className="flex flex-col items-stretch justify-center gap-2 md:flex-row md:items-center">
@@ -505,7 +422,7 @@ export default function AcademyPage() {
                     <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/10 p-6 text-center">
                       {loadingLab ? <Loader2 className="mb-3 h-7 w-7 animate-spin text-primary" /> : <Terminal className="mb-3 h-8 w-8 text-primary" />}
                       <p className="font-semibold">{loadingLab ? 'Checking your Cyber Lab…' : 'Start a lab for this practical step'}</p>
-                      <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">When a Linux lab is running, its real persistent terminal appears here in the center of the Academy. You stay in the lesson while you practice.</p>
+                      <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">When a supported Linux lab is running, its persistent terminal appears here so you can practice without leaving the lesson.</p>
                       {!loadingLab && <Button asChild className="mt-4"><Link href="/labs"><Play className="h-4 w-4" /> Open Cyber Lab</Link></Button>}
                     </div>
                   )}
@@ -521,7 +438,7 @@ export default function AcademyPage() {
                       </div>
                       <p className="mt-3 text-sm font-medium">{currentPracticeResult.evaluation.summary}</p>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">{currentPracticeResult.evaluation.feedback}</p>
-                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">browser-observed · evidence {currentPracticeResult.execution.evidenceId.slice(0, 8)}… · SSM {currentPracticeResult.execution.terminalSessionId.slice(0, 18)}…</p>
+                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">Verified practice evidence · receipt {currentPracticeResult.execution.evidenceId.slice(0, 8)}…</p>
                       {currentPracticeResult.evaluation.nextStep && <p className="mt-3 border-t pt-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">Next step:</span> {currentPracticeResult.evaluation.nextStep}</p>}
                     </div>
                   )}
@@ -530,7 +447,7 @@ export default function AcademyPage() {
                 <section className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border bg-muted/10 p-6 text-center">
                   <BookOpenCheck className="mb-3 h-8 w-8 text-primary" />
                   <p className="font-semibold">Concept lesson — no terminal action required</p>
-                  <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Listen to the instructor, follow the synchronized visual model, ask questions, then complete the checkpoint when the mental model is clear.</p>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Use the instructor, visual model and checkpoint to test your mental model. Reviewing this lesson does not by itself demonstrate the capability.</p>
                 </section>
               )}
 
@@ -541,10 +458,10 @@ export default function AcademyPage() {
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                 <Button variant="outline" disabled={activeIndex === 0} onClick={() => selectLesson(activeIndex - 1)}><ArrowLeft className="h-4 w-4" /> Previous</Button>
-                {completed.has(activeLesson.id) ? (
-                  <Button variant="secondary" disabled><CheckCircle2 className="h-4 w-4" /> Completed</Button>
+                {reviewed.has(activeLesson.id) ? (
+                  <Button variant="secondary" disabled><CheckCircle2 className="h-4 w-4" /> Reviewed</Button>
                 ) : (
-                  <Button onClick={markLessonComplete}><CheckCircle2 className="h-4 w-4" /> Mark complete {activeIndex < course.lessons.length - 1 && <ArrowRight className="h-4 w-4" />}</Button>
+                  <Button onClick={markLessonReviewed}><CheckCircle2 className="h-4 w-4" /> Mark reviewed {activeIndex < course.lessons.length - 1 && <ArrowRight className="h-4 w-4" />}</Button>
                 )}
               </div>
             </CardContent>
@@ -600,7 +517,7 @@ export default function AcademyPage() {
 
                 {currentPracticeResult?.evaluation && (
                   <section className="rounded-xl border bg-muted/20 p-3">
-                    <p className="flex items-center gap-2 text-xs font-semibold"><ShieldCheck className="h-4 w-4 text-primary" /> Terminal evidence synced</p>
+                    <p className="flex items-center gap-2 text-xs font-semibold"><ShieldCheck className="h-4 w-4 text-primary" /> Practice evidence synced</p>
                     <p className="mt-2 text-xs leading-5 text-muted-foreground">{currentPracticeResult.evaluation.summary}</p>
                   </section>
                 )}
@@ -626,7 +543,7 @@ export default function AcademyPage() {
                         if (!busy && !voiceInputBusy) void askInstructor();
                       }
                     }}
-                    placeholder={voiceInput.recording ? 'Listening… press stop when you are finished.' : voiceInput.processing ? 'Transcribing your question…' : 'Wait — what exactly is the Docker daemon?'}
+                    placeholder={voiceInput.recording ? 'Listening… press stop when you are finished.' : voiceInput.processing ? 'Transcribing your question…' : 'Ask about this concept or challenge the explanation…'}
                     className="min-h-[84px] resize-none"
                     disabled={busy === 'ask' || voiceInputBusy}
                     maxLength={2000}
@@ -657,7 +574,7 @@ export default function AcademyPage() {
                     {voiceInput.recording
                       ? 'Narration is stopped while your microphone is active. Press stop when you finish speaking.'
                       : voiceInput.processing
-                        ? 'ElevenLabs is transcribing. Review the question before sending it.'
+                        ? 'Transcribing your question. Review it before sending.'
                         : 'Pressing the mic interrupts narration, records only on your action, and places the transcript here for review before submission.'}
                   </p>
                 </section>
