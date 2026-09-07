@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { mapVaultRow, normalizeVaultTags, vaultUpdateSchema } from '@/lib/vault/server';
@@ -48,6 +49,14 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (!existing) return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
 
     const patch = parsed.data;
+    const title = patch.title ?? existing.title;
+    const summary = patch.summary ?? existing.summary;
+    const body = patch.body ?? existing.body;
+    const language = patch.language !== undefined ? patch.language : existing.language;
+    const tags = patch.tags !== undefined ? normalizeVaultTags(patch.tags) : existing.tags;
+    const sourceType = patch.sourceType !== undefined ? patch.sourceType : existing.source_type;
+    const sourceId = patch.sourceId !== undefined ? patch.sourceId : existing.source_id;
+
     const result = await getPool().query(
       `UPDATE vault_items
        SET kind = $3,
@@ -68,16 +77,16 @@ export async function PATCH(request: NextRequest, context: Context) {
         id,
         user.id,
         patch.kind ?? existing.kind,
-        patch.title ?? existing.title,
-        patch.summary ?? existing.summary,
-        patch.body ?? existing.body,
-        patch.language !== undefined ? patch.language : existing.language,
-        patch.tags !== undefined ? normalizeVaultTags(patch.tags) : existing.tags,
+        sanitizePostgresText(String(title ?? '')),
+        sanitizePostgresText(String(summary ?? '')),
+        sanitizePostgresText(String(body ?? '')),
+        language ? sanitizePostgresText(String(language)) : null,
+        Array.isArray(tags) ? tags.map((tag: unknown) => sanitizePostgresText(String(tag))) : [],
         patch.pinned ?? existing.pinned,
         patch.archived ?? existing.archived,
-        patch.sourceType !== undefined ? patch.sourceType : existing.source_type,
-        patch.sourceId !== undefined ? patch.sourceId : existing.source_id,
-        JSON.stringify(patch.metadata ?? existing.metadata ?? {}),
+        sourceType ? sanitizePostgresText(String(sourceType)) : null,
+        sourceId ? sanitizePostgresText(String(sourceId)) : null,
+        stringifyPostgresJson(patch.metadata ?? existing.metadata ?? {}),
       ]
     );
 
