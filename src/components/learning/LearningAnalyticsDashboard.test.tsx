@@ -23,7 +23,7 @@ const zeroProgress: LearnerProgressSummary = {
     longestStreakDays: 0,
     activeDays: 0,
     history: Array.from({ length: 14 }, (_, index) => ({
-      date: `2026-08-${String(25 + index).padStart(2, '0')}`,
+      date: new Date(Date.UTC(2026, 7, 25 + index)).toISOString().slice(0, 10),
       academy: 0,
       labs: 0,
       total: 0,
