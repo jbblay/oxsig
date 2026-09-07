@@ -34,6 +34,15 @@ describe('program-to-process reference path', () => {
     expect(course.lessons.every((lesson) => Boolean(lesson.checkpoint.trim()))).toBe(true);
   });
 
+  it('keeps shell escape sequences literal so the curated course contains no NUL code point', () => {
+    const course = buildProgramProcessAcademyCourse();
+    const serialized = JSON.stringify(course);
+    const command = course.lessons.find((lesson) => lesson.id === 'process-context')?.practice?.command;
+
+    expect(serialized).not.toContain('\\u0000');
+    expect(command).toContain(String.raw`tr '\0' '\n'`);
+  });
+
   it('requires prediction/observation/explanation-oriented practical work rather than page completion', () => {
     const course = buildProgramProcessAcademyCourse();
 
