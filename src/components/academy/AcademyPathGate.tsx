@@ -112,7 +112,7 @@ export default function AcademyPathGate({
     );
   }
 
-  if (enrolled && activeCourseTitle && !showLegacyMaterial) {
+  if (enrolled && !showLegacyMaterial) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 py-8">
         <section className="overflow-hidden rounded-3xl border bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.14),transparent_38%),linear-gradient(145deg,hsl(var(--background)),hsl(var(--muted)/0.28))] p-6 sm:p-9">
@@ -124,7 +124,7 @@ export default function AcademyPathGate({
               {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               {starting ? 'Opening journey…' : `Continue${nextCapability ? ` · ${nextCapability.title}` : ''}`}
             </Button>
-            <Button variant="outline" onClick={() => setShowLegacyMaterial(true)}>Open older Academy material</Button>
+            {activeCourseTitle && <Button variant="outline" onClick={() => setShowLegacyMaterial(true)}>Open older Academy material</Button>}
             <Button variant="ghost" asChild><Link href="/academy/explore"><Compass className="h-4 w-4" /> Explore a topic</Link></Button>
           </div>
         </section>
