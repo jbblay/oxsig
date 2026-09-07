@@ -31,10 +31,10 @@ export async function recordLearningActivity(
     );
     return true;
   } catch (error) {
-    console.error('Learning activity rollup could not be recorded', {
-      kind,
-      code: (error as { code?: string } | null)?.code,
-    });
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== '42P01') {
+      console.error('Learning activity rollup could not be recorded', { kind, code });
+    }
     return false;
   }
 }
