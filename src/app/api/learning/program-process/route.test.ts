@@ -93,9 +93,10 @@ describe('program process reference path', () => {
     expect(fork.evidence.bestReflectionScore).toBe(91);
     expect(body.state.demonstratedCount).toBe(1);
     expect(body.state.progressPercent).toBe(13);
+    expect(body.state.enrollment.recommendedCapabilityId).toBe('command-resolution');
   });
 
-  it('allows a persisted assessment to demonstrate a capability without manufacturing lesson completion', async () => {
+  it('allows a persisted assessment to demonstrate a capability and recommends the next unfinished node', async () => {
     mocks.query
       .mockResolvedValueOnce({ rows: [enrollment] })
       .mockResolvedValueOnce({
@@ -107,6 +108,8 @@ describe('program process reference path', () => {
 
     expect(body.state.capabilities[0].status).toBe('demonstrated');
     expect(body.state.capabilities[0].evidence.assessmentDemonstrated).toBe(true);
+    expect(body.state.enrollment.activeCapabilityId).toBe('command-resolution');
+    expect(body.state.enrollment.recommendedCapabilityId).toBe('fork-copy-on-write');
   });
 
   it('starts the curated Academy journey with zero assumed capability evidence', async () => {
@@ -128,6 +131,7 @@ describe('program process reference path', () => {
     expect(mocks.recordLearningActivity).toHaveBeenCalledWith(user.id, 'academy');
     expect(body.state.progressPercent).toBe(0);
     expect(body.state.capabilities[0].status).toBe('in_progress');
+    expect(body.state.enrollment.recommendedCapabilityId).toBe('command-resolution');
     expect(body.state.capabilities.slice(1).every((item: { status: string }) => item.status === 'not_started')).toBe(true);
   });
 
