@@ -6,13 +6,18 @@ const mocks = vi.hoisted(() => ({
   validateCsrfToken: vi.fn(),
   checkRateLimit: vi.fn(),
   query: vi.fn(),
+  release: vi.fn(),
 }));
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
-vi.mock('@/lib/db/pool', () => ({ getPool: () => ({ query: mocks.query }) }));
+vi.mock('@/lib/db/pool', () => ({
+  getPool: () => ({
+    connect: async () => ({ query: mocks.query, release: mocks.release }),
+  }),
+}));
 
 import { DELETE } from './route';
 
@@ -31,19 +36,46 @@ describe('Academy full reset', () => {
     ) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
-    mocks.query.mockResolvedValue({ rows: [], rowCount: 1 });
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('to_regclass')) return { rows: [{ relation: 'learning_activity_days' }] };
+      return { rows: [], rowCount: 1 };
+    });
   });
 
-  it('deletes Academy courses only for the authenticated owner', async () => {
+  it('atomically deletes Academy history and only the Academy side of daily activity', async () => {
     const response = await DELETE(request());
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(mocks.query).toHaveBeenCalledTimes(1);
+    expect(mocks.query).toHaveBeenCalledWith('BEGIN');
     expect(mocks.query).toHaveBeenCalledWith(
       'DELETE FROM academy_courses WHERE owner_id = $1',
       [user.id]
     );
+    expect(mocks.query).toHaveBeenCalledWith(
+      expect.stringContaining('SET academy_actions = 0'),
+      [user.id]
+    );
+    expect(mocks.query).toHaveBeenCalledWith(
+      expect.stringContaining('academy_actions = 0 AND lab_actions = 0'),
+      [user.id]
+    );
+    expect(mocks.query).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('still resets Academy safely when the analytics migration is not installed yet', async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('to_regclass')) return { rows: [{ relation: null }] };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const response = await DELETE(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.query).toHaveBeenCalledWith('DELETE FROM academy_courses WHERE owner_id = $1', [user.id]);
+    expect(mocks.query).not.toHaveBeenCalledWith(expect.stringContaining('SET academy_actions = 0'), expect.anything());
+    expect(mocks.query).toHaveBeenCalledWith('COMMIT');
   });
 
   it('rejects a reset without a valid CSRF token before touching persistence', async () => {
