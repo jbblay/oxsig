@@ -3,7 +3,7 @@ import 'server-only';
 import type { Pool, PoolClient } from 'pg';
 
 export type LiveWorkspaceRole = 'owner' | 'instructor' | 'learner' | 'observer';
-export type LiveWorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design';
+export type LiveWorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design' | 'storyboard' | 'vault-item';
 
 export type LiveWorkspaceCapabilities = {
   observe: boolean;
@@ -225,6 +225,25 @@ export async function listOwnerAttachableResources(
                 design.updated_at AS sort_at
            FROM infrastructure_designs design
           WHERE design.owner_id = $1
+         UNION ALL
+         SELECT board.id,
+                'storyboard'::text AS type,
+                COALESCE(NULLIF(board.title, ''), 'Board')::text AS label,
+                NULL::text AS access_mode,
+                board.updated_at AS sort_at
+           FROM storyboard_sessions board
+          WHERE board.owner_id = $1
+            AND board.deleted_at IS NULL
+            AND board.status <> 'archived'
+         UNION ALL
+         SELECT vault.id,
+                'vault-item'::text AS type,
+                COALESCE(NULLIF(vault.title, ''), 'Vault item')::text AS label,
+                NULL::text AS access_mode,
+                vault.updated_at AS sort_at
+           FROM vault_items vault
+          WHERE vault.owner_id = $1
+            AND vault.archived = false
        ) resource
       ORDER BY resource.sort_at DESC, resource.type, resource.label`,
     [ownerId]
@@ -267,14 +286,36 @@ export async function assertOwnerResource(
     if (!result.rows[0]) throw new LiveWorkspaceError('The Academy course is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
     return { id: result.rows[0].id, label: result.rows[0].label };
   }
+  if (resourceType === 'infrastructure-design') {
+    const result = await queryable.query(
+      `SELECT owner_id AS id, 'Infrastructure design'::text AS label
+       FROM infrastructure_designs
+       WHERE owner_id = $1 AND owner_id = $2
+       LIMIT 1`,
+      [resourceId, ownerId]
+    );
+    if (!result.rows[0]) throw new LiveWorkspaceError('The Infrastructure Design is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
+    return { id: result.rows[0].id, label: result.rows[0].label };
+  }
+  if (resourceType === 'storyboard') {
+    const result = await queryable.query(
+      `SELECT id, COALESCE(NULLIF(title, ''), 'Board') AS label
+       FROM storyboard_sessions
+       WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL AND status <> 'archived'
+       LIMIT 1`,
+      [resourceId, ownerId]
+    );
+    if (!result.rows[0]) throw new LiveWorkspaceError('The Board is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
+    return { id: result.rows[0].id, label: result.rows[0].label };
+  }
   const result = await queryable.query(
-    `SELECT owner_id AS id, 'Infrastructure design'::text AS label
-     FROM infrastructure_designs
-     WHERE owner_id = $1 AND owner_id = $2
+    `SELECT id, COALESCE(NULLIF(title, ''), 'Vault item') AS label
+     FROM vault_items
+     WHERE id = $1 AND owner_id = $2 AND archived = false
      LIMIT 1`,
     [resourceId, ownerId]
   );
-  if (!result.rows[0]) throw new LiveWorkspaceError('The Infrastructure Design is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
+  if (!result.rows[0]) throw new LiveWorkspaceError('The Vault item is unavailable or not owned by the workspace owner.', 403, 'RESOURCE_OWNERSHIP_MISMATCH');
   return { id: result.rows[0].id, label: result.rows[0].label };
 }
 

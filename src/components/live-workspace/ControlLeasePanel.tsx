@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Surface = 'terminal' | 'desktop';
+type WorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design' | 'storyboard' | 'vault-item';
 
 type Capabilities = {
   requestControl: boolean;
@@ -18,9 +19,9 @@ type Capabilities = {
   eligibleForDesktopControl: boolean;
 };
 
-type LabResource = {
+type WorkspaceResource = {
   id: string;
-  type: 'lab-instance' | 'academy-course' | 'infrastructure-design';
+  type: WorkspaceResourceType;
   resourceId: string;
   label: string;
   accessMode: Surface | null;
@@ -63,7 +64,7 @@ type Props = {
   workspaceId: string;
   viewerId: string;
   capabilities: Capabilities;
-  resources: LabResource[];
+  resources: WorkspaceResource[];
   control: LiveWorkspaceControlState;
   onRefresh: () => Promise<void>;
 };
@@ -116,7 +117,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
     }
   }
 
-  const labs = resources.filter((resource): resource is LabResource & { accessMode: Surface } =>
+  const labs = resources.filter((resource): resource is WorkspaceResource & { type: 'lab-instance'; accessMode: Surface } =>
     resource.type === 'lab-instance' && (resource.accessMode === 'terminal' || resource.accessMode === 'desktop')
   );
   const pending = control.requests.filter((request) => request.status === 'pending');
@@ -127,7 +128,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Machine control</CardTitle>
-            <CardDescription>Choose who may send input to an attached lab. Access is temporary and can be released or revoked at any time.</CardDescription>
+            <CardDescription>Only attached Cyber Labs participate in machine control. Boards, Vault items, Academy material and designs remain shared context only.</CardDescription>
           </div>
           <Badge variant="outline">Explicit control</Badge>
         </div>

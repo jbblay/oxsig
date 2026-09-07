@@ -30,6 +30,8 @@ const workspaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const labId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ownerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const bindingId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const boardId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const vaultId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const user = { id: ownerId, clerkUserId: 'clerk-owner', role: 'user' as const };
 
 function request(body: unknown, method = 'POST') {
@@ -107,6 +109,29 @@ describe('Live Workspace resource binding API', () => {
       resourceOwnerId: ownerId,
       ownershipTransferred: false,
     });
+  });
+
+  it.each([
+    ['storyboard', boardId, 'Process model'],
+    ['vault-item', vaultId, 'fork notes'],
+  ] as const)('accepts owner-scoped %s resources without transferring ownership', async (resourceType, resourceId, label) => {
+    mocks.assertOwnerResource.mockResolvedValue({ id: resourceId, label });
+    query.mockResolvedValueOnce({ rows: [{
+      id: bindingId,
+      resource_type: resourceType,
+      resource_id: resourceId,
+      resource_owner_id: ownerId,
+      attached_by: ownerId,
+      metadata: { label },
+      attached_at: new Date().toISOString(),
+    }], rowCount: 1 });
+
+    const response = await POST(request({ resourceType, resourceId }), { params: Promise.resolve({ id: workspaceId }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(mocks.assertOwnerResource).toHaveBeenCalledWith(expect.anything(), ownerId, resourceType, resourceId);
+    expect(body.resource).toMatchObject({ resourceId, resourceOwnerId: ownerId, ownershipTransferred: false });
   });
 
   it('does not accept arbitrary resource types', async () => {

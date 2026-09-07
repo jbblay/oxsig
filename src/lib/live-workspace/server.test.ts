@@ -108,6 +108,8 @@ describe('Live Workspace foundation policy', () => {
         { id: 'lab-1', type: 'lab-instance', label: 'Ubuntu Lab', access_mode: 'terminal' },
         { id: 'course-1', type: 'academy-course', label: 'Linux networking', access_mode: null },
         { id: 'owner-1', type: 'infrastructure-design', label: 'Infrastructure design', access_mode: null },
+        { id: 'board-1', type: 'storyboard', label: 'Process model', access_mode: null },
+        { id: 'vault-1', type: 'vault-item', label: 'fork notes', access_mode: null },
       ] };
     });
 
@@ -115,6 +117,8 @@ describe('Live Workspace foundation policy', () => {
       { id: 'lab-1', type: 'lab-instance', label: 'Ubuntu Lab', accessMode: 'terminal' },
       { id: 'course-1', type: 'academy-course', label: 'Linux networking', accessMode: null },
       { id: 'owner-1', type: 'infrastructure-design', label: 'Infrastructure design', accessMode: null },
+      { id: 'board-1', type: 'storyboard', label: 'Process model', accessMode: null },
+      { id: 'vault-1', type: 'vault-item', label: 'fork notes', accessMode: null },
     ]);
   });
 
@@ -132,6 +136,32 @@ describe('Live Workspace foundation policy', () => {
     });
     await expect(assertOwnerResource(pool, 'owner-1', 'lab-instance', 'lab-1'))
       .resolves.toEqual({ id: 'lab-1', label: 'Ubuntu Lab' });
+  });
+
+  it('owner-scopes Boards and Vault items before exposing them in a Workspace', async () => {
+    const boardPool = poolWith((sql, values) => {
+      expect(values).toEqual(['board-1', 'owner-1']);
+      expect(sql).toContain('storyboard_sessions');
+      return { rows: [{ id: 'board-1', label: 'Process model' }], rowCount: 1 };
+    });
+    await expect(assertOwnerResource(boardPool, 'owner-1', 'storyboard', 'board-1'))
+      .resolves.toEqual({ id: 'board-1', label: 'Process model' });
+
+    const vaultPool = poolWith((sql, values) => {
+      expect(values).toEqual(['vault-1', 'owner-1']);
+      expect(sql).toContain('vault_items');
+      return { rows: [{ id: 'vault-1', label: 'fork notes' }], rowCount: 1 };
+    });
+    await expect(assertOwnerResource(vaultPool, 'owner-1', 'vault-item', 'vault-1'))
+      .resolves.toEqual({ id: 'vault-1', label: 'fork notes' });
+  });
+
+  it('rejects a foreign Board or Vault item', async () => {
+    const pool = poolWith(() => ({ rows: [], rowCount: 0 }));
+    await expect(assertOwnerResource(pool, 'owner-1', 'storyboard', 'foreign-board'))
+      .rejects.toMatchObject({ code: 'RESOURCE_OWNERSHIP_MISMATCH', status: 403 });
+    await expect(assertOwnerResource(pool, 'owner-1', 'vault-item', 'foreign-vault'))
+      .rejects.toMatchObject({ code: 'RESOURCE_OWNERSHIP_MISMATCH', status: 403 });
   });
 
   it('uses typed conflict errors for denied operations', () => {

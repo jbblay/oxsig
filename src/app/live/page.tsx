@@ -38,7 +38,7 @@ type Participant = {
   role: Role;
   capabilities: Capabilities;
 };
-type ResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design';
+type ResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design' | 'storyboard' | 'vault-item';
 type Resource = {
   id: string;
   type: ResourceType;
@@ -68,6 +68,8 @@ const RESOURCE_LABELS: Record<ResourceType, string> = {
   'lab-instance': 'Cyber Lab',
   'academy-course': 'Academy course',
   'infrastructure-design': 'Infrastructure design',
+  storyboard: 'Board',
+  'vault-item': 'Vault item',
 };
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -93,8 +95,8 @@ export default function LiveWorkspacePage() {
   const [detailError, setDetailError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [showCreate, setShowCreate] = React.useState(false);
-  const [name, setName] = React.useState('Live Lab Session');
-  const [description, setDescription] = React.useState('Collaborative technical learning workspace');
+  const [name, setName] = React.useState('Learning Workspace');
+  const [description, setDescription] = React.useState('Persistent context for learning, practice, explanation and collaboration');
   const [inviteEmail, setInviteEmail] = React.useState('');
   const [resourceType, setResourceType] = React.useState<ResourceType>('lab-instance');
   const [resourceId, setResourceId] = React.useState('');
@@ -265,9 +267,9 @@ export default function LiveWorkspacePage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2"><RadioTower className="h-5 w-5 text-primary" /><h1 className="text-2xl font-semibold">Live Workspace</h1></div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Bring people and owner-owned technical resources into one live session. Participants can observe or collaborate, while machine control stays explicit, time-bounded and revocable.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Bring people, learning material, labs, Boards, Vault knowledge and designs into one persistent technical context. Everyone can navigate shared resources while machine control stays explicit, time-bounded and revocable.</p>
           </div>
-          <Badge variant="outline">Terminal control available</Badge>
+          <Badge variant="outline">Persistent shared context</Badge>
         </div>
       </section>
 
@@ -276,7 +278,7 @@ export default function LiveWorkspacePage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <div><CardTitle className="text-base">Your workspaces</CardTitle><CardDescription>Select a session or start a new one.</CardDescription></div>
+                <div><CardTitle className="text-base">Your workspaces</CardTitle><CardDescription>Select a workspace or start a new one.</CardDescription></div>
                 <Button size="sm" variant={showCreate ? 'secondary' : 'outline'} onClick={() => setShowCreate((value) => !value)}><Plus className="h-4 w-4" /> New</Button>
               </div>
             </CardHeader>
@@ -285,11 +287,11 @@ export default function LiveWorkspacePage() {
                 <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
                   <div className="space-y-1.5">
                     <label htmlFor="live-workspace-name" className="text-xs font-medium">Workspace name</label>
-                    <Input id="live-workspace-name" value={name} onChange={(event) => setName(event.target.value.slice(0, 80))} placeholder="Linux troubleshooting session" />
+                    <Input id="live-workspace-name" value={name} onChange={(event) => setName(event.target.value.slice(0, 80))} placeholder="Understanding Linux file descriptors" />
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="live-workspace-description" className="text-xs font-medium">Description</label>
-                    <Textarea id="live-workspace-description" className="min-h-20 resize-none" value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="What are you working on together?" />
+                    <label htmlFor="live-workspace-description" className="text-xs font-medium">Purpose</label>
+                    <Textarea id="live-workspace-description" className="min-h-20 resize-none" value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="What should this workspace help you accomplish?" />
                   </div>
                   <Button className="w-full" onClick={() => void createWorkspace()} disabled={busy === 'create' || !name.trim()}>{busy === 'create' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create workspace</Button>
                 </div>
@@ -299,7 +301,7 @@ export default function LiveWorkspacePage() {
               {workspaces.map((workspace) => (
                 <button key={workspace.id} type="button" aria-pressed={selectedId === workspace.id} onClick={() => setSelectedId(workspace.id)} className={`w-full rounded-xl border p-3 text-left transition-colors ${selectedId === workspace.id ? 'bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/30'}`}>
                   <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{workspace.name}</span><Badge variant="secondary" className="text-[10px]">{ROLE_LABELS[workspace.role]}</Badge></div>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{workspace.description || 'Technical live session'}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{workspace.description || 'Persistent technical workspace'}</p>
                 </button>
               ))}
             </CardContent>
@@ -317,7 +319,7 @@ export default function LiveWorkspacePage() {
             <>
               <Card>
                 <CardHeader>
-                  <div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{detail.workspace.name}</CardTitle><CardDescription>{detail.workspace.description || 'Technical live session'}</CardDescription></div><Badge>{ROLE_LABELS[detail.workspace.role]}</Badge></div>
+                  <div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{detail.workspace.name}</CardTitle><CardDescription>{detail.workspace.description || 'Persistent technical workspace'}</CardDescription></div><Badge>{ROLE_LABELS[detail.workspace.role]}</Badge></div>
                 </CardHeader>
               </Card>
 
@@ -331,7 +333,7 @@ export default function LiveWorkspacePage() {
               />
 
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> Participants</CardTitle><CardDescription>Observers can watch the session. Learners and instructors may request control when their role allows it.</CardDescription></CardHeader>
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> Participants</CardTitle><CardDescription>Observers can watch. Learners and instructors may request machine control only when their explicit workspace role allows it.</CardDescription></CardHeader>
                 <CardContent className="space-y-3">
                   {detail.workspace.isOwner && (
                     <div className="space-y-1.5">
@@ -341,11 +343,9 @@ export default function LiveWorkspacePage() {
                   )}
                   {detail.participants.map((participant) => (
                     <div key={participant.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-                      <div><p className="text-sm font-semibold">{participant.displayName}</p><p className="text-xs text-muted-foreground">{participant.email || 'Oxsig participant'}</p></div>
+                      <div><p className="text-sm font-semibold">{participant.displayName}</p><p className="text-xs text-muted-foreground">{participant.email || 'OXSIG participant'}</p></div>
                       <div className="flex flex-wrap items-center justify-end gap-2">
-                        {participant.role === 'owner' || !detail.workspace.capabilities.manageParticipants ? <Badge variant="secondary">{ROLE_LABELS[participant.role]}</Badge> : (
-                          <label className="sr-only" htmlFor={`role-${participant.id}`}>Role for {participant.displayName}</label>
-                        )}
+                        {participant.role === 'owner' || !detail.workspace.capabilities.manageParticipants ? <Badge variant="secondary">{ROLE_LABELS[participant.role]}</Badge> : <label className="sr-only" htmlFor={`role-${participant.id}`}>Role for {participant.displayName}</label>}
                         {participant.role !== 'owner' && detail.workspace.capabilities.manageParticipants && (
                           <select id={`role-${participant.id}`} aria-label={`Role for ${participant.displayName}`} className="rounded-md border bg-background px-2 py-1.5 text-xs" value={participant.role} disabled={busy === `role:${participant.id}`} onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}>
                             <option value="observer">Observer</option>
@@ -361,13 +361,19 @@ export default function LiveWorkspacePage() {
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Session resources</CardTitle><CardDescription>Attach resources already owned by the workspace owner. Ownership never moves into the workspace.</CardDescription></CardHeader>
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Workspace resources</CardTitle><CardDescription>Attach owner-owned learning and technical context. Visibility in a Workspace never transfers ownership, and non-machine resources never grant terminal or desktop control.</CardDescription></CardHeader>
                 <CardContent className="space-y-3">
                   {detail.workspace.capabilities.manageResources && (
                     <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 sm:grid-cols-[180px_minmax(0,1fr)_auto] sm:items-end">
                       <div className="space-y-1.5">
                         <label htmlFor="live-resource-type" className="text-xs font-medium">Resource type</label>
-                        <select id="live-resource-type" className="h-10 w-full rounded-md border bg-background px-2 text-sm" value={resourceType} onChange={(event) => setResourceType(event.target.value as ResourceType)}><option value="lab-instance">Cyber Lab</option><option value="academy-course">Academy course</option><option value="infrastructure-design">Infrastructure design</option></select>
+                        <select id="live-resource-type" className="h-10 w-full rounded-md border bg-background px-2 text-sm" value={resourceType} onChange={(event) => setResourceType(event.target.value as ResourceType)}>
+                          <option value="lab-instance">Cyber Lab</option>
+                          <option value="academy-course">Academy course</option>
+                          <option value="storyboard">Board</option>
+                          <option value="vault-item">Vault item</option>
+                          <option value="infrastructure-design">Infrastructure design</option>
+                        </select>
                       </div>
                       <div className="space-y-1.5">
                         <label htmlFor="live-resource" className="text-xs font-medium">Owner resource</label>
@@ -378,7 +384,7 @@ export default function LiveWorkspacePage() {
                       <Button variant="outline" onClick={() => void attachResource()} disabled={busy === 'resource' || !resourceId}>{busy === 'resource' && <Loader2 className="h-4 w-4 animate-spin" />} Attach</Button>
                     </div>
                   )}
-                  {detail.resources.length === 0 && <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">No resources attached yet. Owners can attach an existing lab, Academy course or infrastructure design above.</p>}
+                  {detail.resources.length === 0 && <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">No resources attached yet. The owner can attach a lab, Academy course, Board, Vault item, or infrastructure design above.</p>}
                   {detail.resources.map((resource) => (
                     <div key={resource.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{resource.label}</p><p className="text-xs text-muted-foreground">{RESOURCE_LABELS[resource.type]}{resource.accessMode ? ` · ${resource.accessMode === 'terminal' ? 'Terminal' : 'Desktop'}` : ''}</p></div><div className="flex items-center gap-2"><Badge variant="outline">Owner retained</Badge>{detail.workspace.capabilities.manageResources && <Button size="sm" variant="ghost" disabled={busy === `resource:${resource.id}`} onClick={() => void detachResource(resource.id)}>{busy === `resource:${resource.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Detach'}</Button>}</div></div>
                   ))}
