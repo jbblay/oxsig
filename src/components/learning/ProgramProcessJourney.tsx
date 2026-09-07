@@ -10,6 +10,7 @@ import {
   Circle,
   Loader2,
   Play,
+  ShieldCheck,
   TerminalSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -162,6 +163,7 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
           ) : (
             <Button asChild><Link href="/academy"><Play className="h-4 w-4" /> Continue in Academy</Link></Button>
           )}
+          {enrolled && <Button variant="outline" asChild><Link href="/academy/prove"><ShieldCheck className="h-4 w-4" /> Prove what I know</Link></Button>}
           <Button variant="outline" asChild><Link href="/labs"><TerminalSquare className="h-4 w-4" /> Open Cyber Lab</Link></Button>
         </div>
       </div>
@@ -178,7 +180,7 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
               return (
                 <div key={capability.id} className="relative">
                   {index < state.capabilities.length - 1 && (
-                    <div className={cn('absolute left-[27px] top-12 h-[calc(100%-24px)] w-0.5', demonstrated ? 'bg-emerald-500/65' : 'bg-border')} />
+                    <div className={cn('absolute left-[27px] top-12 h-[calc(100%-24px)] w-0.5 transition-colors duration-700', demonstrated ? 'bg-emerald-500/65' : 'bg-border')} />
                   )}
                   <button
                     type="button"
@@ -190,8 +192,8 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
                     aria-expanded={active}
                   >
                     <span className={cn(
-                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-background transition-all',
-                      demonstrated && 'border-emerald-500/50 bg-emerald-500/15 text-emerald-600',
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-background transition-all duration-500',
+                      demonstrated && 'border-emerald-500/50 bg-emerald-500/15 text-emerald-600 shadow-[0_0_20px_-10px_rgba(16,185,129,0.9)]',
                       (inProgress || recommended) && 'border-sky-500/55 bg-sky-500/10 text-sky-600 shadow-[0_0_20px_-10px_rgba(14,165,233,0.85)]'
                     )}>
                       {demonstrated ? <Check className="h-4 w-4" /> : inProgress || recommended ? <span className="h-2.5 w-2.5 rounded-full bg-sky-500 motion-safe:animate-pulse" /> : <Circle className="h-3.5 w-3.5" />}
@@ -235,14 +237,17 @@ export function ProgramProcessJourney({ isAuthenticated }: { isAuthenticated: bo
                 <Badge variant="secondary">{selected.practiceLabel}</Badge>
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <div className={cn('rounded-xl border p-3 text-xs', selected.evidence.practiceDemonstrated && 'border-emerald-500/30 bg-emerald-500/5')}><p className="font-medium">Practical result</p><p className="mt-1 text-muted-foreground">{selected.evidence.practiceDemonstrated ? 'Passed with persisted execution evidence' : 'Not demonstrated yet'}</p></div>
-                <div className={cn('rounded-xl border p-3 text-xs', selected.evidence.reflectionDemonstrated && 'border-emerald-500/30 bg-emerald-500/5')}><p className="font-medium">Explain-back</p><p className="mt-1 text-muted-foreground">{selected.evidence.reflectionDemonstrated ? `Demonstrated${selected.evidence.bestReflectionScore !== null ? ` · ${selected.evidence.bestReflectionScore}%` : ''}` : 'Not demonstrated yet'}</p></div>
-                <div className={cn('rounded-xl border p-3 text-xs', selected.evidence.assessmentDemonstrated && 'border-emerald-500/30 bg-emerald-500/5')}><p className="font-medium">Prove what you know</p><p className="mt-1 text-muted-foreground">{selected.evidence.assessmentDemonstrated ? 'Assessment demonstrated' : 'No bypass assessment recorded'}</p></div>
+                <div className={cn('rounded-xl border p-3 text-xs transition-colors', selected.evidence.practiceDemonstrated && 'border-emerald-500/30 bg-emerald-500/5')}><p className="font-medium">Practical result</p><p className="mt-1 text-muted-foreground">{selected.evidence.practiceDemonstrated ? 'Passed with persisted execution evidence' : 'Not demonstrated yet'}</p></div>
+                <div className={cn('rounded-xl border p-3 text-xs transition-colors', selected.evidence.reflectionDemonstrated && 'border-emerald-500/30 bg-emerald-500/5')}><p className="font-medium">Explain-back</p><p className="mt-1 text-muted-foreground">{selected.evidence.reflectionDemonstrated ? `Demonstrated${selected.evidence.bestReflectionScore !== null ? ` · ${selected.evidence.bestReflectionScore}%` : ''}` : 'Not demonstrated yet'}</p></div>
+                <div className={cn('rounded-xl border p-3 text-xs transition-colors', selected.evidence.assessmentDemonstrated && 'border-emerald-500/30 bg-emerald-500/5')}><p className="font-medium">Prove what you know</p><p className="mt-1 text-muted-foreground">{selected.evidence.assessmentDemonstrated ? 'Assessment demonstrated' : selected.evidence.practiceDemonstrated ? 'Practical evidence ready for assessment' : 'Pass the practical checkpoint first'}</p></div>
               </div>
             </div>
 
             {enrolled && (
-              <Button asChild className="mt-5"><Link href="/academy">Work on this capability <ArrowRight className="h-4 w-4" /></Link></Button>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button asChild><Link href="/academy">Work on this capability <ArrowRight className="h-4 w-4" /></Link></Button>
+                {selected.status !== 'demonstrated' && <Button variant="outline" asChild><Link href="/academy/prove"><ShieldCheck className="h-4 w-4" /> Prove what I know</Link></Button>}
+              </div>
             )}
           </div>
         )}
