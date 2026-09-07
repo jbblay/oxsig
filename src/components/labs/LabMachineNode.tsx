@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Cloud,
   MonitorCog,
   Server,
   Shield,
@@ -115,7 +114,7 @@ export default function LabMachineNode({ data, selected }: NodeProps<LabMachineF
               </div>
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.shortName} · {data.category}</p>
             </div>
-            {data.live ? <Cloud className="h-4 w-4 shrink-0 text-primary" aria-label="Live in AWS" /> : null}
+            {data.live ? <Server className="h-4 w-4 shrink-0 text-primary" aria-label="Lab running" /> : null}
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-3 text-[11px]">
@@ -123,7 +122,7 @@ export default function LabMachineNode({ data, selected }: NodeProps<LabMachineF
               <span className={`h-2 w-2 rounded-full ${status.dot} ${status.pulse ? "animate-pulse" : ""}`} />
               {status.text}
             </span>
-            <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-muted-foreground">{data.instanceType}</span>
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-muted-foreground">{data.live ? "Practice machine" : "Designed machine"}</span>
           </div>
         </div>
       </div>
@@ -131,8 +130,8 @@ export default function LabMachineNode({ data, selected }: NodeProps<LabMachineF
       <div className="flex items-center justify-between border-t px-4 py-2 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1"><PlatformIcon className="h-3 w-3" />{data.platform}</span>
         <span className="flex items-center gap-1">
-          {data.live ? <Cloud className="h-3 w-3" /> : data.available ? <Server className="h-3 w-3" /> : <Shield className="h-3 w-3" />}
-          {data.live ? "Live in AWS" : data.available ? "Launchable" : "Activation required"}
+          {data.live ? <Server className="h-3 w-3" /> : data.available ? <Server className="h-3 w-3" /> : <Shield className="h-3 w-3" />}
+          {data.live ? "Lab running" : data.available ? "Ready to launch" : "Activation required"}
         </span>
       </div>
 
