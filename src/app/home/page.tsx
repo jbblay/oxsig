@@ -5,12 +5,11 @@ import Link from 'next/link';
 import {
   ArrowRight,
   BookOpen,
-  Box,
   LibraryBig,
   Sparkles,
 } from 'lucide-react';
-import { CapabilityPathExplorer } from '@/components/learning/CapabilityPathExplorer';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
+import { ProgramProcessJourney } from '@/components/learning/ProgramProcessJourney';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,7 +69,7 @@ export default function HomePage() {
                 {isAuthenticated ? `Build capability${user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}.` : 'Build capability, not a pile of unfinished courses.'}
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Choose a path, continue the next meaningful step, practice in a prepared lab, and let OXSIG track what you can actually demonstrate.
+                Follow one reference journey deeply. OXSIG teaches, prepares practice, captures evidence, and only marks capability demonstrated when you prove it.
               </p>
             </div>
             {progress && (
@@ -98,11 +97,8 @@ export default function HomePage() {
               <Link href="/academy" className="group">
                 <Card className="h-full transition hover:border-sky-500/30 hover:shadow-md">
                   <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                      <div><CardDescription>Continue learning</CardDescription><CardTitle className="mt-1 text-lg">{activeCourse.title}</CardTitle></div>
-                      <Badge className="bg-sky-600">{activeCourse.score}%</Badge>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-sky-500 transition-[width] duration-500" style={{ width: `${Math.max(0, Math.min(100, activeCourse.totalLessons > 0 ? (activeCourse.completedLessons / activeCourse.totalLessons) * 100 : 0))}%` }} /></div>
+                    <div><CardDescription>Continue learning</CardDescription><CardTitle className="mt-1 text-lg">{activeCourse.title}</CardTitle></div>
+                    <p className="text-xs text-muted-foreground">Open the active lesson. Capability progress is shown separately from course navigation.</p>
                     <span className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-primary">Continue in Academy <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" /></span>
                   </CardHeader>
                 </Card>
@@ -126,7 +122,7 @@ export default function HomePage() {
         </section>
       )}
 
-      <CapabilityPathExplorer />
+      <ProgramProcessJourney isAuthenticated={isAuthenticated} />
 
       {isAuthenticated && progressLoading && !progress && <AnalyticsLoading />}
       {isAuthenticated && progress && <LearningAnalyticsDashboard progress={progress} compact />}
@@ -135,14 +131,14 @@ export default function HomePage() {
         <Card className="overflow-hidden">
           <CardContent className="flex items-center gap-4 p-5">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400"><BookOpen className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">Explain what you are working on</p><p className="mt-1 text-sm text-muted-foreground">Use a Board when a topology, process or shared explanation is more useful than another lesson.</p></div>
+            <div className="min-w-0 flex-1"><p className="font-semibold">Explain what you are working on</p><p className="mt-1 text-sm text-muted-foreground">Use a Board to draw the shell → fork → execve → process model in your own words.</p></div>
             <Button variant="ghost" size="icon" asChild><Link href="/collab/storyboards" aria-label="Open Boards"><ArrowRight className="h-4 w-4" /></Link></Button>
           </CardContent>
         </Card>
         <Card className="overflow-hidden">
           <CardContent className="flex items-center gap-4 p-5">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400"><LibraryBig className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">Keep what proved useful</p><p className="mt-1 text-sm text-muted-foreground">Save commands, procedures and discoveries to Vault as they become relevant to your path.</p></div>
+            <div className="min-w-0 flex-1"><p className="font-semibold">Keep what proved useful</p><p className="mt-1 text-sm text-muted-foreground">Save commands, corrections, and explanations worth revisiting after the experiment.</p></div>
             <Button variant="ghost" size="icon" asChild><Link href="/vault" aria-label="Open Vault"><ArrowRight className="h-4 w-4" /></Link></Button>
           </CardContent>
         </Card>

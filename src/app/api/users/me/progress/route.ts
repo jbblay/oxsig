@@ -117,8 +117,6 @@ async function loadLearningActivity(ownerId: string): Promise<Array<Record<strin
   } catch (error) {
     if ((error as { code?: string } | null)?.code !== '42P01') throw error;
 
-    // A deployment can safely precede migration 038. Existing durable records
-    // remain a truthful, though less complete, source until the ledger exists.
     const fallback = await pool.query(
       `WITH learning_days AS (
          SELECT (last_activity_at AT TIME ZONE 'UTC')::date AS day, true AS academy, false AS labs
@@ -149,13 +147,40 @@ async function loadLearningActivity(ownerId: string): Promise<Array<Record<strin
   }
 }
 
+async function loadDemonstratedCapabilityCount(ownerId: string): Promise<number> {
+  try {
+    const result = await getPool().query(
+      `WITH capability_proof AS (
+         SELECT enrollment_id,
+                capability_id,
+                BOOL_OR(source_type='assessment' AND result='demonstrated') AS assessment,
+                BOOL_OR(source_type='academy-practice' AND result='demonstrated') AS practice,
+                BOOL_OR(source_type='academy-reflection' AND result='demonstrated') AS reflection
+           FROM learning_capability_evidence
+          WHERE owner_id=$1
+          GROUP BY enrollment_id, capability_id
+       )
+       SELECT COUNT(*)::int AS demonstrated
+         FROM capability_proof
+        WHERE assessment OR (practice AND reflection)`,
+      [ownerId]
+    );
+    return Math.max(0, Number(result.rows[0]?.demonstrated) || 0);
+  } catch (error) {
+    // During a deployment that precedes migration 039, capability rewards remain
+    // truthfully zero instead of falling back to manual lesson-completion state.
+    if ((error as { code?: string } | null)?.code === '42P01') return 0;
+    throw error;
+  }
+}
+
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
     const rateLimit = await checkRateLimit(req, { maxRequests: 60, windowMs: 60_000 }, user.id);
     if (rateLimit) return rateLimit;
 
     const pool = getPool();
-    const [academyResult, activeCourseResult, labsResult, activeLabResult, runtimeResult, activityRows] = await Promise.all([
+    const [academyResult, activeCourseResult, labsResult, activeLabResult, runtimeResult, activityRows, demonstratedCapabilities] = await Promise.all([
       pool.query(
         `SELECT COUNT(c.id)::int AS courses,
                 COUNT(c.id) FILTER (WHERE m.status = 'mastered')::int AS mastered_courses,
@@ -248,6 +273,7 @@ export async function GET(request: NextRequest) {
         [user.id]
       ),
       loadLearningActivity(user.id),
+      loadDemonstratedCapabilityCount(user.id),
     ]);
 
     const academy = academyResult.rows[0] || {};
@@ -295,8 +321,7 @@ export async function GET(request: NextRequest) {
         history: buildActivityHistory(activityRows),
       },
       rewards: buildLearningRewards({
-        completedLessons: academySummary.completedLessons,
-        masteredCourses: academySummary.masteredCourses,
+        demonstratedCapabilities,
         passedPractices: academySummary.passedPractices,
         labsStarted: labsSummary.started,
         activeDays,
