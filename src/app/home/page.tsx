@@ -8,7 +8,6 @@ import {
   Box,
   GraduationCap,
   LibraryBig,
-  Loader2,
   Network,
   Sparkles,
   Users,
@@ -25,7 +24,6 @@ const intents = [
     href: '/academy',
     title: 'Learn',
     description: 'Build a guided course around what you want to understand.',
-    action: 'Open Academy',
     icon: GraduationCap,
     tone: 'border-sky-500/20 bg-sky-500/5 text-sky-600 dark:text-sky-400',
   },
@@ -33,7 +31,6 @@ const intents = [
     href: '/labs',
     title: 'Practice',
     description: 'Open a prepared Linux or Windows environment and do the work.',
-    action: 'Open Cyber Lab',
     icon: Box,
     tone: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400',
   },
@@ -41,7 +38,6 @@ const intents = [
     href: '/labs',
     title: 'Build',
     description: 'Shape an environment visually, then launch only what OXSIG supports safely.',
-    action: 'Open Designer',
     icon: Network,
     tone: 'border-violet-500/20 bg-violet-500/5 text-violet-600 dark:text-violet-400',
   },
@@ -49,7 +45,6 @@ const intents = [
     href: '/live',
     title: 'Collaborate',
     description: 'Bring another person into the same technical session when the task needs it.',
-    action: 'Open Live Workspace',
     icon: Users,
     tone: 'border-orange-500/20 bg-orange-500/5 text-orange-600 dark:text-orange-400',
   },
@@ -119,8 +114,8 @@ export default function HomePage() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.12),transparent_58%)]" />
             <div className="relative flex h-full items-center justify-center">
               <div className="grid w-full max-w-sm grid-cols-2 gap-3">
-                {intents.map(({ href, title, icon: Icon, tone }) => (
-                  <Link key={title} href={href} className={`group flex min-h-28 flex-col justify-between rounded-2xl border p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md ${tone}`}>
+                {intents.map(({ href, title, description, icon: Icon, tone }) => (
+                  <Link key={title} href={href} title={description} className={`group flex min-h-28 flex-col justify-between rounded-2xl border p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md ${tone}`}>
                     <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-background/80 shadow-sm"><Icon className="h-5 w-5" /></span>
                     <div className="mt-4 flex items-center justify-between gap-2"><span className="font-semibold text-foreground">{title}</span><ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></div>
                   </Link>
@@ -175,32 +170,6 @@ export default function HomePage() {
           </div>
         </section>
       )}
-
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Jump in</h2>
-            <p className="text-sm text-muted-foreground">Four ways to move forward. OXSIG handles the infrastructure underneath.</p>
-          </div>
-          {progressLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {intents.map(({ href, title, description, action, icon: Icon, tone }) => (
-            <Link key={`${href}-${title}`} href={href} className="group">
-              <Card className={`h-full transition-all hover:-translate-y-1 hover:shadow-md ${tone}`}>
-                <CardHeader className="space-y-4">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-background shadow-sm"><Icon className="h-6 w-6" /></span>
-                  <div>
-                    <CardTitle className="text-base text-foreground">{title}</CardTitle>
-                    <CardDescription className="mt-2 line-clamp-2 leading-6">{description}</CardDescription>
-                  </div>
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold">{action} <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
-                </CardHeader>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      </section>
 
       <section className="grid gap-4 md:grid-cols-2">
         <Card className="overflow-hidden">
