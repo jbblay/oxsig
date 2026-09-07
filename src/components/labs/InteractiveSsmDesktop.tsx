@@ -77,7 +77,7 @@ export default function InteractiveSsmDesktop({
 
   const [state, setState] = React.useState<ConnectionState>("connecting");
   const [error, setError] = React.useState<string | null>(null);
-  const [statusDetail, setStatusDetail] = React.useState("Preparing the private browser desktop.");
+  const [statusDetail, setStatusDetail] = React.useState("Preparing the secure browser desktop.");
   const [platform, setPlatform] = React.useState<"linux" | "windows" | null>(null);
   const [desktopSize, setDesktopSize] = React.useState<string | null>(null);
   const [accessEvidenceState, setAccessEvidenceState] = React.useState<AccessEvidenceState>("pending");
@@ -100,7 +100,7 @@ export default function InteractiveSsmDesktop({
         keepalive,
       });
     } catch {
-      // Session Manager also closes the port session when the data channel disappears.
+      // The managed transport also closes its remote session when the data channel disappears.
     }
   }, [labInstanceId]);
 
@@ -115,15 +115,15 @@ export default function InteractiveSsmDesktop({
     if (disposedRef.current || intentionalCloseRef.current) return;
     if (transportRetriesRef.current >= 3) {
       setState("error");
-      setError(reason || "The private desktop tunnel closed repeatedly.");
-      setStatusDetail("Automatic recovery stopped after three attempts. Use Reconnect to start a fresh desktop tunnel.");
+      setError(reason || "The secure desktop connection closed repeatedly.");
+      setStatusDetail("Automatic recovery stopped after three attempts. Use Reconnect to start a fresh desktop connection.");
       return;
     }
     transportRetriesRef.current += 1;
     const delay = Math.min(6000, 1000 * (2 ** (transportRetriesRef.current - 1)));
     setState("connecting");
     setError(null);
-    setStatusDetail(`Desktop transport interrupted. Recovering with a fresh SSM tunnel (${transportRetriesRef.current}/3)…`);
+    setStatusDetail(`Desktop connection interrupted. Recovering (${transportRetriesRef.current}/3)…`);
     clearRetryTimer();
     retryTimerRef.current = setTimeout(() => void connectRef.current(true), delay);
   }, [clearRetryTimer]);
@@ -147,7 +147,7 @@ export default function InteractiveSsmDesktop({
     setState("connecting");
     setError(null);
     setAccessEvidenceState("pending");
-    setStatusDetail(recovery ? "Requesting a fresh private desktop tunnel." : "Checking the desktop service on the lab VM.");
+    setStatusDetail(recovery ? "Requesting a fresh secure desktop connection." : "Checking the desktop service on the practice machine.");
 
     try {
       const csrf = await getCsrfToken();
@@ -161,20 +161,20 @@ export default function InteractiveSsmDesktop({
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new DesktopRequestError(body.error || "Could not start the browser desktop", body.code);
-      if (!body.sessionId || !body.bridgePath || !body.tokenValue) throw new Error("Oxsig did not return a complete desktop tunnel session");
+      if (!body.sessionId || !body.bridgePath || !body.tokenValue) throw new Error("OXSIG did not return a complete desktop session");
       if (generation !== generationRef.current || disposedRef.current) return;
 
       const session = body as DesktopSession;
       setPlatform(session.platform);
       sessionIdRef.current = session.sessionId;
-      let ssmChannelReady = false;
+      let managedChannelReady = false;
 
       const channel = new SsmBrowserPortChannel({
         onData: (data) => rfbRef.current?.feed(data),
         onReady: () => {
           if (generation !== generationRef.current) return;
-          ssmChannelReady = true;
-          setStatusDetail("Private SSM tunnel connected. Negotiating the browser desktop display.");
+          managedChannelReady = true;
+          setStatusDetail("Secure transport connected. Negotiating the browser desktop display.");
         },
         onError: (message) => {
           if (generation !== generationRef.current) return;
@@ -195,11 +195,11 @@ export default function InteractiveSsmDesktop({
           setDesktopSize(`${width}×${height}`);
           setState("connected");
           setError(null);
-          setStatusDetail("Connected through AWS Systems Manager. No inbound VNC or RDP port is exposed.");
+          setStatusDetail("Secure browser desktop connected. No inbound desktop port is exposed to the learner.");
           canvas.focus();
 
           const offer = session.accessEvidence;
-          if (!offer?.eligible || !ssmChannelReady) {
+          if (!offer?.eligible || !managedChannelReady) {
             setAccessEvidenceState("unavailable");
             return;
           }
@@ -238,7 +238,7 @@ export default function InteractiveSsmDesktop({
           if (generation !== generationRef.current) return;
           setState("error");
           setError(message);
-          setStatusDetail("The private tunnel is open, but the desktop protocol failed.");
+          setStatusDetail("The secure transport is open, but the desktop protocol failed.");
           channel.close();
         },
       });
@@ -280,7 +280,7 @@ export default function InteractiveSsmDesktop({
     await endServerSession(false);
     setState("disconnected");
     setError(null);
-    setStatusDetail("Disconnected from the private browser desktop.");
+    setStatusDetail("Disconnected from the secure browser desktop.");
     intentionalCloseRef.current = false;
   }, [clearRetryTimer, closeLocalChannel, endServerSession]);
 
@@ -319,38 +319,18 @@ export default function InteractiveSsmDesktop({
             {statusLabel}
           </Badge>
           {desktopSize && <Badge variant="outline" className="text-[9px]">{desktopSize}</Badge>}
-          {accessEvidenceState === "recorded" && (
-            <Badge variant="secondary" className="text-[9px]"><ShieldCheck className="mr-1 h-3 w-3" />Access evidence recorded</Badge>
-          )}
-          {accessEvidenceState === "recording" && (
-            <Badge variant="outline" className="text-[9px]"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Recording evidence</Badge>
-          )}
+          {accessEvidenceState === "recorded" && <Badge variant="secondary" className="text-[9px]"><ShieldCheck className="mr-1 h-3 w-3" />Access evidence recorded</Badge>}
+          {accessEvidenceState === "recording" && <Badge variant="outline" className="text-[9px]"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Recording evidence</Badge>}
           {accessEvidenceState === "error" && <Badge variant="outline" className="text-[9px]">Evidence retry on next session</Badge>}
         </div>
         <div className="flex flex-wrap gap-2">
-          {platform === "windows" && state === "connected" && (
-            <Button size="sm" variant="outline" onClick={() => rfbRef.current?.sendCtrlAltDelete()}>
-              <Keyboard className="mr-1.5 h-3.5 w-3.5" />Ctrl+Alt+Del
-            </Button>
-          )}
-          {state !== "connected" && (
-            <Button size="sm" variant="outline" onClick={() => void connect(false)} disabled={state === "connecting"}>
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />Reconnect
-            </Button>
-          )}
-          {(state === "connected" || state === "connecting") && (
-            <Button size="sm" variant="outline" onClick={() => void disconnect()}>
-              <Unplug className="mr-1.5 h-3.5 w-3.5" />Disconnect
-            </Button>
-          )}
+          {platform === "windows" && state === "connected" && <Button size="sm" variant="outline" onClick={() => rfbRef.current?.sendCtrlAltDelete()}><Keyboard className="mr-1.5 h-3.5 w-3.5" />Ctrl+Alt+Del</Button>}
+          {state !== "connected" && <Button size="sm" variant="outline" onClick={() => void connect(false)} disabled={state === "connecting"}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Reconnect</Button>}
+          {(state === "connected" || state === "connecting") && <Button size="sm" variant="outline" onClick={() => void disconnect()}><Unplug className="mr-1.5 h-3.5 w-3.5" />Disconnect</Button>}
         </div>
       </div>
 
-      {(statusDetail || error) && (
-        <div className={`rounded-lg border px-3 py-2 text-[11px] ${error ? "border-destructive/30 bg-destructive/5 text-destructive" : "bg-muted/20 text-muted-foreground"}`}>
-          {error || statusDetail}
-        </div>
-      )}
+      {(statusDetail || error) && <div className={`rounded-lg border px-3 py-2 text-[11px] ${error ? "border-destructive/30 bg-destructive/5 text-destructive" : "bg-muted/20 text-muted-foreground"}`}>{error || statusDetail}</div>}
 
       <div className="relative overflow-auto rounded-xl border bg-black p-2">
         <div className={`flex items-center justify-center ${focusMode ? "min-h-[calc(100vh-220px)]" : "min-h-[460px]"}`}>
@@ -362,43 +342,17 @@ export default function InteractiveSsmDesktop({
             style={{ imageRendering: "auto" }}
             onKeyDown={(event) => { event.preventDefault(); rfbRef.current?.key(event.key, true); }}
             onKeyUp={(event) => { event.preventDefault(); rfbRef.current?.key(event.key, false); }}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.currentTarget.setPointerCapture(event.pointerId);
-              event.currentTarget.focus();
-              const point = pointerPosition(event);
-              rfbRef.current?.pointer(point.x, point.y, rfbButtons(event.buttons));
-            }}
-            onPointerMove={(event) => {
-              const point = pointerPosition(event);
-              rfbRef.current?.pointer(point.x, point.y, rfbButtons(event.buttons));
-            }}
-            onPointerUp={(event) => {
-              event.preventDefault();
-              const point = pointerPosition(event);
-              rfbRef.current?.pointer(point.x, point.y, rfbButtons(event.buttons));
-            }}
+            onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); event.currentTarget.focus(); const point = pointerPosition(event); rfbRef.current?.pointer(point.x, point.y, rfbButtons(event.buttons)); }}
+            onPointerMove={(event) => { const point = pointerPosition(event); rfbRef.current?.pointer(point.x, point.y, rfbButtons(event.buttons)); }}
+            onPointerUp={(event) => { event.preventDefault(); const point = pointerPosition(event); rfbRef.current?.pointer(point.x, point.y, rfbButtons(event.buttons)); }}
             onContextMenu={(event) => event.preventDefault()}
-            onWheel={(event) => {
-              event.preventDefault();
-              const point = pointerPosition(event);
-              rfbRef.current?.wheel(event.deltaY, point.x, point.y);
-            }}
+            onWheel={(event) => { event.preventDefault(); const point = pointerPosition(event); rfbRef.current?.wheel(event.deltaY, point.x, point.y); }}
           />
-          {state !== "connected" && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50 text-center text-white">
-              <div>
-                {state === "connecting" ? <Loader2 className="mx-auto h-8 w-8 animate-spin" /> : <Monitor className="mx-auto h-8 w-8 opacity-70" />}
-                <p className="mt-3 text-sm font-medium">{state === "connecting" ? "Preparing secure desktop" : "Desktop not connected"}</p>
-              </div>
-            </div>
-          )}
+          {state !== "connected" && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50 text-center text-white"><div>{state === "connecting" ? <Loader2 className="mx-auto h-8 w-8 animate-spin" /> : <Monitor className="mx-auto h-8 w-8 opacity-70" />}<p className="mt-3 text-sm font-medium">{state === "connecting" ? "Preparing secure desktop" : "Desktop not connected"}</p></div></div>}
         </div>
       </div>
 
-      <p className="text-[10px] leading-4 text-muted-foreground">
-        Desktop pixels, keyboard, and pointer events travel through the authenticated same-origin Oxsig WebSocket bridge and AWS Systems Manager port forwarding. The VNC service is loopback-only on the lab VM. When prior guest-service evidence is ready, Oxsig records the successful browser RFB handshake as browser-observed access-path evidence.
-      </p>
+      <p className="text-[10px] leading-4 text-muted-foreground">Desktop pixels, keyboard and pointer events travel through OXSIG's authenticated private bridge. The guest desktop service is not exposed directly to the public internet. When prerequisite evidence is ready, OXSIG records the successful browser handshake as access-path evidence.</p>
     </div>
   );
 }
