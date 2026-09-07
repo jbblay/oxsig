@@ -3,21 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  BookOpenCheck,
-  Flame,
   GraduationCap,
   Loader2,
-  Medal,
   RefreshCw,
   RotateCcw,
   Save,
-  ShieldCheck,
-  Terminal,
   Trash2,
-  Trophy,
   User,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,36 +28,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth/use-auth';
+import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Profile = { id: string; displayName: string; email?: string; bio?: string; avatarUrl?: string; role?: string };
-type ProgressSummary = {
-  academy: {
-    courses: number;
-    masteredCourses: number;
-    completedLessons: number;
-    averageMastery: number;
-    activeCourse: {
-      title: string;
-      completedLessons: number;
-      totalLessons: number;
-      score: number;
-    } | null;
-  };
-  labs: {
-    started: number;
-    running: number;
-    activeLab: {
-      name: string;
-      status: string;
-      expiresAt: string | null;
-    } | null;
-  };
-  activity: {
-    streakDays: number;
-    activeDays: number;
-  };
-};
 
 const UI_PREFERENCE_KEYS = [
   'oxsig:app-sidebar:v1',
@@ -80,7 +49,7 @@ const ACADEMY_LOCAL_KEYS = [
 export default function AccountPage() {
   const { isAuthenticated, isLoading: authLoading, profileError, refresh } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [progress, setProgress] = useState<ProgressSummary | null>(null);
+  const [progress, setProgress] = useState<LearnerProgressSummary | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
@@ -98,7 +67,7 @@ export default function AccountPage() {
     const response = await fetch('/api/users/me/progress', { cache: 'no-store' });
     if (!response.ok) return;
     const body = await response.json().catch(() => ({}));
-    if (body?.progress) setProgress(body.progress as ProgressSummary);
+    if (body?.progress) setProgress(body.progress as LearnerProgressSummary);
   }, [isAuthenticated]);
 
   const load = useCallback(async () => {
@@ -182,58 +151,31 @@ export default function AccountPage() {
   }
 
   if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin" /></div>;
-  if (!isAuthenticated) return <Card className="mx-auto max-w-md"><CardHeader><CardTitle>Profile</CardTitle><CardDescription>Sign in to view your progress and account.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent></Card>;
-
-  const achievements = [
-    {
-      title: 'First steps',
-      description: 'Started learning or launched a lab.',
-      earned: Boolean(progress && (progress.academy.courses > 0 || progress.labs.started > 0)),
-      icon: Medal,
-    },
-    {
-      title: 'Hands-on',
-      description: 'Started a real Cyber Lab environment.',
-      earned: Boolean(progress && progress.labs.started > 0),
-      icon: Terminal,
-    },
-    {
-      title: 'Course mastery',
-      description: 'Mastered at least one Academy course.',
-      earned: Boolean(progress && progress.academy.masteredCourses > 0),
-      icon: Trophy,
-    },
-    {
-      title: 'Consistency',
-      description: 'Built a learning streak of three days or more.',
-      earned: Boolean(progress && progress.activity.streakDays >= 3),
-      icon: Flame,
-    },
-  ];
+  if (!isAuthenticated) return <Card className="mx-auto max-w-md"><CardHeader><CardTitle>My progress</CardTitle><CardDescription>Sign in to view your learning analytics, rewards and account.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent></Card>;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-7">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2"><User className="h-7 w-7" /><h1 className="text-3xl font-semibold">Profile & progress</h1></div>
-          <p className="mt-1 text-muted-foreground">Your learning activity, achievements and personal settings in one place.</p>
+          <div className="flex items-center gap-2"><User className="h-7 w-7" /><h1 className="text-3xl font-semibold">My progress</h1></div>
+          <p className="mt-1 text-muted-foreground">Real learning activity, unlocks and account controls. Nothing here is demo data.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button>
       </div>
 
       {profileError && <Card><CardContent className="pt-6 text-sm text-amber-600">Some profile information is still synchronizing. Your signed-in session remains active.</CardContent></Card>}
 
-      {progress && (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10"><Flame className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.activity.streakDays}</p><p className="text-xs text-muted-foreground">day streak</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10"><BookOpenCheck className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.academy.completedLessons}</p><p className="text-xs text-muted-foreground">lessons completed</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10"><Terminal className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.labs.started}</p><p className="text-xs text-muted-foreground">labs started</p></div></CardContent></Card>
-          <Card><CardContent className="flex items-center gap-3 p-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10"><GraduationCap className="h-5 w-5" /></span><div><p className="text-2xl font-semibold">{progress.academy.averageMastery}%</p><p className="text-xs text-muted-foreground">average mastery</p></div></CardContent></Card>
+      {progress ? (
+        <LearningAnalyticsDashboard progress={progress} />
+      ) : !loadError ? (
+        <section className="space-y-4" aria-label="Loading learner progress">
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]"><div className="h-48 animate-pulse rounded-2xl border bg-muted/40" /><div className="h-48 animate-pulse rounded-2xl border bg-muted/30" /></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl border bg-muted/30" />)}</div>
         </section>
-      )}
+      ) : null}
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6">
+        <div>
           {loading ? (
             <Card><CardContent className="flex items-center justify-center py-16 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading profile…</CardContent></Card>
           ) : loadError ? (
@@ -272,60 +214,62 @@ export default function AccountPage() {
               </CardContent>
             </Card>
           ) : null}
-
-          <Card>
-            <CardHeader><CardTitle>Start fresh</CardTitle><CardDescription>Recover from a confusing layout or deliberately clear your Academy learning history.</CardDescription></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="text-sm font-semibold">Reset interface</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Restore navigation and Cyber Lab layout preferences to their defaults. Your courses, labs and saved work are not deleted.</p></div>
-                <Button variant="outline" className="shrink-0" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset layout</Button>
-              </div>
-
-              <div className="flex flex-col gap-3 rounded-xl border border-destructive/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="text-sm font-semibold">Clear AI Academy</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Delete all of your Academy courses, progress, questions, practice attempts and learning history. Cyber Lab resources are not affected.</p></div>
-                <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-                  <DialogTrigger asChild><Button variant="outline" className="shrink-0 border-destructive/30 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /> Clear Academy</Button></DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Delete all Academy learning history?</DialogTitle>
-                      <DialogDescription>This cannot be undone. Your generated courses, lesson progress, instructor questions and Academy practice history will be permanently deleted. Running Cyber Lab machines and other OXSIG workspaces stay untouched.</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setResetDialogOpen(false)} disabled={deletingAcademy}>Cancel</Button>
-                      <Button variant="destructive" onClick={() => void deleteAcademyHistory()} disabled={deletingAcademy}>{deletingAcademy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Academy history</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="space-y-6">
-          <Card>
-            <CardHeader><CardTitle>Achievements</CardTitle><CardDescription>Small milestones based on real learning and lab activity.</CardDescription></CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {achievements.map(({ title, description, earned, icon: Icon }) => (
-                <div key={title} className={`flex items-start gap-3 rounded-xl border p-3 ${earned ? 'bg-primary/5' : 'opacity-55'}`}>
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${earned ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}><Icon className="h-4 w-4" /></span>
-                  <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-sm font-semibold">{title}</p>{earned && <ShieldCheck className="h-3.5 w-3.5 text-primary" />}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
           {progress?.academy.activeCourse && (
-            <Card>
-              <CardHeader><CardDescription>Continue learning</CardDescription><CardTitle>{progress.academy.activeCourse.title}</CardTitle></CardHeader>
+            <Card className="overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-background">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div><CardDescription>Current course</CardDescription><CardTitle className="mt-1">{progress.academy.activeCourse.title}</CardTitle></div>
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400"><GraduationCap className="h-5 w-5" /></span>
+                </div>
+              </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between text-xs"><span>{progress.academy.activeCourse.completedLessons}/{progress.academy.activeCourse.totalLessons} lessons</span><span>{progress.academy.activeCourse.score}% mastery</span></div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, progress.academy.activeCourse.score))}%` }} /></div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.max(0, Math.min(100, progress.academy.activeCourse.totalLessons > 0 ? (progress.academy.activeCourse.completedLessons / progress.academy.activeCourse.totalLessons) * 100 : 0))}%` }} /></div>
                 <Button asChild className="w-full"><Link href="/academy">Continue course</Link></Button>
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader><CardTitle>How rewards work</CardTitle><CardDescription>OXSIG rewards are deterministic, not manually filled dashboard numbers.</CardDescription></CardHeader>
+            <CardContent className="space-y-2 text-sm leading-6 text-muted-foreground">
+              <p>XP increases from completed lessons, mastered courses, passed practical checkpoints, started labs and recorded active days.</p>
+              <p>Lab runtime is shown as analytics but gives no XP, so leaving a machine running cannot improve your level.</p>
+              <p>Streak badges use your longest recorded streak, so an earned streak milestone does not disappear just because your current streak later resets.</p>
+            </CardContent>
+          </Card>
         </div>
       </section>
+
+      <Card>
+        <CardHeader><CardTitle>Start fresh</CardTitle><CardDescription>Recover from a confusing layout or deliberately clear your Academy learning history.</CardDescription></CardHeader>
+        <CardContent className="grid gap-3 lg:grid-cols-2">
+          <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="text-sm font-semibold">Reset interface</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Restore navigation and Cyber Lab layout preferences to defaults. Courses, labs and saved work remain.</p></div>
+            <Button variant="outline" className="shrink-0" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset layout</Button>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-xl border border-destructive/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="text-sm font-semibold">Clear AI Academy</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Delete your Academy courses, progress, questions, practice attempts and Academy-derived reward progress. Cyber Lab resources stay untouched.</p></div>
+            <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+              <DialogTrigger asChild><Button variant="outline" className="shrink-0 border-destructive/30 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /> Clear Academy</Button></DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete all Academy learning history?</DialogTitle>
+                  <DialogDescription>This cannot be undone. Generated courses, lesson progress, instructor questions and Academy practice history will be permanently deleted. Running Cyber Lab machines and other OXSIG workspaces stay untouched.</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setResetDialogOpen(false)} disabled={deletingAcademy}>Cancel</Button>
+                  <Button variant="destructive" onClick={() => void deleteAcademyHistory()} disabled={deletingAcademy}>{deletingAcademy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Academy history</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
