@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { getPool } from '@/lib/db/pool';
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { infrastructureDesignSchema, type InfrastructureDesign } from './designer-schema';
 
 export type PersistedInfrastructureDesign = {
@@ -33,7 +34,7 @@ export async function saveInfrastructureDesign(ownerId: string, design: Infrastr
      ON CONFLICT (owner_id)
      DO UPDATE SET design = EXCLUDED.design, updated_at = NOW()
      RETURNING design, updated_at`,
-    [ownerId, JSON.stringify(validated)]
+    [ownerId, stringifyPostgresJson(validated)]
   );
 
   const row = result.rows[0];
