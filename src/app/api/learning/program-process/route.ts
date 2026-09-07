@@ -76,6 +76,7 @@ async function loadPathState(ownerId: string) {
 
     return {
       ...capability,
+      evidenceRequirement: capability.evidence,
       order: index + 1,
       status,
       evidence: {
