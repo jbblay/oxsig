@@ -75,7 +75,7 @@ export const LAB_CATALOG: LabDefinition[] = [
       'Run repeatable security and operations exercises',
     ],
     available: false,
-    availabilityNote: 'This lab profile is not activated on this deployment yet.',
+    availabilityNote: 'Marketplace activation is required before this lab profile can launch on this deployment.',
     marketplaceProductCode: '3qk9e6x2ni81uiqnorll45r3f',
   },
   {
@@ -103,7 +103,7 @@ export const LAB_CATALOG: LabDefinition[] = [
       'Destroy the temporary machine after the exercise',
     ],
     available: false,
-    availabilityNote: 'This lab profile is not activated on this deployment yet.',
+    availabilityNote: 'Marketplace activation is required before this lab profile can launch on this deployment.',
     marketplaceProductCode: '7lgvy7mt78lgoi4lant0znp5h',
   },
   {
