@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
@@ -102,7 +103,14 @@ export async function POST(request: NextRequest) {
           `INSERT INTO ai_practitioner_events (
              owner_id, lab_instance_id, event_type, prompt, command, model, metadata
            ) VALUES ($1,$2,'plan',$3,$4,$5,$6::jsonb)`,
-          [user.id, instance?.id ?? null, parsed.data.prompt, plan.command, model, JSON.stringify({ plan })]
+          [
+            user.id,
+            instance?.id ?? null,
+            sanitizePostgresText(parsed.data.prompt),
+            sanitizePostgresText(plan.command),
+            sanitizePostgresText(model),
+            stringifyPostgresJson({ plan }),
+          ]
         );
 
         return NextResponse.json({
@@ -170,11 +178,11 @@ export async function POST(request: NextRequest) {
         [
           user.id,
           instance.id,
-          parsed.data.prompt,
-          evidence.command || parsed.data.command,
+          sanitizePostgresText(parsed.data.prompt),
+          sanitizePostgresText(evidence.command || parsed.data.command),
           evidence.exitCode ?? -1,
-          model,
-          JSON.stringify({
+          sanitizePostgresText(model),
+          stringifyPostgresJson({
             analysis,
             evidenceId: evidence.id,
             executionId: evidence.executionId,
