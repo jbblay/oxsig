@@ -133,7 +133,7 @@ describe('program process reference path', () => {
     const serializedCourse = JSON.stringify(persistedCourse);
     expect(serializedCourse).not.toContain('\\u0000');
     const processContextCommand = persistedCourse.lessons.find((lesson: { id: string }) => lesson.id === 'process-context')?.practice?.command;
-    expect(processContextCommand).toContain("tr '\\0' '\\n'");
+    expect(processContextCommand).toContain("tr '\0' '\n'");
 
     expect(mocks.recordLearningActivity).toHaveBeenCalledWith(user.id, 'academy');
     expect(body.state.progressPercent).toBe(0);
