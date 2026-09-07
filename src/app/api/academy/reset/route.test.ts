@@ -37,12 +37,13 @@ describe('Academy full reset', () => {
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('to_regclass')) return { rows: [{ relation: 'learning_activity_days' }] };
+      if (sql.includes("to_regclass('public.learning_path_enrollments')")) return { rows: [{ relation: 'learning_path_enrollments' }] };
+      if (sql.includes("to_regclass('public.learning_activity_days')")) return { rows: [{ relation: 'learning_activity_days' }] };
       return { rows: [], rowCount: 1 };
     });
   });
 
-  it('atomically deletes Academy history and only the Academy side of daily activity', async () => {
+  it('atomically deletes Academy history, capability state, and only the Academy side of daily activity', async () => {
     const response = await DELETE(request());
 
     expect(response.status).toBe(200);
@@ -50,6 +51,10 @@ describe('Academy full reset', () => {
     expect(mocks.query).toHaveBeenCalledWith('BEGIN');
     expect(mocks.query).toHaveBeenCalledWith(
       'DELETE FROM academy_courses WHERE owner_id = $1',
+      [user.id]
+    );
+    expect(mocks.query).toHaveBeenCalledWith(
+      'DELETE FROM learning_path_enrollments WHERE owner_id = $1',
       [user.id]
     );
     expect(mocks.query).toHaveBeenCalledWith(
@@ -64,7 +69,7 @@ describe('Academy full reset', () => {
     expect(mocks.release).toHaveBeenCalledTimes(1);
   });
 
-  it('still resets Academy safely when the analytics migration is not installed yet', async () => {
+  it('still resets Academy safely when capability and analytics migrations are not installed yet', async () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes('to_regclass')) return { rows: [{ relation: null }] };
       return { rows: [], rowCount: 1 };
@@ -74,6 +79,7 @@ describe('Academy full reset', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.query).toHaveBeenCalledWith('DELETE FROM academy_courses WHERE owner_id = $1', [user.id]);
+    expect(mocks.query).not.toHaveBeenCalledWith('DELETE FROM learning_path_enrollments WHERE owner_id = $1', [user.id]);
     expect(mocks.query).not.toHaveBeenCalledWith(expect.stringContaining('SET academy_actions = 0'), expect.anything());
     expect(mocks.query).toHaveBeenCalledWith('COMMIT');
   });
