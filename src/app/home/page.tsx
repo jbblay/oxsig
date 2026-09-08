@@ -12,6 +12,8 @@ import {
   Settings2,
   Terminal,
   Sparkles,
+  Boxes,
+  ShieldCheck,
 } from 'lucide-react';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
@@ -108,7 +110,16 @@ export default function HomePage() {
           <div className="my-6 sm:my-8">
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Hands-on workspace</p>
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{activeLab ? 'Open Cyber Lab' : 'Start a lab'}</h2>
-            <p className="mt-3 text-sm text-muted-foreground">Terminal · Topology · Evidence</p>
+            <ol className="oxsig-workflow-map mt-5" aria-label="Lab workflow">
+              {[
+                { label: 'Build', color: 'boards', icon: Boxes },
+                { label: 'Run', color: 'labs', icon: Terminal },
+                { label: 'Review', color: 'evidence', icon: ShieldCheck },
+                { label: 'Save', color: 'vault', icon: LibraryBig },
+              ].map(({ label, color, icon: FlowIcon }) => (
+                <li key={label}><span className="oxsig-workspace-icon" data-workspace-color={color}><FlowIcon className="h-4 w-4" /></span><span>{label}</span></li>
+              ))}
+            </ol>
           </div>
           <span className="inline-flex min-h-11 items-center justify-between gap-6 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
             {activeLab ? 'Open lab' : 'Start lab'} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -121,8 +132,8 @@ export default function HomePage() {
           {actions.filter((item) => item.href !== '/labs').map((item) => {
             const Icon = item.icon;
             return (
-              <Link key={item.href} href={item.href} className="oxsig-workspace-row group flex min-w-0 items-center gap-3 px-4 py-3 sm:px-5">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground transition group-hover:border-primary/40 group-hover:text-primary">
+              <Link key={item.href} href={item.href} data-workspace-color={item.href === '/collab/storyboards' ? 'boards' : item.href.slice(1)} className="oxsig-workspace-row group flex min-w-0 items-center gap-3 px-4 py-3 sm:px-5">
+                <span className="oxsig-workspace-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground transition group-hover:border-primary/40 group-hover:text-primary">
                   <Icon className="h-5 w-5" />
                 </span>
                 <span className="min-w-0 flex-1 text-sm font-medium">{item.label}</span>

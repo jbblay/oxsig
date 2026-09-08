@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Menu, Search, Sparkles } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import AppCommandPalette from './AppCommandPalette';
+import WorkspaceWalkthrough from './WorkspaceWalkthrough';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 
@@ -60,7 +61,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
           <button
             type="button"
             onClick={() => setCommandOpen(true)}
-            className="ml-auto hidden h-9 min-w-48 max-w-md flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 text-left text-sm text-muted-foreground transition hover:bg-muted/60 md:flex"
+            className="ml-auto hidden h-9 min-w-48 max-w-md flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 text-left text-sm text-muted-foreground transition hover:bg-muted/60 lg:flex"
             aria-label="Search and jump to a workspace"
           >
             <Search className="h-3.5 w-3.5" />
@@ -69,7 +70,8 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
           </button>
 
           <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-2">
-            <Button size="icon" variant="ghost" className="h-9 w-9 md:hidden" onClick={() => setCommandOpen(true)} aria-label="Search and jump">
+            <WorkspaceWalkthrough />
+            <Button size="icon" variant="ghost" className="h-9 w-9 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search and jump">
               <Search className="h-4 w-4" />
             </Button>
             <Button

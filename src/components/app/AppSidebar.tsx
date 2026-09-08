@@ -114,6 +114,7 @@ function SidebarContent({
                       onClick={onNavigate}
                       title={compact ? item.label : undefined}
                       aria-current={active ? 'page' : undefined}
+                      data-workspace-color={item.href === '/collab/storyboards' ? 'boards' : item.href.slice(1)}
                       className={cn(
                         'oxsig-nav-item group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200',
                         compact ? 'h-11 justify-center px-2' : 'gap-3 px-3 py-2.5',
@@ -124,7 +125,7 @@ function SidebarContent({
                     >
                       {active && !compact && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary" />}
                       <span className={cn(
-                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                        'oxsig-workspace-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
                         active
                           ? 'bg-primary/15 text-primary'
                           : 'bg-sidebar-accent/70 text-muted-foreground group-hover:bg-sidebar-accent group-hover:text-foreground'
