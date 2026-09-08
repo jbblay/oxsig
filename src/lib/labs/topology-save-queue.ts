@@ -42,27 +42,49 @@ export class LabTopologySaveQueue {
 
   enqueue(topology: LabTopology): Promise<void> {
     this.desired = pending(topology);
-    if (!this.running) {
-      this.running = this.drain().finally(() => {
-        this.running = null;
-      });
-    }
-    return this.running;
+    return this.ensureRunning();
+  }
+
+  private ensureRunning(): Promise<void> {
+    if (this.running) return this.running;
+
+    let resolveWorker!: () => void;
+    let rejectWorker!: (error: unknown) => void;
+    const worker = new Promise<void>((resolve, reject) => {
+      resolveWorker = resolve;
+      rejectWorker = reject;
+    });
+
+    // Publish the worker before starting the drain. That removes the settled-
+    // promise/finalizer window where a new desired graph could observe a stale
+    // non-null running promise and then be left without a worker.
+    this.running = worker;
+    void this.drain().then(resolveWorker, rejectWorker);
+    return worker;
   }
 
   private async drain() {
-    while (this.desired && this.desired.serialized !== this.confirmedSerialized) {
-      const candidate = this.desired;
-      try {
-        await this.save(candidate.topology);
-        // The authenticated PUT accepted this exact desired topology. Use the
-        // submitted representation as the ordering token so harmless server
-        // normalization cannot create an endless resave loop.
-        this.confirmedSerialized = candidate.serialized;
-      } catch (error) {
-        this.reportError(error);
-        return;
+    try {
+      while (this.desired && this.desired.serialized !== this.confirmedSerialized) {
+        const candidate = this.desired;
+        try {
+          await this.save(candidate.topology);
+          // The authenticated PUT accepted this exact desired topology. Use the
+          // submitted representation as the ordering token so harmless server
+          // normalization cannot create an endless resave loop.
+          this.confirmedSerialized = candidate.serialized;
+        } catch (error) {
+          this.reportError(error);
+          return;
+        }
       }
+    } finally {
+      // No await occurs between the final desired/confirmed comparison above
+      // and clearing running here, so JavaScript cannot interleave an enqueue in
+      // a state where the old worker is both logically finished and still owns
+      // the queue. Any later enqueue observes running === null and starts a new
+      // worker immediately.
+      this.running = null;
     }
   }
 }
