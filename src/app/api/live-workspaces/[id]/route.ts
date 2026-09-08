@@ -29,11 +29,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!access) return NextResponse.json({ error: 'Live Workspace not found or access denied' }, { status: 404 });
 
     try {
+      const attachablePromise = access.capabilities.manageResources
+        ? listOwnerAttachableResources(pool, access.ownerId)
+        : access.capabilities.collaborate
+          ? listOwnerAttachableResources(pool, user.id).then((resources) => resources.filter((resource) => resource.type === 'lab-instance'))
+          : Promise.resolve([]);
+
       const [participants, resources, control, attachableResources] = await Promise.all([
         listLiveWorkspaceParticipants(pool, id),
         pool.query(
           `SELECT resource.id, resource.resource_type, resource.resource_id, resource.resource_owner_id,
                   resource.attached_by, resource.metadata, resource.attached_at,
+                  COALESCE(owner.display_name, split_part(owner.email,'@',1), 'Participant') AS resource_owner_name,
                   CASE
                     WHEN resource.resource_type = 'lab-instance' AND lab.metadata->>'accessMode' = 'desktop' THEN 'desktop'
                     WHEN resource.resource_type = 'lab-instance' THEN 'terminal'
@@ -42,14 +49,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
            FROM live_workspace_resources resource
            LEFT JOIN lab_instances lab
              ON resource.resource_type = 'lab-instance' AND lab.id = resource.resource_id
+           JOIN users owner ON owner.id = resource.resource_owner_id
            WHERE resource.collaboration_id = $1 AND resource.status = 'attached'
            ORDER BY resource.attached_at ASC`,
           [id]
         ),
         listControlState({ pool, collaborationId: id, viewerId: user.id }),
-        access.capabilities.manageResources
-          ? listOwnerAttachableResources(pool, access.ownerId)
-          : Promise.resolve([]),
+        attachablePromise,
       ]);
       const attachedKeys = new Set(resources.rows.map((row) => `${row.resource_type}:${row.resource_id}`));
 
@@ -62,6 +68,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           type: row.resource_type,
           resourceId: row.resource_id,
           resourceOwnerId: row.resource_owner_id,
+          resourceOwnerName: row.resource_owner_name,
           attachedBy: row.attached_by,
           label: row.metadata?.label || row.resource_type,
           attachedAt: row.attached_at,
