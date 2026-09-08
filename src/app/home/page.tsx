@@ -15,6 +15,8 @@ import {
   Sparkles,
   Terminal,
 } from 'lucide-react';
+import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
+import TerminalActivityStrip from '@/components/app/TerminalActivityStrip';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,6 +69,7 @@ export default function HomePage() {
   }, [isAuthenticated]);
 
   const activeLab = progress?.labs.activeLab;
+  const labRunning = activeLab?.status === 'running';
 
   return (
     <div className="oxsig-console mx-auto max-w-6xl space-y-4">
@@ -87,6 +90,8 @@ export default function HomePage() {
         </div>
       )}
 
+      {progress && <ProgressBadgeRail progress={progress} compact />}
+
       {activeLab && (
         <Link href="/labs" className="oxsig-active-strip group flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5">
           <span className="oxsig-workspace-icon h-8 w-8 rounded-md" data-workspace-color="labs"><Box className="h-4 w-4" /></span>
@@ -100,6 +105,8 @@ export default function HomePage() {
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
         </Link>
       )}
+
+      <TerminalActivityStrip running={labRunning} label={activeLab ? `${activeLab.name} activity` : 'Terminal activity'} />
 
       <section aria-labelledby="workspace-launcher-title">
         <div className="mb-2 flex items-center justify-between gap-3">
