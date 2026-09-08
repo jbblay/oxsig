@@ -40,7 +40,7 @@ describe('AccountPage usability states', () => {
 
     await waitFor(() => expect(screen.getByText(/profile unavailable/i)).toBeInTheDocument());
     expect(screen.getByText(/profile service returned 503/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/display name/i)).not.toBeInTheDocument();
 
     vi.unstubAllGlobals();
