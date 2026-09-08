@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/lib/db/pool';
+import { getPool, transaction } from '@/lib/db/pool';
 import { createAcademyCourse } from '@/lib/academy/persistence';
 import { requireAuth } from '@/lib/auth/middleware';
 import { recordLearningActivity } from '@/lib/learning/activity';
@@ -76,6 +76,7 @@ async function loadPathState(ownerId: string) {
     evidenceByCapability.set(row.capability_id, current);
   }
 
+  const enrollmentActive = Boolean(enrollment) && enrollment?.status === 'active';
   const capabilities = PROGRAM_PROCESS_CAPABILITIES.map((capability, index) => {
     const rows = evidenceByCapability.get(capability.id) || [];
     const practiceDemonstrated = rows.some((row) => row.source_type === 'academy-practice' && row.result === 'demonstrated');
@@ -83,7 +84,7 @@ async function loadPathState(ownerId: string) {
     const assessmentDemonstrated = rows.some((row) => row.source_type === 'assessment' && row.result === 'demonstrated');
     const demonstrated = assessmentDemonstrated || (practiceDemonstrated && reflectionDemonstrated);
     const hasEvidence = rows.length > 0;
-    const persistedActive = Boolean(enrollment) && String(enrollment?.active_capability_id || '') === capability.id;
+    const persistedActive = enrollmentActive && String(enrollment?.active_capability_id || '') === capability.id;
     const status = demonstrated ? 'demonstrated' : hasEvidence || persistedActive ? 'in_progress' : 'not_started';
     const reflectionScores = rows
       .filter((row) => row.source_type === 'academy-reflection' && row.score !== null)
@@ -107,7 +108,7 @@ async function loadPathState(ownerId: string) {
   const progressPercent = capabilities.length > 0
     ? Math.round((demonstratedCount / capabilities.length) * 100)
     : 0;
-  const recommendedCapabilityId = enrollment
+  const recommendedCapabilityId = enrollmentActive
     ? capabilities.find((capability) => capability.status !== 'demonstrated')?.id || null
     : null;
 
@@ -192,5 +193,63 @@ export async function POST(request: NextRequest) {
     await recordLearningActivity(user.id, 'academy');
     const state = await loadPathState(user.id);
     return NextResponse.json({ state, enrollmentId: enrollmentResult.rows[0]?.id });
+  });
+}
+
+export async function PATCH(request: NextRequest) {
+  return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) {
+      return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
+    }
+    const rateLimit = await checkRateLimit(req, { maxRequests: 8, windowMs: 60_000 }, user.id);
+    if (rateLimit) return rateLimit;
+
+    const body = await req.json().catch(() => null) as { action?: string } | null;
+    if (body?.action !== 'abandon') {
+      return NextResponse.json({ error: 'Invalid reference-path action' }, { status: 400 });
+    }
+
+    const changed = await transaction(async (client) => {
+      const enrollmentResult = await client.query(
+        `UPDATE learning_path_enrollments
+            SET status='abandoned', active_capability_id=NULL,
+                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
+          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'
+          RETURNING id`,
+        [user.id, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
+      );
+      if (!enrollmentResult.rows[0]) return false;
+
+      const courseResult = await client.query(
+        `SELECT id
+           FROM academy_courses
+          WHERE owner_id=$1 AND source_prompt=$2 AND status='active'
+          LIMIT 1
+          FOR UPDATE`,
+        [user.id, PROGRAM_PROCESS_SOURCE_PROMPT]
+      );
+      const courseId = courseResult.rows[0]?.id as string | undefined;
+      if (courseId) {
+        await client.query(
+          `UPDATE academy_sessions
+              SET status='abandoned', last_activity_at=NOW()
+            WHERE owner_id=$1 AND course_id=$2 AND status='active'`,
+          [user.id, courseId]
+        );
+        await client.query(
+          `UPDATE academy_courses
+              SET status='archived', updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2`,
+          [courseId, user.id]
+        );
+      }
+      return true;
+    });
+
+    if (!changed) {
+      return NextResponse.json({ error: 'No active learning journey to leave' }, { status: 404 });
+    }
+    const state = await loadPathState(user.id);
+    return NextResponse.json({ state });
   });
 }
