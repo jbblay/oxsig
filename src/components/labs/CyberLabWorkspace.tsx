@@ -8,7 +8,7 @@ import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
 import GuestServiceReadinessReview from '@/components/labs/GuestServiceReadinessReview';
 import InfrastructureDesigner from '@/components/labs/InfrastructureDesigner';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
-import LabTopologyPersistenceBridge from '@/components/labs/LabTopologyPersistenceBridge';
+import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
 import { Button } from '@/components/ui/button';
 
@@ -110,9 +110,9 @@ export default function CyberLabWorkspace() {
       </div>
 
       <div id="cyber-lab-runtime" role="tabpanel" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
-        <LabTopologyPersistenceBridge>
+        <LabTopologyDurableStateProvider>
           <LabRuntimePanel embedded />
-        </LabTopologyPersistenceBridge>
+        </LabTopologyDurableStateProvider>
       </div>
 
       {designerMounted && (
