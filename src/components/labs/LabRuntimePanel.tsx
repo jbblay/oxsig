@@ -48,6 +48,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLabsSnapshot, invalidateLabsSnapshot } from "@/lib/labs/client";
 import { applyOptimisticLabLifecycle, replaceLabInstance, type LabLifecycleAction } from "@/lib/labs/optimistic-lifecycle";
+import { LabTopologySaveQueue } from "@/lib/labs/topology-save-queue";
 import type { LabTopology } from "@/lib/labs/topology-schema";
 import type {
   LabAccessMode,
@@ -184,8 +185,10 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [flow, setFlow] = React.useState<ReactFlowInstance<LabMachineFlowNode, Edge> | null>(null);
   const [topologyReady, setTopologyReady] = React.useState(false);
-  const topologyLastSavedRef = React.useRef<string | null>(null);
-  const topologySaveChainRef = React.useRef<Promise<void>>(Promise.resolve());
+  const topologySaveQueue = React.useMemo(() => new LabTopologySaveQueue(
+    saveTopology,
+    (error) => toast.error(error instanceof Error ? error.message : "Cyber Lab topology could not be saved")
+  ), [saveTopology]);
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [liveNodeId, setLiveNodeId] = React.useState<string | null>(null);
   const [selectedAccessMode, setSelectedAccessMode] = React.useState<LabAccessMode>("terminal");
@@ -330,7 +333,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     let restoredNodes: LabMachineFlowNode[] = [];
     let restoredEdges: Edge[] = [];
     const saved = initialTopology;
-    topologyLastSavedRef.current = JSON.stringify(saved);
+    topologySaveQueue.setConfirmed(saved);
 
     if (saved.nodes.length) {
       restoredNodes = saved.nodes.flatMap((savedNode) => {
@@ -357,30 +360,17 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     setNodes(restoredNodes);
     setEdges(restoredEdges);
     setTopologyReady(true);
-  }, [catalog, initialTopology, instance, setEdges, setNodes, topologyReady]);
+  }, [catalog, initialTopology, instance, setEdges, setNodes, topologyReady, topologySaveQueue]);
 
   React.useEffect(() => {
     if (!topologyReady) return;
     const payload = topologyPayload(nodes, edges);
-    const serialized = JSON.stringify(payload);
-    if (serialized === topologyLastSavedRef.current) return;
-
     const timer = window.setTimeout(() => {
-      topologySaveChainRef.current = topologySaveChainRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          if (serialized === topologyLastSavedRef.current) return;
-          try {
-            const saved = await saveTopology(payload);
-            topologyLastSavedRef.current = JSON.stringify(saved);
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Cyber Lab topology could not be saved");
-          }
-        });
+      void topologySaveQueue.enqueue(payload);
     }, TOPOLOGY_SAVE_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [edges, nodes, saveTopology, topologyReady]);
+  }, [edges, nodes, topologyReady, topologySaveQueue]);
 
   React.useEffect(() => {
     if (!topologyReady || catalog.length === 0) return;
