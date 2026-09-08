@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   getInfrastructureDesign: vi.fn(),
   saveInfrastructureDesign: vi.fn(),
+  deleteInfrastructureDesign: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
@@ -15,9 +16,10 @@ vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLim
 vi.mock('@/lib/infrastructure/designer-persistence', () => ({
   getInfrastructureDesign: mocks.getInfrastructureDesign,
   saveInfrastructureDesign: mocks.saveInfrastructureDesign,
+  deleteInfrastructureDesign: mocks.deleteInfrastructureDesign,
 }));
 
-import { GET, PUT } from './route';
+import { DELETE, GET, PUT } from './route';
 
 const user = { id: 'user-1', role: 'user' as const };
 const validDesign = {
@@ -31,7 +33,7 @@ const validDesign = {
   edges: [],
 };
 
-function request(method: 'GET' | 'PUT', body?: unknown) {
+function request(method: 'GET' | 'PUT' | 'DELETE', body?: unknown) {
   return new NextRequest('http://localhost/api/labs/infrastructure-design', {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
@@ -50,6 +52,7 @@ describe('/api/labs/infrastructure-design', () => {
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.getInfrastructureDesign.mockResolvedValue(null);
     mocks.saveInfrastructureDesign.mockResolvedValue({ design: validDesign, updatedAt: '2026-09-05T00:00:00.000Z' });
+    mocks.deleteInfrastructureDesign.mockResolvedValue(true);
   });
 
   it('keeps authentication as the outer boundary', async () => {
@@ -88,5 +91,20 @@ describe('/api/labs/infrastructure-design', () => {
     expect(response.status).toBe(200);
     expect(mocks.checkRateLimit).toHaveBeenCalledWith(expect.any(NextRequest), { maxRequests: 30, windowMs: 60_000 }, user.id);
     expect(mocks.saveInfrastructureDesign).toHaveBeenCalledWith(user.id, validDesign);
+  });
+
+  it('requires CSRF before deleting the owner design', async () => {
+    mocks.validateCsrfToken.mockResolvedValue(false);
+    const response = await DELETE(request('DELETE'));
+    expect(response.status).toBe(403);
+    expect(mocks.deleteInfrastructureDesign).not.toHaveBeenCalled();
+  });
+
+  it('deletes only the authenticated owner design', async () => {
+    const response = await DELETE(request('DELETE'));
+    expect(response.status).toBe(200);
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(expect.any(NextRequest), { maxRequests: 12, windowMs: 60_000 }, user.id);
+    expect(mocks.deleteInfrastructureDesign).toHaveBeenCalledWith(user.id);
+    expect(await response.json()).toEqual({ ok: true, deleted: true });
   });
 });
