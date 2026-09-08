@@ -27,7 +27,7 @@ import {
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -58,17 +58,17 @@ const BODY_LABELS: Record<VaultKind, string> = {
   procedure: 'Procedure',
   cheat_sheet: 'Reference content',
   script: 'Script and usage notes',
-  concept: 'Explanation',
+  concept: 'Concept',
   playbook: 'Playbook content',
 };
 
 const BODY_PLACEHOLDERS: Record<VaultKind, string> = {
-  command: 'nmap -sS -sV -p- 10.0.0.5\n\nWhy: full TCP port discovery with service detection.\nWhen: initial enumeration against an authorized lab target.',
-  procedure: '1. Identify the target and scope\n2. Run discovery\n3. Enumerate exposed services\n4. Record findings\n5. Validate the next hypothesis',
-  cheat_sheet: 'Discovery\n  nmap -sn 10.0.0.0/24\n\nService scan\n  nmap -sV -p 22,80,443 10.0.0.5\n\nNotes\n  Keep the scope explicit.',
-  script: '#!/usr/bin/env bash\n\n# Add the script here, then document inputs, outputs and assumptions.',
-  concept: 'Explain the idea in your own words. Add an example, the failure mode it prevents, and how you would recognize it in practice.',
-  playbook: 'Goal\n\nPhase 1 — Discover\n\nPhase 2 — Enumerate\n\nPhase 3 — Validate\n\nLessons learned',
+  command: 'nmap -sS -sV -p- 10.0.0.5\n\nNotes…',
+  procedure: '1. Identify target and scope\n2. Run discovery\n3. Enumerate services\n4. Record findings',
+  cheat_sheet: 'Discovery\n  nmap -sn 10.0.0.0/24\n\nService scan\n  nmap -sV -p 22,80,443 10.0.0.5',
+  script: '#!/usr/bin/env bash\n\n# Script…',
+  concept: 'Concept, example, and key notes…',
+  playbook: 'Goal\n\nDiscover\n\nEnumerate\n\nValidate',
 };
 
 type EditorState = {
@@ -188,7 +188,6 @@ export default function VaultPage() {
     });
   }, [items, kindFilter, pinnedOnly, query]);
 
-
   function canDiscardChanges() {
     return !dirty || window.confirm('Discard your unsaved Vault changes?');
   }
@@ -214,7 +213,7 @@ export default function VaultPage() {
 
   async function createItem() {
     if (!editor.title.trim()) {
-      toast.error('Give this knowledge object a title.');
+      toast.error('Add a title.');
       return;
     }
     setSaving(true);
@@ -234,7 +233,7 @@ export default function VaultPage() {
       setActiveId(created.id);
       setEditor(next);
       setBaselineEditor(next);
-      toast.success('Saved to your Vault.');
+      toast.success('Saved to Vault.');
     } catch (error) {
       console.error('Failed to create Vault item:', error);
       toast.error(error instanceof Error ? error.message : 'Could not create Vault item');
@@ -259,7 +258,7 @@ export default function VaultPage() {
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
       setEditor(next);
       setBaselineEditor(next);
-      toast.success('Vault item updated.');
+      toast.success('Saved.');
     } catch (error) {
       console.error('Failed to update Vault item:', error);
       toast.error(error instanceof Error ? error.message : 'Could not update Vault item');
@@ -295,7 +294,7 @@ export default function VaultPage() {
       setCreating(false);
       setEditor(next);
       setBaselineEditor(next);
-      toast.success('Moved out of the active Vault.');
+      toast.success('Archived.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not archive Vault item');
     } finally {
@@ -314,7 +313,7 @@ export default function VaultPage() {
       setCreating(false);
       setEditor(next);
       setBaselineEditor(next);
-      toast.success('Vault item deleted.');
+      toast.success('Deleted.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not delete Vault item');
     } finally {
@@ -324,7 +323,7 @@ export default function VaultPage() {
 
   function handoff(item: VaultItem, destination: 'lab' | 'board' | 'collaboration') {
     if (dirty) {
-      toast.error('Save or cancel your Vault changes before continuing to another workspace.');
+      toast.error('Save or discard changes first.');
       return;
     }
     const payload = {
@@ -342,13 +341,13 @@ export default function VaultPage() {
     try {
       window.localStorage.setItem('oxsig:vault-handoff', JSON.stringify(payload));
     } catch {
-      // Handoff still works as navigation even when browser storage is unavailable.
+      // Navigation remains available when browser storage is unavailable.
     }
 
     if (destination === 'lab') {
       if (item.kind === 'command' || item.kind === 'script') {
         void navigator.clipboard?.writeText(item.body).then(
-          () => toast.success('Knowledge copied. Paste it into your authorized lab terminal when ready.'),
+          () => toast.success('Copied.'),
           () => undefined
         );
       }
@@ -365,9 +364,9 @@ export default function VaultPage() {
   async function copyBody(item: VaultItem) {
     try {
       await navigator.clipboard.writeText(item.body || item.summary || item.title);
-      toast.success('Copied from Vault.');
+      toast.success('Copied.');
     } catch {
-      toast.error('The browser could not copy this item.');
+      toast.error('Copy failed.');
     }
   }
 
@@ -403,7 +402,7 @@ export default function VaultPage() {
                   <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Vault" className="pl-9" aria-label="Search Vault" />
                 </div>
                 <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as 'all' | VaultKind)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="Filter Vault by type">
-                  <option value="all">All knowledge</option>
+                  <option value="all">All items</option>
                   {VAULT_KINDS.map((kind) => <option key={kind} value={kind}>{VAULT_KIND_LABELS[kind]}</option>)}
                 </select>
                 <Button variant={pinnedOnly ? 'secondary' : 'outline'} onClick={() => setPinnedOnly((value) => !value)}>
@@ -415,21 +414,21 @@ export default function VaultPage() {
           </Card>
 
           {loading ? (
-            <Card><CardContent className="flex items-center justify-center py-20 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading your technical memory…</CardContent></Card>
+            <Card><CardContent className="flex items-center justify-center py-20 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading Vault…</CardContent></Card>
           ) : loadError ? (
             <Card className="border-destructive/30">
               <CardContent className="flex flex-col items-center justify-center py-16 text-center">
                 <LibraryBig className="h-8 w-8 text-muted-foreground/50" />
-                <h2 className="mt-3 font-semibold">Your Vault could not be loaded.</h2>
+                <h2 className="mt-3 font-semibold">Could not load Vault</h2>
                 <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
-                <Button className="mt-4" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Try again</Button>
+                <Button className="mt-4" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Retry</Button>
               </CardContent>
             </Card>
           ) : filtered.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted"><Brain className="h-6 w-6" /></div>
-                <h2 className="font-semibold">{items.length === 0 ? 'No items yet' : 'No matches'}</h2>
+                <h2 className="font-semibold">{items.length === 0 ? 'No items' : 'No matches'}</h2>
                 {items.length === 0 && <Button className="mt-4" onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>}
               </CardContent>
             </Card>
@@ -479,23 +478,23 @@ export default function VaultPage() {
                 setBaselineEditor(next);
               }}
             >
-              Back to Vault
+              Back
             </Button>
           )}
           {!editorVisible ? (
-  <Card className="overflow-hidden">
-    <CardContent className="flex min-h-[360px] items-center justify-center p-6">
-      <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
-    </CardContent>
-  </Card>
-) : (
-  <Card className="overflow-hidden shadow-sm">
+            <Card className="overflow-hidden">
+              <CardContent className="flex min-h-[360px] items-center justify-center p-6">
+                <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="overflow-hidden shadow-sm">
               <CardHeader className="border-b bg-muted/20">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-primary"><ActiveKindIcon className="h-5 w-5" /></div>
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2"><CardTitle className="truncate text-lg">{creating ? 'Capture knowledge' : active?.title}</CardTitle>{dirty && <Badge variant="outline" className="text-[9px]">Unsaved changes</Badge>}</div>
+                      <div className="flex flex-wrap items-center gap-2"><CardTitle className="truncate text-lg">{creating ? 'New item' : active?.title}</CardTitle>{dirty && <Badge variant="outline" className="text-[9px]">Unsaved</Badge>}</div>
                     </div>
                   </div>
                   {!creating && active && <Button size="icon" variant="ghost" disabled={saving} onClick={() => void togglePin(active)} title={active.pinned ? 'Unpin' : 'Pin'} aria-label={active.pinned ? 'Unpin Vault item' : 'Pin Vault item'}>{active.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
@@ -504,26 +503,26 @@ export default function VaultPage() {
               <CardContent className="space-y-4 p-4">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1.5 text-xs font-medium">Type<select value={editor.kind} onChange={(event) => setEditor((current) => ({ ...current, kind: event.target.value as VaultKind }))} className="h-9 w-full rounded-md border bg-background px-3 text-sm" disabled={saving}>{VAULT_KINDS.map((kind) => <option key={kind} value={kind}>{VAULT_KIND_LABELS[kind]}</option>)}</select></label>
-                  <label className="space-y-1.5 text-xs font-medium">Language / environment<Input value={editor.language} onChange={(event) => setEditor((current) => ({ ...current, language: event.target.value }))} placeholder="bash, Python, Linux…" maxLength={64} disabled={saving} /></label>
+                  <label className="space-y-1.5 text-xs font-medium">Environment<Input value={editor.language} onChange={(event) => setEditor((current) => ({ ...current, language: event.target.value }))} placeholder="bash, Python, Linux…" maxLength={64} disabled={saving} /></label>
                 </div>
                 <label className="block space-y-1.5 text-xs font-medium">Title<Input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="Nmap service enumeration" maxLength={160} disabled={saving} /></label>
-                <label className="block space-y-1.5 text-xs font-medium">What is this for?<Textarea value={editor.summary} onChange={(event) => setEditor((current) => ({ ...current, summary: event.target.value }))} placeholder="A short explanation of when and why you would use this." className="min-h-[76px]" maxLength={500} disabled={saving} /></label>
+                <label className="block space-y-1.5 text-xs font-medium">Summary<Textarea value={editor.summary} onChange={(event) => setEditor((current) => ({ ...current, summary: event.target.value }))} placeholder="Optional summary" className="min-h-[76px]" maxLength={500} disabled={saving} /></label>
                 <label className="block space-y-1.5 text-xs font-medium">{BODY_LABELS[editor.kind]}<Textarea value={editor.body} onChange={(event) => setEditor((current) => ({ ...current, body: event.target.value }))} placeholder={BODY_PLACEHOLDERS[editor.kind]} className="min-h-[260px] font-mono text-xs leading-5" maxLength={100000} disabled={saving} /></label>
-                <label className="block space-y-1.5 text-xs font-medium">Tags<Input value={editor.tags} onChange={(event) => setEditor((current) => ({ ...current, tags: event.target.value }))} placeholder="nmap, enumeration, networking" disabled={saving} /><span className="block font-normal text-muted-foreground">Comma-separated, up to 12 tags.</span></label>
+                <label className="block space-y-1.5 text-xs font-medium">Tags<Input value={editor.tags} onChange={(event) => setEditor((current) => ({ ...current, tags: event.target.value }))} placeholder="nmap, enumeration, networking" disabled={saving} /></label>
 
                 <div className="flex flex-wrap gap-2 border-t pt-4">
-                  {creating ? <Button onClick={() => void createItem()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save to Vault</Button> : <Button onClick={() => void saveActive()} disabled={saving || !editor.title.trim() || !dirty}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save changes</Button>}
-                  <Button variant="outline" onClick={cancelEditor} disabled={saving}>{dirty ? 'Discard changes' : 'Cancel'}</Button>
+                  {creating ? <Button onClick={() => void createItem()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button> : <Button onClick={() => void saveActive()} disabled={saving || !editor.title.trim() || !dirty}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button>}
+                  <Button variant="outline" onClick={cancelEditor} disabled={saving}>{dirty ? 'Discard' : 'Cancel'}</Button>
                 </div>
 
                 {!creating && active && (
                   <div className="space-y-3 border-t pt-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Continue in OXSIG</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Actions</p>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'lab')}><FlaskConical className="h-4 w-4" /> Practice in Cyber Lab</Button>
-                      <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'board')}><Network className="h-4 w-4" /> Explain on Board</Button>
+                      <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'lab')}><FlaskConical className="h-4 w-4" /> Open in Cyber Lab</Button>
+                      <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'board')}><Network className="h-4 w-4" /> Open on Board</Button>
                       <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'collaboration')}><MessageCircle className="h-4 w-4" /> Discuss</Button>
-                      <Button variant="outline" className="justify-start" onClick={() => void copyBody(active)}><Copy className="h-4 w-4" /> Copy content</Button>
+                      <Button variant="outline" className="justify-start" onClick={() => void copyBody(active)}><Copy className="h-4 w-4" /> Copy</Button>
                     </div>
                     <div className="flex gap-2 pt-1">
                       <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void archiveActive()} disabled={saving}><Archive className="h-4 w-4" /> Archive</Button>
