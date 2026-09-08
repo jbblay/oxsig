@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Menu, Search, Sparkles } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import ActivityCenter from './ActivityCenter';
 import AppCommandPalette from './AppCommandPalette';
 import WorkspaceWalkthrough from './WorkspaceWalkthrough';
 import { Button } from '@/components/ui/button';
@@ -61,16 +62,17 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
             type="button"
             onClick={() => setCommandOpen(true)}
             className="ml-auto hidden h-8 min-w-44 max-w-sm flex-1 items-center gap-2 rounded-md border bg-muted/20 px-2.5 text-left text-xs text-muted-foreground transition hover:bg-muted/50 lg:flex"
-            aria-label="Search and jump to a workspace"
+            aria-label="Search commands and workspaces"
           >
             <Search className="h-3.5 w-3.5" />
-            <span className="truncate">Search or jump</span>
+            <span className="truncate">Search or run command</span>
             <kbd className="ml-auto rounded border bg-background px-1 py-0.5 font-mono text-[10px]">⌘K</kbd>
           </button>
 
           <div className="ml-auto flex shrink-0 items-center gap-0.5 md:ml-1.5">
+            <ActivityCenter />
             <WorkspaceWalkthrough />
-            <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search and jump">
+            <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search commands and workspaces">
               <Search className="h-3.5 w-3.5" />
             </Button>
             <Button
