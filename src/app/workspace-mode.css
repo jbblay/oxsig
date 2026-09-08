@@ -1,115 +1,24 @@
-/*
- * Workspace routes should open directly into the tool. The application header
- * already names the surface, so feature-level marketing/teaching copy is
- * suppressed or compressed while operational controls stay visible.
- */
+/* Workspace routes open directly into the tool. Page components own their
+   action-first structure; this file only supplies shared workspace geometry
+   and a small Cyber Lab compatibility layer. */
 
 main[data-oxsig-workspace] {
   max-width: none;
+  overflow-x: hidden;
 }
 
 main[data-oxsig-workspace] > * {
   min-width: 0;
 }
 
-/* Collaboration is already a three-pane application. Keep New session as a
-   toolbar action, but remove the duplicate page title/description block. */
-main[data-oxsig-workspace='collab'] > div {
-  gap: 0.5rem;
-}
-
-main[data-oxsig-workspace='collab'] > div > div:first-child {
-  min-height: 2.5rem;
-  justify-content: flex-end;
-}
-
-main[data-oxsig-workspace='collab'] > div > div:first-child > div:first-child {
-  display: none;
-}
-
-main[data-oxsig-workspace='collab'] > div > div:last-child {
-  min-height: calc(100dvh - 5rem);
-  border-radius: 0.75rem;
-  box-shadow: none;
-}
-
-/* Live Workspace already has list/detail application structure. The old hero
-   adds no operational control, so the list/detail workspace starts first. */
-main[data-oxsig-workspace='live'] > div {
-  max-width: none;
-  gap: 0.5rem;
-  padding-top: 0;
-}
-
-main[data-oxsig-workspace='live'] > div > section:first-child {
-  display: none;
-}
-
-main[data-oxsig-workspace='live'] > div > div:last-child {
-  min-height: calc(100dvh - 5rem);
-}
-
-/* Vault is a browser/editor. Convert its hero into a compact create toolbar,
-   keep the creation controls, and remove marketing copy plus vanity metrics. */
-main[data-oxsig-workspace='vault'] > div {
-  gap: 0.75rem;
-}
-
-main[data-oxsig-workspace='vault'] > div > section:first-child {
-  overflow: visible;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  box-shadow: none;
-}
-
-main[data-oxsig-workspace='vault'] > div > section:first-child > div:first-child,
-main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex > div:first-child,
-main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.mt-5 {
-  display: none;
-}
-
-main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex {
-  min-height: 2.5rem;
-  justify-content: flex-end;
-}
-
-main[data-oxsig-workspace='vault'] > div > div:nth-child(2) {
-  display: none;
-}
-
-main[data-oxsig-workspace='vault'] > div > div:nth-child(3) {
-  gap: 0.75rem;
-}
-
-/* Cyber Lab is a tool suite. Compress each mode header into a toolbar: keep
-   mode identity, state badges and buttons, remove the prose paragraph. */
+/* Runtime still contains legacy duplicate chrome inside LabRuntimePanel. Keep
+   only operational status/actions visible until that panel is decomposed. */
 main[data-oxsig-workspace='labs'] > div:first-child {
   margin-bottom: 0.5rem;
   border-radius: 0.75rem;
   box-shadow: none;
 }
 
-main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div {
-  gap: 0.5rem;
-  padding-bottom: 0;
-}
-
-main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div > div:first-child {
-  gap: 0.5rem;
-}
-
-main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div > div:first-child > div:first-child > p {
-  display: none;
-}
-
-main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div > div:first-child h1 {
-  font-size: 0.95rem;
-  line-height: 1.25rem;
-}
-
-/* Runtime's left header contains only the duplicate Lab title/prose. Preserve
-   the status badges and collapse control on the right as the operational bar. */
 main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child {
   justify-content: flex-end;
 }
@@ -118,55 +27,13 @@ main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child > d
   display: none;
 }
 
-/* Remove the one-time explanatory banner. Panel-collapse controls remain in
-   the actual lab chrome where they are immediately usable. */
 main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div.relative.overflow-hidden {
   display: none;
 }
 
-/* Make the Planner's no-result state a compact empty canvas rather than an
-   article beneath its Generate action. */
-main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) > p:last-child {
-  display: none;
-}
-
-main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) {
-  padding-top: 2rem;
-  padding-bottom: 2rem;
-}
-
-/* The full AI Practitioner remains operationally richer than the global
-   helper, but its empty state should still open as a tool, not an onboarding
-   article. Leave the live lab/terminal status and composer visible. */
+/* AI Practitioner is intentionally richer than the global helper, but its
+   legacy onboarding article is hidden so the composer opens as the tool. */
 body:has(main[data-oxsig-workspace='labs']) aside[class*='w-[460px]'] > div:nth-child(2) > div.space-y-4 {
-  display: none;
-}
-
-/* Boards are a drawing application. Preserve live status badges and canvas
-   controls, remove the duplicate title/description and the capabilities card
-   that merely describes tools which are already visible above it. */
-main[data-oxsig-workspace='boards'] {
-  overflow-x: hidden;
-}
-
-main[data-oxsig-workspace='boards'] > div {
-  gap: 0.75rem;
-}
-
-main[data-oxsig-workspace='boards'] > div > div:first-of-type {
-  min-height: 2.5rem;
-  justify-content: flex-end;
-}
-
-main[data-oxsig-workspace='boards'] > div > div:first-of-type > div:first-child {
-  display: none;
-}
-
-main[data-oxsig-workspace='boards'] > div > div:nth-of-type(2) {
-  gap: 0.75rem;
-}
-
-main[data-oxsig-workspace='boards'] > div > div:nth-of-type(2) > div:first-child > div:nth-child(2) {
   display: none;
 }
 
@@ -174,17 +41,5 @@ main[data-oxsig-workspace='boards'] > div > div:nth-of-type(2) > div:first-child
   main[data-oxsig-workspace] {
     padding-left: 0.375rem;
     padding-right: 0.375rem;
-  }
-
-  main[data-oxsig-workspace='collab'] > div > div:first-child,
-  main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex,
-  main[data-oxsig-workspace='boards'] > div > div:first-of-type {
-    min-height: 2.25rem;
-  }
-
-  main[data-oxsig-workspace='collab'] > div > div:last-child,
-  main[data-oxsig-workspace='live'] > div > div:last-child {
-    min-height: calc(100dvh - 4.25rem);
-    border-radius: 0.625rem;
   }
 }
