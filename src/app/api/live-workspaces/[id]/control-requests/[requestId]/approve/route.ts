@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { createWorkspaceNotification } from '@/lib/notifications/server';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { approveControlRequest, CONTROL_LEASE_MINUTES } from '@/lib/live-workspace/control';
@@ -38,13 +39,35 @@ export async function POST(
     }
 
     try {
+      const pool = getPool();
+      const durationMinutes = parsed.data.durationMinutes ?? CONTROL_LEASE_MINUTES.default;
       const lease = await approveControlRequest({
-        pool: getPool(),
+        pool,
         collaborationId: id,
         requestId,
         grantorId: user.id,
-        durationMinutes: parsed.data.durationMinutes ?? CONTROL_LEASE_MINUTES.default,
+        durationMinutes,
       });
+
+      if (lease.participantId) {
+        try {
+          await createWorkspaceNotification({
+            ownerId: lease.participantId,
+            type: 'live.control_granted',
+            title: `${lease.surface === 'desktop' ? 'Desktop' : 'Terminal'} control granted`,
+            detail: `You have control of ${lease.labLabel || 'the attached lab'} for ${durationMinutes} minutes.`,
+            href: '/live',
+            severity: 'success',
+            sourceType: 'live-control-lease',
+            sourceId: lease.id,
+            dedupeKey: `live-control-granted:${requestId}`,
+            queryable: pool,
+          });
+        } catch (notificationError) {
+          console.warn('Live Workspace control approval notification failed:', notificationError);
+        }
+      }
+
       return NextResponse.json({ lease }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       if (error instanceof LiveWorkspaceError) {
