@@ -8,12 +8,14 @@ import {
   Box,
   Boxes,
   LibraryBig,
+  LogIn,
   MessageCircle,
   RadioTower,
   Settings2,
   ShieldCheck,
   Sparkles,
   Terminal,
+  UserRound,
 } from 'lucide-react';
 import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
 import TerminalActivityStrip from '@/components/app/TerminalActivityStrip';
@@ -40,7 +42,7 @@ const workflow = [
 ] as const;
 
 export default function HomePage() {
-  const { isAuthenticated, profileError } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, profileError } = useAuth();
   const [progress, setProgress] = React.useState<LearnerProgressSummary | null>(null);
   const [progressLoading, setProgressLoading] = React.useState(false);
 
@@ -70,6 +72,7 @@ export default function HomePage() {
 
   const activeLab = progress?.labs.activeLab;
   const labRunning = activeLab?.status === 'running';
+  const guestMode = !authLoading && !isAuthenticated;
 
   return (
     <div className="oxsig-console mx-auto max-w-6xl space-y-4">
@@ -83,6 +86,22 @@ export default function HomePage() {
           <Link href="/labs"><Terminal className="mr-2 h-4 w-4" />{activeLab ? 'Open lab' : 'Start lab'}</Link>
         </Button>
       </div>
+
+      {guestMode && (
+        <div className="flex flex-col gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.045] px-3 py-2.5 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyan-500/10 text-cyan-500"><UserRound className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2"><p className="text-xs font-semibold">Guest workspace</p><Badge variant="outline" className="h-5 px-1.5 text-[9px]">Explore</Badge></div>
+              <p className="truncate text-[11px] text-muted-foreground">Browse the dashboard now. Create an account when you want to save or use protected actions.</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-1.5 sm:ml-auto">
+            <Button asChild size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><Link href="/sign-in"><LogIn className="mr-1.5 h-3.5 w-3.5" />Log in</Link></Button>
+            <Button asChild size="sm" className="h-8 px-2.5 text-xs"><Link href="/sign-up">Sign up</Link></Button>
+          </div>
+        </div>
+      )}
 
       {profileError && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
