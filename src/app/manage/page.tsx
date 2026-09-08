@@ -8,6 +8,7 @@ import {
   Boxes,
   BrainCircuit,
   Loader2,
+  MailX,
   Pencil,
   Play,
   RadioTower,
@@ -64,10 +65,20 @@ type LearningPathState = {
   progressPercent: number;
 };
 
+type PendingInvitation = {
+  id: string;
+  collaborationId: string;
+  collaborationName: string;
+  email: string;
+  deliveryStatus: string;
+  expiresAt: string;
+};
+
 type DashboardState = {
   courses: AcademyCourseItem[];
   collaborations: CollaborationItem[];
   workspaces: WorkspaceItem[];
+  invitations: PendingInvitation[];
   hasInfrastructureDesign: boolean;
   learningPath: LearningPathState | null;
 };
@@ -85,22 +96,25 @@ export default function ManageResourcesPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [academyResponse, collaborationResponse, workspaceResponse, designResponse, learningResponse] = await Promise.all([
+      const [academyResponse, collaborationResponse, workspaceResponse, invitationResponse, designResponse, learningResponse] = await Promise.all([
         fetch('/api/academy/history?limit=50', { cache: 'no-store' }),
         fetch('/api/collaborations', { cache: 'no-store' }),
         fetch('/api/live-workspaces', { cache: 'no-store' }),
+        fetch('/api/collaborations/invitations', { cache: 'no-store' }),
         fetch('/api/labs/infrastructure-design', { cache: 'no-store' }),
         fetch('/api/learning/program-process', { cache: 'no-store' }),
       ]);
       if (!academyResponse.ok) throw new Error(await responseError(academyResponse, 'Could not load Academy courses'));
       if (!collaborationResponse.ok) throw new Error(await responseError(collaborationResponse, 'Could not load collaborations'));
       if (!workspaceResponse.ok) throw new Error(await responseError(workspaceResponse, 'Could not load Live Workspaces'));
+      if (!invitationResponse.ok) throw new Error(await responseError(invitationResponse, 'Could not load invitations'));
       if (!designResponse.ok) throw new Error(await responseError(designResponse, 'Could not load infrastructure design'));
       if (!learningResponse.ok) throw new Error(await responseError(learningResponse, 'Could not load learning journey'));
 
       const academy = await academyResponse.json() as { courses: AcademyCourseItem[] };
       const collaborations = await collaborationResponse.json() as { collaborations: CollaborationItem[] };
       const workspaces = await workspaceResponse.json() as { workspaces: WorkspaceItem[] };
+      const invitations = await invitationResponse.json() as { invitations: PendingInvitation[] };
       const design = await designResponse.json() as { design: unknown | null };
       const learning = await learningResponse.json() as { state: LearningPathState };
 
@@ -108,6 +122,7 @@ export default function ManageResourcesPage() {
         courses: academy.courses || [],
         collaborations: (collaborations.collaborations || []).filter((item) => item.isOwner && item.collaborationType !== 'live-workspace'),
         workspaces: (workspaces.workspaces || []).filter((item) => item.isOwner),
+        invitations: invitations.invitations || [],
         hasInfrastructureDesign: Boolean(design.design),
         learningPath: learning.state || null,
       });
@@ -184,6 +199,11 @@ export default function ManageResourcesPage() {
   async function deleteCollaboration(item: CollaborationItem) {
     if (!window.confirm(`Permanently delete “${item.name}” and its collaboration history?`)) return;
     await mutate(`collaboration:${item.id}`, `/api/collaborations/${item.id}`, 'DELETE');
+  }
+
+  async function revokeInvitation(invitation: PendingInvitation) {
+    if (!window.confirm(`Revoke the invitation for ${invitation.email} to “${invitation.collaborationName}”?`)) return;
+    await mutate(`invitation:${invitation.id}`, `/api/collaborations/invitations?invitationId=${encodeURIComponent(invitation.id)}`, 'DELETE');
   }
 
   async function endWorkspace(item: WorkspaceItem) {
@@ -283,6 +303,25 @@ export default function ManageResourcesPage() {
                 <Button size="sm" variant="outline" disabled={busy === `collaboration:${item.id}`} onClick={() => void renameCollaboration(item)}><Pencil className="h-4 w-4" /> Rename</Button>
                 <Button size="sm" variant="destructive" disabled={busy === `collaboration:${item.id}`} onClick={() => void deleteCollaboration(item)}><Trash2 className="h-4 w-4" /> Delete</Button>
               </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><MailX className="h-5 w-5" /> Pending collaboration invitations</CardTitle>
+          <CardDescription>Revoke invitations that should no longer be able to grant future access.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!state?.invitations.length && <p className="text-sm text-muted-foreground">No pending external invitations.</p>}
+          {state?.invitations.map((invitation) => (
+            <div key={invitation.id} className="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold">{invitation.email}</p>
+                <p className="text-xs text-muted-foreground">{invitation.collaborationName} · delivery {invitation.deliveryStatus} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</p>
+              </div>
+              <Button size="sm" variant="destructive" disabled={busy === `invitation:${invitation.id}`} onClick={() => void revokeInvitation(invitation)}><MailX className="h-4 w-4" /> Revoke</Button>
             </div>
           ))}
         </CardContent>
