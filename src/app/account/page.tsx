@@ -7,8 +7,11 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  ShieldCheck,
+  UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +37,11 @@ const UI_PREFERENCE_KEYS = [
   'oxsig:cyber-lab-layout-hint:v1',
   'oxsig:cyber-lab-workspace-mode:v1',
 ];
+
+function initials(value?: string) {
+  const parts = (value || 'O').trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'O';
+}
 
 export default function AccountPage() {
   const { isAuthenticated, isLoading: authLoading, profileError, refresh } = useAuth();
@@ -147,6 +155,24 @@ export default function AccountPage() {
           Profile is syncing.
         </div>
       )}
+
+      {profile && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card/70 p-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border bg-primary/5 text-sm font-semibold text-primary">
+            {profile.avatarUrl ? <UserRound className="h-5 w-5" /> : initials(profile.displayName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-semibold">{profile.displayName}</span>
+              <Badge variant="secondary" className="h-5 text-[10px] capitalize">{profile.role || 'member'}</Badge>
+              <Badge variant="outline" className="h-5 gap-1 text-[10px]"><ShieldCheck className="h-3 w-3" />{profile.bio?.trim() ? 'Profile ready' : 'Add bio'}</Badge>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{profile.bio?.trim() || 'Add a short technical bio so collaborators know your focus.'}</p>
+          </div>
+        </div>
+      )}
+
+      {progress && <ProgressBadgeRail progress={progress} />}
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
