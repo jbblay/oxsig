@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   BookOpen,
   Box,
+  Crosshair,
   Home,
   LibraryBig,
   LogOut,
@@ -17,6 +18,7 @@ import {
   RadioTower,
   Settings2,
   Sun,
+  Swords,
   X,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -38,6 +40,8 @@ const groups = [
   {
     label: 'Practice',
     items: [
+      { href: '/operations', label: 'Operations', icon: Crosshair },
+      { href: '/warroom', label: 'WarRoom', icon: Swords },
       { href: '/labs', label: 'Cyber Lab', icon: Box },
       { href: '/vault', label: 'Vault', icon: LibraryBig },
     ],
@@ -53,6 +57,13 @@ function isItemActive(pathname: string, href: string) {
   if (href === '/home') return pathname === '/home';
   if (href === '/collab') return pathname === '/collab';
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function workspaceColor(href: string) {
+  if (href === '/collab/storyboards') return 'boards';
+  if (href === '/operations') return 'labs';
+  if (href === '/warroom') return 'live';
+  return href.slice(1);
 }
 
 function SidebarContent({
@@ -109,7 +120,7 @@ function SidebarContent({
                       onClick={onNavigate}
                       title={compact ? item.label : undefined}
                       aria-current={active ? 'page' : undefined}
-                      data-workspace-color={item.href === '/collab/storyboards' ? 'boards' : item.href.slice(1)}
+                      data-workspace-color={workspaceColor(item.href)}
                       className={cn(
                         'oxsig-nav-item group relative flex min-h-9 items-center text-[13px] font-medium transition-colors duration-150',
                         compact ? 'justify-center px-1' : 'gap-2 px-2',
@@ -137,8 +148,8 @@ function SidebarContent({
           title={compact ? 'Account' : undefined}
           className={cn('flex min-h-9 items-center rounded-md transition hover:bg-sidebar-accent/70', compact ? 'justify-center px-1' : 'gap-2 px-2')}
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
-            {initials(user?.displayName || user?.email)}
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
+            {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(user?.displayName || user?.email)}
           </div>
           {!compact && <span className="min-w-0 flex-1 truncate text-xs font-medium">{user?.displayName || 'Account'}</span>}
         </Link>
