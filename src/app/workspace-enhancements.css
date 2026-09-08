@@ -1,0 +1,132 @@
+.oxsig-workspace-rail {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: .5rem;
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border) / .8);
+  border-radius: .6rem;
+  background: hsl(var(--card) / .72);
+  padding: .25rem .4rem;
+  scrollbar-width: none;
+  backdrop-filter: blur(14px);
+}
+
+.oxsig-workspace-rail::-webkit-scrollbar { display: none; }
+
+.oxsig-rail-title,
+.oxsig-rail-actions,
+.oxsig-rail-badges {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: .3rem;
+}
+
+.oxsig-rail-title {
+  padding: 0 .45rem;
+  font-size: .72rem;
+  font-weight: 650;
+}
+
+.oxsig-rail-badges { margin-left: auto; }
+
+.oxsig-rail-badges > span {
+  display: inline-flex;
+  height: 1.7rem;
+  align-items: center;
+  gap: .3rem;
+  border: 1px solid hsl(var(--border) / .7);
+  border-radius: .45rem;
+  background: hsl(var(--background) / .7);
+  padding: 0 .45rem;
+  font-size: .64rem;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.oxsig-badge-rail {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  overflow-x: auto;
+  padding-bottom: .1rem;
+  scrollbar-width: none;
+}
+
+.oxsig-badge-rail::-webkit-scrollbar { display: none; }
+
+.oxsig-achievement-chip {
+  display: inline-flex;
+  height: 1.85rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: .3rem;
+  border: 1px solid hsl(var(--border) / .75);
+  border-radius: .5rem;
+  background: hsl(var(--card) / .72);
+  padding: 0 .5rem;
+  font-size: .66rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.oxsig-achievement-chip strong { color: hsl(var(--foreground)); }
+.oxsig-achievement-chip[data-tone="level"] { border-color: rgb(34 211 238 / .28); background: rgb(34 211 238 / .06); }
+.oxsig-achievement-chip[data-tone="xp"] { border-color: rgb(168 85 247 / .25); background: rgb(168 85 247 / .06); }
+.oxsig-achievement-chip[data-tone="streak"] { border-color: rgb(249 115 22 / .25); background: rgb(249 115 22 / .06); }
+.oxsig-achievement-chip[data-tone="earned"] { border-color: rgb(16 185 129 / .24); background: rgb(16 185 129 / .06); }
+
+.oxsig-terminal-strip {
+  display: flex;
+  min-height: 2.8rem;
+  align-items: center;
+  gap: .65rem;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border) / .85);
+  border-radius: .6rem;
+  background: linear-gradient(90deg, rgb(3 7 18 / .94), rgb(15 23 42 / .92));
+  padding: .42rem .65rem;
+  color: rgb(226 232 240);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .035);
+}
+
+.oxsig-terminal-icon {
+  display: grid;
+  height: 1.9rem;
+  width: 1.9rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: .45rem;
+  background: rgb(34 211 238 / .1);
+  color: rgb(103 232 249);
+}
+
+.oxsig-terminal-strip .text-muted-foreground { color: rgb(148 163 184); }
+.oxsig-terminal-strip .text-primary { color: rgb(103 232 249); }
+
+@keyframes oxsig-terminal-blink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: .16; }
+}
+
+.oxsig-terminal-cursor { animation: oxsig-terminal-blink 900ms steps(1, end) infinite; color: rgb(103 232 249); }
+
+main[data-oxsig-workspace="live"] .rounded-xl,
+main[data-oxsig-workspace="vault"] .rounded-xl,
+main[data-oxsig-workspace="collab"] .rounded-xl,
+main[data-oxsig-workspace="boards"] .rounded-xl { border-radius: .65rem; }
+
+main[data-oxsig-workspace="collab"] .rounded-2xl { border-radius: .7rem; }
+main[data-oxsig-workspace="live"] .shadow-xl,
+main[data-oxsig-workspace="collab"] .shadow-xl { box-shadow: 0 16px 45px rgb(2 6 23 / .18); }
+
+@media (max-width: 720px) {
+  .oxsig-workspace-rail { gap: .2rem; padding-inline: .25rem; }
+  .oxsig-rail-title { position: sticky; left: 0; z-index: 1; background: hsl(var(--card) / .96); }
+  .oxsig-rail-badges { margin-left: .15rem; }
+  .oxsig-terminal-strip { padding-inline: .5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxsig-terminal-cursor { animation: none; }
+}
