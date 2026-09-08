@@ -1,8 +1,10 @@
 import 'server-only';
 
 import { Rest } from 'ably';
+import { collaborationChannelName, liveTerminalChannelName } from '@/lib/realtime/channel-names';
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
+const TERMINAL_TOKEN_TTL_MS = 5 * 60 * 1000;
 let restClient: Rest | null = null;
 
 function apiKey() {
@@ -11,10 +13,6 @@ function apiKey() {
 
 export function realtimeProviderConfigured() {
   return Boolean(apiKey());
-}
-
-export function collaborationChannelName(collaborationId: string) {
-  return `oxsig:collaboration:${collaborationId}`;
 }
 
 function getRestClient() {
@@ -37,6 +35,33 @@ export async function issueCollaborationRealtimeToken(args: {
     ttl: TOKEN_TTL_MS,
     capability: {
       [channelName]: ['subscribe', 'presence'],
+    },
+  });
+}
+
+export async function issueLiveTerminalRealtimeToken(args: {
+  collaborationId: string;
+  bindingId: string;
+  leaseId: string;
+  clientId: string;
+  mode: 'publish' | 'subscribe';
+  leaseExpiresAt: string | Date;
+}) {
+  const client = getRestClient();
+  if (!client) return null;
+
+  const expiresAt = new Date(args.leaseExpiresAt).getTime();
+  const remaining = expiresAt - Date.now();
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    throw new Error('The terminal control lease has expired.');
+  }
+
+  const channelName = liveTerminalChannelName(args.collaborationId, args.bindingId, args.leaseId);
+  return client.auth.requestToken({
+    clientId: args.clientId,
+    ttl: Math.max(1_000, Math.min(TERMINAL_TOKEN_TTL_MS, remaining)),
+    capability: {
+      [channelName]: [args.mode],
     },
   });
 }
