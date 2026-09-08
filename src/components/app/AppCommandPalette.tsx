@@ -6,6 +6,7 @@ import {
   BookOpen,
   Box,
   Command,
+  Crosshair,
   Home,
   LibraryBig,
   MessageCircle,
@@ -15,6 +16,7 @@ import {
   Search,
   Settings2,
   Sparkles,
+  Swords,
   UserRound,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -27,6 +29,8 @@ import {
 
 const destinations = [
   { href: '/home', label: 'Dashboard', hint: 'Open workspace dashboard', icon: Home, color: 'home' },
+  { href: '/operations', label: 'Operations', hint: 'Preconfigured technical scenarios', icon: Crosshair, color: 'labs' },
+  { href: '/warroom', label: 'WarRoom', hint: '2–4 player team lab', icon: Swords, color: 'live' },
   { href: '/labs', label: 'Cyber Lab', hint: 'Build, run and review', icon: Box, color: 'labs' },
   { href: '/collab', label: 'Collaboration', hint: 'Messages and people', icon: MessageCircle, color: 'collab' },
   { href: '/live', label: 'Live Workspace', hint: 'Shared technical session', icon: RadioTower, color: 'live' },
@@ -91,6 +95,26 @@ export default function AppCommandPalette({
       type: 'action',
       run: openAi,
       keywords: 'ask ai helper explain diagnose fix summarize',
+    },
+    {
+      id: 'action-operation',
+      label: 'Start an Operation',
+      hint: 'Choose a preconfigured scenario and mode',
+      icon: Crosshair,
+      color: 'labs',
+      type: 'action',
+      run: () => navigate('/operations', 'Opened Operations from command palette', 'labs'),
+      keywords: 'operation scenario active directory linux pentest forensics cloud challenge walkthrough',
+    },
+    {
+      id: 'action-warroom',
+      label: 'Open WarRoom',
+      hint: 'Start a 2–4 player team lab',
+      icon: Swords,
+      color: 'live',
+      type: 'action',
+      run: () => navigate('/warroom', 'Opened WarRoom from command palette', 'live'),
+      keywords: 'warroom team multiplayer shared terminal challenge',
     },
     {
       id: 'action-lab',
