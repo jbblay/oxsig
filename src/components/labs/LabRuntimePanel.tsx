@@ -42,18 +42,19 @@ import { toast } from "sonner";
 import InteractiveSsmDesktop from "@/components/labs/InteractiveSsmDesktop";
 import InteractiveSsmTerminal from "@/components/labs/InteractiveSsmTerminal";
 import LabMachineNode, { LabOsIcon, type LabMachineFlowNode, type LabMachineNodeData } from "@/components/labs/LabMachineNode";
+import { useLabTopologyDurableState } from "@/components/labs/LabTopologyDurableStateProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLabsSnapshot, invalidateLabsSnapshot } from "@/lib/labs/client";
 import { applyOptimisticLabLifecycle, replaceLabInstance, type LabLifecycleAction } from "@/lib/labs/optimistic-lifecycle";
+import type { LabTopology } from "@/lib/labs/topology-schema";
 import type {
   LabAccessMode,
   LabInstanceStatus,
   LearnerLabDefinition,
   LearnerLabRuntimeCapabilities,
 } from "@/lib/labs/types";
-import { notifyLocalStorageChange } from "@/lib/persistence/storage-change-observer";
 import { getCsrfToken } from "@/lib/security/csrf-client";
 
 type Instance = {
@@ -83,10 +84,6 @@ type TerminalDiagnostics = {
 
 type TerminalFailure = { error: string; code?: string; stage?: string };
 type DockTab = "desktop" | "terminal" | "events" | "network" | "diagnostics";
-type PersistedTopology = {
-  nodes: Array<Pick<LabMachineFlowNode, "id" | "position" | "type"> & { data: Pick<LabMachineNodeData, "slug" | "label"> }>;
-  edges: Edge[];
-};
 
 type LayoutState = {
   machinesOpen: boolean;
@@ -97,11 +94,11 @@ type LayoutState = {
 
 const TRANSITIONAL: LabInstanceStatus[] = ["created", "provisioning", "stopping", "destroying", "resetting"];
 const NODE_TYPES = { machine: LabMachineNode };
-const TOPOLOGY_KEY = "oxsig:cyber-lab-topology:v1";
 const RUNTIME_NODE_KEY = "oxsig:cyber-lab-runtime-node:v1";
 const LAYOUT_KEY = "oxsig:cyber-lab-layout:v1";
 const LAYOUT_HINT_KEY = "oxsig:cyber-lab-layout-hint:v1";
 const ACTION_BUTTON = "h-10 w-full justify-start";
+const TOPOLOGY_SAVE_DEBOUNCE_MS = 400;
 
 async function responseError(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
@@ -154,7 +151,28 @@ function uniqueNodeId() {
   return `machine-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function topologyPayload(nodes: LabMachineFlowNode[], edges: Edge[]): LabTopology {
+  return {
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      type: "machine" as const,
+      position: node.position,
+      data: { slug: node.data.slug, label: node.data.label },
+    })),
+    edges: edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      ...(edge.sourceHandle !== undefined ? { sourceHandle: edge.sourceHandle } : {}),
+      ...(edge.targetHandle !== undefined ? { targetHandle: edge.targetHandle } : {}),
+      ...(edge.type !== undefined ? { type: edge.type } : {}),
+      ...(edge.animated !== undefined ? { animated: Boolean(edge.animated) } : {}),
+    })),
+  };
+}
+
 export default function LabRuntimePanel({ embedded = false }: { embedded?: boolean }) {
+  const { initialTopology, saveTopology } = useLabTopologyDurableState();
   const [catalog, setCatalog] = React.useState<LearnerLabDefinition[]>([]);
   const [capabilities, setCapabilities] = React.useState<LearnerLabRuntimeCapabilities | null>(null);
   const [instances, setInstances] = React.useState<Instance[]>([]);
@@ -166,6 +184,8 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [flow, setFlow] = React.useState<ReactFlowInstance<LabMachineFlowNode, Edge> | null>(null);
   const [topologyReady, setTopologyReady] = React.useState(false);
+  const topologyLastSavedRef = React.useRef<string | null>(null);
+  const topologySaveChainRef = React.useRef<Promise<void>>(Promise.resolve());
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [liveNodeId, setLiveNodeId] = React.useState<string | null>(null);
   const [selectedAccessMode, setSelectedAccessMode] = React.useState<LabAccessMode>("terminal");
@@ -306,22 +326,22 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   }, [terminalId, refreshTerminal]);
 
   React.useEffect(() => {
-    if (topologyReady || catalog.length === 0 || typeof window === "undefined") return;
+    if (topologyReady || catalog.length === 0) return;
     let restoredNodes: LabMachineFlowNode[] = [];
     let restoredEdges: Edge[] = [];
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(TOPOLOGY_KEY) || "null") as PersistedTopology | null;
-      if (saved?.nodes?.length) {
-        restoredNodes = saved.nodes.flatMap((savedNode) => {
-          const lab = catalog.find((item) => item.slug === savedNode.data.slug);
-          if (!lab) return [];
-          return [{ id: savedNode.id, type: "machine", position: savedNode.position, data: nodeData(lab, savedNode.data.label || lab.shortName) } satisfies LabMachineFlowNode];
-        });
-        const ids = new Set(restoredNodes.map((node) => node.id));
-        restoredEdges = (saved.edges || []).filter((edge) => ids.has(edge.source) && ids.has(edge.target));
-      }
-    } catch {
-      window.localStorage.removeItem(TOPOLOGY_KEY);
+    const saved = initialTopology;
+    topologyLastSavedRef.current = JSON.stringify(saved);
+
+    if (saved.nodes.length) {
+      restoredNodes = saved.nodes.flatMap((savedNode) => {
+        const lab = catalog.find((item) => item.slug === savedNode.data.slug);
+        if (!lab) return [];
+        return [{ id: savedNode.id, type: "machine", position: savedNode.position, data: nodeData(lab, savedNode.data.label || lab.shortName) } satisfies LabMachineFlowNode];
+      });
+      const ids = new Set(restoredNodes.map((node) => node.id));
+      restoredEdges = saved.edges
+        .filter((edge) => ids.has(edge.source) && ids.has(edge.target))
+        .map((edge) => ({ ...edge } as Edge));
     }
 
     if (instance && !restoredNodes.some((node) => node.data.slug === instance.slug)) {
@@ -337,17 +357,30 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     setNodes(restoredNodes);
     setEdges(restoredEdges);
     setTopologyReady(true);
-  }, [catalog, instance, setEdges, setNodes, topologyReady]);
+  }, [catalog, initialTopology, instance, setEdges, setNodes, topologyReady]);
 
   React.useEffect(() => {
-    if (!topologyReady || typeof window === "undefined") return;
-    const payload: PersistedTopology = {
-      nodes: nodes.map((node) => ({ id: node.id, type: "machine", position: node.position, data: { slug: node.data.slug, label: node.data.label } })),
-      edges,
-    };
-    window.localStorage.setItem(TOPOLOGY_KEY, JSON.stringify(payload));
-    notifyLocalStorageChange(TOPOLOGY_KEY);
-  }, [edges, nodes, topologyReady]);
+    if (!topologyReady) return;
+    const payload = topologyPayload(nodes, edges);
+    const serialized = JSON.stringify(payload);
+    if (serialized === topologyLastSavedRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      topologySaveChainRef.current = topologySaveChainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (serialized === topologyLastSavedRef.current) return;
+          try {
+            const saved = await saveTopology(payload);
+            topologyLastSavedRef.current = JSON.stringify(saved);
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Cyber Lab topology could not be saved");
+          }
+        });
+    }, TOPOLOGY_SAVE_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [edges, nodes, saveTopology, topologyReady]);
 
   React.useEffect(() => {
     if (!topologyReady || catalog.length === 0) return;
