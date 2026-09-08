@@ -114,13 +114,17 @@ export async function activateAcademyCourse(ownerId: string, courseId: string): 
 
     if (target.rows[0].source_prompt === PROGRAM_PROCESS_SOURCE_PROMPT) {
       await client.query(
-        `UPDATE learning_path_enrollments
-            SET status='active',
-                active_capability_id=COALESCE(active_capability_id, $4),
-                completed_at=NULL,
-                last_activity_at=NOW(),
-                updated_at=NOW()
-          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3`,
+        `INSERT INTO learning_path_enrollments (
+           owner_id, path_id, path_version, status, active_capability_id,
+           last_activity_at, updated_at
+         ) VALUES ($1,$2,$3,'active',$4,NOW(),NOW())
+         ON CONFLICT (owner_id, path_id, path_version)
+         DO UPDATE SET
+           status='active',
+           active_capability_id=COALESCE(learning_path_enrollments.active_capability_id, EXCLUDED.active_capability_id),
+           completed_at=NULL,
+           last_activity_at=NOW(),
+           updated_at=NOW()`,
         [
           ownerId,
           PROGRAM_PROCESS_PATH_ID,
