@@ -24,6 +24,13 @@ type StoredPracticeResult = {
     stdout: string;
     stderr: string;
     exitCode: number;
+    risk?: 'read-only' | 'changes-system';
+    executionId?: string;
+    evidenceId?: string;
+    provenance?: 'browser-observed' | 'server-executed' | 'provider-attested' | 'learner-provided';
+    executionReceiptId?: string;
+    terminalSessionId?: string;
+    surface?: 'academy';
   };
   evaluation: AcademyPracticeEvaluation;
   createdAt: string;
@@ -66,6 +73,36 @@ type ContextValue = {
 };
 
 const AcademyDurableStateContext = React.createContext<ContextValue | null>(null);
+
+function normalizeEvidenceBindings(state: AcademyDurableState): AcademyDurableState {
+  if (!state) return null;
+  return {
+    ...state,
+    practiceResults: Object.fromEntries(
+      Object.entries(state.practiceResults || {}).map(([lessonId, result]) => {
+        const binding = result.evaluation?.evidenceBinding;
+        return [
+          lessonId,
+          {
+            ...result,
+            execution: binding
+              ? {
+                  ...result.execution,
+                  risk: binding.risk,
+                  executionId: binding.executionId,
+                  evidenceId: binding.evidenceId,
+                  provenance: binding.provenance,
+                  executionReceiptId: binding.executionReceiptId,
+                  terminalSessionId: binding.terminalSessionId,
+                  surface: 'academy' as const,
+                }
+              : result.execution,
+          },
+        ];
+      })
+    ),
+  };
+}
 
 function clearLegacyState() {
   try {
@@ -114,7 +151,7 @@ export default function AcademyDurableStateProvider({
   initialState: AcademyDurableState;
   children: React.ReactNode;
 }) {
-  const [state, setState] = React.useState<AcademyDurableState>(initialState);
+  const [state, setState] = React.useState<AcademyDurableState>(() => normalizeEvidenceBindings(initialState));
   const [ready, setReady] = React.useState(false);
   const [migrationError, setMigrationError] = React.useState(false);
 
@@ -122,8 +159,9 @@ export default function AcademyDurableStateProvider({
     const response = await fetch('/api/academy/state', { cache: 'no-store' });
     if (!response.ok) throw new Error(await responseError(response, 'Academy state could not be loaded'));
     const body = await response.json() as { state: AcademyDurableState };
-    setState(body.state);
-    return body.state;
+    const normalized = normalizeEvidenceBindings(body.state);
+    setState(normalized);
+    return normalized;
   }, []);
 
   React.useEffect(() => {
@@ -158,7 +196,7 @@ export default function AcademyDurableStateProvider({
         }
         const body = await response.json() as { state: AcademyDurableState };
         if (!cancelled) {
-          setState(body.state);
+          setState(normalizeEvidenceBindings(body.state));
           setMigrationError(false);
         }
         clearLegacyState();
