@@ -6,7 +6,6 @@ import {
   ArrowRight,
   BookOpen,
   Box,
-  Boxes,
   Crosshair,
   LibraryBig,
   LogIn,
