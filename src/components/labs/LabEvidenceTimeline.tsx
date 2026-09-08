@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { CheckCircle2, Clipboard, Download, FileText, History, LibraryBig } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,7 +39,6 @@ function buildReport(items: WorkspaceActivity[]) {
 }
 
 export default function LabEvidenceTimeline() {
-  const router = useRouter();
   const [items, setItems] = React.useState<WorkspaceActivity[]>([]);
   const refresh = React.useCallback(() => {
     setItems(getWorkspaceActivity().filter((item) => item.color === 'labs' || item.kind === 'action').slice(0, 10));
@@ -90,8 +89,8 @@ export default function LabEvidenceTimeline() {
         <Button size="sm" variant="outline" className="h-8 px-2 text-xs" onClick={downloadReport}>
           <Download className="h-3.5 w-3.5" /> Generate report
         </Button>
-        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => router.push('/vault')}>
-          <LibraryBig className="h-3.5 w-3.5" /> Vault
+        <Button asChild size="sm" variant="ghost" className="h-8 px-2 text-xs">
+          <Link href="/vault"><LibraryBig className="h-3.5 w-3.5" /> Vault</Link>
         </Button>
       </div>
 
