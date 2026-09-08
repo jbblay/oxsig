@@ -9,10 +9,22 @@ import AppSidebar from './AppSidebar';
 
 const SIDEBAR_KEY = 'oxsig:app-sidebar:v1';
 
+type WorkspaceKind = 'labs' | 'collab' | 'boards' | 'live' | 'vault';
+
+function workspaceKindFor(pathname: string): WorkspaceKind | null {
+  if (pathname.startsWith('/labs')) return 'labs';
+  if (pathname.startsWith('/collab/storyboards')) return 'boards';
+  if (pathname.startsWith('/collab')) return 'collab';
+  if (pathname.startsWith('/live')) return 'live';
+  if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'vault';
+  return null;
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const bare = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up');
-  const immersiveWorkspace = pathname.startsWith('/labs');
+  const workspaceKind = workspaceKindFor(pathname);
+  const immersiveWorkspace = workspaceKind === 'labs';
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [immersiveExpanded, setImmersiveExpanded] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
@@ -56,6 +68,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (bare) return <>{children}</>;
 
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
+  const workspaceMain = workspaceKind !== null;
 
   return (
     <div className="oxsig-app-background min-h-screen">
@@ -71,7 +84,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div className="min-w-0 flex-1">
           <AppHeader onOpenMobileNav={() => setMobileNavOpen(true)} />
-          <main className="mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8">{children}</main>
+          <main
+            data-oxsig-workspace={workspaceKind || undefined}
+            className={workspaceMain
+              ? 'w-full min-w-0 px-2 py-2 sm:px-3 sm:py-3'
+              : 'mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
+          >
+            {children}
+          </main>
         </div>
       </div>
       {immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />}
