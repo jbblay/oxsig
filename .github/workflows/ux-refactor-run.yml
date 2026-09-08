@@ -1,0 +1,41 @@
+name: Run action-first refactor
+
+on:
+  push:
+    branches:
+      - feature/action-first-responsive-ai-helper-v1
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/action-first-responsive-ai-helper-v1
+          fetch-depth: 0
+      - name: Apply codemod
+        shell: bash
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[ux-codemod\]'; then
+            echo "Refactor commit already applied"
+            exit 0
+          fi
+          sed -n "/python3 <<'PY'/,/^          PY$/p" .github/workflows/ux-refactor-once.yml | tail -n +2 | head -n -1 | sed 's/^          //' > /tmp/ux-refactor.py
+          test -s /tmp/ux-refactor.py
+          python3 /tmp/ux-refactor.py
+          git diff --check
+      - name: Commit refactor
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/vault/page.tsx src/components/collab/CollaborationWorkspace.tsx src/app/live/page.tsx src/app/collab/storyboards/page.tsx src/components/labs/InfrastructureDesigner.tsx src/components/labs/DeploymentPlanner.tsx src/components/labs/DeploymentEvidenceReview.tsx src/components/labs/RuntimeReadinessReview.tsx src/components/labs/GuestServiceReadinessReview.tsx src/components/labs/AccessPathReadinessReview.tsx
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "refactor: make workspaces action-first [ux-codemod]"
+          git push origin HEAD:feature/action-first-responsive-ai-helper-v1
