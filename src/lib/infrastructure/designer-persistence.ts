@@ -2,6 +2,7 @@ import 'server-only';
 
 import { getPool } from '@/lib/db/pool';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
+import { detachOwnerResourceFromLiveWorkspaces } from '@/lib/live-workspace/resource-lifecycle';
 import { infrastructureDesignSchema, type InfrastructureDesign } from './designer-schema';
 
 export type PersistedInfrastructureDesign = {
@@ -45,10 +46,22 @@ export async function saveInfrastructureDesign(ownerId: string, design: Infrastr
 }
 
 export async function deleteInfrastructureDesign(ownerId: string): Promise<boolean> {
-  const result = await getPool().query(
-    `DELETE FROM infrastructure_designs
-      WHERE owner_id = $1`,
-    [ownerId]
-  );
-  return (result.rowCount || 0) > 0;
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await detachOwnerResourceFromLiveWorkspaces(client, ownerId, 'infrastructure-design', ownerId);
+    const result = await client.query(
+      `DELETE FROM infrastructure_designs
+        WHERE owner_id = $1`,
+      [ownerId]
+    );
+    await client.query('COMMIT');
+    return (result.rowCount || 0) > 0;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
