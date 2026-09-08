@@ -6,10 +6,9 @@ import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
+import WorkspaceEnhancements, { type WorkspaceKind } from './WorkspaceEnhancements';
 
 const SIDEBAR_KEY = 'oxsig:app-sidebar:v1';
-
-type WorkspaceKind = 'labs' | 'collab' | 'boards' | 'live' | 'vault';
 
 function workspaceKindFor(pathname: string): WorkspaceKind | null {
   if (pathname.startsWith('/labs')) return 'labs';
@@ -90,6 +89,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ? 'w-full min-w-0 px-2 py-2 sm:px-3 sm:py-3'
               : 'mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
+            {workspaceKind && <WorkspaceEnhancements kind={workspaceKind} />}
             {children}
           </main>
         </div>
