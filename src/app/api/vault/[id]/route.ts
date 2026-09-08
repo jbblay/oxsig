@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { sanitizePostgresText, stringifyPostgresJson } from '@/lib/db/postgres-safe';
+import { detachOwnerResourceFromLiveWorkspaces } from '@/lib/live-workspace/resource-lifecycle';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { mapVaultRow, normalizeVaultTags, vaultUpdateSchema } from '@/lib/vault/server';
@@ -104,11 +105,26 @@ export async function DELETE(request: NextRequest, context: Context) {
     if (rateLimit) return rateLimit;
 
     const { id } = await context.params;
-    const result = await getPool().query(
-      `DELETE FROM vault_items WHERE id = $1 AND owner_id = $2 RETURNING id`,
-      [id, user.id]
-    );
-    if (!result.rows[0]) return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
-    return NextResponse.json({ deleted: true });
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await detachOwnerResourceFromLiveWorkspaces(client, user.id, 'vault-item', id);
+      const result = await client.query(
+        `DELETE FROM vault_items WHERE id = $1 AND owner_id = $2 RETURNING id`,
+        [id, user.id]
+      );
+      if (!result.rows[0]) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
+      }
+      await client.query('COMMIT');
+      return NextResponse.json({ deleted: true });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 }
