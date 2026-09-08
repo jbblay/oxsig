@@ -191,24 +191,38 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { id } = await params;
     if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'Invalid Live Workspace' }, { status: 400 });
 
-    const result = await getPool().query(
+    const pool = getPool();
+    const owned = await pool.query(
+      `SELECT id
+         FROM collaborations
+        WHERE id = $1 AND owner_id = $2 AND collaboration_type = 'live-workspace'
+        LIMIT 1`,
+      [id, user.id]
+    );
+    if (!owned.rows[0]) {
+      return NextResponse.json({ error: 'Live Workspace not found or owner access required' }, { status: 404 });
+    }
+
+    try {
+      await deleteCollaborationObjects(id);
+    } catch (error) {
+      console.warn('Live Workspace attachment cleanup failed; database deletion was not attempted:', error);
+      return NextResponse.json(
+        { error: 'Could not delete Live Workspace attachments. Nothing was deleted.' },
+        { status: 503 }
+      );
+    }
+
+    const result = await pool.query(
       `DELETE FROM collaborations
         WHERE id = $1 AND owner_id = $2 AND collaboration_type = 'live-workspace'
         RETURNING id`,
       [id, user.id]
     );
     if (!result.rows[0]) {
-      return NextResponse.json({ error: 'Live Workspace not found or owner access required' }, { status: 404 });
+      return NextResponse.json({ error: 'Live Workspace changed before deletion; try again' }, { status: 409 });
     }
 
-    let storageCleanupPending = false;
-    try {
-      await deleteCollaborationObjects(id);
-    } catch (error) {
-      storageCleanupPending = true;
-      console.warn('Live Workspace deleted but attachment cleanup is pending:', error);
-    }
-
-    return NextResponse.json({ deleted: true, storageCleanupPending });
+    return NextResponse.json({ deleted: true });
   });
 }
