@@ -7,6 +7,7 @@ import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
 import GuestServiceReadinessReview from '@/components/labs/GuestServiceReadinessReview';
 import InfrastructureDesigner from '@/components/labs/InfrastructureDesigner';
+import LabEvidenceTimeline from '@/components/labs/LabEvidenceTimeline';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
@@ -136,6 +137,7 @@ export default function CyberLabWorkspace() {
       {evidenceMounted && (
         <div id="cyber-lab-evidence" role="tabpanel" aria-labelledby="cyber-lab-tab-evidence" className={mode === 'evidence' ? 'block' : 'hidden'} aria-hidden={mode !== 'evidence'}>
           <DeploymentEvidenceReview />
+          <LabEvidenceTimeline />
         </div>
       )}
 
@@ -159,4 +161,3 @@ export default function CyberLabWorkspace() {
     </>
   );
 }
-
