@@ -70,6 +70,42 @@
     hsl(var(--background));
 }
 
+.oxsig-walkthrough {
+  max-height: calc(100dvh - 1rem);
+}
+
+.oxsig-walkthrough > button {
+  top: 0.35rem;
+  right: 0.35rem;
+  min-width: 2rem;
+  min-height: 2rem;
+}
+
+.oxsig-tour-map {
+  padding: 0.6rem 0.75rem;
+}
+
+.oxsig-tour-map ol {
+  gap: 0.25rem;
+}
+
+.oxsig-tour-stop {
+  gap: 0.25rem;
+  padding: 0.35rem 0.15rem;
+  border-radius: 0.45rem;
+  font-size: 0.65rem;
+}
+
+.oxsig-tour-stop .oxsig-workspace-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.45rem;
+}
+
+.oxsig-tour-step {
+  min-height: 12rem;
+}
+
 @media (hover: hover) {
   .oxsig-action-button:hover,
   .oxsig-flow-button:hover,
@@ -86,6 +122,12 @@
 
 @media (max-width: 900px) {
   .oxsig-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .oxsig-tour-map ol { grid-template-columns: repeat(6, minmax(2.2rem, 1fr)); overflow-x: auto; }
+  .oxsig-tour-stop span:last-child { display: none; }
+  .oxsig-tour-step { min-height: 0; }
 }
 
 @media (max-width: 520px) {
