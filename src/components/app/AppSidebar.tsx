@@ -73,37 +73,32 @@ function SidebarContent({
 
   return (
     <div className="oxsig-navigation flex h-full min-h-0 w-full flex-col">
-      <div className={cn('flex h-16 items-center border-b border-sidebar-border/70', compact ? 'justify-center px-2' : 'justify-between px-4')}>
-        <Link href="/home" onClick={onNavigate} className={cn('flex min-w-0 items-center gap-3', compact && 'justify-center')}>
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/10">
-            <Network className="h-5 w-5" />
+      <div className={cn('flex h-14 items-center border-b border-sidebar-border/70', compact ? 'justify-center px-2' : 'justify-between px-3')}>
+        <Link href="/home" onClick={onNavigate} className={cn('flex min-w-0 items-center gap-2.5', compact && 'justify-center')}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/10">
+            <Network className="h-4 w-4" />
           </div>
-          {!compact && (
-            <div className="min-w-0">
-              <p className="truncate text-lg font-bold tracking-[0.16em]">OXSIG</p>
-              <p className="truncate text-xs uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
-            </div>
-          )}
+          {!compact && <p className="truncate text-sm font-bold tracking-[0.18em]">OXSIG</p>}
         </Link>
         {!compact && onToggle && !mobile && (
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onToggle} aria-label="Collapse navigation" title="Collapse navigation">
-            <PanelLeftClose className="h-4 w-4" />
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onToggle} aria-label="Collapse navigation" title="Collapse navigation">
+            <PanelLeftClose className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
 
-      <div className="oxsig-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-4">
+      <div className="oxsig-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {compact && onToggle && (
-          <Button size="icon" variant="ghost" className="mb-3 h-10 w-full" onClick={onToggle} aria-label="Expand navigation" title="Expand navigation">
+          <Button size="icon" variant="ghost" className="mb-2 h-9 w-full" onClick={onToggle} aria-label="Expand navigation" title="Expand navigation">
             <PanelLeftOpen className="h-4 w-4" />
           </Button>
         )}
 
-        <nav className="space-y-5">
+        <nav className="space-y-4">
           {groups.map((group) => (
             <div key={group.label}>
-              {!compact && <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{group.label}</p>}
-              <div className="space-y-1">
+              {!compact && <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>}
+              <div className="space-y-0.5">
                 {group.items.map((item) => {
                   const active = isItemActive(pathname, item.href);
                   const Icon = item.icon;
@@ -116,21 +111,14 @@ function SidebarContent({
                       aria-current={active ? 'page' : undefined}
                       data-workspace-color={item.href === '/collab/storyboards' ? 'boards' : item.href.slice(1)}
                       className={cn(
-                        'oxsig-nav-item group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200',
-                        compact ? 'h-11 justify-center px-2' : 'gap-3 px-3 py-2.5',
-                        active
-                          ? 'bg-primary/10 text-primary shadow-sm'
-                          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+                        'oxsig-nav-item group relative flex min-h-9 items-center text-[13px] font-medium transition-colors duration-150',
+                        compact ? 'justify-center px-1' : 'gap-2 px-2',
+                        active ? 'bg-primary/[0.07] text-foreground' : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
                       )}
                     >
-                      {active && !compact && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary" />}
-                      <span className={cn(
-                        'oxsig-workspace-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                        active
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-sidebar-accent/70 text-muted-foreground group-hover:bg-sidebar-accent group-hover:text-foreground'
-                      )}>
-                        <Icon className="h-4 w-4" />
+                      {active && !compact && <span className="absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-primary" />}
+                      <span className="oxsig-workspace-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
+                        <Icon className="h-3.5 w-3.5" />
                       </span>
                       {!compact && <span className="truncate">{item.label}</span>}
                     </Link>
@@ -147,42 +135,35 @@ function SidebarContent({
           href="/account"
           onClick={onNavigate}
           title={compact ? 'Account' : undefined}
-          className={cn('flex items-center rounded-xl transition hover:bg-sidebar-accent', compact ? 'justify-center p-2' : 'gap-3 p-2')}
+          className={cn('flex min-h-9 items-center rounded-md transition hover:bg-sidebar-accent/70', compact ? 'justify-center px-1' : 'gap-2 px-2')}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-xs font-bold">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
             {initials(user?.displayName || user?.email)}
           </div>
-          {!compact && (
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold">{user?.displayName || 'Oxsig user'}</p>
-              <p className="truncate text-xs text-muted-foreground">{user?.email || 'Account'}</p>
-            </div>
-          )}
+          {!compact && <span className="min-w-0 flex-1 truncate text-xs font-medium">{user?.displayName || 'Account'}</span>}
         </Link>
 
-        <div className={cn('mt-1 flex items-center gap-1', compact ? 'flex-col' : 'justify-between')}>
+        <div className={cn('mt-1 flex items-center gap-0.5', compact ? 'flex-col' : 'justify-between')}>
           <Button
-            size={compact ? 'icon' : 'sm'}
+            size="icon"
             variant="ghost"
-            className={cn(compact ? 'h-9 w-9' : 'h-9 px-2.5')}
+            className="h-8 w-8"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label="Toggle theme"
             title="Toggle theme"
           >
-            <Sun className="h-4 w-4 dark:hidden" />
-            <Moon className="hidden h-4 w-4 dark:block" />
-            {!compact && <span className="ml-2 text-xs">Theme</span>}
+            <Sun className="h-3.5 w-3.5 dark:hidden" />
+            <Moon className="hidden h-3.5 w-3.5 dark:block" />
           </Button>
           <Button
-            size={compact ? 'icon' : 'sm'}
+            size="icon"
             variant="ghost"
-            className={cn(compact ? 'h-9 w-9' : 'h-9 px-2.5 text-muted-foreground')}
+            className="h-8 w-8 text-muted-foreground"
             onClick={() => void logout()}
             aria-label="Sign out"
             title="Sign out"
           >
-            <LogOut className="h-4 w-4" />
-            {!compact && <span className="ml-2 text-xs">Sign out</span>}
+            <LogOut className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -205,8 +186,8 @@ export default function AppSidebar({
     <>
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border/70 bg-sidebar/90 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-300 ease-in-out md:flex',
-          collapsed ? 'w-[76px]' : 'w-[248px]'
+          'sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border/70 bg-sidebar/92 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-200 ease-out md:flex',
+          collapsed ? 'w-[64px]' : 'w-[220px]'
         )}
       >
         <SidebarContent collapsed={collapsed} onToggle={onToggle} />
@@ -215,12 +196,12 @@ export default function AppSidebar({
       <div className={cn('fixed inset-0 z-50 md:hidden', mobileOpen ? 'pointer-events-auto' : 'pointer-events-none')} aria-hidden={!mobileOpen}>
         <button
           type="button"
-          className={cn('absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300', mobileOpen ? 'opacity-100' : 'opacity-0')}
+          className={cn('absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200', mobileOpen ? 'opacity-100' : 'opacity-0')}
           onClick={onMobileClose}
           aria-label="Close navigation"
         />
-        <aside className={cn('absolute inset-y-0 left-0 w-[286px] max-w-[calc(100vw-24px)] border-r bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-300 ease-in-out', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
-          <Button size="icon" variant="ghost" className="absolute right-2 top-3 z-10 h-9 w-9" onClick={onMobileClose} aria-label="Close navigation">
+        <aside className={cn('absolute inset-y-0 left-0 w-[252px] max-w-[calc(100vw-20px)] border-r bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-200 ease-out', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
+          <Button size="icon" variant="ghost" className="absolute right-2 top-2.5 z-10 h-8 w-8" onClick={onMobileClose} aria-label="Close navigation">
             <X className="h-4 w-4" />
           </Button>
           <SidebarContent collapsed={false} mobile onNavigate={onMobileClose} />
@@ -229,4 +210,3 @@ export default function AppSidebar({
     </>
   );
 }
-
