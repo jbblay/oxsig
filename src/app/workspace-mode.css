@@ -135,10 +135,32 @@ main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) {
   padding-bottom: 2rem;
 }
 
-/* Boards are naturally canvas-first. Give them workspace spacing without
-   imposing document-width constraints from the normal page shell. */
+/* Boards are a drawing application. Preserve live status badges and canvas
+   controls, remove the duplicate title/description and the capabilities card
+   that merely describes tools which are already visible above it. */
 main[data-oxsig-workspace='boards'] {
   overflow-x: hidden;
+}
+
+main[data-oxsig-workspace='boards'] > div {
+  gap: 0.75rem;
+}
+
+main[data-oxsig-workspace='boards'] > div > div:first-of-type {
+  min-height: 2.5rem;
+  justify-content: flex-end;
+}
+
+main[data-oxsig-workspace='boards'] > div > div:first-of-type > div:first-child {
+  display: none;
+}
+
+main[data-oxsig-workspace='boards'] > div > div:nth-of-type(2) {
+  gap: 0.75rem;
+}
+
+main[data-oxsig-workspace='boards'] > div > div:nth-of-type(2) > div:first-child > div:nth-child(2) {
+  display: none;
 }
 
 @media (max-width: 767px) {
@@ -148,7 +170,8 @@ main[data-oxsig-workspace='boards'] {
   }
 
   main[data-oxsig-workspace='collab'] > div > div:first-child,
-  main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex {
+  main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex,
+  main[data-oxsig-workspace='boards'] > div > div:first-of-type {
     min-height: 2.25rem;
   }
 
