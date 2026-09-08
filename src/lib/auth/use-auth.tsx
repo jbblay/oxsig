@@ -14,6 +14,7 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
+  sessionIdentityId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   profileError: string | null;
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthContextType = {
     user: profile ?? fallbackUser,
+    sessionIdentityId: clerkUser?.id ?? null,
     isAuthenticated: Boolean(isSignedIn),
     isLoading: !isLoaded || profileLoading,
     profileError,
