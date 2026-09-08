@@ -207,7 +207,7 @@ export async function listOwnerAttachableResources(
            FROM lab_instances li
            JOIN lab_definitions ld ON ld.id = li.definition_id
           WHERE li.owner_id = $1
-            AND li.status <> 'destroyed'
+            AND li.status NOT IN ('destroying', 'destroyed')
          UNION ALL
          SELECT course.id,
                 'academy-course'::text AS type,
@@ -268,7 +268,8 @@ export async function assertOwnerResource(
       `SELECT li.id, COALESCE(ld.name, ld.slug, 'Cyber Lab') AS label
        FROM lab_instances li
        JOIN lab_definitions ld ON ld.id = li.definition_id
-       WHERE li.id = $1 AND li.owner_id = $2 AND li.status <> 'destroyed'
+       WHERE li.id = $1 AND li.owner_id = $2
+         AND li.status NOT IN ('destroying', 'destroyed')
        LIMIT 1`,
       [resourceId, ownerId]
     );
@@ -279,7 +280,7 @@ export async function assertOwnerResource(
     const result = await queryable.query(
       `SELECT id, COALESCE(course_data->>'title', 'Academy course') AS label
        FROM academy_courses
-       WHERE id = $1 AND owner_id = $2
+       WHERE id = $1 AND owner_id = $2 AND status = 'active'
        LIMIT 1`,
       [resourceId, ownerId]
     );
