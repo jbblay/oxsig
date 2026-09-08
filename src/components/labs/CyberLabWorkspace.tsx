@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Activity, Boxes, ChevronDown, CloudCog, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Activity, Boxes, ChevronDown, CloudCog, Crosshair, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
 import AccessPathReadinessReview from '@/components/labs/AccessPathReadinessReview';
 import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
@@ -11,7 +12,9 @@ import LabEvidenceTimeline from '@/components/labs/LabEvidenceTimeline';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { getOperation } from '@/lib/operations/catalog';
 
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
 type WorkspaceMode = 'runtime' | 'designer' | 'planner' | 'evidence' | 'readiness' | 'guest-service' | 'access-path';
@@ -32,7 +35,13 @@ const ADVANCED_STAGES: Stage[] = [
 
 const ALL_MODES = new Set<WorkspaceMode>([...PRIMARY_STAGES, ...ADVANCED_STAGES].map((stage) => stage.mode));
 
-export default function CyberLabWorkspace() {
+export default function CyberLabWorkspace({
+  operationSlug,
+  operationMode,
+}: {
+  operationSlug?: string;
+  operationMode?: string;
+}) {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
   const [designerMounted, setDesignerMounted] = React.useState(false);
   const [plannerMounted, setPlannerMounted] = React.useState(false);
@@ -40,6 +49,7 @@ export default function CyberLabWorkspace() {
   const [readinessMounted, setReadinessMounted] = React.useState(false);
   const [guestServiceMounted, setGuestServiceMounted] = React.useState(false);
   const [accessPathMounted, setAccessPathMounted] = React.useState(false);
+  const operation = operationSlug ? getOperation(operationSlug) : null;
 
   React.useEffect(() => {
     const saved = window.localStorage.getItem(MODE_KEY) as WorkspaceMode | null;
@@ -100,6 +110,25 @@ export default function CyberLabWorkspace() {
 
   return (
     <>
+      {operation && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.035] px-3 py-2.5">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Crosshair className="h-4 w-4" /></span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate text-xs font-semibold">{operation.codename}</p>
+              {operationMode && <Badge variant="outline" className="h-5 text-[9px] capitalize">{operationMode}</Badge>}
+            </div>
+            <p className="truncate text-[10px] text-muted-foreground">{operation.topology.join(' → ')}</p>
+          </div>
+          <div className="hidden max-w-sm flex-wrap gap-1.5 lg:flex">
+            {operation.objectives.slice(0, 3).map((objective, index) => (
+              <Badge key={objective} variant="secondary" className="h-5 text-[9px]">{index + 1}. {objective}</Badge>
+            ))}
+          </div>
+          <Button asChild size="sm" variant="outline" className="h-8"><Link href="/operations">Change</Link></Button>
+        </div>
+      )}
+
       <div className="mb-3 overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="oxsig-scrollbar overflow-x-auto p-2" role="tablist" aria-label="Cyber Lab main tools">
           <div className="flex min-w-max items-center gap-1">{PRIMARY_STAGES.map(renderStage)}</div>
