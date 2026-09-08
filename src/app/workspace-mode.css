@@ -138,7 +138,7 @@ main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) {
 /* The full AI Practitioner remains operationally richer than the global
    helper, but its empty state should still open as a tool, not an onboarding
    article. Leave the live lab/terminal status and composer visible. */
-body:has(main[data-oxsig-workspace='labs']) aside.fixed.z-50 > div:nth-child(2) > div.space-y-4 {
+body:has(main[data-oxsig-workspace='labs']) aside[class*='w-[460px]'] > div:nth-child(2) > div.space-y-4 {
   display: none;
 }
 
