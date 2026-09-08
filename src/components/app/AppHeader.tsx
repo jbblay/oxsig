@@ -42,6 +42,10 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  function openAi() {
+    window.dispatchEvent(new CustomEvent(cyberLab ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+  }
+
   return (
     <>
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-xl">
@@ -68,18 +72,16 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
             <Button size="icon" variant="ghost" className="h-9 w-9 md:hidden" onClick={() => setCommandOpen(true)} aria-label="Search and jump">
               <Search className="h-4 w-4" />
             </Button>
-            {!cyberLab && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-9 w-9"
-                onClick={() => window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'))}
-                aria-label="Open AI Helper"
-                title="AI Helper"
-              >
-                <Sparkles className="h-4 w-4" />
-              </Button>
-            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9"
+              onClick={openAi}
+              aria-label={cyberLab ? 'Open AI Practitioner' : 'Open AI Helper'}
+              title={cyberLab ? 'AI Practitioner' : 'AI Helper'}
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
             <Link
               href="/account"
               className="group flex min-w-0 items-center gap-2 rounded-lg border border-transparent p-1 transition hover:border-border hover:bg-muted/40"
