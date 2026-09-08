@@ -6,6 +6,7 @@ import {
   Archive,
   BookOpen,
   Boxes,
+  BrainCircuit,
   Loader2,
   Pencil,
   Play,
@@ -55,11 +56,20 @@ type WorkspaceItem = {
   updatedAt: string;
 };
 
+type LearningPathState = {
+  path: { title: string };
+  enrollment: null | { status: 'active' | 'completed' | 'abandoned' };
+  demonstratedCount: number;
+  totalCapabilities: number;
+  progressPercent: number;
+};
+
 type DashboardState = {
   courses: AcademyCourseItem[];
   collaborations: CollaborationItem[];
   workspaces: WorkspaceItem[];
   hasInfrastructureDesign: boolean;
+  learningPath: LearningPathState | null;
 };
 
 async function responseError(response: Response, fallback: string) {
@@ -75,27 +85,31 @@ export default function ManageResourcesPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [academyResponse, collaborationResponse, workspaceResponse, designResponse] = await Promise.all([
+      const [academyResponse, collaborationResponse, workspaceResponse, designResponse, learningResponse] = await Promise.all([
         fetch('/api/academy/history?limit=50', { cache: 'no-store' }),
         fetch('/api/collaborations', { cache: 'no-store' }),
         fetch('/api/live-workspaces', { cache: 'no-store' }),
         fetch('/api/labs/infrastructure-design', { cache: 'no-store' }),
+        fetch('/api/learning/program-process', { cache: 'no-store' }),
       ]);
       if (!academyResponse.ok) throw new Error(await responseError(academyResponse, 'Could not load Academy courses'));
       if (!collaborationResponse.ok) throw new Error(await responseError(collaborationResponse, 'Could not load collaborations'));
       if (!workspaceResponse.ok) throw new Error(await responseError(workspaceResponse, 'Could not load Live Workspaces'));
       if (!designResponse.ok) throw new Error(await responseError(designResponse, 'Could not load infrastructure design'));
+      if (!learningResponse.ok) throw new Error(await responseError(learningResponse, 'Could not load learning journey'));
 
       const academy = await academyResponse.json() as { courses: AcademyCourseItem[] };
       const collaborations = await collaborationResponse.json() as { collaborations: CollaborationItem[] };
       const workspaces = await workspaceResponse.json() as { workspaces: WorkspaceItem[] };
       const design = await designResponse.json() as { design: unknown | null };
+      const learning = await learningResponse.json() as { state: LearningPathState };
 
       setState({
         courses: academy.courses || [],
         collaborations: (collaborations.collaborations || []).filter((item) => item.isOwner && item.collaborationType !== 'live-workspace'),
         workspaces: (workspaces.workspaces || []).filter((item) => item.isOwner),
         hasInfrastructureDesign: Boolean(design.design),
+        learningPath: learning.state || null,
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Resource management could not be loaded');
@@ -144,9 +158,18 @@ export default function ManageResourcesPage() {
   }
 
   async function deleteCourse(course: AcademyCourseItem) {
-    if (!window.confirm(`Permanently delete “${course.title}” and its progress, sessions, questions, practice attempts, and mastery data?`)) return;
+    if (!window.confirm(`Permanently delete “${course.title}” and its progress, sessions, questions, practice attempts, reflections, mastery data, and capability evidence derived from those deleted sources?`)) return;
     const ok = await mutate(`course:${course.courseId}`, `/api/academy/courses/${course.courseId}`, 'DELETE');
     if (ok && course.courseStatus === 'active') {
+      window.localStorage.removeItem(COURSE_KEY);
+      window.localStorage.removeItem(PROGRESS_KEY);
+    }
+  }
+
+  async function abandonLearningPath() {
+    if (!window.confirm('Leave the active curated learning journey? Your demonstrated evidence will be preserved and available if you resume later.')) return;
+    const ok = await mutate('learning-path', '/api/learning/program-process', 'PATCH', { action: 'abandon' });
+    if (ok) {
       window.localStorage.removeItem(COURSE_KEY);
       window.localStorage.removeItem(PROGRESS_KEY);
     }
@@ -182,6 +205,8 @@ export default function ManageResourcesPage() {
     return <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading your resources…</div>;
   }
 
+  const learningPathActive = state?.learningPath?.enrollment?.status === 'active';
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-2">
       <section className="rounded-3xl border bg-gradient-to-br from-primary/10 via-background to-purple-500/10 p-6">
@@ -194,6 +219,25 @@ export default function ManageResourcesPage() {
           <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><BrainCircuit className="h-5 w-5" /> Curated learning journey</CardTitle>
+          <CardDescription>Enrollment is user-controlled; demonstrated evidence remains durable when you leave and can be reused when you resume.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">{state?.learningPath?.path.title || 'How a Program Becomes a Process'}</p>
+            <p className="text-xs text-muted-foreground">
+              {state?.learningPath?.enrollment?.status || 'not enrolled'} · {state?.learningPath?.demonstratedCount || 0}/{state?.learningPath?.totalCapabilities || 0} demonstrated · {state?.learningPath?.progressPercent || 0}%
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild><Link href="/academy">Open Academy</Link></Button>
+            <Button variant="destructive" disabled={!learningPathActive || busy === 'learning-path'} onClick={() => void abandonLearningPath()}>Leave journey</Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
