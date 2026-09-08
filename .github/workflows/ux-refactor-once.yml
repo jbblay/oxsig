@@ -1,0 +1,404 @@
+name: One-shot action-first workspace refactor
+
+on:
+  push:
+    branches:
+      - feature/action-first-responsive-ai-helper-v1
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: ${{ !contains(github.event.head_commit.message, '[ux-codemod]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/action-first-responsive-ai-helper-v1
+          fetch-depth: 0
+      - name: Apply action-first component cleanup
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text()
+
+          def write(path, text):
+              Path(path).write_text(text)
+              print(f'updated {path}')
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 exact match, found {count}')
+              return text.replace(old, new, 1)
+
+          def sub_once(text, pattern, repl, label):
+              next_text, count = re.subn(pattern, repl, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 regex match, found {count}')
+              return next_text
+
+          # Vault: remove landing-page presentation and make the durable list/editor the surface.
+          path = 'src/app/vault/page.tsx'
+          s = read(path)
+          for token in ('  FileText,\n', '  ShieldCheck,\n', '  Sparkles,\n'):
+              s = s.replace(token, '')
+          s = sub_once(s, r"\n  const stats = React\.useMemo\(\(\) => \(\{.*?\n  \}\), \[items\]\);\n", "\n", 'vault stats')
+          s = replace_once(s, '  return (\n    <div className="space-y-6">', '  return (\n    <div className="min-h-0">', 'vault wrapper')
+          s = sub_once(
+              s,
+              r'\n      <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br[\s\S]*?\n      <div className="grid gap-6 xl:grid-cols-\[minmax\(0,1fr\)_420px\]">',
+              '\n      <div className="grid min-h-[calc(100dvh-5rem)] gap-3 lg:grid-cols-[340px_minmax(0,1fr)]">',
+              'vault landing removal',
+          )
+          old = '''                <Button variant={pinnedOnly ? 'secondary' : 'outline'} onClick={() => setPinnedOnly((value) => !value)}>
+                  <Pin className="h-4 w-4" /> {pinnedOnly ? 'Pinned only' : 'Pinned'}
+                </Button>
+              </div>'''
+          new = '''                <Button variant={pinnedOnly ? 'secondary' : 'outline'} onClick={() => setPinnedOnly((value) => !value)}>
+                  <Pin className="h-4 w-4" /> {pinnedOnly ? 'Pinned only' : 'Pinned'}
+                </Button>
+                <div className="flex flex-wrap gap-2 md:ml-auto">
+                  <Button variant="outline" onClick={() => startCreate('cheat_sheet')}><BookOpenCheck className="h-4 w-4" /> Cheat sheet</Button>
+                  <Button variant="outline" onClick={() => startCreate('playbook')}><LibraryBig className="h-4 w-4" /> Playbook</Button>
+                  <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
+                </div>
+              </div>'''
+          s = replace_once(s, old, new, 'vault create toolbar')
+          s = replace_once(s, '            <div className="grid gap-3 md:grid-cols-2">', '            <div className="space-y-2">', 'vault list density')
+          s = sub_once(
+              s,
+              r'<h2 className="font-semibold">\{items\.length === 0 \? \'Your Vault starts with one useful thing\.\' : \'Nothing matches this view\.\'\}</h2>\n                <p className="mt-1 max-w-md text-sm text-muted-foreground">\{items\.length === 0 \? \'Capture a command you keep forgetting, a procedure you want to repeat, or the first playbook for a topic you are learning\.\' : \'Change the search or filter to find another knowledge object\.\'\}</p>\n                \{items\.length === 0 && <Button className="mt-4" onClick=\{\(\) => startCreate\(\'command\'\)\}><Plus className="h-4 w-4" /> Capture first item</Button>\}',
+              '<h2 className="font-semibold">{items.length === 0 ? \'No items yet\' : \'No matches\'}</h2>\n                {items.length === 0 && <Button className="mt-4" onClick={() => startCreate(\'command\')}><Plus className="h-4 w-4" /> New item</Button>}',
+              'vault empty state',
+          )
+          s = sub_once(
+              s,
+              r'          \{!editorVisible \? \([\s\S]*?\n          \) : \(\n            <Card className="overflow-hidden shadow-sm">',
+              '''          {!editorVisible ? (
+            <Card className="overflow-hidden">
+              <CardContent className="flex min-h-[360px] items-center justify-center p-6">
+                <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="overflow-hidden shadow-sm">''',
+              'vault idle editor',
+          )
+          s = replace_once(s, '        <div className="xl:sticky xl:top-20 xl:self-start">', '        <div className="lg:sticky lg:top-20 lg:self-start">', 'vault sticky editor')
+          s = sub_once(
+              s,
+              r'\n\n      <Card>\n        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4" /> The Oxsig knowledge loop</CardTitle>[\s\S]*?\n      </Card>',
+              '',
+              'vault knowledge loop',
+          )
+          write(path, s)
+
+          # Collaboration: conversation first, compact empty states, responsive two/three-pane geometry.
+          path = 'src/components/collab/CollaborationWorkspace.tsx'
+          s = read(path)
+          s = replace_once(s, '  return (\n    <div className="space-y-4">', '  return (\n    <div className="space-y-2">', 'collab wrapper')
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">[\s\S]*?\n        <Button onClick=\{\(\) => setShowNewSession\(\(value\) => !value\)\}>\n          <Plus className="mr-2 h-4 w-4" />New session\n        </Button>\n      </div>',
+              '''
+      <div className="flex justify-end">
+        <Button onClick={() => setShowNewSession((value) => !value)}>
+          <Plus className="mr-2 h-4 w-4" />New session
+        </Button>
+      </div>''',
+              'collab title block',
+          )
+          s = s.replace('placeholder="Session name, e.g. Network Security Study Group"', 'placeholder="Session name"')
+          s = replace_once(
+              s,
+              '      <div className="grid min-h-[680px] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[250px_minmax(0,1fr)_280px]">',
+              '      <div className="grid min-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border bg-card md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)_280px]">',
+              'collab responsive grid',
+          )
+          s = replace_once(s, '        <aside className="border-b bg-muted/15 lg:border-b-0 lg:border-r">', '        <aside className="border-b bg-muted/15 md:border-b-0 md:border-r">', 'collab sessions pane')
+          s = replace_once(s, '          <div className="max-h-48 space-y-1 overflow-auto p-2 lg:max-h-[610px]">', '          <div className="max-h-44 space-y-1 overflow-auto p-2 md:max-h-[calc(100dvh-9rem)]">', 'collab sessions scroll')
+          s = s.replace('<Plus className="mb-2 h-5 w-5" />Create your first conversation.', '<Plus className="mr-2 inline h-4 w-4" />New session')
+          s = sub_once(
+              s,
+              r'          \{!activeSession \? \([\s\S]*?\n          \) : \(\n            <>',
+              '''          {!activeSession ? (
+            <div className="flex min-h-[420px] flex-1 items-center justify-center p-6">
+              <Button onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
+            </div>
+          ) : (
+            <>''',
+              'collab no session state',
+          )
+          s = sub_once(
+              s,
+              r'                \) : messages\.length === 0 \? \([\s\S]*?\n                \) : \(\n                  <div className="space-y-3">',
+              '''                ) : messages.length === 0 ? (
+                  <div className="flex min-h-[320px] items-center justify-center text-sm text-muted-foreground">Start the conversation.</div>
+                ) : (
+                  <div className="space-y-3">''',
+              'collab empty messages',
+          )
+          s = s.replace('Explain mode — your next message is marked as an explanation.', 'Explain mode')
+          s = replace_once(s, '        <aside className="border-t bg-muted/10 lg:border-l lg:border-t-0">', '        <aside className="border-t bg-muted/10 md:col-span-2 xl:col-span-1 xl:border-l xl:border-t-0">', 'collab details pane')
+          s = s.replace('            <p className="text-[11px] text-muted-foreground">People and shared actions</p>\n', '')
+          s = s.replace('                  <p className="text-[10px] leading-4 text-muted-foreground">Existing OXSIG users are added immediately. New users receive a secure email invitation when transactional email is configured.</p>\n', '')
+          s = replace_once(s, '<Sparkles className="h-4 w-4 text-primary" /><div><p className="text-xs font-medium">Explain in chat</p><p className="text-[10px] text-muted-foreground">Keep the explanation in context.</p></div>', '<Sparkles className="h-4 w-4 text-primary" /><span className="text-xs font-medium">Explain</span>', 'collab explain tool')
+          s = replace_once(s, '<Paperclip className="h-4 w-4" /><div><p className="text-xs font-medium">Attach resource</p><p className="text-[10px] text-muted-foreground">Share it with every member.</p></div>', '<Paperclip className="h-4 w-4" /><span className="text-xs font-medium">Attach resource</span>', 'collab attach tool')
+          s = replace_once(s, '<Box className="h-4 w-4" /><div><p className="text-xs font-medium">Practice together</p><p className="text-[10px] text-muted-foreground">Place a lab card in the timeline.</p></div>', '<Box className="h-4 w-4" /><span className="text-xs font-medium">Practice</span>', 'collab practice tool')
+          write(path, s)
+
+          # Live Workspace: list/detail application, no hero/capability prose, Academy remains readable but is no longer attachable.
+          path = 'src/app/live/page.tsx'
+          s = read(path)
+          s = s.replace("  const [name, setName] = React.useState('Learning Workspace');", "  const [name, setName] = React.useState('');")
+          s = s.replace("  const [description, setDescription] = React.useState('Persistent context for learning, practice, explanation and collaboration');", "  const [description, setDescription] = React.useState('');")
+          s = replace_once(s, '  return (\n    <div className="mx-auto max-w-[1500px] space-y-5 py-3">', '  return (\n    <div className="w-full space-y-2">', 'live wrapper')
+          s = sub_once(
+              s,
+              r'\n      <section className="rounded-2xl border bg-gradient-to-r from-primary/10 via-background to-purple-500/10 p-5">[\s\S]*?\n      </section>\n\n      <div className="grid gap-5 lg:grid-cols-\[300px_minmax\(0,1fr\)\]">',
+              '\n      <div className="grid gap-3 md:grid-cols-[280px_minmax(0,1fr)]">',
+              'live hero',
+          )
+          s = s.replace('<div><CardTitle className="text-base">Your workspaces</CardTitle><CardDescription>Select a workspace or start a new one.</CardDescription></div>', '<CardTitle className="text-base">Workspaces</CardTitle>')
+          s = s.replace('<CardHeader><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> Participants</CardTitle><CardDescription>Observers can watch. Learners and instructors may request machine control only when their explicit workspace role allows it.</CardDescription></CardHeader>', '<CardHeader><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> Participants</CardTitle></CardHeader>')
+          s = s.replace('<CardHeader><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Workspace resources</CardTitle><CardDescription>Attach owner-owned learning and technical context. Visibility in a Workspace never transfers ownership, and non-machine resources never grant terminal or desktop control.</CardDescription></CardHeader>', '<CardHeader><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Workspace resources</CardTitle></CardHeader>')
+          s = s.replace('                          <option value="academy-course">Academy course</option>\n', '')
+          s = s.replace('No resources attached yet. The owner can attach a lab, Academy course, Board, Vault item, or infrastructure design above.', 'No resources attached.')
+          write(path, s)
+
+          # Boards: canvas first, remove marketing/capability copy and tutorial shortcut wall.
+          path = 'src/app/collab/storyboards/page.tsx'
+          s = read(path)
+          s = s.replace('  ArrowLeft,\n', '')
+          s = s.replace('import Link from "next/link";\n', '')
+          s = sub_once(
+              s,
+              r'\n            <CardDescription className="mt-1">\n              Freehand drawing, replayable shapes, synchronized audio, secure sharing, export, zoom, grid snapping, and automatic recovery\.\n            </CardDescription>',
+              '',
+              'boards editor description',
+          )
+          s = sub_once(
+              s,
+              r'\n        <div className="flex flex-wrap items-center gap-2 text-\[11px\] text-muted-foreground">[\s\S]*?\n        </div>\n\n        <div className="flex flex-wrap gap-2">',
+              '\n\n        <div className="flex flex-wrap gap-2">',
+              'boards shortcut wall',
+          )
+          s = s.replace('            <p className="text-xs text-muted-foreground">Seeking rebuilds the canvas at that exact point in the audio timeline.</p>\n', '')
+          s = replace_once(s, '  return (\n    <div className="space-y-6">', '  return (\n    <div className="space-y-2">', 'boards wrapper')
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">[\s\S]*?\n      </div>\n\n      <div className="grid gap-6 xl:grid-cols-\[minmax\(0,1fr\)_340px\]">',
+              '\n      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">',
+              'boards page heading',
+          )
+          s = sub_once(
+              s,
+              r'\n          <Card>\n            <CardHeader><CardTitle className="text-base">Board capabilities</CardTitle></CardHeader>[\s\S]*?\n          </Card>',
+              '',
+              'boards capabilities',
+          )
+          s = s.replace('              <CardDescription>Owned by you or shared with your account. Search, filter, open, play, or copy a direct secure link.</CardDescription>\n', '')
+          s = s.replace('              <CardDescription>Browser-local safety copies update automatically. A cloud badge means the recovery copy is linked to a secure session.</CardDescription>\n', '')
+          write(path, s)
+
+          # Infrastructure Designer: toolbars/canvas/inspector, no duplicated page introduction.
+          path = 'src/components/labs/InfrastructureDesigner.tsx'
+          s = read(path)
+          s = s.replace('    <div className="space-y-4 pb-10">', '    <div className="space-y-2 pb-2">', 1)
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">[\s\S]*?\n      <div className="grid min-h-\[680px\] gap-3 xl:grid-cols-\[250px_minmax\(0,1fr\)_330px\]">',
+              '''
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} devices · {edges.length} links</Badge>
+        <Badge variant={validation.valid ? 'default' : 'destructive'}>
+          {validation.valid ? <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> : <AlertTriangle className="mr-1 h-3.5 w-3.5" />}
+          {validation.errors.length} errors · {validation.warnings.length} warnings
+        </Badge>
+        <Badge variant="outline">
+          {saveState === 'saving' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+          {saveState === 'saved' ? 'Saved' : saveState === 'saving' ? 'Saving' : 'Save issue'}
+        </Badge>
+      </div>
+
+      <div className="grid min-h-[calc(100dvh-7rem)] gap-3 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_320px]">''',
+              'infrastructure header',
+          )
+          s = s.replace('<div className="border-b p-4"><p className="font-semibold">Technical palette</p><p className="mt-1 text-xs text-muted-foreground">Drag a device to the canvas or tap Add.</p></div>', '<div className="border-b p-3"><p className="text-sm font-semibold">Devices</p></div>')
+          s = s.replace('<div className="min-w-0 flex-1"><p className="text-sm font-medium">{meta.label}</p><p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{meta.description}</p></div>', '<div className="min-w-0 flex-1"><p className="text-sm font-medium">{meta.label}</p></div>')
+          s = s.replace('<section className="relative min-h-[680px] overflow-hidden rounded-2xl border bg-muted/10">', '<section className="relative min-h-[520px] overflow-hidden rounded-xl border bg-muted/10 sm:min-h-[620px] lg:min-h-[calc(100dvh-8rem)]">')
+          s = sub_once(
+              s,
+              r'\{nodes\.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center shadow-sm backdrop-blur"><Network className="mx-auto h-10 w-10 text-muted-foreground/50" /><p className="mt-3 font-medium">Design the system before you deploy it</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Add clients, servers, routers, switches, and firewalls\. Connect them, configure addressing and runtime intent, then let OXSIG validate the blueprint\.</p></div></div>\}',
+              '{nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Add a device</div>}',
+              'infrastructure empty canvas',
+          )
+          s = s.replace('          <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur">Blueprint only · saved runtime intent participates in the deployment plan identity</div>\n', '')
+          s = s.replace('        <aside className="overflow-hidden rounded-2xl border bg-card">\n          <div className="border-b p-4"><p className="font-semibold">Inspector</p><p className="mt-1 text-xs text-muted-foreground">Configure the selected technical device.</p></div>', '        <aside className="overflow-hidden rounded-xl border bg-card lg:col-span-2 xl:col-span-1">\n          <div className="border-b p-3"><p className="text-sm font-semibold">Inspector</p></div>')
+          s = s.replace('<div className="flex min-h-[300px] flex-col items-center justify-center p-6 text-center text-muted-foreground"><Network className="h-8 w-8 opacity-40" /><p className="mt-3 text-sm font-medium">Nothing selected</p><p className="mt-1 text-xs">Choose a device on the canvas.</p></div>', '<div className="flex min-h-[220px] items-center justify-center p-6 text-sm text-muted-foreground">Select a device</div>')
+          s = s.replace('                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Make the OS and execution intent explicit. OXSIG will never infer this from the role label.</p>\n', '')
+          write(path, s)
+
+          # Deployment Planner: keep actions, status, authorization and results; remove the explainer wall.
+          path = 'src/components/labs/DeploymentPlanner.tsx'
+          s = read(path)
+          s = s.replace('    <div className="space-y-4 pb-10">', '    <div className="space-y-3 pb-2">', 1)
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">[\s\S]*?\n      </div>\n\n      \{!result && !loading && \([\s\S]*?\n      \)\}',
+              '''
+      <div className="flex justify-end">
+        <Button onClick={() => void generatePlan()} disabled={busy || Boolean(deployment)}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <FileCog className="mr-2 h-4 w-4" />}
+          {result ? 'Regenerate plan' : 'Generate plan'}
+        </Button>
+      </div>''',
+              'deployment planner intro',
+          )
+          s = s.replace('                    <p className="mt-1 text-xs text-muted-foreground">Actions remain proposals until the controlled adapter consumes a matching receipt.</p>\n', '')
+          s = sub_once(
+              s,
+              r'\n                <p className="mt-2 text-\[11px\] leading-5 text-muted-foreground">\n                  Stable SHA-256 identity over the deterministic plan\. Runtime profile selections are inside this identity, so approval binds to the exact OS/access/resource proposal instead of mutable client state\.\n                </p>',
+              '',
+              'deployment plan identity prose',
+          )
+          s = s.replace('                    Controlled adapter available: <span className="font-mono">{result.executionSupport.target.labSlug}</span> · {result.executionSupport.target.accessMode}. Authorization can bind this exact plan to a one-time execution receipt.', '<span className="font-mono">{result.executionSupport.target.labSlug}</span> · {result.executionSupport.target.accessMode}')
+          s = s.replace('                    <p className="text-[11px] leading-5 text-muted-foreground">This blueprint remains valid design intent, but the current controlled runtime will not create an authorization for it.</p>\n', '')
+          write(path, s)
+
+          # Evidence and readiness surfaces: actions/results first; empty states stay terse.
+          path = 'src/components/labs/DeploymentEvidenceReview.tsx'
+          s = read(path)
+          s = s.replace('    <div className="space-y-4 pb-10">', '    <div className="space-y-3 pb-2">', 1)
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">[\s\S]*?\n      </div>\n\n      \{error',
+              '''
+      <div className="flex justify-end">
+        <Button onClick={() => void interpretLatest()} disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+          {result ? 'Reload evidence' : 'Interpret evidence'}
+        </Button>
+      </div>
+
+      {error''',
+              'evidence header',
+          )
+          s = sub_once(s, r'\n      \{!result && !loading && \([\s\S]*?\n      \)\}', '', 'evidence empty article')
+          write(path, s)
+
+          path = 'src/components/labs/RuntimeReadinessReview.tsx'
+          s = read(path)
+          s = s.replace('    <div className="space-y-4 pb-10">', '    <div className="space-y-3 pb-2">', 1)
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">[\s\S]*?\n      </div>\n\n      \{error',
+              '''
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || checking}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loadingLab ? 'animate-spin' : ''}`} />Refresh
+        </Button>
+        <Button onClick={() => void checkReadiness()} disabled={!lab || checking || loadingLab}>
+          {checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
+          {checking ? 'Checking…' : 'Check readiness'}
+        </Button>
+      </div>
+
+      {error''',
+              'runtime readiness header',
+          )
+          s = sub_once(
+              s,
+              r'\n      \{!loadingLab && !lab && \([\s\S]*?\n      \)\}',
+              '\n      {!loadingLab && !lab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No active lab.</div>}',
+              'runtime no lab',
+          )
+          s = sub_once(s, r'\n      \{lab && !facts && !checking && \([\s\S]*?\n      \)\}', '', 'runtime precheck explainer')
+          write(path, s)
+
+          path = 'src/components/labs/GuestServiceReadinessReview.tsx'
+          s = read(path)
+          s = s.replace('    <div className="space-y-4 pb-10">', '    <div className="space-y-3 pb-2">', 1)
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">[\s\S]*?\n      </div>\n\n      \{error',
+              '''
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || checking}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loadingLab ? 'animate-spin' : ''}`} />Refresh
+        </Button>
+        <Button onClick={() => void checkGuestService()} disabled={!lab || !desktopLab || checking || loadingLab}>
+          {checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MonitorCheck className="mr-2 h-4 w-4" />}
+          {checking ? 'Inspecting…' : 'Check service'}
+        </Button>
+      </div>
+
+      {error''',
+              'guest service header',
+          )
+          s = sub_once(s, r'\n      \{!loadingLab && !lab && \([\s\S]*?\n      \)\}', '\n      {!loadingLab && !lab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No active lab.</div>}', 'guest no lab')
+          s = sub_once(
+              s,
+              r'\n      \{lab && !desktopLab && \([\s\S]*?\n      \)\}',
+              '\n      {lab && !desktopLab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Desktop workload required.</div>}',
+              'guest not desktop',
+          )
+          s = sub_once(s, r'\n      \{lab && desktopLab && !facts && !checking && \([\s\S]*?\n      \)\}', '', 'guest precheck explainer')
+          write(path, s)
+
+          path = 'src/components/labs/AccessPathReadinessReview.tsx'
+          s = read(path)
+          s = s.replace('    <div className="space-y-4 pb-10">', '    <div className="space-y-3 pb-2">', 1)
+          s = sub_once(
+              s,
+              r'\n      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">[\s\S]*?\n      </div>\n\n      \{error',
+              '''
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || loadingEvidence || analyzing}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loadingLab || loadingEvidence ? 'animate-spin' : ''}`} />Refresh
+        </Button>
+        <Button onClick={() => void analyze()} disabled={!facts || analyzing}>
+          {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+          {analysis ? 'Review' : 'Interpret'}
+        </Button>
+      </div>
+
+      {error''',
+              'access path header',
+          )
+          s = replace_once(s, '        <div className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground">No active Cyber Lab runtime is available.</div>', '        <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No active lab.</div>', 'access no lab')
+          s = sub_once(
+              s,
+              r'\n      \{lab && !desktopLab && \([\s\S]*?\n      \)\}',
+              '\n      {lab && !desktopLab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Desktop workload required.</div>}',
+              'access not desktop',
+          )
+          s = sub_once(
+              s,
+              r'\n      \{lab && desktopLab && !facts && !loadingEvidence && \([\s\S]*?\n      \)\}',
+              '\n      {lab && desktopLab && !facts && !loadingEvidence && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No access-path evidence yet.</div>}',
+              'access no evidence',
+          )
+          write(path, s)
+          PY
+
+      - name: Check patch formatting
+        run: git diff --check
+      - name: Commit refactor
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/vault/page.tsx src/components/collab/CollaborationWorkspace.tsx src/app/live/page.tsx src/app/collab/storyboards/page.tsx src/components/labs/InfrastructureDesigner.tsx src/components/labs/DeploymentPlanner.tsx src/components/labs/DeploymentEvidenceReview.tsx src/components/labs/RuntimeReadinessReview.tsx src/components/labs/GuestServiceReadinessReview.tsx src/components/labs/AccessPathReadinessReview.tsx
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "refactor: make workspaces action-first [ux-codemod]"
+          git push origin HEAD:feature/action-first-responsive-ai-helper-v1
