@@ -1,0 +1,99 @@
+/*
+ * Workspace routes should open directly into the tool. The application header
+ * already names the surface, so feature-level marketing/teaching headers are
+ * intentionally suppressed here. Keep this file limited to shell geometry and
+ * legacy presentation cleanup; feature behavior remains owned by each surface.
+ */
+
+main[data-oxsig-workspace] {
+  max-width: none;
+}
+
+main[data-oxsig-workspace] > * {
+  min-width: 0;
+}
+
+/* Collaboration is already a three-pane application. Remove the duplicate
+   page introduction and let the conversation workspace use the viewport. */
+main[data-oxsig-workspace='collab'] > div {
+  gap: 0.5rem;
+}
+
+main[data-oxsig-workspace='collab'] > div > div:first-child {
+  display: none;
+}
+
+main[data-oxsig-workspace='collab'] > div > div:last-child {
+  min-height: calc(100dvh - 5rem);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+
+/* Live Workspace already has list/detail application structure. The old hero
+   made the tool look like a landing page before the actual controls appeared. */
+main[data-oxsig-workspace='live'] > div {
+  max-width: none;
+  gap: 0.5rem;
+  padding-top: 0;
+}
+
+main[data-oxsig-workspace='live'] > div > section:first-child {
+  display: none;
+}
+
+main[data-oxsig-workspace='live'] > div > div:last-child {
+  min-height: calc(100dvh - 5rem);
+}
+
+/* Vault is a knowledge browser/editor, not a product pitch. Go straight to
+   search/list/editor and remove the hero plus dashboard-style vanity metrics. */
+main[data-oxsig-workspace='vault'] > div {
+  gap: 0.75rem;
+}
+
+main[data-oxsig-workspace='vault'] > div > section:first-child,
+main[data-oxsig-workspace='vault'] > div > div:nth-child(2) {
+  display: none;
+}
+
+main[data-oxsig-workspace='vault'] > div > div:nth-child(3) {
+  gap: 0.75rem;
+}
+
+/* Cyber Lab should open on its control surface. The global header already says
+   Cyber Lab; remove the second title/description and the legacy onboarding
+   banner that interrupts the topology/terminal workflow. */
+main[data-oxsig-workspace='labs'] > div:first-child {
+  margin-bottom: 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+
+main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div {
+  gap: 0.5rem;
+  padding-bottom: 0;
+}
+
+main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child,
+main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div.relative.overflow-hidden {
+  display: none;
+}
+
+/* Boards are naturally canvas-first. Give them workspace spacing without
+   imposing document-width constraints from the normal page shell. */
+main[data-oxsig-workspace='boards'] {
+  overflow-x: hidden;
+}
+
+@media (max-width: 767px) {
+  main[data-oxsig-workspace] {
+    padding-left: 0.375rem;
+    padding-right: 0.375rem;
+  }
+
+  main[data-oxsig-workspace='collab'] > div > div:last-child,
+  main[data-oxsig-workspace='live'] > div > div:last-child {
+    min-height: calc(100dvh - 4.25rem);
+    border-radius: 0.625rem;
+  }
+}
