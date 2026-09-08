@@ -6,17 +6,16 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 
-function pageMeta(pathname: string) {
-  if (pathname === '/home') return { title: 'Dashboard', description: 'Continue your path, practice, and next demonstrated capability' };
-  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Build capability through teaching, practice, evidence, and feedback' };
-  if (pathname === '/collab') return { title: 'Collaboration', description: 'Talk, share and work through a task together' };
-  if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Explain ideas visually and record walkthroughs' };
-  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Work together around shared learning resources and practice' };
-  if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Save useful commands, concepts and playbooks' };
-  if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your saved knowledge' };
-  if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Open a real temporary practice environment' };
-  if (pathname.startsWith('/account')) return { title: 'My Progress', description: 'Your demonstrated capabilities, activity, achievements and account settings' };
-  return { title: 'OXSIG', description: 'Learn, collaborate and practice' };
+function pageTitle(pathname: string) {
+  if (pathname === '/home') return 'Dashboard';
+  if (pathname === '/collab') return 'Collaboration';
+  if (pathname.startsWith('/collab/storyboards')) return 'Boards';
+  if (pathname.startsWith('/live')) return 'Live Workspace';
+  if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'Vault';
+  if (pathname.startsWith('/labs')) return 'Cyber Lab';
+  if (pathname.startsWith('/manage')) return 'Resources';
+  if (pathname.startsWith('/account')) return 'My Progress';
+  return 'OXSIG';
 }
 
 function initials(value?: string | null) {
@@ -26,20 +25,16 @@ function initials(value?: string | null) {
 
 export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const pathname = usePathname();
-  const meta = pageMeta(pathname);
   const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/75 backdrop-blur-xl">
-      <div className="flex h-16 items-center justify-between gap-4 px-4 md:px-6 lg:px-8">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-14 items-center justify-between gap-3 px-3 sm:px-4 md:h-16 md:px-6 lg:px-8">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{meta.title}</p>
-            <p className="truncate text-[11px] text-muted-foreground">{meta.description}</p>
-          </div>
+          <p className="truncate text-sm font-semibold">{pageTitle(pathname)}</p>
         </div>
 
         <Link
