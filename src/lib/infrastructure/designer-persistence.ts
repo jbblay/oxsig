@@ -43,3 +43,12 @@ export async function saveInfrastructureDesign(ownerId: string, design: Infrastr
     updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
+
+export async function deleteInfrastructureDesign(ownerId: string): Promise<boolean> {
+  const result = await getPool().query(
+    `DELETE FROM infrastructure_designs
+      WHERE owner_id = $1`,
+    [ownerId]
+  );
+  return (result.rowCount || 0) > 0;
+}
