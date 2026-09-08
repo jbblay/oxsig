@@ -13,10 +13,12 @@ import {
 } from '@/lib/labs/aws-runtime';
 import { validateLabLifecycleAction } from '@/lib/labs/lifecycle';
 import type { LabInstanceStatus } from '@/lib/labs/types';
+import { destroyOperationRun } from '@/lib/operations/runtime';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
 const actionSchema = z.object({ action: z.enum(['start', 'stop', 'destroy']) }).strict();
+const uuidSchema = z.string().uuid();
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return requireAuth(request, async (req, user) => {
@@ -37,7 +39,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const { id } = await context.params;
     const pool = getPool();
     const owned = await pool.query(
-      `SELECT id,status,runtime_provider,runtime_external_id,expires_at
+      `SELECT id,status,runtime_provider,runtime_external_id,expires_at,metadata
        FROM lab_instances
        WHERE id=$1 AND owner_id=$2 AND status <> 'destroyed'`,
       [id, user.id]
@@ -50,8 +52,30 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const action = parsed.data.action;
     const externalId = instance.runtime_external_id as string;
+    const operationRunId = typeof instance.metadata?.operationRunId === 'string' ? instance.metadata.operationRunId : null;
 
     try {
+      if (action === 'destroy' && operationRunId && uuidSchema.safeParse(operationRunId).success) {
+        const operationResult = await destroyOperationRun({ pool, runId: operationRunId, ownerId: user.id });
+        await pool.query(
+          `INSERT INTO lab_events (lab_instance_id,event_type,payload)
+           VALUES ($1,'destroy',$2)`,
+          [id, stringifyPostgresJson({ provider: 'aws-ec2', externalId, operationRunId, wholeOperation: true })]
+        );
+        await logAudit({
+          userId: user.id,
+          action: AUDIT_ACTIONS.LAB_DESTROY,
+          resourceType: 'operation-run',
+          resourceId: operationRunId,
+          ...getRequestMetadata(req),
+          metadata: { provider: 'aws-ec2', operatorLabInstanceId: id, wholeOperation: true },
+        });
+        return NextResponse.json({
+          instance: { ...instance, status: 'destroying' },
+          operation: operationResult,
+        });
+      }
+
       // EC2 is the runtime source of truth. Reconcile the stored state before
       // deciding whether start/stop/destroy is a valid transition.
       const states = await describeLabVmStates([externalId]);

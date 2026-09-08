@@ -29,7 +29,7 @@ export const operations: Operation[] = [
     modes: ['practice', 'walkthrough', 'challenge', 'warroom'],
     objectives: ['Discover the domain controller', 'Enumerate users and services', 'Obtain an initial foothold', 'Escalate or move laterally', 'Submit domain compromise evidence'],
     evidence: ['Recon output', 'Compromised identity', 'Privilege proof', 'Final domain evidence'],
-    topology: ['Kali operator', 'Windows workstation', 'Domain controller'],
+    topology: ['Operator terminal', 'Windows workstation', 'Domain controller'],
     tags: ['AD', 'Kerberos', 'SMB', 'Lateral movement'],
   },
   {

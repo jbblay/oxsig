@@ -1,11 +1,15 @@
+'use client';
+
+import * as React from 'react';
 import Link from 'next/link';
 import { ArrowRight, CircleDot, Eye, Hand, ShieldCheck, Swords, Terminal, UsersRound } from 'lucide-react';
+import { OperationRunStrip } from '@/components/operations/OperationRunStrip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getOperation, operations } from '@/lib/operations/catalog';
 
-type SearchParams = Promise<{ operation?: string }>;
+type SearchParams = Promise<{ operation?: string; run?: string }>;
 
 const permissionModes = [
   { label: 'View', detail: 'Observe a teammate terminal without input.', icon: Eye },
@@ -19,6 +23,7 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
+      {params.run ? <OperationRunStrip runId={params.run} /> : null}
       <div className="flex flex-wrap items-center gap-2">
         <div className="mr-auto">
           <div className="flex items-center gap-2">
@@ -28,7 +33,7 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
           <p className="text-xs text-muted-foreground">Team lab control plane: terminals, objectives, evidence and presence in one workspace.</p>
         </div>
         <Button asChild size="sm" variant="outline"><Link href="/operations">Operations</Link></Button>
-        <Button asChild size="sm"><Link href={`/live?mode=warroom&operation=${selected.slug}`}><UsersRound className="mr-2 h-4 w-4" />Create team workspace</Link></Button>
+        <Button asChild size="sm"><Link href={`/live?mode=warroom&operation=${selected.slug}${params.run ? `&run=${params.run}` : ''}`}><UsersRound className="mr-2 h-4 w-4" />Create team workspace</Link></Button>
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[250px_minmax(0,1fr)_300px]">
@@ -126,7 +131,7 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
                 </div>
               ))}
               <Button asChild size="sm" variant="outline" className="mt-2 w-full">
-                <Link href={`/labs?operation=${selected.slug}&mode=challenge`}>Open lab <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                <Link href={`/labs?operation=${selected.slug}&mode=challenge${params.run ? `&run=${params.run}` : ''}`}>Open lab <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
             </CardContent>
           </Card>
