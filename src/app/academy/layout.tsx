@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
+import AcademyDurableStateProvider from '@/components/academy/AcademyDurableStateProvider';
 import AcademyPathGate from '@/components/academy/AcademyPathGate';
-import AcademyPersistenceBridge from '@/components/academy/AcademyPersistenceBridge';
 import { getAcademyState } from '@/lib/academy/persistence';
 import { getClerkAuthenticatedUser } from '@/lib/auth/clerk-user';
 
@@ -16,11 +16,10 @@ export default async function AcademyLayout({ children }: { children: ReactNode 
   }
 
   return (
-    <>
-      <AcademyPersistenceBridge initialState={initialState} />
+    <AcademyDurableStateProvider initialState={initialState}>
       <AcademyPathGate activeCourseTitle={initialState?.course?.title || null}>
         {children}
       </AcademyPathGate>
-    </>
+    </AcademyDurableStateProvider>
   );
 }
