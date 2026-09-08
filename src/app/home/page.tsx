@@ -7,6 +7,7 @@ import {
   BookOpen,
   Box,
   Boxes,
+  Crosshair,
   LibraryBig,
   LogIn,
   MessageCircle,
@@ -14,6 +15,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Swords,
   Terminal,
   UserRound,
 } from 'lucide-react';
@@ -28,6 +30,8 @@ import { useAuth } from '@/lib/auth/use-auth';
 import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 
 const actions = [
+  { href: '/operations', label: 'Operations', hint: 'Preconfigured scenarios', icon: Crosshair, color: 'labs' },
+  { href: '/warroom', label: 'WarRoom', hint: '2–4 player team lab', icon: Swords, color: 'live' },
   { href: '/labs', label: 'Cyber Lab', hint: 'Build and run', icon: Terminal, color: 'labs' },
   { href: '/live', label: 'Live Workspace', hint: 'Shared workspace', icon: RadioTower, color: 'live' },
   { href: '/collab', label: 'Collaboration', hint: 'Messages and people', icon: MessageCircle, color: 'collab' },
@@ -37,7 +41,7 @@ const actions = [
 ] as const;
 
 const workflow = [
-  { href: '/labs', label: 'Build', color: 'boards', icon: Boxes },
+  { href: '/operations', label: 'Choose', color: 'labs', icon: Crosshair },
   { href: '/labs', label: 'Run', color: 'labs', icon: Terminal },
   { href: '/labs', label: 'Review', color: 'evidence', icon: ShieldCheck },
   { href: '/vault', label: 'Save', color: 'vault', icon: LibraryBig },
@@ -85,7 +89,7 @@ export default function HomePage() {
           <span className="hidden sm:inline">AI Helper</span>
         </Button>
         <Button asChild size="sm" className="h-9">
-          <Link href="/labs"><Terminal className="mr-2 h-4 w-4" />{activeLab ? 'Open lab' : 'Start lab'}</Link>
+          <Link href={activeLab ? '/labs' : '/operations'}><Terminal className="mr-2 h-4 w-4" />{activeLab ? 'Open lab' : 'Start operation'}</Link>
         </Button>
       </div>
 
@@ -155,7 +159,7 @@ export default function HomePage() {
 
       <section aria-labelledby="lab-flow-title" className="rounded-lg border bg-card/60 p-2.5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <h2 id="lab-flow-title" className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:w-28 sm:shrink-0">Lab flow</h2>
+          <h2 id="lab-flow-title" className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:w-28 sm:shrink-0">Operation flow</h2>
           <div className="grid flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
             {workflow.map((item, index) => {
               const Icon = item.icon;
