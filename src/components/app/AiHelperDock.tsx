@@ -25,6 +25,8 @@ function uid() {
 
 function surfaceLabel(pathname: string) {
   if (pathname === '/home') return 'Dashboard';
+  if (pathname.startsWith('/operations')) return 'Operations';
+  if (pathname.startsWith('/warroom')) return 'WarRoom';
   if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'Vault';
   if (pathname.startsWith('/collab/storyboards')) return 'Boards';
   if (pathname.startsWith('/collab')) return 'Collaboration';
