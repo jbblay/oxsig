@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
                 c.name,
                 c.description,
                 c.owner_id,
+                c.collaboration_type,
                 c.created_at,
                 c.updated_at,
                 owner.display_name AS owner_name,
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
           description: row.description || '',
           ownerId: row.owner_id,
           ownerName: row.owner_name || row.owner_email || 'Owner',
+          collaborationType: row.collaboration_type || 'chat',
           memberCount: Number(row.member_count || 1),
           lastMessage: row.last_message || '',
           lastMessageType: row.last_message_type || null,
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
       const created = await client.query(
         `INSERT INTO collaborations (name, description, owner_id, status, collaboration_type, settings)
          VALUES ($1, $2, $3, 'active', 'chat', $4::jsonb)
-         RETURNING id, name, description, owner_id, created_at, updated_at`,
+         RETURNING id, name, description, owner_id, collaboration_type, created_at, updated_at`,
         [
           parsed.data.name,
           parsed.data.description || null,
@@ -145,6 +147,7 @@ export async function POST(request: NextRequest) {
           description: row.description || '',
           ownerId: row.owner_id,
           ownerName: user.name || user.email || 'You',
+          collaborationType: row.collaboration_type || 'chat',
           memberCount: 1,
           lastMessage: '',
           lastMessageType: null,
