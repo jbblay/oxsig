@@ -197,27 +197,15 @@ export default function AccessPathReadinessReview() {
   const desktopLab = lab?.metadata?.accessMode === 'desktop';
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold md:text-3xl">Browser Access Path</h1>
-            <Badge variant="secondary">Evidence v1</Badge>
-            {facts && <Badge variant="outline">browser-observed</Badge>}
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            This surface proves the final controlled desktop path only after a browser completes an RFB/VNC handshake through the same-origin OXSIG WebSocket bridge and an AWS Systems Manager port-forwarding session. The server-issued session claim and browser observation remain separate provenance layers.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || loadingEvidence || analyzing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loadingLab || loadingEvidence ? 'animate-spin' : ''}`} />Refresh evidence
-          </Button>
-          <Button onClick={() => void analyze()} disabled={!facts || analyzing}>
-            {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-            {analysis ? 'Review interpretation' : 'Interpret evidence'}
-          </Button>
-        </div>
+    <div className="space-y-3 pb-2">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || loadingEvidence || analyzing}>
+<RefreshCw className={`mr-2 h-4 w-4 ${loadingLab || loadingEvidence ? 'animate-spin' : ''}`} />Refresh
+        </Button>
+        <Button onClick={() => void analyze()} disabled={!facts || analyzing}>
+{analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+{analysis ? 'Review' : 'Interpret'}
+        </Button>
       </div>
 
       {error && (
@@ -225,23 +213,12 @@ export default function AccessPathReadinessReview() {
       )}
 
       {!lab && !loadingLab && (
-        <div className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground">No active Cyber Lab runtime is available.</div>
+        <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No active lab.</div>
       )}
 
-      {lab && !desktopLab && (
-        <div className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground">
-          The active lab is not a desktop workload. Browser access-path evidence applies only to controlled desktop deployments.
-        </div>
-      )}
+      {lab && !desktopLab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Desktop workload required.</div>}
 
-      {lab && desktopLab && !facts && !loadingEvidence && (
-        <div className="rounded-2xl border bg-card p-6">
-          <div className="flex items-center gap-2 font-semibold"><MonitorUp className="h-4 w-4" />No end-to-end access evidence yet</div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Capture Runtime Readiness and a ready Guest Service record first, then open the desktop in Runtime Lab. When the private SSM channel and RFB handshake complete, OXSIG records this evidence automatically.
-          </p>
-        </div>
-      )}
+      {lab && desktopLab && !facts && !loadingEvidence && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No access-path evidence yet.</div>}
 
       {facts && (
         <>

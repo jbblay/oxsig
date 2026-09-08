@@ -202,26 +202,15 @@ export default function RuntimeReadinessReview() {
   const accessMode = facts?.target.accessMode || (lab?.metadata?.accessMode === 'desktop' ? 'desktop' : 'terminal');
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold md:text-3xl">Runtime Readiness</h1>
-            <Badge variant="secondary">Evidence v1</Badge>
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            OXSIG performs a fresh server-side readiness observation against the exact controlled deployment. EC2 and Systems Manager facts remain provider-attested; the aggregate readiness record is server-executed and never treats SSM Online as proof of arbitrary service, desktop, or network health.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || checking}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loadingLab ? 'animate-spin' : ''}`} />Refresh lab
-          </Button>
-          <Button onClick={() => void checkReadiness()} disabled={!lab || checking || loadingLab}>
-            {checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
-            {checking ? 'Checking…' : 'Check readiness'}
-          </Button>
-        </div>
+    <div className="space-y-3 pb-2">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || checking}>
+<RefreshCw className={`mr-2 h-4 w-4 ${loadingLab ? 'animate-spin' : ''}`} />Refresh
+        </Button>
+        <Button onClick={() => void checkReadiness()} disabled={!lab || checking || loadingLab}>
+{checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
+{checking ? 'Checking…' : 'Check readiness'}
+        </Button>
       </div>
 
       {error && (
@@ -233,29 +222,8 @@ export default function RuntimeReadinessReview() {
         </div>
       )}
 
-      {!loadingLab && !lab && (
-        <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
-          <Server className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 font-semibold">No active controlled lab</p>
-          <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Deploy an authorized Infrastructure Designer workload first. Runtime readiness evidence is bound to that exact deployment and cannot be created for an arbitrary browser-supplied machine ID.
-          </p>
-        </div>
-      )}
+      {!loadingLab && !lab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No active lab.</div>}
 
-      {lab && !facts && !checking && (
-        <div className="rounded-2xl border border-dashed bg-card p-8">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-6 w-6 text-muted-foreground" />
-            <div>
-              <p className="font-semibold">Ready to observe: {lab.name}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                The check will ask AWS for the current EC2 state and Systems Manager registration/ping status, then store those facts in the Evidence Ledger before any AI explanation occurs.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {facts && (
         <>

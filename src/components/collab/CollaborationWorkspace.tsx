@@ -487,21 +487,10 @@ export default function CollaborationWorkspace() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 p-2 text-white shadow-sm">
-              <MessageCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold md:text-3xl">Collaboration</h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">Conversation is the workspace. Explain, record, share resources, and start practice without leaving the session context.</p>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-2">
+      <div className="flex justify-end">
         <Button onClick={() => setShowNewSession((value) => !value)}>
-          <Plus className="mr-2 h-4 w-4" />New session
+<Plus className="mr-2 h-4 w-4" />New session
         </Button>
       </div>
 
@@ -512,7 +501,7 @@ export default function CollaborationWorkspace() {
               value={newSessionName}
               onChange={(event) => setNewSessionName(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void createSession(); }}
-              placeholder="Session name, e.g. Network Security Study Group"
+              placeholder="Session name"
               aria-label="New collaboration session name"
               maxLength={80}
             />
@@ -524,8 +513,8 @@ export default function CollaborationWorkspace() {
         </div>
       )}
 
-      <div className="grid min-h-[680px] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[250px_minmax(0,1fr)_280px]">
-        <aside className="border-b bg-muted/15 lg:border-b-0 lg:border-r">
+      <div className="grid min-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border bg-card md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)_280px]">
+        <aside className="border-b bg-muted/15 md:border-b-0 md:border-r">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div>
               <p className="text-sm font-semibold">Sessions</p>
@@ -535,14 +524,14 @@ export default function CollaborationWorkspace() {
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div className="max-h-48 space-y-1 overflow-auto p-2 lg:max-h-[610px]">
+          <div className="max-h-44 space-y-1 overflow-auto p-2 md:max-h-[calc(100dvh-9rem)]">
             {sessions.length === 0 ? (
               <button
                 type="button"
                 className="w-full rounded-xl border border-dashed p-5 text-left text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground"
                 onClick={() => setShowNewSession(true)}
               >
-                <Plus className="mb-2 h-5 w-5" />Create your first conversation.
+                <Plus className="mr-2 inline h-4 w-4" />New session
               </button>
             ) : sessions.map((session) => {
               const active = session.id === activeId;
@@ -571,14 +560,11 @@ export default function CollaborationWorkspace() {
 
         <section className="flex min-w-0 flex-col bg-background/50">
           {!activeSession ? (
-            <div className="flex min-h-[520px] flex-1 flex-col items-center justify-center p-8 text-center">
-              <div className="rounded-2xl bg-muted p-4"><MessageCircle className="h-8 w-8 text-muted-foreground" /></div>
-              <p className="mt-4 font-semibold">Start a collaboration session</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create one conversation where messages, explanations, recordings, resources and practice stay together.</p>
-              <Button className="mt-4" onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
-            </div>
-          ) : (
-            <>
+  <div className="flex min-h-[420px] flex-1 items-center justify-center p-6">
+    <Button onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
+  </div>
+) : (
+  <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -608,13 +594,9 @@ export default function CollaborationWorkspace() {
                     <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="h-3.5 w-3.5" />Try again</Button>
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
-                    <Sparkles className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="mt-3 text-sm font-semibold">The session is ready</p>
-                    <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">Send the first message, switch to Explain, record a voice note, attach a resource, or place a Cyber Lab practice card into the conversation.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
+        <div className="flex min-h-[320px] items-center justify-center text-sm text-muted-foreground">Start the conversation.</div>
+      ) : (
+        <div className="space-y-3">
                     {messages.map((message) => {
                       const attachment = attachmentFrom(message.metadata);
                       const attachmentUrl = attachment && activeId
@@ -678,7 +660,7 @@ export default function CollaborationWorkspace() {
               <div className="border-t bg-background/90 p-3 backdrop-blur sm:p-4">
                 {composerMode === 'explain' && (
                   <div className="mb-2 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-                    <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain mode — your next message is marked as an explanation.</span>
+                    <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain mode</span>
                     <Button size="sm" variant="ghost" className="h-7" onClick={() => setComposerMode('text')}>Cancel</Button>
                   </div>
                 )}
@@ -728,10 +710,9 @@ export default function CollaborationWorkspace() {
           )}
         </section>
 
-        <aside className="border-t bg-muted/10 lg:border-l lg:border-t-0">
+        <aside className="border-t bg-muted/10 md:col-span-2 xl:col-span-1 xl:border-l xl:border-t-0">
           <div className="border-b px-4 py-3">
             <p className="text-sm font-semibold">Session</p>
-            <p className="text-[11px] text-muted-foreground">People and shared actions</p>
           </div>
           {!activeSession ? (
             <div className="p-4 text-xs text-muted-foreground">Choose a session to see its people and tools.</div>
@@ -765,7 +746,6 @@ export default function CollaborationWorkspace() {
                   <Button size="sm" className="w-full" variant="outline" onClick={() => void inviteMember()} disabled={!inviteEmail.trim() || inviting}>
                     {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Add member
                   </Button>
-                  <p className="text-[10px] leading-4 text-muted-foreground">Existing OXSIG users are added immediately. New users receive a secure email invitation when transactional email is configured.</p>
                 </div>
               )}
 
@@ -773,13 +753,13 @@ export default function CollaborationWorkspace() {
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Conversation tools</p>
                 <div className="grid gap-2">
                   <button type="button" onClick={() => setComposerMode('explain')} className="flex items-center gap-3 rounded-xl border bg-background/70 p-3 text-left transition hover:border-primary/30">
-                    <Sparkles className="h-4 w-4 text-primary" /><div><p className="text-xs font-medium">Explain in chat</p><p className="text-[10px] text-muted-foreground">Keep the explanation in context.</p></div>
+                    <Sparkles className="h-4 w-4 text-primary" /><span className="text-xs font-medium">Explain</span>
                   </button>
                   <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-3 rounded-xl border bg-background/70 p-3 text-left transition hover:border-primary/30">
-                    <Paperclip className="h-4 w-4" /><div><p className="text-xs font-medium">Attach resource</p><p className="text-[10px] text-muted-foreground">Share it with every member.</p></div>
+                    <Paperclip className="h-4 w-4" /><span className="text-xs font-medium">Attach resource</span>
                   </button>
                   <button type="button" onClick={() => void startPractice()} className="flex items-center gap-3 rounded-xl border bg-background/70 p-3 text-left transition hover:border-primary/30">
-                    <Box className="h-4 w-4" /><div><p className="text-xs font-medium">Practice together</p><p className="text-[10px] text-muted-foreground">Place a lab card in the timeline.</p></div>
+                    <Box className="h-4 w-4" /><span className="text-xs font-medium">Practice</span>
                   </button>
                 </div>
               </div>

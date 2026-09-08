@@ -103,20 +103,11 @@ export default function DeploymentEvidenceReview() {
   }, []);
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold md:text-3xl">Deployment Evidence</h1>
-            <Badge variant="secondary">Interpretation v1</Badge>
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            OXSIG loads the latest provider-attested deployment evidence from the server, verifies it against the exact authorized plan, and teaches from those verified facts. Provider allocation evidence is not treated as proof that the guest OS, terminal, desktop, services, or network are ready.
-          </p>
-        </div>
+    <div className="space-y-3 pb-2">
+      <div className="flex justify-end">
         <Button onClick={() => void interpretLatest()} disabled={loading}>
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-          {result ? 'Reload evidence' : 'Interpret latest evidence'}
+{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+{result ? 'Reload evidence' : 'Interpret evidence'}
         </Button>
       </div>
 
@@ -129,15 +120,6 @@ export default function DeploymentEvidenceReview() {
         </div>
       )}
 
-      {!result && !loading && (
-        <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
-          <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 font-semibold">Evidence before explanation</p>
-          <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Complete a controlled Infrastructure Designer deployment first. Once the trusted runtime adapter records provider allocation evidence, OXSIG can compare that evidence with the exact authorized plan and explain what it proves—and what still needs verification.
-          </p>
-        </div>
-      )}
 
       {result && (
         <>

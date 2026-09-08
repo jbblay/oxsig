@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Code2,
   Copy,
-  FileText,
   FlaskConical,
   LibraryBig,
   ListChecks,
@@ -22,8 +21,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  ShieldCheck,
-  Sparkles,
   SquareTerminal,
   Trash2,
 } from 'lucide-react';
@@ -192,12 +189,6 @@ export default function VaultPage() {
     });
   }, [items, kindFilter, pinnedOnly, query]);
 
-  const stats = React.useMemo(() => ({
-    total: items.length,
-    commands: items.filter((item) => item.kind === 'command' || item.kind === 'script').length,
-    playbooks: items.filter((item) => item.kind === 'playbook' || item.kind === 'procedure').length,
-    pinned: items.filter((item) => item.pinned).length,
-  }), [items]);
 
   function canDiscardChanges() {
     return !dirty || window.confirm('Discard your unsaved Vault changes?');
@@ -402,54 +393,8 @@ export default function VaultPage() {
   const ActiveKindIcon = KIND_ICONS[activeKind];
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-background via-background to-primary/5 p-5 shadow-sm md:p-7">
-        <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/10">
-                <LibraryBig className="h-5 w-5" />
-              </div>
-              <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" /> Knowledge system</Badge>
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Vault</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
-              Capture technical knowledge once, then carry it into explanation, collaboration and hands-on practice. Commands, procedures, cheat sheets, scripts, concepts and playbooks become reusable Oxsig objects instead of loose files.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => startCreate('cheat_sheet')}><BookOpenCheck className="h-4 w-4" /> New cheat sheet</Button>
-            <Button variant="outline" onClick={() => startCreate('playbook')}><LibraryBig className="h-4 w-4" /> New playbook</Button>
-            <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> Capture knowledge</Button>
-          </div>
-        </div>
-        <div className="relative mt-5 flex items-start gap-2 rounded-xl border border-primary/15 bg-background/70 p-3 text-xs text-muted-foreground backdrop-blur">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <p><span className="font-medium text-foreground">Not generic cloud storage.</span> Vault stores structured technical knowledge. Large ISOs, VM images and arbitrary binary dumps belong outside this workspace; feature-owned assets remain with Boards, Collaboration and Cyber Lab.</p>
-        </div>
-      </section>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          ['Knowledge objects', stats.total, LibraryBig],
-          ['Commands & scripts', stats.commands, SquareTerminal],
-          ['Procedures & playbooks', stats.playbooks, ListChecks],
-          ['Pinned', stats.pinned, Pin],
-        ].map(([label, value, Icon]) => {
-          const StatIcon = Icon as React.ComponentType<{ className?: string }>;
-          return (
-            <Card key={label as string}>
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><StatIcon className="h-4 w-4" /></div>
-                <div><p className="text-2xl font-semibold leading-none">{loadError ? '—' : value as number}</p><p className="mt-1 text-xs text-muted-foreground">{label as string}</p></div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+    <div className="min-h-0">
+      <div className="grid min-h-[calc(100dvh-5rem)] gap-3 lg:grid-cols-[340px_minmax(0,1fr)]">
         <div className="space-y-4">
           <Card>
             <CardContent className="space-y-3 p-4">
@@ -484,13 +429,12 @@ export default function VaultPage() {
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted"><Brain className="h-6 w-6" /></div>
-                <h2 className="font-semibold">{items.length === 0 ? 'Your Vault starts with one useful thing.' : 'Nothing matches this view.'}</h2>
-                <p className="mt-1 max-w-md text-sm text-muted-foreground">{items.length === 0 ? 'Capture a command you keep forgetting, a procedure you want to repeat, or the first playbook for a topic you are learning.' : 'Change the search or filter to find another knowledge object.'}</p>
-                {items.length === 0 && <Button className="mt-4" onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> Capture first item</Button>}
+                <h2 className="font-semibold">{items.length === 0 ? 'No items yet' : 'No matches'}</h2>
+                {items.length === 0 && <Button className="mt-4" onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>}
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
               {filtered.map((item) => {
                 const Icon = KIND_ICONS[item.kind];
                 const snippet = firstUsefulLine(item);
@@ -519,27 +463,15 @@ export default function VaultPage() {
           )}
         </div>
 
-        <div className="xl:sticky xl:top-20 xl:self-start">
+        <div className="lg:sticky lg:top-20 lg:self-start">
           {!editorVisible ? (
-            <Card className="overflow-hidden">
-              <CardHeader>
-                <CardTitle className="text-lg">Knowledge becomes action</CardTitle>
-                <CardDescription>Select an item or capture something new. Vault objects can continue directly into the rest of Oxsig.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {[
-                  [FlaskConical, 'Practice', 'Carry commands, scripts and procedures into Cyber Lab.'],
-                  [Network, 'Explain', 'Open Boards and turn the knowledge into a visual explanation.'],
-                  [MessageCircle, 'Discuss', 'Bring the idea into Collaboration when you need another person.'],
-                ].map(([Icon, title, description]) => {
-                  const FlowIcon = Icon as React.ComponentType<{ className?: string }>;
-                  return <div key={title as string} className="flex gap-3 rounded-xl border p-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted"><FlowIcon className="h-4 w-4" /></div><div><p className="text-sm font-medium">{title as string}</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description as string}</p></div></div>;
-                })}
-                <Button className="w-full" onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> Capture knowledge</Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="overflow-hidden shadow-sm">
+  <Card className="overflow-hidden">
+    <CardContent className="flex min-h-[360px] items-center justify-center p-6">
+      <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
+    </CardContent>
+  </Card>
+) : (
+  <Card className="overflow-hidden shadow-sm">
               <CardHeader className="border-b bg-muted/20">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 gap-3">
@@ -587,21 +519,6 @@ export default function VaultPage() {
           )}
         </div>
       </div>
-
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4" /> The Oxsig knowledge loop</CardTitle><CardDescription>Vault is designed to connect the major workspaces rather than become another isolated app.</CardDescription></CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          {[
-            ['Collaborate', 'Discuss and discover knowledge with other people.', MessageCircle],
-            ['Boards', 'Explain knowledge visually and make it teachable.', Network],
-            ['Cyber Lab', 'Test the knowledge against a real environment.', FlaskConical],
-            ['Vault', 'Capture what worked so it becomes reusable.', LibraryBig],
-          ].map(([title, description, Icon], index) => {
-            const LoopIcon = Icon as React.ComponentType<{ className?: string }>;
-            return <div key={title as string} className="relative rounded-xl border p-4"><div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><LoopIcon className="h-4 w-4" /></div><p className="text-sm font-semibold">{title as string}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{description as string}</p>{index < 3 && <ChevronRight className="absolute -right-3 top-1/2 hidden h-5 w-5 -translate-y-1/2 rounded-full bg-background text-muted-foreground md:block" />}</div>;
-          })}
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -1,9 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   ArrowUpRight,
   Circle,
   CircleStop,
@@ -1167,9 +1165,6 @@ export default function StoryboardsPage() {
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription className="mt-1">
-              Freehand drawing, replayable shapes, synchronized audio, secure sharing, export, zoom, grid snapping, and automatic recovery.
-            </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={exportPng} disabled={eventsRef.current.length === 0}>
@@ -1248,18 +1243,6 @@ export default function StoryboardsPage() {
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <Badge variant="outline" className="font-normal">P Pen</Badge>
-          <Badge variant="outline" className="font-normal">E Eraser</Badge>
-          <Badge variant="outline" className="font-normal">L Line</Badge>
-          <Badge variant="outline" className="font-normal">A Arrow</Badge>
-          <Badge variant="outline" className="font-normal">R Rectangle</Badge>
-          <Badge variant="outline" className="font-normal">O Ellipse</Badge>
-          <Badge variant="outline" className="font-normal">G Grid</Badge>
-          <Badge variant="outline" className="font-normal">S Snap</Badge>
-          <Badge variant="outline" className="font-normal">0 100%</Badge>
-          <span>Snap affects structured shapes; freehand pen input stays fluid.</span>
-        </div>
 
         <div className="flex flex-wrap gap-2">
           {recordingState === "idle" && (
@@ -1298,7 +1281,6 @@ export default function StoryboardsPage() {
               </div>
               <span className="w-[88px] text-right font-mono text-xs text-muted-foreground">{formatDuration(playbackMs)} / {formatDuration(timelineDurationMs)}</span>
             </div>
-            <p className="text-xs text-muted-foreground">Seeking rebuilds the canvas at that exact point in the audio timeline.</p>
 
             {activeServerSession && (
               <div className="space-y-3 border-t pt-3">
@@ -1347,7 +1329,7 @@ export default function StoryboardsPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
       <audio
         ref={audioRef}
         className="hidden"
@@ -1371,47 +1353,15 @@ export default function StoryboardsPage() {
         onSeeked={syncPlaybackFromAudio}
       />
 
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
-            <Link href="/collab" className="inline-flex items-center gap-1 hover:text-foreground"><ArrowLeft className="h-3.5 w-3.5" /> Collaboration</Link>
-            <span>/</span><span>Boards</span>
-          </div>
-          <h1 className="text-2xl font-bold md:text-3xl">Boards</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Build visual explanations with structured drawing, synchronized voice, automatic recovery, secure sharing, and replay.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">Secure server</Badge>
-          <Badge variant="secondary">Grid + snap + zoom</Badge>
-          {recordingState !== "idle" && (
-            <Badge variant={recordingState === "recording" ? "destructive" : "secondary"}>
-              {recordingState === "recording" ? `Recording ${formatDuration(recordingElapsedMs)}` : recordingState === "paused" ? `Paused ${formatDuration(recordingElapsedMs)}` : "Saving…"}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">
           {editorCard}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Board capabilities</CardTitle></CardHeader>
-            <CardContent className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Visual authoring</p><p className="mt-1 text-xs">Pen, eraser, line, arrow, rectangle and ellipse with grouped undo/redo.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Diagram precision</p><p className="mt-1 text-xs">Optional grid, shape snapping and 50–200% zoom make technical diagrams easier to build.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Explain & replay</p><p className="mt-1 text-xs">Voice recording stays synchronized with every board event and timeline seek.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Automatic recovery</p><p className="mt-1 text-xs">Edits and title changes are saved locally after a short pause, even before a secure save.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Shareable secure links</p><p className="mt-1 text-xs">Authorized viewers and editors can open a copied board link directly into the secure session.</p></div>
-              <div className="rounded-xl border p-3"><p className="font-medium text-foreground">Reuse & export</p><p className="mt-1 text-xs">Duplicate a board for a new lesson or export the visible drawing as a white-background PNG.</p></div>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="space-y-4">
           <Card className="h-fit">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg"><Cloud className="h-4 w-4" /> Secure sessions</CardTitle>
-              <CardDescription>Owned by you or shared with your account. Search, filter, open, play, or copy a direct secure link.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
@@ -1463,7 +1413,6 @@ export default function StoryboardsPage() {
           <Card className="h-fit">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg"><Save className="h-4 w-4" /> Recovery drafts</CardTitle>
-              <CardDescription>Browser-local safety copies update automatically. A cloud badge means the recovery copy is linked to a secure session.</CardDescription>
             </CardHeader>
             <CardContent>
               {filteredDrafts.length === 0 ? (
