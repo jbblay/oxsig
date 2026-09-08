@@ -39,15 +39,14 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
 
         <Link
           href="/account"
-          className="group flex min-w-0 items-center gap-2 rounded-xl border border-transparent px-1.5 py-1 transition hover:border-border hover:bg-muted/40"
+          className="group flex min-w-0 items-center gap-2 rounded-lg border border-transparent p-1 transition hover:border-border hover:bg-muted/40"
           aria-label="Open account"
         >
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-bold">
             {initials(user?.displayName || user?.email)}
           </span>
-          <span className="hidden min-w-0 sm:block">
-            <span className="block truncate text-[11px] font-semibold group-hover:text-primary">Account</span>
-            <span className="block max-w-32 truncate text-[9px] text-muted-foreground">{user?.displayName || 'Profile'}</span>
+          <span className="hidden max-w-32 truncate text-[11px] font-medium sm:block">
+            {user?.displayName || 'Account'}
           </span>
         </Link>
       </div>
