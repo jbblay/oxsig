@@ -112,13 +112,14 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
     );
   });
 
-  it('permanently deletes an owned workspace through the collaboration cascade', async () => {
+  it('cleans attachment objects before permanently deleting an owned workspace', async () => {
     const args = input('DELETE');
     const response = await DELETE(args.request, args.context);
     expect(response.status).toBe(200);
     expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining("collaboration_type = 'live-workspace'"), [workspaceId, user.id]);
     expect(mocks.deleteCollaborationObjects).toHaveBeenCalledWith(workspaceId);
-    expect(await response.json()).toEqual({ deleted: true, storageCleanupPending: false });
+    expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collaborations'), [workspaceId, user.id]);
+    expect(await response.json()).toEqual({ deleted: true });
   });
 
   it('returns not found for non-owned workspace deletion', async () => {
@@ -127,5 +128,15 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
     const response = await DELETE(args.request, args.context);
     expect(response.status).toBe(404);
     expect(mocks.deleteCollaborationObjects).not.toHaveBeenCalled();
+  });
+
+  it('does not delete relational data if attachment cleanup fails', async () => {
+    mocks.deleteCollaborationObjects.mockRejectedValue(new Error('storage unavailable'));
+    const args = input('DELETE');
+    const response = await DELETE(args.request, args.context);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Could not delete Live Workspace attachments. Nothing was deleted.' });
+    expect(poolQuery).toHaveBeenCalledTimes(1);
+    expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining('SELECT id'), [workspaceId, user.id]);
   });
 });
