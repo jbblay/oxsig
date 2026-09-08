@@ -12,6 +12,11 @@
   backdrop-filter: blur(14px);
 }
 
+.oxsig-workspace-rail[data-workspace="vault"] { border-color: rgb(168 85 247 / .2); box-shadow: inset 2px 0 0 rgb(168 85 247 / .55); }
+.oxsig-workspace-rail[data-workspace="live"] { border-color: rgb(34 211 238 / .2); box-shadow: inset 2px 0 0 rgb(34 211 238 / .55); }
+.oxsig-workspace-rail[data-workspace="collab"] { border-color: rgb(59 130 246 / .2); box-shadow: inset 2px 0 0 rgb(59 130 246 / .55); }
+.oxsig-workspace-rail[data-workspace="boards"] { border-color: rgb(249 115 22 / .2); box-shadow: inset 2px 0 0 rgb(249 115 22 / .55); }
+
 .oxsig-workspace-rail::-webkit-scrollbar { display: none; }
 
 .oxsig-rail-title,
@@ -74,6 +79,7 @@
 .oxsig-achievement-chip[data-tone="level"] { border-color: rgb(34 211 238 / .28); background: rgb(34 211 238 / .06); }
 .oxsig-achievement-chip[data-tone="xp"] { border-color: rgb(168 85 247 / .25); background: rgb(168 85 247 / .06); }
 .oxsig-achievement-chip[data-tone="streak"] { border-color: rgb(249 115 22 / .25); background: rgb(249 115 22 / .06); }
+.oxsig-achievement-chip[data-tone="badge"] { border-color: rgb(234 179 8 / .24); background: rgb(234 179 8 / .05); }
 .oxsig-achievement-chip[data-tone="earned"] { border-color: rgb(16 185 129 / .24); background: rgb(16 185 129 / .06); }
 
 .oxsig-terminal-strip {
@@ -88,6 +94,11 @@
   padding: .42rem .65rem;
   color: rgb(226 232 240);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .035);
+}
+
+.oxsig-terminal-strip[data-running="true"] {
+  border-color: rgb(34 211 238 / .28);
+  box-shadow: inset 2px 0 0 rgb(34 211 238 / .7), inset 0 1px 0 rgb(255 255 255 / .035);
 }
 
 .oxsig-terminal-icon {
@@ -119,6 +130,41 @@ main[data-oxsig-workspace="boards"] .rounded-xl { border-radius: .65rem; }
 main[data-oxsig-workspace="collab"] .rounded-2xl { border-radius: .7rem; }
 main[data-oxsig-workspace="live"] .shadow-xl,
 main[data-oxsig-workspace="collab"] .shadow-xl { box-shadow: 0 16px 45px rgb(2 6 23 / .18); }
+
+main[data-oxsig-workspace="live"] button[aria-pressed="true"],
+main[data-oxsig-workspace="collab"] button[aria-pressed="true"] {
+  box-shadow: none !important;
+}
+
+main[data-oxsig-workspace="collab"] button[aria-pressed="true"] {
+  border-color: rgb(59 130 246 / .25) !important;
+  background: rgb(59 130 246 / .07) !important;
+}
+
+main[data-oxsig-workspace="live"] button[aria-pressed="true"] {
+  border-color: rgb(34 211 238 / .25) !important;
+  background: rgb(34 211 238 / .06) !important;
+}
+
+@media (min-width: 768px) {
+  main[data-oxsig-workspace="vault"] > .oxsig-workspace-rail + div > .grid {
+    grid-template-columns: 310px minmax(0, 1fr) !important;
+  }
+
+  main[data-oxsig-workspace="live"] > .oxsig-workspace-rail + div > .grid {
+    grid-template-columns: 250px minmax(0, 1fr) !important;
+  }
+
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
+    grid-template-columns: 220px minmax(0, 1fr) !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
+    grid-template-columns: 235px minmax(0, 1fr) 260px !important;
+  }
+}
 
 @media (max-width: 720px) {
   .oxsig-workspace-rail { gap: .2rem; padding-inline: .25rem; }
