@@ -128,6 +128,14 @@ export async function activateAcademyCourse(ownerId: string, courseId: string): 
           PROGRAM_PROCESS_CAPABILITIES[0].id,
         ]
       );
+    } else {
+      await client.query(
+        `UPDATE learning_path_enrollments
+            SET status='abandoned', active_capability_id=NULL,
+                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
+          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'`,
+        [ownerId, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
+      );
     }
 
     await client.query('COMMIT');
@@ -170,6 +178,13 @@ export async function archiveAcademyCourse(ownerId: string, courseId: string): P
           WHERE id = $1 AND owner_id = $2`,
         [courseId, ownerId]
       );
+      await client.query(
+        `UPDATE learning_path_enrollments
+            SET status='abandoned', active_capability_id=NULL,
+                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
+          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'`,
+        [ownerId, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
+      );
     }
 
     await client.query('COMMIT');
@@ -187,15 +202,37 @@ export async function deleteAcademyCourse(ownerId: string, courseId: string): Pr
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await detachOwnerResourceFromLiveWorkspaces(client, ownerId, 'academy-course', courseId);
-    const result = await client.query(
-      `DELETE FROM academy_courses
+    const target = await client.query(
+      `SELECT id, status
+         FROM academy_courses
         WHERE id = $1 AND owner_id = $2
-        RETURNING id`,
+        FOR UPDATE`,
       [courseId, ownerId]
     );
+    if (!target.rows[0]) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    await detachOwnerResourceFromLiveWorkspaces(client, ownerId, 'academy-course', courseId);
+    await client.query(
+      `DELETE FROM academy_courses
+        WHERE id = $1 AND owner_id = $2`,
+      [courseId, ownerId]
+    );
+
+    if (target.rows[0].status === 'active') {
+      await client.query(
+        `UPDATE learning_path_enrollments
+            SET status='abandoned', active_capability_id=NULL,
+                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
+          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'`,
+        [ownerId, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
+      );
+    }
+
     await client.query('COMMIT');
-    return Boolean(result.rows[0]);
+    return true;
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw error;
