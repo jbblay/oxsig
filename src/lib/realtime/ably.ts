@@ -4,7 +4,7 @@ import { Rest } from 'ably';
 import { collaborationChannelName, liveTerminalChannelName } from '@/lib/realtime/channel-names';
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
-const TERMINAL_TOKEN_TTL_MS = 5 * 60 * 1000;
+const TERMINAL_TOKEN_TTL_MS = 60 * 1000;
 let restClient: Rest | null = null;
 
 function apiKey() {
