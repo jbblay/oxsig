@@ -52,6 +52,36 @@ describe('LabTopologySaveQueue', () => {
     expect(reportError).not.toHaveBeenCalled();
   });
 
+  it('publishes the worker before the first save can re-enter the queue', async () => {
+    const stateA = topology('A');
+    const stateB = topology('B');
+    const stateC = topology('C');
+    const firstSave = deferred<LabTopology>();
+    const saves: LabTopology[] = [];
+    let queue!: LabTopologySaveQueue;
+
+    const save = vi.fn((value: LabTopology) => {
+      saves.push(value);
+      if (saves.length === 1) {
+        void queue.enqueue(stateC);
+        return firstSave.promise;
+      }
+      return Promise.resolve(value);
+    });
+
+    queue = new LabTopologySaveQueue(save, vi.fn());
+    queue.setConfirmed(stateA);
+
+    const saving = queue.enqueue(stateB);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    firstSave.resolve(stateB);
+    await saving;
+
+    expect(saves).toEqual([stateB, stateC]);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
   it('coalesces multiple queued changes to the latest desired graph', async () => {
     const stateA = topology('A');
     const stateB = topology('B');
