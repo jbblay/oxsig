@@ -54,3 +54,88 @@ export async function PATCH(
     }
   });
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; userId: string }> }
+) {
+  return requireAuth(request, async (req, user) => {
+    if (!(await validateCsrfToken(req))) return NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 });
+    const { id, userId } = await params;
+    if (!idSchema.safeParse(id).success || !idSchema.safeParse(userId).success) {
+      return NextResponse.json({ error: 'Invalid Live Workspace participant' }, { status: 400 });
+    }
+    const rateLimit = await checkRateLimit(req, { maxRequests: 20, windowMs: 60 * 60_000 }, `${user.id}:${id}`);
+    if (rateLimit) return rateLimit;
+
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const workspace = await client.query(
+        `SELECT c.owner_id
+           FROM collaborations c
+           JOIN live_workspaces lw ON lw.collaboration_id = c.id
+          WHERE c.id = $1
+            AND c.collaboration_type = 'live-workspace'
+            AND c.status = 'active'
+            AND lw.status = 'active'
+          FOR UPDATE`,
+        [id]
+      );
+      const ownerId = workspace.rows[0]?.owner_id as string | undefined;
+      if (!ownerId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Live Workspace not found' }, { status: 404 });
+      }
+      if (userId === ownerId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'The workspace owner cannot be removed' }, { status: 409 });
+      }
+      if (user.id !== ownerId && user.id !== userId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Only the workspace owner can remove another participant' }, { status: 403 });
+      }
+
+      const member = await client.query(
+        `SELECT 1
+           FROM collaboration_members
+          WHERE collaboration_id = $1 AND user_id = $2 AND status = 'active'
+          LIMIT 1`,
+        [id, userId]
+      );
+      if (!member.rowCount) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Participant not found' }, { status: 404 });
+      }
+
+      await revokeControlForParticipant({
+        queryable: client,
+        collaborationId: id,
+        participantId: userId,
+        actorId: user.id,
+        reason: user.id === userId ? 'participant_left' : 'participant_removed',
+      });
+      await client.query(
+        `UPDATE live_workspace_participants
+            SET status = 'removed', updated_at = NOW()
+          WHERE collaboration_id = $1 AND user_id = $2`,
+        [id, userId]
+      );
+      await client.query(
+        `UPDATE collaboration_members
+            SET status = 'removed', last_active_at = NOW()
+          WHERE collaboration_id = $1 AND user_id = $2`,
+        [id, userId]
+      );
+      await client.query('COMMIT');
+      return NextResponse.json({ removed: true, left: user.id === userId });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      console.error('Live Workspace participant removal failed:', error);
+      return NextResponse.json({ error: 'Could not remove participant' }, { status: 500 });
+    } finally {
+      client.release();
+    }
+  });
+}
