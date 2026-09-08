@@ -80,7 +80,7 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
   }, [kind]);
 
   if (kind === 'labs') {
-    return <div className="mb-2"><TerminalActivityStrip running label="Lab terminal pulse" /></div>;
+    return <div className="mb-2"><TerminalActivityStrip label="Lab terminal" /></div>;
   }
 
   if (kind === 'boards') {
@@ -121,7 +121,7 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
           destination: 'lab',
           createdAt: Date.now(),
         }));
-        await navigator.clipboard?.writeText(runnable.body);
+        if (navigator.clipboard) await navigator.clipboard.writeText(runnable.body);
         toast.success('Latest runnable item copied and sent to Cyber Lab.');
       } catch {
         // Navigation remains useful if clipboard or storage is unavailable.
@@ -137,7 +137,7 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
         </div>
         <div className="oxsig-rail-actions">
           <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => void launch()} disabled={!runnable}><SquareTerminal className="h-3.5 w-3.5" /> Send runnable to Lab</Button>
-          {runnable && <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => void navigator.clipboard?.writeText(runnable.body).then(() => toast.success('Copied.'))}><Copy className="h-3.5 w-3.5" /> Copy latest</Button>}
+          {runnable && <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => { if (!navigator.clipboard) return; void navigator.clipboard.writeText(runnable.body).then(() => toast.success('Copied.')); }}><Copy className="h-3.5 w-3.5" /> Copy latest</Button>}
         </div>
       </div>
     );
