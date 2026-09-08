@@ -15,6 +15,7 @@ The three EC2 instances share the configured lab subnet and Operation security g
 - Only the operator machine is an interactive `lab_instances` allocation.
 - Target nodes are tracked in `operation_nodes`; they are not directly exposed as privileged user terminals.
 - Every node has an absolute expiry shutdown task and EC2 `InstanceInitiatedShutdownBehavior=terminate`.
+- The scheduled cloud cleanup scans both durable Operation-node records and `Purpose=OperationNode` EC2 tags, so a node created just before a process/database failure can still be recovered and terminated by expiry.
 - Ending the Operation terminates all node instance IDs together.
 - Destroying the operator Cyber Lab also destroys the whole Operation, preventing target-node orphans.
 - Partial provisioning failure terminates all EC2 instances already created for that run and marks the run failed.
