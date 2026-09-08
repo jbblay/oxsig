@@ -32,7 +32,9 @@ const ownerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const bindingId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const boardId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const vaultId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const participantId = '11111111-1111-4111-8111-111111111111';
 const user = { id: ownerId, clerkUserId: 'clerk-owner', role: 'user' as const };
+const participantUser = { id: participantId, clerkUserId: 'clerk-participant', role: 'user' as const };
 
 function request(body: unknown, method = 'POST') {
   return new NextRequest(`http://localhost/api/live-workspaces/${workspaceId}/resources`, {
@@ -86,19 +88,39 @@ describe('Live Workspace resource binding API', () => {
     });
   });
 
-  it('rejects resource attachment when the participant lacks owner resource management', async () => {
+  it('lets a collaborating participant contribute their own Cyber Lab without transferring ownership', async () => {
+    mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, participantUser));
     mocks.getLiveWorkspaceAccess.mockResolvedValue(access({
-      role: 'instructor', isOwner: false,
-      capabilities: { ...access().capabilities, manageResources: false },
+      role: 'learner', isOwner: false,
+      capabilities: { ...access().capabilities, grantControl: false, manageParticipants: false, manageResources: false },
     }));
+    query.mockResolvedValueOnce({ rows: [{
+      id: bindingId,
+      resource_type: 'lab-instance', resource_id: labId, resource_owner_id: participantId,
+      attached_by: participantId, metadata: { label: 'Ubuntu Lab' }, attached_at: new Date().toISOString(),
+    }], rowCount: 1 });
 
     const response = await POST(request({ resourceType: 'lab-instance', resourceId: labId }), { params: Promise.resolve({ id: workspaceId }) });
-    expect(response.status).toBe(403);
-    expect(mocks.assertOwnerResource).not.toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalled();
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(mocks.assertOwnerResource).toHaveBeenCalledWith(expect.anything(), participantId, 'lab-instance', labId);
+    expect(body.resource).toMatchObject({ resourceId: labId, resourceOwnerId: participantId, ownershipTransferred: false });
   });
 
-  it('validates exact workspace-owner resource ownership before binding', async () => {
+  it('does not let a participant without resource-management rights contribute non-lab resources', async () => {
+    mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, participantUser));
+    mocks.getLiveWorkspaceAccess.mockResolvedValue(access({
+      role: 'learner', isOwner: false,
+      capabilities: { ...access().capabilities, grantControl: false, manageParticipants: false, manageResources: false },
+    }));
+
+    const response = await POST(request({ resourceType: 'storyboard', resourceId: boardId }), { params: Promise.resolve({ id: workspaceId }) });
+    expect(response.status).toBe(403);
+    expect(mocks.assertOwnerResource).not.toHaveBeenCalled();
+  });
+
+  it('validates exact workspace-owner resource ownership before binding owner resources', async () => {
     const response = await POST(request({ resourceType: 'lab-instance', resourceId: labId }), { params: Promise.resolve({ id: workspaceId }) });
     const body = await response.json();
 
