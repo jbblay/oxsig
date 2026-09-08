@@ -4,7 +4,7 @@ type VillainBadge = {
   id: string;
   title: string;
   description: string;
-  progress: string;
+  criteria: string;
   icon: typeof Skull;
 };
 
@@ -13,35 +13,35 @@ const villainBadges: VillainBadge[] = [
     id: 'domain-villain',
     title: 'Domain Villain',
     description: 'Compromise an Active Directory Operation without walkthrough assistance.',
-    progress: '0 / 1 clean Operation',
+    criteria: '1 clean Operation',
     icon: Crown,
   },
   {
     id: 'root-reaper',
     title: 'Root Reaper',
     description: 'Submit valid root evidence in 25 challenge labs.',
-    progress: '0 / 25 roots',
+    criteria: '25 validated roots',
     icon: Skull,
   },
   {
     id: 'ghost-operator',
     title: 'Ghost Operator',
     description: 'Complete a challenge without hints or AI assistance.',
-    progress: '0 / 1 clean solve',
+    criteria: '1 clean solve',
     icon: Ghost,
   },
   {
     id: 'warlord',
     title: 'Warlord',
     description: 'Win 10 scored WarRoom challenges with a team.',
-    progress: '0 / 10 wins',
+    criteria: '10 WarRoom wins',
     icon: Swords,
   },
   {
     id: 'pivot-phantom',
     title: 'Pivot Phantom',
     description: 'Complete five network-pivot Operations with validated evidence.',
-    progress: '0 / 5 pivots',
+    criteria: '5 validated pivots',
     icon: Network,
   },
 ];
@@ -52,9 +52,9 @@ export default function VillainBadgeGrid() {
       <div className="flex items-end justify-between gap-3">
         <div>
           <h2 id="villain-badges-title" className="text-sm font-semibold">Villain badges</h2>
-          <p className="text-[11px] text-muted-foreground">Mastery badges stay visible while locked. Operations and WarRoom events unlock them.</p>
+          <p className="text-[11px] text-muted-foreground">Badge criteria preview. Automated progression and unlock tracking are not connected yet.</p>
         </div>
-        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">0 / {villainBadges.length}</span>
+        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Preview</span>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -68,7 +68,7 @@ export default function VillainBadgeGrid() {
               </span>
               <p className="text-xs font-semibold">{badge.title}</p>
               <p className="mt-1 min-h-12 text-[10px] leading-4 text-muted-foreground">{badge.description}</p>
-              <div className="mt-3 border-t pt-2 text-[10px] font-medium text-muted-foreground">{badge.progress}</div>
+              <div className="mt-3 border-t pt-2 text-[10px] font-medium text-muted-foreground">Criteria: {badge.criteria}</div>
             </div>
           );
         })}
