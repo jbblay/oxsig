@@ -2,6 +2,12 @@ import 'server-only';
 
 import { getPool } from '@/lib/db/pool';
 import { detachOwnerResourceFromLiveWorkspaces } from '@/lib/live-workspace/resource-lifecycle';
+import {
+  PROGRAM_PROCESS_CAPABILITIES,
+  PROGRAM_PROCESS_PATH_ID,
+  PROGRAM_PROCESS_PATH_VERSION,
+  PROGRAM_PROCESS_SOURCE_PROMPT,
+} from '@/lib/learning/program-process-path';
 import type { AcademyCourse } from './types';
 
 export type OwnedAcademyCourse = {
@@ -69,7 +75,7 @@ export async function activateAcademyCourse(ownerId: string, courseId: string): 
   try {
     await client.query('BEGIN');
     const target = await client.query(
-      `SELECT id, status
+      `SELECT id, status, source_prompt
          FROM academy_courses
         WHERE id = $1 AND owner_id = $2
         FOR UPDATE`,
@@ -103,6 +109,24 @@ export async function activateAcademyCourse(ownerId: string, courseId: string): 
         `INSERT INTO academy_sessions (course_id, owner_id, status)
          VALUES ($1, $2, 'active')`,
         [courseId, ownerId]
+      );
+    }
+
+    if (target.rows[0].source_prompt === PROGRAM_PROCESS_SOURCE_PROMPT) {
+      await client.query(
+        `UPDATE learning_path_enrollments
+            SET status='active',
+                active_capability_id=COALESCE(active_capability_id, $4),
+                completed_at=NULL,
+                last_activity_at=NOW(),
+                updated_at=NOW()
+          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3`,
+        [
+          ownerId,
+          PROGRAM_PROCESS_PATH_ID,
+          PROGRAM_PROCESS_PATH_VERSION,
+          PROGRAM_PROCESS_CAPABILITIES[0].id,
+        ]
       );
     }
 
