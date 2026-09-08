@@ -88,19 +88,13 @@ export default function CyberLabWorkspace() {
   return (
     <>
       <div className="mb-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold">Lab tools</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Start in My Lab. Use Build only when you want to create or change the environment.</p>
-          </div>
-          <div className="flex items-center gap-1" role="tablist" aria-label="Cyber Lab main tools">
-            {PRIMARY_STAGES.map(renderStage)}
-          </div>
+        <div className="oxsig-scrollbar overflow-x-auto p-2" role="tablist" aria-label="Cyber Lab main tools">
+          <div className="flex min-w-max items-center gap-1">{PRIMARY_STAGES.map(renderStage)}</div>
         </div>
 
         <details className="border-t" open={advancedActive || undefined}>
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/30 hover:text-foreground">
-            <span>Advanced checks and deployment tools</span>
+            <span>More tools</span>
             <ChevronDown className="h-4 w-4" />
           </summary>
           <div className="oxsig-scrollbar overflow-x-auto border-t bg-muted/10 p-2" role="tablist" aria-label="Cyber Lab advanced tools">
