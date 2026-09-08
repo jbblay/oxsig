@@ -1,5 +1,5 @@
--- Keep Live Workspace resource bindings consistent with the lifecycle of the
--- underlying owner-owned resource. Bindings are intentionally polymorphic, so
+-- Keep owner-managed resource relationships consistent across destructive and
+-- archival lifecycle transitions. Live Workspace bindings are polymorphic, so
 -- PostgreSQL cannot express these relationships as ordinary foreign keys.
 
 CREATE OR REPLACE FUNCTION oxsig_detach_live_workspace_resource_on_delete()
@@ -31,7 +31,6 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION oxsig_detach_live_workspace_resource_on_unavailable()
 RETURNS TRIGGER AS $$
 DECLARE
-    old_data JSONB := to_jsonb(OLD);
     new_data JSONB := to_jsonb(NEW);
     resource_type_name TEXT := TG_ARGV[0];
     resource_owner UUID;
@@ -67,6 +66,21 @@ BEGIN
     END IF;
 
     RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Capability evidence deliberately survives ordinary enrollment abandonment, but
+-- must not claim proof from an Academy source the owner explicitly deleted.
+CREATE OR REPLACE FUNCTION oxsig_remove_capability_evidence_for_deleted_source()
+RETURNS TRIGGER AS $$
+DECLARE
+    source_type_name TEXT := TG_ARGV[0];
+BEGIN
+    DELETE FROM learning_capability_evidence
+     WHERE owner_id = OLD.owner_id
+       AND source_type = source_type_name
+       AND source_id = OLD.id;
+    RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -114,3 +128,13 @@ DROP TRIGGER IF EXISTS trg_infrastructure_design_workspace_detach_delete ON infr
 CREATE TRIGGER trg_infrastructure_design_workspace_detach_delete
 AFTER DELETE ON infrastructure_designs
 FOR EACH ROW EXECUTE FUNCTION oxsig_detach_live_workspace_resource_on_delete('infrastructure-design');
+
+DROP TRIGGER IF EXISTS trg_academy_practice_capability_evidence_delete ON academy_practice_attempts;
+CREATE TRIGGER trg_academy_practice_capability_evidence_delete
+AFTER DELETE ON academy_practice_attempts
+FOR EACH ROW EXECUTE FUNCTION oxsig_remove_capability_evidence_for_deleted_source('academy-practice');
+
+DROP TRIGGER IF EXISTS trg_academy_reflection_capability_evidence_delete ON academy_learning_reflections;
+CREATE TRIGGER trg_academy_reflection_capability_evidence_delete
+AFTER DELETE ON academy_learning_reflections
+FOR EACH ROW EXECUTE FUNCTION oxsig_remove_capability_evidence_for_deleted_source('academy-reflection');
