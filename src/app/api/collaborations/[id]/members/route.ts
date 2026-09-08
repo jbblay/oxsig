@@ -9,6 +9,7 @@ import {
   sendCollaborationInvitationEmail,
 } from '@/lib/collab/invitations';
 import { emailProviderConfigured } from '@/lib/email/resend';
+import { createWorkspaceNotification } from '@/lib/notifications/server';
 import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -219,6 +220,33 @@ export async function POST(
         name: 'members.changed',
         data: { memberId: member.id, action: 'added' },
       });
+
+      try {
+        const contextResult = await pool.query(
+          `SELECT c.name AS collaboration_name,
+                  COALESCE(inviter.display_name, inviter.email, 'An OXSIG member') AS inviter_name
+             FROM collaborations c
+             JOIN users inviter ON inviter.id = $2
+            WHERE c.id = $1
+            LIMIT 1`,
+          [id, user.id]
+        );
+        const context = contextResult.rows[0];
+        await createWorkspaceNotification({
+          ownerId: member.id,
+          type: 'collaboration.member_added',
+          title: context?.collaboration_name ? `Added to ${context.collaboration_name}` : 'Added to a collaboration',
+          detail: `${context?.inviter_name || 'An OXSIG member'} added you to a collaboration workspace.`,
+          href: '/collab',
+          severity: 'info',
+          sourceType: 'collaboration',
+          sourceId: id,
+          dedupeKey: `collaboration:${id}:member-added:${member.id}`,
+          queryable: pool,
+        });
+      } catch (notificationError) {
+        console.warn('Collaboration member notification failed:', notificationError);
+      }
 
       return NextResponse.json({
         member: mapMember({ ...member, role: 'member' }),
