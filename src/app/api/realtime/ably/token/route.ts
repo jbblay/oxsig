@@ -46,10 +46,11 @@ export async function GET(request: NextRequest) {
 
     try {
       if (terminalRequested) {
+        const parsedTerminalMode = terminalModeSchema.safeParse(terminalMode);
         if (
           !terminalBindingId || !idSchema.safeParse(terminalBindingId).success ||
           !terminalLeaseId || !idSchema.safeParse(terminalLeaseId).success ||
-          !terminalModeSchema.safeParse(terminalMode).success
+          !parsedTerminalMode.success
         ) {
           return NextResponse.json({ error: 'Invalid terminal realtime authorization request' }, { status: 400 });
         }
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
         if (!lease || lease.id !== terminalLeaseId) {
           return NextResponse.json({ error: 'Terminal control lease is no longer active' }, { status: 409 });
         }
-        if (terminalMode === 'publish' && controllerId !== user.id) {
+        if (parsedTerminalMode.data === 'publish' && controllerId !== user.id) {
           return NextResponse.json({ error: 'Only the active terminal controller can publish terminal output' }, { status: 403 });
         }
 
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
           bindingId: terminalBindingId,
           leaseId: terminalLeaseId,
           clientId: user.id,
-          mode: terminalMode,
+          mode: parsedTerminalMode.data,
           leaseExpiresAt: lease.expiresAt,
         });
         if (!token) {
