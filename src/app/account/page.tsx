@@ -7,7 +7,6 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
-  User,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
@@ -107,7 +106,7 @@ export default function AccountPage() {
       setDisplayName(next.displayName || '');
       setBio(next.bio || '');
       await refresh();
-      toast.success('Profile updated');
+      toast.success('Saved.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Update failed');
     } finally {
@@ -117,7 +116,7 @@ export default function AccountPage() {
 
   function resetInterface() {
     for (const key of UI_PREFERENCE_KEYS) window.localStorage.removeItem(key);
-    toast.success('Interface preferences reset');
+    toast.success('Interface reset.');
     window.location.assign('/home');
   }
 
@@ -128,22 +127,16 @@ export default function AccountPage() {
   if (!isAuthenticated) {
     return (
       <Card className="mx-auto max-w-md">
-        <CardHeader><CardTitle>Account</CardTitle><CardDescription>Sign in to manage your account.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Account</CardTitle><CardDescription>Sign in to continue.</CardDescription></CardHeader>
         <CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted"><User className="h-5 w-5" /></span>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Account</h1>
-            <p className="truncate text-sm text-muted-foreground">{profile?.email || 'Profile and preferences'}</p>
-          </div>
-        </div>
+    <div className="mx-auto max-w-6xl space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-sm text-muted-foreground">{profile?.email || ''}</p>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
@@ -151,20 +144,20 @@ export default function AccountPage() {
 
       {profileError && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          Some profile information is still synchronizing.
+          Profile is syncing.
         </div>
       )}
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           {loading && !profile ? (
-            <Card><CardContent className="flex items-center justify-center py-16 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading profile…</CardContent></Card>
+            <Card><CardContent className="flex items-center justify-center py-16 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading…</CardContent></Card>
           ) : loadError ? (
             <Card className="border-destructive/30">
               <CardHeader><CardTitle>Profile unavailable</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">{loadError}</p>
-                <Button variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Try again</Button>
+                <Button variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Retry</Button>
               </CardContent>
             </Card>
           ) : profile ? (
@@ -183,7 +176,7 @@ export default function AccountPage() {
                 </div>
                 <div>
                   <label htmlFor="account-bio" className="mb-1 block text-sm font-medium">Bio</label>
-                  <Textarea id="account-bio" value={bio} onChange={(event) => setBio(event.target.value.slice(0, 500))} maxLength={500} rows={4} placeholder="What are you building or working on?" />
+                  <Textarea id="account-bio" value={bio} onChange={(event) => setBio(event.target.value.slice(0, 500))} maxLength={500} rows={4} placeholder="Optional" />
                   <p className="mt-1 text-right text-xs text-muted-foreground">{bio.length}/500</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -206,9 +199,9 @@ export default function AccountPage() {
       </section>
 
       {progress && (
-        <details className="group overflow-hidden rounded-2xl border bg-card">
+        <details className="group overflow-hidden rounded-xl border bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold sm:px-5">
-            <span>Activity & progress</span>
+            <span>Progress</span>
             <span className="text-xs font-normal text-muted-foreground group-open:hidden">View</span>
             <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">Hide</span>
           </summary>
