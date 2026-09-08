@@ -6,6 +6,7 @@ import '@xyflow/react/dist/style.css';
 import './globals.css';
 import './oxsig-design.css';
 import './lab-flow.css';
+import './workspace-mode.css';
 import AppShell from '@/components/app/AppShell';
 import GuestAuthGate from '@/components/auth/guest-auth-gate';
 import { Toaster } from '@/components/ui/sonner';
