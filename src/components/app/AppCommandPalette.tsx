@@ -17,15 +17,15 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
 const destinations = [
-  { href: '/home', label: 'Dashboard', icon: Home },
-  { href: '/labs', label: 'Cyber Lab', icon: Box },
-  { href: '/collab', label: 'Collaboration', icon: MessageCircle },
-  { href: '/live', label: 'Live Workspace', icon: RadioTower },
-  { href: '/collab/storyboards', label: 'Boards', icon: BookOpen },
-  { href: '/vault', label: 'Vault', icon: LibraryBig },
-  { href: '/manage', label: 'Resources', icon: Settings2 },
-  { href: '/account', label: 'Account', icon: UserRound },
-];
+  { href: '/home', label: 'Dashboard', icon: Home, color: 'home' },
+  { href: '/labs', label: 'Cyber Lab', icon: Box, color: 'labs' },
+  { href: '/collab', label: 'Collaboration', icon: MessageCircle, color: 'collab' },
+  { href: '/live', label: 'Live Workspace', icon: RadioTower, color: 'live' },
+  { href: '/collab/storyboards', label: 'Boards', icon: BookOpen, color: 'boards' },
+  { href: '/vault', label: 'Vault', icon: LibraryBig, color: 'vault' },
+  { href: '/manage', label: 'Resources', icon: Settings2, color: 'manage' },
+  { href: '/account', label: 'Account', icon: UserRound, color: 'home' },
+] as const;
 
 export default function AppCommandPalette({
   open,
@@ -55,10 +55,10 @@ export default function AppCommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="w-[calc(100%_-_1rem)] max-w-md gap-0 overflow-hidden rounded-xl p-0">
         <DialogTitle className="sr-only">Go to</DialogTitle>
         <div className="relative border-b">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             ref={inputRef}
             value={query}
@@ -67,12 +67,12 @@ export default function AppCommandPalette({
               if (event.key === 'Enter' && filtered[0]) navigate(filtered[0].href);
             }}
             placeholder="Go to…"
-            className="h-12 rounded-none border-0 pl-11 pr-12 shadow-none focus-visible:ring-0"
+            className="h-10 rounded-none border-0 pl-9 pr-10 text-sm shadow-none focus-visible:ring-0"
           />
         </div>
-        <div className="max-h-[360px] overflow-y-auto p-2">
+        <div className="max-h-[320px] overflow-y-auto p-1.5">
           {filtered.length === 0 ? (
-            <div className="px-3 py-8 text-center text-sm text-muted-foreground">No match</div>
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">No match</div>
           ) : (
             filtered.map((item) => {
               const Icon = item.icon;
@@ -80,10 +80,11 @@ export default function AppCommandPalette({
                 <button
                   key={item.href}
                   type="button"
+                  data-workspace-color={item.color}
                   onClick={() => navigate(item.href)}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  className="group flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition hover:bg-muted/70 focus-visible:bg-muted focus-visible:outline-none"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted"><Icon className="h-4 w-4" /></span>
+                  <span className="oxsig-workspace-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md"><Icon className="h-3.5 w-3.5" /></span>
                   <span className="font-medium">{item.label}</span>
                 </button>
               );
