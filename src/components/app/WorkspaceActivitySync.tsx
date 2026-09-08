@@ -12,10 +12,15 @@ import {
 } from '@/lib/persistence/workspace-activity';
 
 export default function WorkspaceActivitySync() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const runningRef = React.useRef(false);
   const rerunRef = React.useRef(false);
   const timerRef = React.useRef<number | null>(null);
+  const lastUploadedRef = React.useRef<string | null>(null);
+
+  const stateKey = React.useCallback((state: ReturnType<typeof getWorkspaceStateSnapshot>) => (
+    `${user?.id || 'authenticated'}:${JSON.stringify(state)}`
+  ), [user?.id]);
 
   const sync = React.useCallback(async () => {
     if (!isAuthenticated || isLoading) return;
@@ -27,7 +32,8 @@ export default function WorkspaceActivitySync() {
     runningRef.current = true;
     try {
       const snapshot = getWorkspaceStateSnapshot();
-      if (snapshot.activity.length || snapshot.recents.length) {
+      const uploadKey = stateKey(snapshot);
+      if ((snapshot.activity.length || snapshot.recents.length) && uploadKey !== lastUploadedRef.current) {
         const csrf = await getCsrfToken();
         const response = await fetch('/api/workspace-state', {
           method: 'POST',
@@ -36,6 +42,7 @@ export default function WorkspaceActivitySync() {
           body: JSON.stringify(snapshot),
         });
         if (!response.ok) return;
+        lastUploadedRef.current = uploadKey;
       }
 
       const response = await fetch('/api/workspace-state', {
@@ -44,10 +51,11 @@ export default function WorkspaceActivitySync() {
       });
       if (!response.ok) return;
       const body = await response.json().catch(() => ({}));
-      mergeWorkspaceState({
+      const merged = mergeWorkspaceState({
         activity: Array.isArray(body.activity) ? body.activity as WorkspaceActivity[] : [],
         recents: Array.isArray(body.recents) ? body.recents as WorkspaceRecent[] : [],
       });
+      lastUploadedRef.current = stateKey(merged);
     } catch {
       // Local activity remains authoritative while offline or when sync is unavailable.
     } finally {
@@ -57,7 +65,11 @@ export default function WorkspaceActivitySync() {
         window.setTimeout(() => void sync(), 0);
       }
     }
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, stateKey]);
+
+  React.useEffect(() => {
+    lastUploadedRef.current = null;
+  }, [user?.id]);
 
   React.useEffect(() => {
     if (!isAuthenticated || isLoading) return;
