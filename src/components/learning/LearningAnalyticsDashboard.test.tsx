@@ -45,23 +45,23 @@ const zeroProgress: LearnerProgressSummary = {
 };
 
 describe('LearningAnalyticsDashboard', () => {
-  it('renders a truthful rich zero state instead of demo progress', () => {
+  it('renders a truthful zero state instead of demo progress', () => {
     render(<LearningAnalyticsDashboard progress={zeroProgress} />);
 
     expect(screen.getByText('0 XP')).toBeInTheDocument();
     expect(screen.getByText('Explorer')).toBeInTheDocument();
-    expect(screen.getByText('0/2 unlocked from real milestones.')).toBeInTheDocument();
+    expect(screen.getByText('0/2 unlocked')).toBeInTheDocument();
     expect(screen.getByText('0m')).toBeInTheDocument();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 
-  it('lets a learner inspect a locked badge and its real unlock condition', () => {
+  it('lets a learner inspect an in-progress milestone and its real unlock condition', () => {
     render(<LearningAnalyticsDashboard progress={zeroProgress} />);
 
     fireEvent.click(screen.getByRole('button', { name: /first proof/i }));
 
-    expect(screen.getByText('Locked')).toBeInTheDocument();
+    expect(screen.getByText('In progress')).toBeInTheDocument();
     expect(screen.getAllByText('0/1 capability').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/persisted OXSIG learning evidence and activity/i)).toBeInTheDocument();
+    expect(screen.getByText('Demonstrate your first technical capability.')).toBeInTheDocument();
   });
 });

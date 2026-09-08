@@ -7,6 +7,7 @@ import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
 import GuestServiceReadinessReview from '@/components/labs/GuestServiceReadinessReview';
 import InfrastructureDesigner from '@/components/labs/InfrastructureDesigner';
+import LabEvidenceTimeline from '@/components/labs/LabEvidenceTimeline';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
@@ -19,11 +20,11 @@ type Stage = { mode: WorkspaceMode; label: string; longLabel: string; icon: Reac
 const PRIMARY_STAGES: Stage[] = [
   { mode: 'runtime', label: 'My Lab', longLabel: 'Open and use your lab', icon: CloudCog },
   { mode: 'designer', label: 'Build', longLabel: 'Build or change a topology', icon: Boxes },
+  { mode: 'evidence', label: 'Evidence', longLabel: 'Review deployment evidence', icon: ShieldCheck },
 ];
 
 const ADVANCED_STAGES: Stage[] = [
   { mode: 'planner', label: 'Review plan', longLabel: 'Review a deployment plan', icon: FileCog },
-  { mode: 'evidence', label: 'Evidence', longLabel: 'Review deployment evidence', icon: ShieldCheck },
   { mode: 'readiness', label: 'Runtime checks', longLabel: 'Inspect runtime readiness', icon: Activity },
   { mode: 'guest-service', label: 'Service checks', longLabel: 'Inspect guest service readiness', icon: MonitorCheck },
   { mode: 'access-path', label: 'Access checks', longLabel: 'Inspect access path readiness', icon: Route },
@@ -69,13 +70,25 @@ export default function CyberLabWorkspace() {
     return (
       <Button
         key={stage.mode}
+        id={`cyber-lab-tab-${stage.mode}`}
         role="tab"
         aria-selected={active}
         aria-controls={`cyber-lab-${stage.mode}`}
         size="sm"
         variant={active ? 'default' : 'ghost'}
-        className="h-9 shrink-0"
+        className="h-11 shrink-0 sm:h-9"
         onClick={() => selectMode(stage.mode)}
+        onKeyDown={(event) => {
+          const stages = PRIMARY_STAGES.some((item) => item.mode === stage.mode) ? PRIMARY_STAGES : ADVANCED_STAGES;
+          const index = stages.findIndex((item) => item.mode === stage.mode);
+          const nextIndex = event.key === 'ArrowRight' ? (index + 1) % stages.length
+            : event.key === 'ArrowLeft' ? (index + stages.length - 1) % stages.length
+              : event.key === 'Home' ? 0 : event.key === 'End' ? stages.length - 1 : -1;
+          if (nextIndex < 0) return;
+          event.preventDefault();
+          selectMode(stages[nextIndex].mode);
+          document.getElementById(`cyber-lab-tab-${stages[nextIndex].mode}`)?.focus();
+        }}
         title={stage.longLabel}
       >
         <Icon className="mr-1.5 h-4 w-4" />{stage.label}
@@ -87,20 +100,14 @@ export default function CyberLabWorkspace() {
 
   return (
     <>
-      <div className="mb-4 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold">Lab tools</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Start in My Lab. Use Build only when you want to create or change the environment.</p>
-          </div>
-          <div className="flex items-center gap-1" role="tablist" aria-label="Cyber Lab main tools">
-            {PRIMARY_STAGES.map(renderStage)}
-          </div>
+      <div className="mb-3 overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="oxsig-scrollbar overflow-x-auto p-2" role="tablist" aria-label="Cyber Lab main tools">
+          <div className="flex min-w-max items-center gap-1">{PRIMARY_STAGES.map(renderStage)}</div>
         </div>
 
         <details className="border-t" open={advancedActive || undefined}>
-          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/30 hover:text-foreground">
-            <span>Advanced checks and deployment tools</span>
+          <summary className="flex cursor-pointer list-none items-center justify-between min-h-11 px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-muted/30 hover:text-foreground">
+            <span>Deployment &amp; checks</span>
             <ChevronDown className="h-4 w-4" />
           </summary>
           <div className="oxsig-scrollbar overflow-x-auto border-t bg-muted/10 p-2" role="tablist" aria-label="Cyber Lab advanced tools">
@@ -109,44 +116,45 @@ export default function CyberLabWorkspace() {
         </details>
       </div>
 
-      <div id="cyber-lab-runtime" role="tabpanel" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
+      <div id="cyber-lab-runtime" role="tabpanel" aria-labelledby="cyber-lab-tab-runtime" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
         <LabTopologyDurableStateProvider>
           <LabRuntimePanel embedded />
         </LabTopologyDurableStateProvider>
       </div>
 
       {designerMounted && (
-        <div id="cyber-lab-designer" role="tabpanel" className={mode === 'designer' ? 'block' : 'hidden'} aria-hidden={mode !== 'designer'}>
+        <div id="cyber-lab-designer" role="tabpanel" aria-labelledby="cyber-lab-tab-designer" className={mode === 'designer' ? 'block' : 'hidden'} aria-hidden={mode !== 'designer'}>
           <InfrastructureDesigner />
         </div>
       )}
 
       {plannerMounted && (
-        <div id="cyber-lab-planner" role="tabpanel" className={mode === 'planner' ? 'block' : 'hidden'} aria-hidden={mode !== 'planner'}>
+        <div id="cyber-lab-planner" role="tabpanel" aria-labelledby="cyber-lab-tab-planner" className={mode === 'planner' ? 'block' : 'hidden'} aria-hidden={mode !== 'planner'}>
           <DeploymentPlanner />
         </div>
       )}
 
       {evidenceMounted && (
-        <div id="cyber-lab-evidence" role="tabpanel" className={mode === 'evidence' ? 'block' : 'hidden'} aria-hidden={mode !== 'evidence'}>
+        <div id="cyber-lab-evidence" role="tabpanel" aria-labelledby="cyber-lab-tab-evidence" className={mode === 'evidence' ? 'block' : 'hidden'} aria-hidden={mode !== 'evidence'}>
           <DeploymentEvidenceReview />
+          <LabEvidenceTimeline />
         </div>
       )}
 
       {readinessMounted && (
-        <div id="cyber-lab-readiness" role="tabpanel" className={mode === 'readiness' ? 'block' : 'hidden'} aria-hidden={mode !== 'readiness'}>
+        <div id="cyber-lab-readiness" role="tabpanel" aria-labelledby="cyber-lab-tab-readiness" className={mode === 'readiness' ? 'block' : 'hidden'} aria-hidden={mode !== 'readiness'}>
           <RuntimeReadinessReview />
         </div>
       )}
 
       {guestServiceMounted && (
-        <div id="cyber-lab-guest-service" role="tabpanel" className={mode === 'guest-service' ? 'block' : 'hidden'} aria-hidden={mode !== 'guest-service'}>
+        <div id="cyber-lab-guest-service" role="tabpanel" aria-labelledby="cyber-lab-tab-guest-service" className={mode === 'guest-service' ? 'block' : 'hidden'} aria-hidden={mode !== 'guest-service'}>
           <GuestServiceReadinessReview />
         </div>
       )}
 
       {accessPathMounted && (
-        <div id="cyber-lab-access-path" role="tabpanel" className={mode === 'access-path' ? 'block' : 'hidden'} aria-hidden={mode !== 'access-path'}>
+        <div id="cyber-lab-access-path" role="tabpanel" aria-labelledby="cyber-lab-tab-access-path" className={mode === 'access-path' ? 'block' : 'hidden'} aria-hidden={mode !== 'access-path'}>
           <AccessPathReadinessReview />
         </div>
       )}

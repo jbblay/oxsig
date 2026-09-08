@@ -5,7 +5,10 @@ import '@xterm/xterm/css/xterm.css';
 import '@xyflow/react/dist/style.css';
 import './globals.css';
 import './oxsig-design.css';
+import './compact-console.css';
+import './workspace-enhancements.css';
 import './lab-flow.css';
+import './workspace-mode.css';
 import AppShell from '@/components/app/AppShell';
 import GuestAuthGate from '@/components/auth/guest-auth-gate';
 import { Toaster } from '@/components/ui/sonner';
@@ -15,8 +18,8 @@ import { AuthProvider } from '@/lib/auth/use-auth';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Oxsig — Learn, collaborate, practice',
-  description: 'Visual lessons, shared resources, and cloud labs in one workspace.',
+  title: 'Oxsig — Technical workspace',
+  description: 'Collaborate, practice, run cloud labs, and capture technical evidence in one workspace.',
   applicationName: 'Oxsig',
 };
 

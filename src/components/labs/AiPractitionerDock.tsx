@@ -125,6 +125,12 @@ function executeInVisibleTerminal(labInstanceId: string, command: string) {
 
 export default function AiPractitionerDock() {
   const [open, setOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const openPractitioner = () => setOpen(true);
+    window.addEventListener('oxsig:ai-practitioner:open', openPractitioner);
+    return () => window.removeEventListener('oxsig:ai-practitioner:open', openPractitioner);
+  }, []);
   const [prompt, setPrompt] = React.useState('');
   const [instance, setInstance] = React.useState<LabInstance | null>(null);
   const [loadingLab, setLoadingLab] = React.useState(true);
@@ -422,11 +428,6 @@ export default function AiPractitionerDock() {
 
   return (
     <>
-      {!open && (
-        <Button className="fixed bottom-5 right-5 z-40 h-12 rounded-full px-4 shadow-xl" onClick={() => setOpen(true)}>
-          <Sparkles className="h-4 w-4" /> AI Practitioner
-        </Button>
-      )}
 
       {open && (
         <aside className="fixed inset-x-2 bottom-2 top-[74px] z-50 flex flex-col overflow-hidden rounded-2xl border bg-background/97 shadow-2xl backdrop-blur-xl sm:left-auto sm:right-4 sm:w-[460px]">
@@ -439,7 +440,6 @@ export default function AiPractitionerDock() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-semibold">AI Practitioner</h2>
-                    <Badge variant="secondary" className="text-[10px]">Ask → Approve → Run → Explain</Badge>
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
                     {historyLoading
@@ -467,36 +467,6 @@ export default function AiPractitionerDock() {
               </div>
             )}
 
-            {!historyLoading && history.length === 0 && entries.length === 0 && (
-              <div className="space-y-4">
-                <div className="rounded-xl border bg-muted/25 p-4 text-sm leading-6">
-                  <p className="font-medium">Ask first. Use the lab when you need evidence.</p>
-                  <p className="mt-1 text-muted-foreground">AI Practitioner can answer normal questions without a running machine. When you ask it to inspect, test, or run something, it can propose one command for your approval and explain the real result.</p>
-                </div>
-                <div className="flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs text-muted-foreground">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p>Conversation never executes commands. Lab commands require an explicit click, pass server-side command policy checks, bind to the exact active SSM session, run visibly in your terminal, and persist browser-observed evidence before explanation.</p>
-                </div>
-                <div className="space-y-2">
-                  {[
-                    'What is Nmap and when would I use it?',
-                    'Explain Linux processes and systemd in simple terms.',
-                    'Inspect networking on my running lab and explain what you find.',
-                    'Run a safe system health check in my lab, then explain the output.',
-                  ].map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm transition hover:bg-muted/40 disabled:opacity-50"
-                      disabled={!!busy || voiceInputBusy || historyLoading}
-                      onClick={() => void ask(suggestion)}
-                    >
-                      <span>{suggestion}</span><ChevronRight className="h-4 w-4 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {entries.map((entry) => (
               <div key={entry.id} className="space-y-3">
@@ -593,9 +563,6 @@ export default function AiPractitionerDock() {
           </div>
 
           <div className="border-t bg-background p-3">
-            {!running && (
-              <div className="mb-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">AI chat is available now. Start a Cyber Lab only when you want the practitioner to execute an approved command.</div>
-            )}
             <div className="flex items-end gap-2">
               <Textarea
                 value={prompt}

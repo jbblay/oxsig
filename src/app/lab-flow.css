@@ -26,3 +26,61 @@
   border-radius: 0.75rem;
   overflow: hidden;
 }
+
+
+/* Keep the runtime canvas within its work area; designers retain their own size. */
+.oxsig-lab-runtime {
+  --lab-canvas-height: clamp(24rem, 64dvh, 46rem);
+}
+.oxsig-lab-runtime[data-session-open="true"] {
+  --lab-canvas-height: clamp(20rem, 38dvh, 28rem);
+}
+.oxsig-lab-grid {
+  display: grid;
+  grid-template-columns: var(--lab-columns);
+  gap: 0.75rem;
+  align-items: start;
+}
+.oxsig-lab-grid > * { min-width: 0; }
+.oxsig-lab-canvas { height: var(--lab-canvas-height); }
+.oxsig-lab-canvas .react-flow { height: 100%; min-height: 0; }
+.oxsig-machine-list, .oxsig-inspector-content {
+  max-height: calc(var(--lab-canvas-height) - 3.5rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.oxsig-machine-rail { max-height: var(--lab-canvas-height); overflow-y: auto; }
+.oxsig-lab-panel-switcher { display: none; }
+.oxsig-lab-toolbar {
+  min-height: 2.75rem;
+  padding: 0.375rem 0;
+}
+.oxsig-lab-session { border-color: hsl(var(--primary) / 0.25); }
+.oxsig-lab-session[aria-label] { scroll-margin-top: 5rem; }
+
+@media (max-width: 1199px) {
+  .oxsig-lab-grid { grid-template-columns: minmax(0, 1fr); }
+  .oxsig-lab-panel-switcher {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.75rem;
+    background: hsl(var(--card));
+  }
+  .oxsig-lab-runtime:not([data-compact-panel="machines"]) .oxsig-lab-machines,
+  .oxsig-lab-runtime:not([data-compact-panel="topology"]) .oxsig-lab-canvas,
+  .oxsig-lab-runtime:not([data-compact-panel="inspector"]) .oxsig-lab-inspector {
+    display: none;
+  }
+  .oxsig-machine-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+  .oxsig-machine-list > * { margin-top: 0 !important; }
+}
+
+@media (max-width: 639px) {
+  .oxsig-lab-runtime { --lab-canvas-height: clamp(20rem, 55dvh, 32rem); }
+  .oxsig-machine-list { grid-template-columns: minmax(0, 1fr); }
+  .oxsig-lab-minimap { display: none; }
+  .oxsig-lab-toolbar button, .oxsig-lab-machines button, .oxsig-lab-inspector button { min-height: 2.75rem; }
+  .oxsig-lab-canvas .react-flow__controls-button { width: 2.75rem; height: 2.75rem; }
+}

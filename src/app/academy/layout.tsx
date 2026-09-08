@@ -1,25 +1,5 @@
-import type { ReactNode } from 'react';
-import AcademyDurableStateProvider from '@/components/academy/AcademyDurableStateProvider';
-import AcademyPathGate from '@/components/academy/AcademyPathGate';
-import { getAcademyState } from '@/lib/academy/persistence';
-import { getClerkAuthenticatedUser } from '@/lib/auth/clerk-user';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function AcademyLayout({ children }: { children: ReactNode }) {
-  let initialState = null;
-  try {
-    const user = await getClerkAuthenticatedUser();
-    if (user) initialState = await getAcademyState(user.id);
-  } catch (error) {
-    console.warn('Academy durable state preload failed:', error);
-  }
-
-  return (
-    <AcademyDurableStateProvider initialState={initialState}>
-      <AcademyPathGate activeCourseTitle={initialState?.course?.title || null}>
-        {children}
-      </AcademyPathGate>
-    </AcademyDurableStateProvider>
-  );
+export default function AcademyLayout() {
+  redirect('/home');
 }

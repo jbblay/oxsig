@@ -89,7 +89,7 @@ describe('DeploymentPlanner adapter eligibility', () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(response(false))));
 
     render(<DeploymentPlanner />);
-    fireEvent.click(screen.getByRole('button', { name: /generate deployment plan/i }));
+    fireEvent.click(screen.getByRole('button', { name: /generate plan/i }));
 
     await waitFor(() => expect(screen.getAllByText('Design-only').length).toBeGreaterThan(0));
     expect(screen.getAllByText(/exactly one VM workload/i).length).toBeGreaterThan(0);
@@ -101,7 +101,7 @@ describe('DeploymentPlanner adapter eligibility', () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(response(true))));
 
     render(<DeploymentPlanner />);
-    fireEvent.click(screen.getByRole('button', { name: /generate deployment plan/i }));
+    fireEvent.click(screen.getByRole('button', { name: /generate plan/i }));
 
     await waitFor(() => expect(screen.getAllByText('Available').length).toBeGreaterThan(0));
     expect(screen.getAllByText(/ubuntu-security-lab/).length).toBeGreaterThan(0);

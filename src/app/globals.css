@@ -276,13 +276,6 @@ body > * {
     }
   }
   
-  /* Emergency horizontal scroll prevention */
-  * {
-    max-width: 100vw !important;
-  }
-  
-  svg {
-    max-width: 100% !important;
-    height: auto !important;
-  }
+
 }
+

@@ -40,7 +40,7 @@ describe('AccountPage usability states', () => {
 
     await waitFor(() => expect(screen.getByText(/profile unavailable/i)).toBeInTheDocument());
     expect(screen.getByText(/profile service returned 503/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/display name/i)).not.toBeInTheDocument();
 
     vi.unstubAllGlobals();
@@ -55,15 +55,15 @@ describe('AccountPage usability states', () => {
     render(<AccountPage />);
 
     const displayName = await screen.findByLabelText(/display name/i);
-    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
 
     fireEvent.change(displayName, { target: { value: 'Edited User' } });
-    expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
+    expect(screen.getByText(/^unsaved$/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: /discard/i }));
     expect(screen.getByLabelText(/display name/i)).toHaveValue('Oxsig User');
-    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
 
     vi.unstubAllGlobals();
   });

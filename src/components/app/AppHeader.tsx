@@ -1,22 +1,25 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
-import { Menu } from 'lucide-react';
+import { Menu, Search, Sparkles } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import ActivityCenter from './ActivityCenter';
+import AppCommandPalette from './AppCommandPalette';
+import WorkspaceWalkthrough from './WorkspaceWalkthrough';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 
-function pageMeta(pathname: string) {
-  if (pathname === '/home') return { title: 'Dashboard', description: 'Continue your path, practice, and next demonstrated capability' };
-  if (pathname.startsWith('/academy')) return { title: 'AI Academy', description: 'Build capability through teaching, practice, evidence, and feedback' };
-  if (pathname === '/collab') return { title: 'Collaboration', description: 'Talk, share and work through a task together' };
-  if (pathname.startsWith('/collab/storyboards')) return { title: 'Boards', description: 'Explain ideas visually and record walkthroughs' };
-  if (pathname.startsWith('/live')) return { title: 'Live Workspace', description: 'Work together around shared learning resources and practice' };
-  if (pathname.startsWith('/vault')) return { title: 'Vault', description: 'Save useful commands, concepts and playbooks' };
-  if (pathname.startsWith('/storage')) return { title: 'Vault', description: 'Opening your saved knowledge' };
-  if (pathname.startsWith('/labs')) return { title: 'Cyber Lab', description: 'Open a real temporary practice environment' };
-  if (pathname.startsWith('/account')) return { title: 'My Progress', description: 'Your demonstrated capabilities, activity, achievements and account settings' };
-  return { title: 'OXSIG', description: 'Learn, collaborate and practice' };
+function pageTitle(pathname: string) {
+  if (pathname === '/home') return 'Dashboard';
+  if (pathname === '/collab') return 'Collaboration';
+  if (pathname.startsWith('/collab/storyboards')) return 'Boards';
+  if (pathname.startsWith('/live')) return 'Live Workspace';
+  if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'Vault';
+  if (pathname.startsWith('/labs')) return 'Cyber Lab';
+  if (pathname.startsWith('/manage')) return 'Resources';
+  if (pathname.startsWith('/account')) return 'Account';
+  return 'OXSIG';
 }
 
 function initials(value?: string | null) {
@@ -26,36 +29,76 @@ function initials(value?: string | null) {
 
 export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const pathname = usePathname();
-  const meta = pageMeta(pathname);
   const { user } = useAuth();
+  const [commandOpen, setCommandOpen] = React.useState(false);
+  const cyberLab = pathname.startsWith('/labs');
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  function openAi() {
+    window.dispatchEvent(new CustomEvent(cyberLab ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+  }
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/75 backdrop-blur-xl">
-      <div className="flex h-16 items-center justify-between gap-4 px-4 md:px-6 lg:px-8">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
-            <Menu className="h-5 w-5" />
+    <>
+      <header className="oxsig-app-header sticky top-0 z-30 border-b bg-background/82 backdrop-blur-xl">
+        <div className="flex h-12 items-center gap-1.5 px-2 sm:px-3 md:h-14 md:px-4">
+          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
+            <Menu className="h-4 w-4" />
           </Button>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{meta.title}</p>
-            <p className="truncate text-[11px] text-muted-foreground">{meta.description}</p>
+
+          <p className="min-w-0 truncate text-[13px] font-semibold">{pageTitle(pathname)}</p>
+
+          <button
+            type="button"
+            onClick={() => setCommandOpen(true)}
+            className="ml-auto hidden h-8 min-w-44 max-w-sm flex-1 items-center gap-2 rounded-md border bg-muted/20 px-2.5 text-left text-xs text-muted-foreground transition hover:bg-muted/50 lg:flex"
+            aria-label="Search commands and workspaces"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span className="truncate">Search or run command</span>
+            <kbd className="ml-auto rounded border bg-background px-1 py-0.5 font-mono text-[10px]">⌘K</kbd>
+          </button>
+
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 md:ml-1.5">
+            <ActivityCenter />
+            <WorkspaceWalkthrough />
+            <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search commands and workspaces">
+              <Search className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={openAi}
+              aria-label={cyberLab ? 'Open AI Practitioner' : 'Open AI Helper'}
+              title={cyberLab ? 'AI Practitioner' : 'AI Helper'}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </Button>
+            <Link
+              href="/account"
+              className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
+              aria-label="Open account"
+              title={user?.displayName || user?.email || 'Account'}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
+                {initials(user?.displayName || user?.email)}
+              </span>
+            </Link>
           </div>
         </div>
-
-        <Link
-          href="/account"
-          className="group flex min-w-0 items-center gap-2 rounded-xl border border-transparent px-1.5 py-1 transition hover:border-border hover:bg-muted/40"
-          aria-label="Open profile and progress"
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-bold">
-            {initials(user?.displayName || user?.email)}
-          </span>
-          <span className="hidden min-w-0 sm:block">
-            <span className="block truncate text-[11px] font-semibold group-hover:text-primary">My progress</span>
-            <span className="block max-w-32 truncate text-[9px] text-muted-foreground">{user?.displayName || 'Profile'}</span>
-          </span>
-        </Link>
-      </div>
-    </header>
+      </header>
+      <AppCommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+    </>
   );
 }

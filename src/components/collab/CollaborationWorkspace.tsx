@@ -26,7 +26,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
-
 type Collaboration = {
   id: string;
   name: string;
@@ -117,10 +116,10 @@ function attachmentFrom(metadata: Record<string, unknown>): Attachment | null {
 function lastMessagePreview(session: Collaboration) {
   if (session.lastMessage) return session.lastMessage;
   if (session.lastMessageType === 'audio') return 'Voice message';
-  if (session.lastMessageType === 'resource') return 'Shared a resource';
-  if (session.lastMessageType === 'practice') return 'Started practice';
+  if (session.lastMessageType === 'resource') return 'Shared resource';
+  if (session.lastMessageType === 'practice') return 'Practice';
   if (session.lastMessageType === 'explain') return 'Explanation';
-  return session.description || 'Start the conversation';
+  return session.description || 'No messages';
 }
 
 export default function CollaborationWorkspace() {
@@ -138,6 +137,7 @@ export default function CollaborationWorkspace() {
   const [composerMode, setComposerMode] = React.useState<ComposerMode>('text');
   const [newSessionName, setNewSessionName] = React.useState('');
   const [showNewSession, setShowNewSession] = React.useState(false);
+  const [showSessionPanel, setShowSessionPanel] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState('');
   const [inviting, setInviting] = React.useState(false);
   const [recording, setRecording] = React.useState(false);
@@ -240,6 +240,7 @@ export default function CollaborationWorkspace() {
     setConversationError(null);
     setDraft('');
     setComposerMode('text');
+    setShowSessionPanel(false);
     setInviteEmail('');
 
     if (!activeId) {
@@ -252,8 +253,6 @@ export default function CollaborationWorkspace() {
 
   React.useEffect(() => {
     if (!activeId) return;
-    // Realtime is the primary transport when configured. Keep a slow poll as a
-    // reconciliation safety net; without Ably, preserve the existing fallback.
     const intervalMs = realtime.state === 'connected' ? 30_000 : 3500;
     const timer = window.setInterval(() => {
       void loadConversation(activeId, true);
@@ -276,9 +275,10 @@ export default function CollaborationWorkspace() {
   const chooseSession = (id: string) => {
     if (id === activeId) return;
     if (recording) {
-      toast.error('Stop the voice recording before switching sessions.');
+      toast.error('Stop recording before switching sessions.');
       return;
     }
+    setShowSessionPanel(false);
     activeIdRef.current = id;
     setActiveId(id);
   };
@@ -301,7 +301,7 @@ export default function CollaborationWorkspace() {
       setActiveId(created.id);
       setNewSessionName('');
       setShowNewSession(false);
-      toast.success('Collaboration session created');
+      toast.success('Session created.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not create session');
     }
@@ -487,32 +487,21 @@ export default function CollaborationWorkspace() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 p-2 text-white shadow-sm">
-              <MessageCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold md:text-3xl">Collaboration</h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">Conversation is the workspace. Explain, record, share resources, and start practice without leaving the session context.</p>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-2">
+      <div className="flex justify-end">
         <Button onClick={() => setShowNewSession((value) => !value)}>
           <Plus className="mr-2 h-4 w-4" />New session
         </Button>
       </div>
 
       {showNewSession && (
-        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
               value={newSessionName}
               onChange={(event) => setNewSessionName(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void createSession(); }}
-              placeholder="Session name, e.g. Network Security Study Group"
+              placeholder="Session name"
               aria-label="New collaboration session name"
               maxLength={80}
             />
@@ -524,25 +513,25 @@ export default function CollaborationWorkspace() {
         </div>
       )}
 
-      <div className="grid min-h-[680px] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[250px_minmax(0,1fr)_280px]">
-        <aside className="border-b bg-muted/15 lg:border-b-0 lg:border-r">
+      <div className="grid min-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border bg-card md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)_280px]">
+        <aside className={activeSession ? 'hidden border-b bg-muted/15 md:block md:border-b-0 md:border-r' : 'border-b bg-muted/15 md:border-b-0 md:border-r'}>
           <div className="flex items-center justify-between border-b px-4 py-3">
-            <div>
+            <div className="flex items-center gap-2">
               <p className="text-sm font-semibold">Sessions</p>
-              <p className="text-[11px] text-muted-foreground">{sessions.length} conversation{sessions.length === 1 ? '' : 's'}</p>
+              <Badge variant="outline" className="text-[9px]">{sessions.length}</Badge>
             </div>
             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void loadSessions()} aria-label="Refresh sessions">
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div className="max-h-48 space-y-1 overflow-auto p-2 lg:max-h-[610px]">
+          <div className="max-h-44 space-y-1 overflow-auto p-2 md:max-h-[calc(100dvh-9rem)]">
             {sessions.length === 0 ? (
               <button
                 type="button"
                 className="w-full rounded-xl border border-dashed p-5 text-left text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground"
                 onClick={() => setShowNewSession(true)}
               >
-                <Plus className="mb-2 h-5 w-5" />Create your first conversation.
+                <Plus className="mr-2 inline h-4 w-4" />New session
               </button>
             ) : sessions.map((session) => {
               const active = session.id === activeId;
@@ -569,50 +558,57 @@ export default function CollaborationWorkspace() {
           </div>
         </aside>
 
-        <section className="flex min-w-0 flex-col bg-background/50">
+        <section className={activeSession ? 'flex min-w-0 flex-col bg-background/50' : 'hidden min-w-0 flex-col bg-background/50 md:flex'}>
           {!activeSession ? (
-            <div className="flex min-h-[520px] flex-1 flex-col items-center justify-center p-8 text-center">
-              <div className="rounded-2xl bg-muted p-4"><MessageCircle className="h-8 w-8 text-muted-foreground" /></div>
-              <p className="mt-4 font-semibold">Start a collaboration session</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">Create one conversation where messages, explanations, recordings, resources and practice stay together.</p>
-              <Button className="mt-4" onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
+            <div className="flex min-h-[420px] flex-1 items-center justify-center p-6">
+              <Button onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur">
-                <div className="min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background/80 px-3 py-3 backdrop-blur sm:px-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2 md:hidden"
+                  onClick={() => { activeIdRef.current = null; setActiveId(null); }}
+                >
+                  Sessions
+                </Button>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h2 className="truncate font-semibold">{activeSession.name}</h2>
-                    <Badge variant="secondary" className="text-[9px]">{activeSession.memberCount} member{activeSession.memberCount === 1 ? '' : 's'}</Badge>
+                    <Badge variant="secondary" className="text-[9px]">{activeSession.memberCount}</Badge>
                   </div>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{activeSession.description || 'Shared conversation workspace'}</p>
+                  {activeSession.description && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{activeSession.description}</p>}
                 </div>
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                  {realtime.state === 'connected'
-                    ? `Realtime · ${realtime.onlineCount} online`
-                    : realtime.state === 'connecting'
-                      ? 'Connecting realtime…'
-                      : 'Polling fallback'}
+                <div className="flex items-center gap-2">
+                  <div className="hidden items-center gap-2 text-[10px] text-muted-foreground sm:flex">
+                    <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    {realtime.state === 'connected'
+                      ? `${realtime.onlineCount} online`
+                      : realtime.state === 'connecting'
+                        ? 'Connecting…'
+                        : 'Fallback'}
+                  </div>
+                  <Button type="button" size="sm" variant="outline" className="h-8 xl:hidden" onClick={() => setShowSessionPanel(true)}>
+                    <Users className="mr-1.5 h-3.5 w-3.5" />People
+                  </Button>
                 </div>
               </div>
 
               <div className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5">
                 {messagesLoading ? (
-                  <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading conversation…</div>
+                  <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
                 ) : conversationError ? (
                   <div className="flex min-h-[360px] flex-col items-center justify-center p-6 text-center">
                     <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="mt-3 text-sm font-semibold">This conversation could not be loaded.</p>
+                    <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
                     <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
-                    <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="h-3.5 w-3.5" />Try again</Button>
+                    <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="h-3.5 w-3.5" />Retry</Button>
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
-                    <Sparkles className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="mt-3 text-sm font-semibold">The session is ready</p>
-                    <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">Send the first message, switch to Explain, record a voice note, attach a resource, or place a Cyber Lab practice card into the conversation.</p>
-                  </div>
+                  <div className="flex min-h-[320px] items-center justify-center text-sm text-muted-foreground">No messages</div>
                 ) : (
                   <div className="space-y-3">
                     {messages.map((message) => {
@@ -637,8 +633,8 @@ export default function CollaborationWorkspace() {
                             <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
                               {message.type === 'practice' ? (
                                 <div className="min-w-[220px] space-y-2">
-                                  <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice together</div>
-                                  <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text || 'Open a temporary cloud lab and work through the task together.'}</p>
+                                  <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
+                                  {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
                                   <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8">
                                     <Link href={practiceHref}>Open Cyber Lab</Link>
                                   </Button>
@@ -659,7 +655,7 @@ export default function CollaborationWorkspace() {
                                     </div>
                                   </div>
                                   <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8">
-                                    <a href={`${attachmentUrl}&download=1`}>Open resource</a>
+                                    <a href={`${attachmentUrl}&download=1`}>Open</a>
                                   </Button>
                                 </div>
                               ) : (
@@ -678,7 +674,7 @@ export default function CollaborationWorkspace() {
               <div className="border-t bg-background/90 p-3 backdrop-blur sm:p-4">
                 {composerMode === 'explain' && (
                   <div className="mb-2 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-                    <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain mode — your next message is marked as an explanation.</span>
+                    <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain</span>
                     <Button size="sm" variant="ghost" className="h-7" onClick={() => setComposerMode('text')}>Cancel</Button>
                   </div>
                 )}
@@ -692,7 +688,7 @@ export default function CollaborationWorkspace() {
                         void submitDraft();
                       }
                     }}
-                    placeholder={composerMode === 'explain' ? 'Explain the idea, command, error, or concept to the group…' : `Message ${activeSession.name}…`}
+                    placeholder={composerMode === 'explain' ? 'Explain…' : `Message ${activeSession.name}…`}
                     className="min-h-[78px] resize-none bg-background"
                     maxLength={5000}
                   />
@@ -721,68 +717,46 @@ export default function CollaborationWorkspace() {
                       Send
                     </Button>
                   </div>
-                  {uploading && <p className="text-[10px] text-muted-foreground">Uploading and sharing with this session…</p>}
+                  {uploading && <p className="text-[10px] text-muted-foreground">Uploading…</p>}
                 </form>
               </div>
             </>
           )}
         </section>
 
-        <aside className="border-t bg-muted/10 lg:border-l lg:border-t-0">
-          <div className="border-b px-4 py-3">
-            <p className="text-sm font-semibold">Session</p>
-            <p className="text-[11px] text-muted-foreground">People and shared actions</p>
+        <aside className={activeSession ? `${showSessionPanel ? 'fixed' : 'hidden'} inset-x-3 bottom-3 top-20 z-40 overflow-auto rounded-xl border bg-card shadow-xl xl:static xl:inset-auto xl:z-auto xl:block xl:rounded-none xl:border-0 xl:border-l xl:bg-muted/10 xl:shadow-none` : 'hidden'}>
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">People</p>
+              <Badge variant="outline" className="text-[9px]">{members.length}</Badge>
+            </div>
+            <Button type="button" size="sm" variant="ghost" className="h-8 xl:hidden" onClick={() => setShowSessionPanel(false)}>Close</Button>
           </div>
-          {!activeSession ? (
-            <div className="p-4 text-xs text-muted-foreground">Choose a session to see its people and tools.</div>
-          ) : (
-            <div className="space-y-5 p-4">
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">People</p>
-                  <Badge variant="outline" className="text-[9px]">{members.length}</Badge>
-                </div>
-                <div className="space-y-2">
-                  {members.map((member) => (
-                    <div key={member.id} className="flex items-center gap-2 rounded-xl border bg-background/70 p-2">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-semibold">
-                        {initials(member.displayName)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium">{member.displayName}</p>
-                        <p className="truncate text-[10px] text-muted-foreground">{member.email || member.role}</p>
-                      </div>
-                      {member.isOwner && <Badge variant="secondary" className="text-[8px]">Owner</Badge>}
+          {activeSession && (
+            <div className="space-y-4 p-4">
+              <div className="space-y-2">
+                {members.map((member) => (
+                  <div key={member.id} className="flex items-center gap-2 rounded-xl border bg-background/70 p-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-semibold">
+                      {initials(member.displayName)}
                     </div>
-                  ))}
-                </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium">{member.displayName}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">{member.email || member.role}</p>
+                    </div>
+                    {member.isOwner && <Badge variant="secondary" className="text-[8px]">Owner</Badge>}
+                  </div>
+                ))}
               </div>
 
               {canInvite && (
                 <div className="space-y-2 rounded-xl border bg-background/60 p-3">
-                  <div className="flex items-center gap-2 text-xs font-medium"><UserPlus className="h-3.5 w-3.5" />Add someone</div>
                   <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="member@example.com" type="email" className="h-9" aria-label="Member email" />
                   <Button size="sm" className="w-full" variant="outline" onClick={() => void inviteMember()} disabled={!inviteEmail.trim() || inviting}>
-                    {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Add member
+                    {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Invite
                   </Button>
-                  <p className="text-[10px] leading-4 text-muted-foreground">Existing OXSIG users are added immediately. New users receive a secure email invitation when transactional email is configured.</p>
                 </div>
               )}
-
-              <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Conversation tools</p>
-                <div className="grid gap-2">
-                  <button type="button" onClick={() => setComposerMode('explain')} className="flex items-center gap-3 rounded-xl border bg-background/70 p-3 text-left transition hover:border-primary/30">
-                    <Sparkles className="h-4 w-4 text-primary" /><div><p className="text-xs font-medium">Explain in chat</p><p className="text-[10px] text-muted-foreground">Keep the explanation in context.</p></div>
-                  </button>
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-3 rounded-xl border bg-background/70 p-3 text-left transition hover:border-primary/30">
-                    <Paperclip className="h-4 w-4" /><div><p className="text-xs font-medium">Attach resource</p><p className="text-[10px] text-muted-foreground">Share it with every member.</p></div>
-                  </button>
-                  <button type="button" onClick={() => void startPractice()} className="flex items-center gap-3 rounded-xl border bg-background/70 p-3 text-left transition hover:border-primary/30">
-                    <Box className="h-4 w-4" /><div><p className="text-xs font-medium">Practice together</p><p className="text-[10px] text-muted-foreground">Place a lab card in the timeline.</p></div>
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </aside>

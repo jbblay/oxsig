@@ -254,31 +254,22 @@ export default function InfrastructureDesigner() {
   }
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold md:text-3xl">Infrastructure Designer</h1>
-            <Badge variant="secondary">Blueprint v1</Badge>
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Build the intended network first. Compute nodes now carry an explicit runtime profile so operating system, access, architecture, and resource intent are part of the saved blueprint and later deployment plan.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} devices · {edges.length} links</Badge>
-          <Badge variant={validation.valid ? 'default' : 'destructive'}>
-            {validation.valid ? <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> : <AlertTriangle className="mr-1 h-3.5 w-3.5" />}
-            {validation.errors.length} errors · {validation.warnings.length} warnings
-          </Badge>
-          <Badge variant="outline">
-            {saveState === 'saving' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
-            {saveState === 'saved' ? 'Saved' : saveState === 'saving' ? 'Saving' : 'Save issue'}
-          </Badge>
-        </div>
+    <div className="space-y-2 pb-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} devices · {edges.length} links</Badge>
+        <Badge variant={validation.valid ? 'default' : 'destructive'}>
+{validation.valid ? <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> : <AlertTriangle className="mr-1 h-3.5 w-3.5" />}
+{validation.errors.length} errors · {validation.warnings.length} warnings
+        </Badge>
+        <Badge variant="outline">
+{saveState === 'saving' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+{saveState === 'saved' ? 'Saved' : saveState === 'saving' ? 'Saving' : 'Save issue'}
+        </Badge>
       </div>
 
-      <div className="grid min-h-[680px] gap-3 xl:grid-cols-[250px_minmax(0,1fr)_330px]">
-        <aside className="overflow-hidden rounded-2xl border bg-card">
-          <div className="border-b p-4"><p className="font-semibold">Technical palette</p><p className="mt-1 text-xs text-muted-foreground">Drag a device to the canvas or tap Add.</p></div>
+      <div className="grid min-h-[calc(100dvh-7rem)] gap-3 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_320px]">
+        <aside className="order-2 overflow-hidden rounded-xl border bg-card lg:order-1">
+          <div className="border-b p-3"><p className="text-sm font-semibold">Devices</p></div>
           <div className="max-h-[620px] space-y-2 overflow-auto p-3">
             {INFRASTRUCTURE_KINDS.map((kind) => {
               const meta = INFRASTRUCTURE_KIND_META[kind];
@@ -286,7 +277,7 @@ export default function InfrastructureDesigner() {
                 <div key={kind} draggable onDragStart={(event) => { event.dataTransfer.setData('application/x-oxsig-infrastructure-kind', kind); event.dataTransfer.effectAllowed = 'move'; }} className="rounded-xl border bg-background p-3 transition hover:border-primary/40 hover:shadow-sm">
                   <div className="flex items-start gap-2.5">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted ring-1 ring-border"><InfrastructureKindIcon kind={kind} className="h-5 w-5" /></div>
-                    <div className="min-w-0 flex-1"><p className="text-sm font-medium">{meta.label}</p><p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{meta.description}</p></div>
+                    <div className="min-w-0 flex-1"><p className="text-sm font-medium">{meta.label}</p></div>
                     <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/60" />
                   </div>
                   <Button size="sm" variant="ghost" className="mt-2 h-8 w-full" onClick={() => addDevice(kind)}><Plus className="mr-1.5 h-3.5 w-3.5" />Add {meta.label}</Button>
@@ -296,7 +287,7 @@ export default function InfrastructureDesigner() {
           </div>
         </aside>
 
-        <section className="relative min-h-[680px] overflow-hidden rounded-2xl border bg-muted/10">
+        <section className="order-1 relative min-h-[520px] overflow-hidden rounded-xl border bg-muted/10 sm:min-h-[620px] lg:order-2 lg:min-h-[calc(100dvh-8rem)]">
           <ReactFlow<InfrastructureDeviceFlowNode, Edge>
             nodes={nodes}
             edges={edges}
@@ -324,15 +315,14 @@ export default function InfrastructureDesigner() {
             <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
             <Controls position="bottom-left" />
             <MiniMap pannable zoomable position="bottom-right" className="!bg-background/90" />
-            {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="max-w-sm rounded-2xl border border-dashed bg-background/90 p-8 text-center shadow-sm backdrop-blur"><Network className="mx-auto h-10 w-10 text-muted-foreground/50" /><p className="mt-3 font-medium">Design the system before you deploy it</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Add clients, servers, routers, switches, and firewalls. Connect them, configure addressing and runtime intent, then let OXSIG validate the blueprint.</p></div></div>}
+            {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Add a device</div>}
           </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur">Blueprint only · saved runtime intent participates in the deployment plan identity</div>
         </section>
 
-        <aside className="overflow-hidden rounded-2xl border bg-card">
-          <div className="border-b p-4"><p className="font-semibold">Inspector</p><p className="mt-1 text-xs text-muted-foreground">Configure the selected technical device.</p></div>
+        <aside className="order-3 overflow-hidden rounded-xl border bg-card lg:col-span-2 xl:col-span-1">
+          <div className="border-b p-3"><p className="text-sm font-semibold">Inspector</p></div>
           {!selectedNode ? (
-            <div className="flex min-h-[300px] flex-col items-center justify-center p-6 text-center text-muted-foreground"><Network className="h-8 w-8 opacity-40" /><p className="mt-3 text-sm font-medium">Nothing selected</p><p className="mt-1 text-xs">Choose a device on the canvas.</p></div>
+            <div className="flex min-h-[220px] items-center justify-center p-6 text-sm text-muted-foreground">Select a device</div>
           ) : (
             <div className="space-y-4 p-4">
               <div className="flex items-start gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted"><InfrastructureKindIcon kind={selectedNode.data.kind} className="h-5 w-5" /></div><div><p className="font-semibold">{selectedNode.data.label || 'Unnamed device'}</p><p className="text-xs capitalize text-muted-foreground">{selectedNode.data.kind}</p></div></div>
@@ -349,7 +339,6 @@ export default function InfrastructureDesigner() {
                 <div className="space-y-3 rounded-xl border p-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Runtime profile</p>
-                    <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Make the OS and execution intent explicit. OXSIG will never infer this from the role label.</p>
                   </div>
                   <SelectField
                     label="Operating system"

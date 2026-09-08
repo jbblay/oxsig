@@ -50,10 +50,10 @@ describe('VaultPage usability guards', () => {
 
     render(<VaultPage />);
 
-    await waitFor(() => expect(screen.getByText(/your vault could not be loaded/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/could not load vault/i)).toBeInTheDocument());
     expect(screen.getByText(/vault service unavailable/i)).toBeInTheDocument();
-    expect(screen.queryByText(/your vault starts with one useful thing/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^no items$/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^retry$/i })).toBeInTheDocument();
   });
 
   it('does not discard edited knowledge when another item is selected without confirmation', async () => {
@@ -71,7 +71,7 @@ describe('VaultPage usability guards', () => {
 
     const title = screen.getByLabelText('Title');
     fireEvent.change(title, { target: { value: 'Edited alpha command' } });
-    expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
+    expect(screen.getByText(/^unsaved$/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /beta command/i }));
 
@@ -81,3 +81,4 @@ describe('VaultPage usability guards', () => {
     vi.unstubAllGlobals();
   });
 });
+

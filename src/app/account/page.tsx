@@ -3,48 +3,32 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  BrainCircuit,
-  GraduationCap,
   Loader2,
   RefreshCw,
   RotateCcw,
   Save,
   ShieldCheck,
-  Trash2,
-  User,
+  UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth/use-auth';
 import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
-type Profile = { id: string; displayName: string; email?: string; bio?: string; avatarUrl?: string; role?: string };
-type CapabilityPathState = {
-  path: { id: string; version: number; title: string; description: string };
-  enrollment: null | { recommendedCapabilityId: string | null };
-  demonstratedCount: number;
-  totalCapabilities: number;
-  progressPercent: number;
-  capabilities: Array<{
-    id: string;
-    title: string;
-    status: 'not_started' | 'in_progress' | 'demonstrated';
-  }>;
+type Profile = {
+  id: string;
+  displayName: string;
+  email?: string;
+  bio?: string;
+  avatarUrl?: string;
+  role?: string;
 };
 
 const UI_PREFERENCE_KEYS = [
@@ -54,23 +38,19 @@ const UI_PREFERENCE_KEYS = [
   'oxsig:cyber-lab-workspace-mode:v1',
 ];
 
-const ACADEMY_LOCAL_KEYS = [
-  'oxsig:academy-course:v1',
-  'oxsig:academy-progress:v1',
-  'oxsig:academy-server-state:v1',
-];
+function initials(value?: string) {
+  const parts = (value || 'O').trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'O';
+}
 
 export default function AccountPage() {
   const { isAuthenticated, isLoading: authLoading, profileError, refresh } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [progress, setProgress] = useState<LearnerProgressSummary | null>(null);
-  const [capabilityPath, setCapabilityPath] = useState<CapabilityPathState | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deletingAcademy, setDeletingAcademy] = useState(false);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const dirty = useMemo(() => Boolean(
@@ -85,14 +65,6 @@ export default function AccountPage() {
     if (body?.progress) setProgress(body.progress as LearnerProgressSummary);
   }, [isAuthenticated]);
 
-  const loadCapabilityPath = useCallback(async () => {
-    if (!isAuthenticated) return;
-    const response = await fetch('/api/learning/program-process', { cache: 'no-store' });
-    if (!response.ok) return;
-    const body = await response.json().catch(() => ({}));
-    if (body?.state) setCapabilityPath(body.state as CapabilityPathState);
-  }, [isAuthenticated]);
-
   const load = useCallback(async () => {
     if (!isAuthenticated) return;
     setLoading(true);
@@ -104,16 +76,18 @@ export default function AccountPage() {
       setProfile(next);
       setDisplayName(next.displayName || '');
       setBio(next.bio || '');
-      await Promise.all([loadProgress(), loadCapabilityPath()]);
+      await loadProgress();
     } catch (error) {
       setProfile(null);
       setLoadError(error instanceof Error ? error.message : 'Could not load profile');
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, loadCapabilityPath, loadProgress]);
+  }, [isAuthenticated, loadProgress]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -140,7 +114,7 @@ export default function AccountPage() {
       setDisplayName(next.displayName || '');
       setBio(next.bio || '');
       await refresh();
-      toast.success('Profile updated');
+      toast.success('Saved.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Update failed');
     } finally {
@@ -150,103 +124,74 @@ export default function AccountPage() {
 
   function resetInterface() {
     for (const key of UI_PREFERENCE_KEYS) window.localStorage.removeItem(key);
-    toast.success('Interface preferences reset');
+    toast.success('Interface reset.');
     window.location.assign('/home');
   }
 
-  async function deleteAcademyHistory() {
-    setDeletingAcademy(true);
-    try {
-      const response = await fetch('/api/academy/reset', {
-        method: 'DELETE',
-        headers: { 'x-csrf-token': await getCsrfToken() },
-      });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Academy reset failed');
-      for (const key of ACADEMY_LOCAL_KEYS) window.localStorage.removeItem(key);
-      setResetDialogOpen(false);
-      await Promise.all([loadProgress(), loadCapabilityPath()]);
-      toast.success('AI Academy and capability journey are back to a clean slate');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Academy reset failed');
-    } finally {
-      setDeletingAcademy(false);
-    }
+  if (authLoading) {
+    return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin" /></div>;
   }
 
-  if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin" /></div>;
-  if (!isAuthenticated) return <Card className="mx-auto max-w-md"><CardHeader><CardTitle>My progress</CardTitle><CardDescription>Sign in to view your learning analytics, demonstrated capabilities and account.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent></Card>;
-
-  const nextCapability = capabilityPath?.capabilities.find((item) => item.id === capabilityPath.enrollment?.recommendedCapabilityId)
-    || capabilityPath?.capabilities.find((item) => item.status !== 'demonstrated')
-    || null;
+  if (!isAuthenticated) {
+    return (
+      <Card className="mx-auto max-w-md">
+        <CardHeader><CardTitle>Account</CardTitle><CardDescription>Sign in to continue.</CardDescription></CardHeader>
+        <CardContent><Button asChild><Link href="/sign-in">Sign in</Link></Button></CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-7">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2"><User className="h-7 w-7" /><h1 className="text-3xl font-semibold">My progress</h1></div>
-          <p className="mt-1 text-muted-foreground">Real capability evidence, learning activity, unlocks and account controls. Nothing here is demo data.</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button>
+    <div className="mx-auto max-w-6xl space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-sm text-muted-foreground">{profile?.email || ''}</p>
+        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </Button>
       </div>
 
-      {profileError && <Card><CardContent className="pt-6 text-sm text-amber-600">Some profile information is still synchronizing. Your signed-in session remains active.</CardContent></Card>}
-
-      {capabilityPath && (
-        <Card className="overflow-hidden border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 via-background to-sky-500/5">
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="max-w-3xl">
-                <div className="flex items-center gap-2"><BrainCircuit className="h-5 w-5 text-emerald-600" /><CardDescription>Demonstrated capability journey</CardDescription></div>
-                <CardTitle className="mt-2">{capabilityPath.path.title}</CardTitle>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{capabilityPath.path.description}</p>
-              </div>
-              <Badge variant={capabilityPath.enrollment ? 'secondary' : 'outline'}>{capabilityPath.enrollment ? 'Enrolled' : 'Not started'}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div><p className="text-3xl font-semibold">{capabilityPath.demonstratedCount}<span className="text-base font-normal text-muted-foreground">/{capabilityPath.totalCapabilities}</span></p><p className="text-xs text-muted-foreground">capabilities demonstrated</p></div>
-              <p className="text-xl font-semibold">{capabilityPath.progressPercent}%</p>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500" style={{ width: `${Math.max(0, Math.min(100, capabilityPath.progressPercent))}%` }} /></div>
-            <p className="text-xs text-muted-foreground">Only persisted capability evidence moves this progress bar. Reviewing a lesson does not.</p>
-            {nextCapability && <div className="rounded-xl border bg-background/70 p-3 text-sm"><span className="font-medium">Next capability:</span> <span className="text-muted-foreground">{nextCapability.title}</span></div>}
-            <div className="flex flex-wrap gap-2">
-              <Button asChild><Link href="/academy">{capabilityPath.enrollment ? 'Continue in Academy' : 'Start in Academy'}</Link></Button>
-              {capabilityPath.enrollment && <Button variant="outline" asChild><Link href="/academy/prove"><ShieldCheck className="h-4 w-4" /> Prove what I know</Link></Button>}
-            </div>
-          </CardContent>
-        </Card>
+      {profileError && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          Profile is syncing.
+        </div>
       )}
 
-      {progress ? (
-        <LearningAnalyticsDashboard progress={progress} />
-      ) : !loadError ? (
-        <section className="space-y-4" aria-label="Loading learner progress">
-          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]"><div className="h-48 animate-pulse rounded-2xl border bg-muted/40" /><div className="h-48 animate-pulse rounded-2xl border bg-muted/30" /></div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl border bg-muted/30" />)}</div>
-        </section>
-      ) : null}
+      {profile && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card/70 p-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border bg-primary/5 text-sm font-semibold text-primary">
+            {profile.avatarUrl ? <UserRound className="h-5 w-5" /> : initials(profile.displayName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-semibold">{profile.displayName}</span>
+              <Badge variant="secondary" className="h-5 text-[10px] capitalize">{profile.role || 'member'}</Badge>
+              <Badge variant="outline" className="h-5 gap-1 text-[10px]"><ShieldCheck className="h-3 w-3" />{profile.bio?.trim() ? 'Profile ready' : 'Add bio'}</Badge>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{profile.bio?.trim() || 'Add a short technical bio so collaborators know your focus.'}</p>
+          </div>
+        </div>
+      )}
 
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+      {progress && <ProgressBadgeRail progress={progress} />}
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
-          {loading ? (
-            <Card><CardContent className="flex items-center justify-center py-16 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading profile…</CardContent></Card>
+          {loading && !profile ? (
+            <Card><CardContent className="flex items-center justify-center py-16 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading…</CardContent></Card>
           ) : loadError ? (
             <Card className="border-destructive/30">
-              <CardHeader><CardTitle>Profile unavailable</CardTitle><CardDescription>Your account is signed in, but the profile could not be loaded.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>Profile unavailable</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">{loadError}</p>
-                <Button variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Try again</Button>
+                <Button variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Retry</Button>
               </CardContent>
             </Card>
           ) : profile ? (
             <Card>
-              <CardHeader>
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div><CardTitle>Your profile</CardTitle><CardDescription>{profile.email || 'Signed-in account'}</CardDescription></div>
-                  {dirty && <Badge variant="outline">Unsaved changes</Badge>}
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-base">Profile</CardTitle>
+                  {dirty && <Badge variant="outline">Unsaved</Badge>}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -256,13 +201,13 @@ export default function AccountPage() {
                   {displayName.trim().length > 0 && displayName.trim().length < 2 && <p className="mt-1 text-xs text-destructive">Use at least 2 characters.</p>}
                 </div>
                 <div>
-                  <label htmlFor="account-bio" className="mb-1 block text-sm font-medium">About you</label>
-                  <Textarea id="account-bio" value={bio} onChange={(event) => setBio(event.target.value.slice(0, 500))} maxLength={500} rows={5} placeholder="What are you learning or building?" />
+                  <label htmlFor="account-bio" className="mb-1 block text-sm font-medium">Bio</label>
+                  <Textarea id="account-bio" value={bio} onChange={(event) => setBio(event.target.value.slice(0, 500))} maxLength={500} rows={4} placeholder="Optional" />
                   <p className="mt-1 text-right text-xs text-muted-foreground">{bio.length}/500</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={saving || !dirty || displayName.trim().length < 2} onClick={() => void save()}>
-                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save changes
+                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save
                   </Button>
                   {dirty && <Button variant="outline" disabled={saving} onClick={() => { setDisplayName(profile.displayName || ''); setBio(profile.bio || ''); }}>Discard</Button>}
                 </div>
@@ -271,61 +216,26 @@ export default function AccountPage() {
           ) : null}
         </div>
 
-        <div className="space-y-6">
-          {progress?.academy.activeCourse && (
-            <Card className="overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-background">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div><CardDescription>Academy lesson history</CardDescription><CardTitle className="mt-1">{progress.academy.activeCourse.title}</CardTitle></div>
-                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400"><GraduationCap className="h-5 w-5" /></span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between text-xs"><span>{progress.academy.activeCourse.completedLessons}/{progress.academy.activeCourse.totalLessons} lesson records</span><span className="text-muted-foreground">Navigation history</span></div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.max(0, Math.min(100, progress.academy.activeCourse.totalLessons > 0 ? (progress.academy.activeCourse.completedLessons / progress.academy.activeCourse.totalLessons) * 100 : 0))}%` }} /></div>
-                <p className="text-[10px] leading-4 text-muted-foreground">This is lesson history, not demonstrated mastery. Capability evidence is shown above.</p>
-                <Button asChild className="w-full"><Link href="/academy">Open Academy</Link></Button>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader><CardTitle>How rewards work</CardTitle><CardDescription>OXSIG rewards are deterministic and evidence-based.</CardDescription></CardHeader>
-            <CardContent className="space-y-2 text-sm leading-6 text-muted-foreground">
-              <p>XP increases from demonstrated capabilities, distinct passed practical checkpoints, real lab starts and recorded active learning days.</p>
-              <p>Reviewing lessons and leaving a lab running do not generate XP, so navigation or idle runtime cannot manufacture progress.</p>
-              <p>Streak badges use your longest recorded streak, so an earned streak milestone does not disappear just because your current streak later resets.</p>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="h-fit">
+          <CardHeader className="pb-3"><CardTitle className="text-base">Interface</CardTitle></CardHeader>
+          <CardContent>
+            <Button variant="outline" className="w-full" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset interface</Button>
+          </CardContent>
+        </Card>
       </section>
 
-      <Card>
-        <CardHeader><CardTitle>Start fresh</CardTitle><CardDescription>Recover from a confusing layout or deliberately return Academy learning state to zero.</CardDescription></CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-2">
-          <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-sm font-semibold">Reset interface</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Restore navigation and Cyber Lab layout preferences to defaults. Learning evidence, labs and saved work remain.</p></div>
-            <Button variant="outline" className="shrink-0" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset layout</Button>
+      {progress && (
+        <details className="group overflow-hidden rounded-xl border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold sm:px-5">
+            <span>Progress</span>
+            <span className="text-xs font-normal text-muted-foreground group-open:hidden">View</span>
+            <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">Hide</span>
+          </summary>
+          <div className="border-t p-3 sm:p-5">
+            <LearningAnalyticsDashboard progress={progress} compact />
           </div>
-
-          <div className="flex flex-col gap-3 rounded-xl border border-destructive/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-sm font-semibold">Clear AI Academy</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Delete Academy lesson history, capability enrollment and evidence, questions and practice attempts. Cyber Lab resources and other OXSIG work stay untouched.</p></div>
-            <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-              <DialogTrigger asChild><Button variant="outline" className="shrink-0 border-destructive/30 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /> Clear Academy</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Return Academy learning state to zero?</DialogTitle>
-                  <DialogDescription>This cannot be undone. Academy courses, lesson history, capability enrollment/evidence, instructor questions and Academy practice history will be deleted. Running Cyber Lab machines, Boards, Vault knowledge and Live Workspaces stay untouched.</DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setResetDialogOpen(false)} disabled={deletingAcademy}>Cancel</Button>
-                  <Button variant="destructive" onClick={() => void deleteAcademyHistory()} disabled={deletingAcademy}>{deletingAcademy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Academy learning state</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </CardContent>
-      </Card>
+        </details>
+      )}
     </div>
   );
 }

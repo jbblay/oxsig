@@ -1,0 +1,142 @@
+/* Compact console refinement: small controls, quiet surfaces, strong workspace color. */
+
+.oxsig-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.oxsig-action-button,
+.oxsig-flow-button,
+.oxsig-active-strip {
+  background: hsl(var(--card) / 0.72);
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.oxsig-action-button {
+  display: flex;
+  min-width: 0;
+  min-height: 4.25rem;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.55rem;
+}
+
+.oxsig-flow-button {
+  display: flex;
+  min-width: 0;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+}
+
+.oxsig-active-strip {
+  border-color: hsl(var(--primary) / 0.22);
+}
+
+.oxsig-navigation .oxsig-nav-item {
+  border-radius: 0.4rem;
+}
+
+.oxsig-navigation .oxsig-workspace-icon {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oxsig-navigation .oxsig-nav-item[aria-current="page"] .oxsig-workspace-icon {
+  background: hsl(var(--workspace-color) / 0.1);
+}
+
+.oxsig-app-header {
+  backdrop-filter: blur(18px);
+}
+
+.oxsig-app-background {
+  background:
+    linear-gradient(to bottom, hsl(var(--primary) / 0.018), transparent 18rem),
+    hsl(var(--background));
+}
+
+.dark .oxsig-app-background {
+  background:
+    linear-gradient(to bottom, hsl(var(--primary) / 0.025), transparent 18rem),
+    hsl(var(--background));
+}
+
+.oxsig-walkthrough {
+  max-height: calc(100dvh - 1rem);
+}
+
+.oxsig-walkthrough > button {
+  top: 0.35rem;
+  right: 0.35rem;
+  min-width: 2rem;
+  min-height: 2rem;
+}
+
+.oxsig-tour-map {
+  padding: 0.6rem 0.75rem;
+}
+
+.oxsig-tour-map ol {
+  gap: 0.25rem;
+}
+
+.oxsig-tour-stop {
+  gap: 0.25rem;
+  padding: 0.35rem 0.15rem;
+  border-radius: 0.45rem;
+  font-size: 0.65rem;
+}
+
+.oxsig-tour-stop .oxsig-workspace-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.45rem;
+}
+
+.oxsig-tour-step {
+  min-height: 12rem;
+}
+
+@media (hover: hover) {
+  .oxsig-action-button:hover,
+  .oxsig-flow-button:hover,
+  .oxsig-active-strip:hover {
+    border-color: hsl(var(--primary) / 0.28);
+    background: hsl(var(--primary) / 0.045);
+  }
+
+  .oxsig-action-button:hover .oxsig-workspace-icon,
+  .oxsig-flow-button:hover .oxsig-workspace-icon {
+    transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 900px) {
+  .oxsig-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .oxsig-tour-map ol { grid-template-columns: repeat(6, minmax(2.2rem, 1fr)); overflow-x: auto; }
+  .oxsig-tour-stop span:last-child { display: none; }
+  .oxsig-tour-step { min-height: 0; }
+}
+
+@media (max-width: 520px) {
+  .oxsig-action-grid { grid-template-columns: minmax(0, 1fr); }
+  .oxsig-action-button { min-height: 3.8rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxsig-action-button,
+  .oxsig-flow-button,
+  .oxsig-active-strip { transition: none !important; }
+}

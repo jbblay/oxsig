@@ -1,0 +1,18 @@
+/* Workspace routes open directly into the tool. Page components own their
+   action-first structure; this file only supplies shared workspace geometry. */
+
+main[data-oxsig-workspace] {
+  max-width: none;
+  overflow-x: hidden;
+}
+
+main[data-oxsig-workspace] > * {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  main[data-oxsig-workspace] {
+    padding-left: 0.375rem;
+    padding-right: 0.375rem;
+  }
+}

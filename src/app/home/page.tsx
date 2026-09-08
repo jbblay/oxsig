@@ -5,33 +5,46 @@ import Link from 'next/link';
 import {
   ArrowRight,
   BookOpen,
+  Box,
+  Boxes,
   LibraryBig,
+  LogIn,
+  MessageCircle,
+  RadioTower,
+  Settings2,
+  ShieldCheck,
   Sparkles,
+  Terminal,
+  UserRound,
 } from 'lucide-react';
+import GuestSampleFlow from '@/components/app/GuestSampleFlow';
+import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
+import RecentWorkspaceStrip from '@/components/app/RecentWorkspaceStrip';
+import TerminalActivityStrip from '@/components/app/TerminalActivityStrip';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
-import { ProgramProcessJourney } from '@/components/learning/ProgramProcessJourney';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/use-auth';
 import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 
-function AnalyticsLoading() {
-  return (
-    <section className="space-y-4" aria-label="Loading learning analytics">
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="h-48 animate-pulse rounded-2xl border bg-muted/40" />
-        <div className="h-48 animate-pulse rounded-2xl border bg-muted/30" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl border bg-muted/30" />)}
-      </div>
-    </section>
-  );
-}
+const actions = [
+  { href: '/labs', label: 'Cyber Lab', hint: 'Build and run', icon: Terminal, color: 'labs' },
+  { href: '/live', label: 'Live Workspace', hint: 'Shared workspace', icon: RadioTower, color: 'live' },
+  { href: '/collab', label: 'Collaboration', hint: 'Messages and people', icon: MessageCircle, color: 'collab' },
+  { href: '/collab/storyboards', label: 'Boards', hint: 'Draw and explain', icon: BookOpen, color: 'boards' },
+  { href: '/vault', label: 'Vault', hint: 'Reusable knowledge', icon: LibraryBig, color: 'vault' },
+  { href: '/manage', label: 'Resources', hint: 'Manage work', icon: Settings2, color: 'manage' },
+] as const;
+
+const workflow = [
+  { href: '/labs', label: 'Build', color: 'boards', icon: Boxes },
+  { href: '/labs', label: 'Run', color: 'labs', icon: Terminal },
+  { href: '/labs', label: 'Review', color: 'evidence', icon: ShieldCheck },
+  { href: '/vault', label: 'Save', color: 'vault', icon: LibraryBig },
+] as const;
 
 export default function HomePage() {
-  const { user, isAuthenticated, profileError } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, profileError } = useAuth();
   const [progress, setProgress] = React.useState<LearnerProgressSummary | null>(null);
   const [progressLoading, setProgressLoading] = React.useState(false);
 
@@ -41,6 +54,7 @@ export default function HomePage() {
       setProgressLoading(false);
       return;
     }
+
     let cancelled = false;
     setProgressLoading(true);
     void fetch('/api/users/me/progress', { cache: 'no-store' })
@@ -49,100 +63,128 @@ export default function HomePage() {
         if (!cancelled && body?.progress) setProgress(body.progress as LearnerProgressSummary);
       })
       .catch(() => undefined)
-      .finally(() => { if (!cancelled) setProgressLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setProgressLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
 
-  const activeCourse = progress?.academy.activeCourse;
   const activeLab = progress?.labs.activeLab;
-  const hasContinuation = Boolean(activeCourse || activeLab);
+  const labRunning = activeLab?.status === 'running';
+  const guestMode = !authLoading && !isAuthenticated;
 
   return (
-    <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-3xl border bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.14),transparent_36%),linear-gradient(135deg,hsl(var(--background)),hsl(var(--muted)/0.35))] shadow-sm">
-        <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(hsl(var(--border)/0.5)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.5)_1px,transparent_1px)] [background-size:32px_32px]" />
-        <div className="relative p-6 sm:p-8 lg:p-10">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="max-w-3xl">
-              <Badge variant="secondary" className="mb-4 w-fit gap-1.5"><Sparkles className="h-3.5 w-3.5" /> Your dashboard</Badge>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
-                {isAuthenticated ? `Build capability${user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}.` : 'Build capability, not a pile of unfinished courses.'}
-              </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Follow one reference journey deeply. OXSIG teaches, prepares practice, captures evidence, and only marks capability demonstrated when you prove it.
-              </p>
+    <div className="oxsig-console mx-auto max-w-6xl space-y-4">
+      <div className="flex min-h-10 flex-wrap items-center gap-2">
+        <h1 className="mr-auto text-lg font-semibold tracking-tight">Workspace</h1>
+        <Button size="sm" variant="outline" className="h-9 gap-2" onClick={() => window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'))}>
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="hidden sm:inline">AI Helper</span>
+        </Button>
+        <Button asChild size="sm" className="h-9">
+          <Link href="/labs"><Terminal className="mr-2 h-4 w-4" />{activeLab ? 'Open lab' : 'Start lab'}</Link>
+        </Button>
+      </div>
+
+      {guestMode && (
+        <div className="flex flex-col gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.045] px-3 py-2.5 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyan-500/10 text-cyan-500"><UserRound className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2"><p className="text-xs font-semibold">Guest workspace</p><Badge variant="outline" className="h-5 px-1.5 text-[9px]">Explore</Badge></div>
+              <p className="truncate text-[11px] text-muted-foreground">Browse the dashboard now. Create an account when you want to save or use protected actions.</p>
             </div>
-            {progress && (
-              <div className="grid min-w-[220px] grid-cols-2 gap-2 rounded-2xl border bg-background/70 p-3 backdrop-blur-sm">
-                <div className="rounded-xl bg-muted/50 p-3"><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Level</p><p className="mt-1 text-xl font-semibold">{progress.rewards.level}</p></div>
-                <div className="rounded-xl bg-muted/50 p-3"><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Streak</p><p className="mt-1 text-xl font-semibold">{progress.activity.streakDays}<span className="ml-1 text-xs font-normal text-muted-foreground">days</span></p></div>
-              </div>
-            )}
           </div>
-          {profileError && <p className="mt-4 text-sm text-amber-600">Your account is signed in, but some profile information is still loading.</p>}
+          <div className="flex shrink-0 gap-1.5 sm:ml-auto">
+            <Button asChild size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><Link href="/sign-in"><LogIn className="mr-1.5 h-3.5 w-3.5" />Log in</Link></Button>
+            <Button asChild size="sm" className="h-8 px-2.5 text-xs"><Link href="/sign-up">Sign up</Link></Button>
+          </div>
+        </div>
+      )}
+
+      {guestMode && <GuestSampleFlow />}
+
+      {profileError && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          Account details are loading.
+        </div>
+      )}
+
+      {progress && <ProgressBadgeRail progress={progress} compact />}
+
+      {activeLab && (
+        <Link href="/labs" className="oxsig-active-strip group flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5">
+          <span className="oxsig-workspace-icon h-8 w-8 rounded-md" data-workspace-color="labs"><Box className="h-4 w-4" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium">{activeLab.name}</span>
+              <Badge variant={activeLab.status === 'running' ? 'default' : 'outline'} className="h-5 shrink-0 px-1.5 text-[10px] capitalize">{activeLab.status}</Badge>
+            </span>
+          </span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">Resume</span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+        </Link>
+      )}
+
+      <RecentWorkspaceStrip />
+      <TerminalActivityStrip running={labRunning} label={activeLab ? `${activeLab.name} activity` : 'Terminal activity'} />
+
+      <section aria-labelledby="workspace-launcher-title">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 id="workspace-launcher-title" className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Open</h2>
+        </div>
+        <div className="oxsig-action-grid">
+          {actions.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link key={item.href} href={item.href} data-workspace-color={item.color} className="oxsig-action-button group">
+                <span className="oxsig-workspace-icon h-9 w-9 rounded-md"><Icon className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-sm font-medium">{item.label}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{item.hint}</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+              </Link>
+            );
+          })}
         </div>
       </section>
 
-      {hasContinuation && (
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Continue where you left off</p>
-              <h2 className="mt-1 text-xl font-semibold">Your next actions</h2>
-            </div>
-            {progress && progress.activity.streakDays > 0 && <Badge variant="outline">Current streak: {progress.activity.streakDays} days</Badge>}
+      <section aria-labelledby="lab-flow-title" className="rounded-lg border bg-card/60 p-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <h2 id="lab-flow-title" className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:w-28 sm:shrink-0">Lab flow</h2>
+          <div className="grid flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {workflow.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.label} href={item.href} data-workspace-color={item.color} className="oxsig-flow-button group">
+                  <span className="text-[10px] tabular-nums text-muted-foreground">0{index + 1}</span>
+                  <span className="oxsig-workspace-icon h-7 w-7 rounded-md"><Icon className="h-3.5 w-3.5" /></span>
+                  <span className="text-xs font-medium">{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {activeCourse && (
-              <Link href="/academy" className="group">
-                <Card className="h-full transition hover:border-sky-500/30 hover:shadow-md">
-                  <CardHeader>
-                    <div><CardDescription>Continue learning</CardDescription><CardTitle className="mt-1 text-lg">{activeCourse.title}</CardTitle></div>
-                    <p className="text-xs text-muted-foreground">Open the active lesson. Capability progress is shown separately from course navigation.</p>
-                    <span className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-primary">Continue in Academy <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" /></span>
-                  </CardHeader>
-                </Card>
-              </Link>
-            )}
-            {activeLab && (
-              <Link href="/labs" className="group">
-                <Card className="h-full transition hover:border-emerald-500/30 hover:shadow-md">
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                      <div><CardDescription>Continue practicing</CardDescription><CardTitle className="mt-1 text-lg">{activeLab.name}</CardTitle></div>
-                      <Badge variant={activeLab.status === 'running' ? 'default' : 'outline'} className={activeLab.status === 'running' ? 'bg-emerald-600 capitalize' : 'capitalize'}>{activeLab.status}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Your existing lab state is still available.</p>
-                    <span className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-primary">Open Cyber Lab <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" /></span>
-                  </CardHeader>
-                </Card>
-              </Link>
-            )}
-          </div>
-        </section>
-      )}
-
-      <ProgramProcessJourney isAuthenticated={isAuthenticated} />
-
-      {isAuthenticated && progressLoading && !progress && <AnalyticsLoading />}
-      {isAuthenticated && progress && <LearningAnalyticsDashboard progress={progress} compact />}
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center gap-4 p-5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400"><BookOpen className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">Explain what you are working on</p><p className="mt-1 text-sm text-muted-foreground">Use a Board to draw the shell → fork → execve → process model in your own words.</p></div>
-            <Button variant="ghost" size="icon" asChild><Link href="/collab/storyboards" aria-label="Open Boards"><ArrowRight className="h-4 w-4" /></Link></Button>
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center gap-4 p-5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400"><LibraryBig className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">Keep what proved useful</p><p className="mt-1 text-sm text-muted-foreground">Save commands, corrections, and explanations worth revisiting after the experiment.</p></div>
-            <Button variant="ghost" size="icon" asChild><Link href="/vault" aria-label="Open Vault"><ArrowRight className="h-4 w-4" /></Link></Button>
-          </CardContent>
-        </Card>
+        </div>
       </section>
+
+      {progressLoading && !progress && <div role="status" className="px-1 text-xs text-muted-foreground">Loading activity…</div>}
+
+      {isAuthenticated && progress && (
+        <details className="group overflow-hidden rounded-lg border bg-card/60">
+          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-medium">
+            <span>Progress</span>
+            <span className="text-xs font-normal text-muted-foreground group-open:hidden">View</span>
+            <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">Hide</span>
+          </summary>
+          <div className="border-t p-3 sm:p-4">
+            <LearningAnalyticsDashboard progress={progress} compact />
+          </div>
+        </details>
+      )}
     </div>
   );
 }

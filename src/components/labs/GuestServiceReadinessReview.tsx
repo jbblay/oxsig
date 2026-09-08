@@ -194,26 +194,15 @@ export default function GuestServiceReadinessReview() {
   const desktopLab = lab?.metadata?.accessMode === 'desktop';
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold md:text-3xl">Guest Service Readiness</h1>
-            <Badge variant="secondary">Evidence v1</Badge>
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            OXSIG performs a fixed read-only inspection inside the desktop guest through Systems Manager. It proves the configured desktop service state and expected loopback listener without starting a browser tunnel or treating local service readiness as end-to-end desktop access.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || checking}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loadingLab ? 'animate-spin' : ''}`} />Refresh lab
-          </Button>
-          <Button onClick={() => void checkGuestService()} disabled={!lab || !desktopLab || checking || loadingLab}>
-            {checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MonitorCheck className="mr-2 h-4 w-4" />}
-            {checking ? 'Inspecting…' : 'Check guest service'}
-          </Button>
-        </div>
+    <div className="space-y-3 pb-2">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void loadLab()} disabled={loadingLab || checking}>
+<RefreshCw className={`mr-2 h-4 w-4 ${loadingLab ? 'animate-spin' : ''}`} />Refresh
+        </Button>
+        <Button onClick={() => void checkGuestService()} disabled={!lab || !desktopLab || checking || loadingLab}>
+{checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MonitorCheck className="mr-2 h-4 w-4" />}
+{checking ? 'Inspecting…' : 'Check service'}
+        </Button>
       </div>
 
       {error && (
@@ -225,43 +214,10 @@ export default function GuestServiceReadinessReview() {
         </div>
       )}
 
-      {!loadingLab && !lab && (
-        <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
-          <Server className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 font-semibold">No active controlled lab</p>
-          <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Deploy an authorized desktop workload first. Guest-service evidence is bound to that exact deployment and its prior runtime-management evidence.
-          </p>
-        </div>
-      )}
+      {!loadingLab && !lab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">No active lab.</div>}
 
-      {lab && !desktopLab && (
-        <div className="rounded-2xl border border-dashed bg-card p-8">
-          <div className="flex items-start gap-3">
-            <CircleDashed className="mt-0.5 h-6 w-6 text-muted-foreground" />
-            <div>
-              <p className="font-semibold">Guest desktop service not applicable</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                The active lab is configured for terminal access. Runtime Readiness already covers its management and terminal path; this evidence type is intentionally limited to desktop workloads.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {lab && !desktopLab && <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Desktop workload required.</div>}
 
-      {lab && desktopLab && !facts && !checking && (
-        <div className="rounded-2xl border border-dashed bg-card p-8">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-6 w-6 text-muted-foreground" />
-            <div>
-              <p className="font-semibold">Ready to inspect: {lab.name}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                A prior management-ready evidence record is required. This check will not install or start the desktop service; it records the guest state exactly as observed.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {facts && (
         <>

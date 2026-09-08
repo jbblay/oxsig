@@ -231,32 +231,13 @@ export default function DeploymentPlanner() {
   const busy = loading || authorizing || issuingReceipt || startingDeployment;
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold md:text-3xl">Deployment Planner</h1>
-            <Badge variant="secondary">Controlled execution v2</Badge>
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Compile the saved Infrastructure Designer blueprint into a reviewable deployment contract. OXSIG checks current controlled-adapter scope before authorization, then revalidates the exact saved plan at authorization, receipt issuance, and execution. A real provider VM is created only after explicit authorization, a one-time receipt, and a final cost-bearing start action.
-          </p>
-        </div>
+    <div className="space-y-3 pb-2">
+      <div className="flex justify-end">
         <Button onClick={() => void generatePlan()} disabled={busy || Boolean(deployment)}>
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <FileCog className="mr-2 h-4 w-4" />}
-          {result ? 'Regenerate plan' : 'Generate deployment plan'}
+{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : result ? <RefreshCw className="mr-2 h-4 w-4" /> : <FileCog className="mr-2 h-4 w-4" />}
+{result ? 'Regenerate plan' : 'Generate plan'}
         </Button>
       </div>
-
-      {!result && !loading && (
-        <div className="rounded-2xl border border-dashed bg-card p-10 text-center">
-          <FileCog className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 font-semibold">Blueprint → explicit deployment contract</p>
-          <p className="mx-auto mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            OXSIG reads your persisted blueprint, re-runs validation on the server, identifies workloads, runtime mappings, network functions, segments, links, and whether the current controlled one-VM adapter can execute the exact plan.
-          </p>
-        </div>
-      )}
 
       {error && (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
@@ -280,7 +261,6 @@ export default function DeploymentPlanner() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold">Proposed execution sequence</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Actions remain proposals until the controlled adapter consumes a matching receipt.</p>
                   </div>
                   <Badge variant="outline">{result.plan.actions.length} actions</Badge>
                 </div>
@@ -317,9 +297,6 @@ export default function DeploymentPlanner() {
               <div className="rounded-2xl border bg-card p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Plan identity</p>
                 <p className="mt-2 break-all font-mono text-xs">{result.planId}</p>
-                <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                  Stable SHA-256 identity over the deterministic plan. Runtime profile selections are inside this identity, so approval binds to the exact OS/access/resource proposal instead of mutable client state.
-                </p>
                 <div className="mt-3 space-y-1 text-[10px] text-muted-foreground">
                   <p>Design saved: {new Date(result.sourceDesignUpdatedAt).toLocaleString()}</p>
                   <p>Plan generated: {new Date(result.generatedAt).toLocaleString()}</p>
@@ -335,11 +312,10 @@ export default function DeploymentPlanner() {
                 </div>
                 {result.executionSupport.supported && result.executionSupport.target ? (
                   <div className="mt-3 rounded-xl bg-emerald-500/10 p-3 text-xs leading-5 text-emerald-700 dark:text-emerald-300">
-                    Controlled adapter available: <span className="font-mono">{result.executionSupport.target.labSlug}</span> · {result.executionSupport.target.accessMode}. Authorization can bind this exact plan to a one-time execution receipt.
+<span className="font-mono">{result.executionSupport.target.labSlug}</span> · {result.executionSupport.target.accessMode}
                   </div>
                 ) : (
                   <div className="mt-3 space-y-2">
-                    <p className="text-[11px] leading-5 text-muted-foreground">This blueprint remains valid design intent, but the current controlled runtime will not create an authorization for it.</p>
                     {result.executionSupport.reasons.map((reason) => (
                       <div key={reason} className="rounded-xl bg-amber-500/10 p-3 text-[11px] leading-5 text-amber-700 dark:text-amber-300">{reason}</div>
                     ))}
