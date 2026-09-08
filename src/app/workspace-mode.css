@@ -1,8 +1,7 @@
 /*
  * Workspace routes should open directly into the tool. The application header
- * already names the surface, so feature-level marketing/teaching headers are
- * intentionally suppressed here. Keep this file limited to shell geometry and
- * legacy presentation cleanup; feature behavior remains owned by each surface.
+ * already names the surface, so feature-level marketing/teaching copy is
+ * suppressed or compressed while operational controls stay visible.
  */
 
 main[data-oxsig-workspace] {
@@ -13,13 +12,18 @@ main[data-oxsig-workspace] > * {
   min-width: 0;
 }
 
-/* Collaboration is already a three-pane application. Remove the duplicate
-   page introduction and let the conversation workspace use the viewport. */
+/* Collaboration is already a three-pane application. Keep New session as a
+   toolbar action, but remove the duplicate page title/description block. */
 main[data-oxsig-workspace='collab'] > div {
   gap: 0.5rem;
 }
 
 main[data-oxsig-workspace='collab'] > div > div:first-child {
+  min-height: 2.5rem;
+  justify-content: flex-end;
+}
+
+main[data-oxsig-workspace='collab'] > div > div:first-child > div:first-child {
   display: none;
 }
 
@@ -30,7 +34,7 @@ main[data-oxsig-workspace='collab'] > div > div:last-child {
 }
 
 /* Live Workspace already has list/detail application structure. The old hero
-   made the tool look like a landing page before the actual controls appeared. */
+   adds no operational control, so the list/detail workspace starts first. */
 main[data-oxsig-workspace='live'] > div {
   max-width: none;
   gap: 0.5rem;
@@ -45,13 +49,31 @@ main[data-oxsig-workspace='live'] > div > div:last-child {
   min-height: calc(100dvh - 5rem);
 }
 
-/* Vault is a knowledge browser/editor, not a product pitch. Go straight to
-   search/list/editor and remove the hero plus dashboard-style vanity metrics. */
+/* Vault is a browser/editor. Convert its hero into a compact create toolbar,
+   keep the creation controls, and remove marketing copy plus vanity metrics. */
 main[data-oxsig-workspace='vault'] > div {
   gap: 0.75rem;
 }
 
-main[data-oxsig-workspace='vault'] > div > section:first-child,
+main[data-oxsig-workspace='vault'] > div > section:first-child {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+main[data-oxsig-workspace='vault'] > div > section:first-child > div:first-child,
+main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex > div:first-child,
+main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.mt-5 {
+  display: none;
+}
+
+main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex {
+  min-height: 2.5rem;
+  justify-content: flex-end;
+}
+
 main[data-oxsig-workspace='vault'] > div > div:nth-child(2) {
   display: none;
 }
@@ -60,23 +82,57 @@ main[data-oxsig-workspace='vault'] > div > div:nth-child(3) {
   gap: 0.75rem;
 }
 
-/* Cyber Lab should open on its control surface. The global header already says
-   Cyber Lab; remove the second title/description and the legacy onboarding
-   banner that interrupts the topology/terminal workflow. */
+/* Cyber Lab is a tool suite. Compress each mode header into a toolbar: keep
+   mode identity, state badges and buttons, remove the prose paragraph. */
 main[data-oxsig-workspace='labs'] > div:first-child {
   margin-bottom: 0.5rem;
   border-radius: 0.75rem;
   box-shadow: none;
 }
 
-main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div {
+main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div {
   gap: 0.5rem;
   padding-bottom: 0;
 }
 
-main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child,
+main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div > div:first-child {
+  gap: 0.5rem;
+}
+
+main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div > div:first-child > div:first-child > p {
+  display: none;
+}
+
+main[data-oxsig-workspace='labs'] [id^='cyber-lab-'] > div > div:first-child h1 {
+  font-size: 0.95rem;
+  line-height: 1.25rem;
+}
+
+/* Runtime's left header contains only the duplicate Lab title/prose. Preserve
+   the status badges and collapse control on the right as the operational bar. */
+main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child {
+  justify-content: flex-end;
+}
+
+main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child > div:first-child {
+  display: none;
+}
+
+/* Remove the one-time explanatory banner. Panel-collapse controls remain in
+   the actual lab chrome where they are immediately usable. */
 main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div.relative.overflow-hidden {
   display: none;
+}
+
+/* Make the Planner's no-result state a compact empty canvas rather than an
+   article beneath its Generate action. */
+main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) > p:last-child {
+  display: none;
+}
+
+main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
 }
 
 /* Boards are naturally canvas-first. Give them workspace spacing without
@@ -89,6 +145,11 @@ main[data-oxsig-workspace='boards'] {
   main[data-oxsig-workspace] {
     padding-left: 0.375rem;
     padding-right: 0.375rem;
+  }
+
+  main[data-oxsig-workspace='collab'] > div > div:first-child,
+  main[data-oxsig-workspace='vault'] > div > section:first-child > div.relative.flex {
+    min-height: 2.25rem;
   }
 
   main[data-oxsig-workspace='collab'] > div > div:last-child,
