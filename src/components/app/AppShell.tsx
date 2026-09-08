@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
+import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
@@ -28,6 +29,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [immersiveExpanded, setImmersiveExpanded] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [layoutReady, setLayoutReady] = React.useState(false);
+  const lastRecordedPathRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -48,7 +50,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     setMobileNavOpen(false);
     setImmersiveExpanded(false);
-  }, [pathname]);
+    if (!bare && lastRecordedPathRef.current !== pathname) {
+      lastRecordedPathRef.current = pathname;
+      recordWorkspaceVisit(pathname);
+    }
+  }, [bare, pathname]);
 
   React.useEffect(() => {
     if (!mobileNavOpen || typeof document === 'undefined') return;
