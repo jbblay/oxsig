@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RadioTower,
+  Settings2,
   Sun,
   X,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ const groups = [
       { href: '/collab', label: 'Collaborate', icon: MessageCircle },
       { href: '/live', label: 'Live Workspace', icon: RadioTower },
       { href: '/collab/storyboards', label: 'Boards', icon: BookOpen },
+      { href: '/manage', label: 'Manage resources', icon: Settings2 },
     ],
   },
   {

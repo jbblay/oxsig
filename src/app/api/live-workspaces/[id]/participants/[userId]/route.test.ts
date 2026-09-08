@@ -18,23 +18,30 @@ vi.mock('@/lib/live-workspace/server', () => ({
   },
 }));
 
-import { PATCH } from './route';
+import { DELETE, PATCH } from './route';
 
 const workspaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const targetId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const user = { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', clerkUserId: 'clerk-1', role: 'user' as const };
+const ownerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const user = { id: ownerId, clerkUserId: 'clerk-1', role: 'user' as const };
 
-function request(body: unknown) {
+function request(body: unknown, method: 'PATCH' | 'DELETE' = 'PATCH') {
   return new NextRequest(`http://localhost/api/live-workspaces/${workspaceId}/participants/${targetId}`, {
-    method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method,
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
 }
 
 describe('Live Workspace participant role API', () => {
-  const pool = { query: vi.fn() };
+  const poolQuery = vi.fn();
+  const clientQuery = vi.fn();
+  const release = vi.fn();
+  const pool = { query: poolQuery, connect: vi.fn() };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    pool.connect.mockResolvedValue({ query: clientQuery, release });
     mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
@@ -44,6 +51,11 @@ describe('Live Workspace participant role API', () => {
       capabilities: { observe: true, collaborate: true, requestControl: true, grantControl: false, manageParticipants: false, manageResources: false, eligibleForTerminalControl: true, eligibleForDesktopControl: true },
     });
     mocks.revokeControlForParticipant.mockResolvedValue(undefined);
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: ownerId }], rowCount: 1 };
+      if (sql.includes('FROM collaboration_members')) return { rows: [{ exists: 1 }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
   });
 
   it('accepts only the strict Live Workspace role set and never accepts owner from the browser', async () => {
@@ -72,5 +84,28 @@ describe('Live Workspace participant role API', () => {
       actorId: user.id,
       reason: 'role_became_observer',
     });
+  });
+
+  it('lets the owner remove a participant and revokes machine control first', async () => {
+    const response = await DELETE(request(undefined, 'DELETE'), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
+    expect(response.status).toBe(200);
+    expect(mocks.revokeControlForParticipant).toHaveBeenCalledWith(expect.objectContaining({
+      collaborationId: workspaceId,
+      participantId: targetId,
+      actorId: ownerId,
+      reason: 'participant_removed',
+    }));
+    expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("SET status = 'removed'"), [workspaceId, targetId]);
+    expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('never allows the workspace owner to be removed', async () => {
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: targetId }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const response = await DELETE(request(undefined, 'DELETE'), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
+    expect(response.status).toBe(409);
+    expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
   });
 });

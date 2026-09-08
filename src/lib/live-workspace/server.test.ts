@@ -102,8 +102,10 @@ describe('Live Workspace foundation policy', () => {
   });
 
   it('discovers only owner-scoped resources and preserves their control surface', async () => {
-    const pool = poolWith((_sql, values) => {
+    const pool = poolWith((sql, values) => {
       expect(values).toEqual(['owner-1']);
+      expect(sql).toContain("li.status NOT IN ('destroying', 'destroyed')");
+      expect(sql).toContain("course.status = 'active'");
       return { rows: [
         { id: 'lab-1', type: 'lab-instance', label: 'Ubuntu Lab', access_mode: 'terminal' },
         { id: 'course-1', type: 'academy-course', label: 'Linux networking', access_mode: null },
@@ -125,6 +127,26 @@ describe('Live Workspace foundation policy', () => {
   it('rejects foreign lab resources instead of attaching them to the workspace owner', async () => {
     const pool = poolWith(() => ({ rows: [], rowCount: 0 }));
     await expect(assertOwnerResource(pool, 'owner-1', 'lab-instance', 'lab-foreign'))
+      .rejects.toMatchObject({ code: 'RESOURCE_OWNERSHIP_MISMATCH', status: 403 });
+  });
+
+  it('rejects destroying labs even when the caller bypasses the attachable-resource list', async () => {
+    const pool = poolWith((sql, values) => {
+      expect(values).toEqual(['lab-1', 'owner-1']);
+      expect(sql).toContain("li.status NOT IN ('destroying', 'destroyed')");
+      return { rows: [], rowCount: 0 };
+    });
+    await expect(assertOwnerResource(pool, 'owner-1', 'lab-instance', 'lab-1'))
+      .rejects.toMatchObject({ code: 'RESOURCE_OWNERSHIP_MISMATCH', status: 403 });
+  });
+
+  it('rejects archived Academy courses even when the caller bypasses the attachable-resource list', async () => {
+    const pool = poolWith((sql, values) => {
+      expect(values).toEqual(['course-1', 'owner-1']);
+      expect(sql).toContain("status = 'active'");
+      return { rows: [], rowCount: 0 };
+    });
+    await expect(assertOwnerResource(pool, 'owner-1', 'academy-course', 'course-1'))
       .rejects.toMatchObject({ code: 'RESOURCE_OWNERSHIP_MISMATCH', status: 403 });
   });
 

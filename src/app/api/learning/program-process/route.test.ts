@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   validateCsrfToken: vi.fn(),
   query: vi.fn(),
+  transaction: vi.fn(),
   createAcademyCourse: vi.fn(),
   recordLearningActivity: vi.fn(),
 }));
@@ -14,11 +15,14 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
-vi.mock('@/lib/db/pool', () => ({ getPool: () => ({ query: mocks.query }) }));
+vi.mock('@/lib/db/pool', () => ({
+  getPool: () => ({ query: mocks.query }),
+  transaction: mocks.transaction,
+}));
 vi.mock('@/lib/academy/persistence', () => ({ createAcademyCourse: mocks.createAcademyCourse }));
 vi.mock('@/lib/learning/activity', () => ({ recordLearningActivity: mocks.recordLearningActivity }));
 
-import { GET, POST } from './route';
+import { GET, PATCH, POST } from './route';
 import { PROGRAM_PROCESS_SOURCE_PROMPT } from '@/lib/learning/program-process-path';
 
 const user = { id: '11111111-1111-4111-8111-111111111111', clerkUserId: 'clerk-1', role: 'user' as const };
@@ -38,6 +42,7 @@ function installAuth() {
   ) => handler(req, user));
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.validateCsrfToken.mockResolvedValue(true);
+  mocks.transaction.mockImplementation(async (handler: (client: { query: typeof mocks.query }) => Promise<unknown>) => handler({ query: mocks.query }));
 }
 
 function getRequest() {
@@ -49,6 +54,14 @@ function postRequest() {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ action: 'start' }),
+  });
+}
+
+function patchRequest() {
+  return new NextRequest('http://localhost/api/learning/program-process', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'abandon' }),
   });
 }
 
@@ -140,6 +153,30 @@ describe('program process reference path', () => {
     expect(body.state.capabilities[0].status).toBe('in_progress');
     expect(body.state.enrollment.recommendedCapabilityId).toBe('command-resolution');
     expect(body.state.capabilities.slice(1).every((item: { status: string }) => item.status === 'not_started')).toBe(true);
+  });
+
+  it('abandons the active journey while preserving durable capability evidence', async () => {
+    const abandoned = { ...enrollment, status: 'abandoned', active_capability_id: null };
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('UPDATE learning_path_enrollments')) return { rows: [{ id: enrollment.id }], rowCount: 1 };
+      if (sql.includes('FROM academy_courses') && sql.includes('FOR UPDATE')) return { rows: [{ id: '33333333-3333-4333-8333-333333333333' }] };
+      if (sql.includes('UPDATE academy_sessions')) return { rows: [], rowCount: 1 };
+      if (sql.includes('UPDATE academy_courses')) return { rows: [], rowCount: 1 };
+      if (sql.includes('FROM learning_path_enrollments')) return { rows: [abandoned] };
+      if (sql.includes('FROM learning_capability_evidence')) return {
+        rows: [{ capability_id: 'fork-copy-on-write', source_type: 'assessment', result: 'demonstrated', score: 90 }],
+      };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    const response = await PATCH(patchRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.state.enrollment.status).toBe('abandoned');
+    expect(body.state.enrollment.recommendedCapabilityId).toBeNull();
+    expect(body.state.demonstratedCount).toBe(1);
+    expect(body.state.capabilities.find((item: { id: string }) => item.id === 'fork-copy-on-write').status).toBe('demonstrated');
   });
 
   it('rejects starting the path without CSRF validation', async () => {

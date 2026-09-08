@@ -15,6 +15,7 @@ const REFERENCE_TITLE = 'How a Program Becomes a Process';
 type PathState = {
   path: { title: string; description: string; version: number };
   enrollment: null | {
+    status: 'active' | 'completed' | 'abandoned';
     activeCapabilityId: string | null;
     recommendedCapabilityId: string | null;
   };
@@ -88,13 +89,14 @@ export default function AcademyPathGate({
 
   if (!state) return <>{children}</>;
 
-  const enrolled = Boolean(state.enrollment);
+  const enrolled = state.enrollment?.status === 'active';
+  const previouslyEnrolled = Boolean(state.enrollment);
   const referenceCourseActive = activeCourseTitle === REFERENCE_TITLE;
   const nextCapability = state.capabilities.find((capability) => capability.id === state.enrollment?.recommendedCapabilityId)
     || state.capabilities.find((capability) => capability.status !== 'demonstrated')
     || null;
 
-  if (referenceCourseActive) {
+  if (referenceCourseActive && enrolled) {
     return (
       <div className="space-y-4">
         <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/20 px-4 py-3">
@@ -138,8 +140,12 @@ export default function AcademyPathGate({
         <section className="overflow-hidden rounded-3xl border bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.16),transparent_36%),linear-gradient(145deg,hsl(var(--background)),hsl(var(--muted)/0.24))] p-6 shadow-sm sm:p-9">
           <Badge className="gap-1.5"><BrainCircuit className="h-3.5 w-3.5" /> Core reference journey</Badge>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-5xl">Learn by building a mental model, testing it, and proving it.</h1>
-          <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">Start with {state.path.title}. OXSIG begins at zero assumed progress, teaches each capability, asks you to predict outcomes, gives you a real Cyber Lab experiment, then evaluates your explanation against persisted evidence.</p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">
+            {previouslyEnrolled
+              ? `Resume ${state.path.title}. Your previously demonstrated capability evidence is preserved, so OXSIG can continue from what you have actually proven.`
+              : `Start with ${state.path.title}. OXSIG begins at zero assumed progress, teaches each capability, asks you to predict outcomes, gives you a real Cyber Lab experiment, then evaluates your explanation against persisted evidence.`}
+          </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <Card><CardHeader><CardTitle className="text-sm">Understand</CardTitle><CardDescription>Technical explanation and visual models focus on the exact capability.</CardDescription></CardHeader></Card>
             <Card><CardHeader><CardTitle className="text-sm">Experiment</CardTitle><CardDescription>Predict first, run the prepared lab observation, then inspect the real result.</CardDescription></CardHeader></Card>
             <Card><CardHeader><CardTitle className="text-sm">Demonstrate</CardTitle><CardDescription>Explain the result back. Only persisted evidence advances capability progress.</CardDescription></CardHeader></Card>
@@ -147,11 +153,15 @@ export default function AcademyPathGate({
           <div className="mt-6 flex flex-wrap items-center gap-2">
             <Button onClick={() => void startOrResumeReferenceJourney()} disabled={starting}>
               {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {starting ? 'Starting…' : 'Start with zero assumed progress'}
+              {starting ? 'Starting…' : previouslyEnrolled ? 'Resume learning journey' : 'Start with zero assumed progress'}
             </Button>
             <Button variant="outline" asChild><Link href="/academy/explore"><Compass className="h-4 w-4" /> Explore a side topic</Link></Button>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">Explore is temporary and does not enroll you, replace your journey, or mark any capability complete.</p>
+          <p className="mt-4 text-xs text-muted-foreground">
+            {previouslyEnrolled
+              ? 'Leaving a journey pauses enrollment; it does not erase evidence you already produced.'
+              : 'Explore is temporary and does not enroll you, replace your journey, or mark any capability complete.'}
+          </p>
         </section>
       </div>
     );
