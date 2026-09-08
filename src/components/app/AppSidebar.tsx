@@ -72,16 +72,16 @@ function SidebarContent({
   const compact = collapsed && !mobile;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
+    <div className="oxsig-navigation flex h-full min-h-0 w-full flex-col">
       <div className={cn('flex h-16 items-center border-b border-sidebar-border/70', compact ? 'justify-center px-2' : 'justify-between px-4')}>
         <Link href="/home" onClick={onNavigate} className={cn('flex min-w-0 items-center gap-3', compact && 'justify-center')}>
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/10">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/10">
             <Network className="h-5 w-5" />
           </div>
           {!compact && (
             <div className="min-w-0">
-              <p className="oxsig-gradient-text truncate text-lg font-bold">Oxsig</p>
-              <p className="truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
+              <p className="truncate text-lg font-bold tracking-[0.16em]">OXSIG</p>
+              <p className="truncate text-xs uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
             </div>
           )}
         </Link>
@@ -102,7 +102,7 @@ function SidebarContent({
         <nav className="space-y-5">
           {groups.map((group) => (
             <div key={group.label}>
-              {!compact && <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{group.label}</p>}
+              {!compact && <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{group.label}</p>}
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const active = isItemActive(pathname, item.href);
@@ -113,19 +113,20 @@ function SidebarContent({
                       href={item.href}
                       onClick={onNavigate}
                       title={compact ? item.label : undefined}
+                      aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200',
+                        'oxsig-nav-item group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200',
                         compact ? 'h-11 justify-center px-2' : 'gap-3 px-3 py-2.5',
                         active
-                          ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-foreground shadow-sm'
+                          ? 'bg-primary/10 text-primary shadow-sm'
                           : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
                       )}
                     >
-                      {active && !compact && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-gradient-to-b from-blue-500 to-purple-600" />}
+                      {active && !compact && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary" />}
                       <span className={cn(
                         'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
                         active
-                          ? 'bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-md shadow-blue-500/10'
+                          ? 'bg-primary/15 text-primary'
                           : 'bg-sidebar-accent/70 text-muted-foreground group-hover:bg-sidebar-accent group-hover:text-foreground'
                       )}>
                         <Icon className="h-4 w-4" />
@@ -153,7 +154,7 @@ function SidebarContent({
           {!compact && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold">{user?.displayName || 'Oxsig user'}</p>
-              <p className="truncate text-[10px] text-muted-foreground">{user?.email || 'Account'}</p>
+              <p className="truncate text-xs text-muted-foreground">{user?.email || 'Account'}</p>
             </div>
           )}
         </Link>
@@ -204,7 +205,7 @@ export default function AppSidebar({
       <aside
         className={cn(
           'sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border/70 bg-sidebar/90 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-300 ease-in-out md:flex',
-          collapsed ? 'w-[76px]' : 'w-[268px]'
+          collapsed ? 'w-[76px]' : 'w-[248px]'
         )}
       >
         <SidebarContent collapsed={collapsed} onToggle={onToggle} />
@@ -227,3 +228,4 @@ export default function AppSidebar({
     </>
   );
 }
+

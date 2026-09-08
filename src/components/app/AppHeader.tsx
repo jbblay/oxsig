@@ -48,7 +48,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-xl">
+      <header className="oxsig-app-header sticky top-0 z-30 border-b bg-background/80 backdrop-blur-xl">
         <div className="flex h-14 items-center gap-2 px-2 sm:px-4 md:h-16 md:px-5 lg:px-6">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
@@ -60,12 +60,12 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
           <button
             type="button"
             onClick={() => setCommandOpen(true)}
-            className="ml-auto hidden h-9 min-w-48 max-w-md flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 text-left text-xs text-muted-foreground transition hover:bg-muted/60 md:flex"
+            className="ml-auto hidden h-9 min-w-48 max-w-md flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 text-left text-sm text-muted-foreground transition hover:bg-muted/60 md:flex"
             aria-label="Search and jump to a workspace"
           >
             <Search className="h-3.5 w-3.5" />
             <span className="truncate">Search or jump</span>
-            <kbd className="ml-auto rounded border bg-background px-1.5 py-0.5 font-mono text-[9px]">⌘K</kbd>
+            <kbd className="ml-auto rounded border bg-background px-1.5 py-0.5 font-mono text-xs">⌘K</kbd>
           </button>
 
           <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-2">
@@ -87,10 +87,10 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               className="group flex min-w-0 items-center gap-2 rounded-lg border border-transparent p-1 transition hover:border-border hover:bg-muted/40"
               aria-label="Open account"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-bold">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-xs font-bold">
                 {initials(user?.displayName || user?.email)}
               </span>
-              <span className="hidden max-w-32 truncate text-[11px] font-medium sm:block">
+              <span className="hidden max-w-32 truncate text-sm font-medium sm:block">
                 {user?.displayName || 'Account'}
               </span>
             </Link>
@@ -101,3 +101,4 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
     </>
   );
 }
+
