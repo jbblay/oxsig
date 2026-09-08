@@ -11,10 +11,10 @@ export default function ClerkEntry() {
         <div className="space-y-3">
           <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-primary text-primary-foreground"><PanelsTopLeft className="size-6" aria-hidden="true" /></div>
           <h1 className="text-3xl font-semibold">Oxsig</h1>
-          <p className="text-muted-foreground">Visual lessons, shared resources, and practical cloud labs in one workspace.</p>
+          <p className="text-muted-foreground">Cloud labs, collaboration, technical workspaces, and reusable evidence in one place.</p>
         </div>
         <div className="space-y-3">
-          <Button asChild className="w-full"><Link href="/home">Try now <ArrowRight className="size-4" aria-hidden="true" /></Link></Button>
+          <Button asChild className="w-full"><Link href="/home">Open workspace <ArrowRight className="size-4" aria-hidden="true" /></Link></Button>
           <Button asChild variant="outline" className="w-full"><Link href="/sign-up">Sign up</Link></Button>
           <Button asChild variant="ghost" className="w-full"><Link href="/sign-in">Log in</Link></Button>
         </div>
