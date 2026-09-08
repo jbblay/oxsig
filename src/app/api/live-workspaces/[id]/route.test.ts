@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
-const poolQuery = vi.fn();
-const clientQuery = vi.fn();
-const release = vi.fn();
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   validateCsrfToken: vi.fn(),
@@ -13,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listLiveWorkspaceParticipants: vi.fn(),
   listOwnerAttachableResources: vi.fn(),
   listControlState: vi.fn(),
+  getPool: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
@@ -25,12 +23,7 @@ vi.mock('@/lib/live-workspace/server', () => ({
   listLiveWorkspaceParticipants: mocks.listLiveWorkspaceParticipants,
   listOwnerAttachableResources: mocks.listOwnerAttachableResources,
 }));
-vi.mock('@/lib/db/pool', () => ({
-  getPool: () => ({
-    query: poolQuery,
-    connect: async () => ({ query: clientQuery, release }),
-  }),
-}));
+vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
 
 import { DELETE, PATCH } from './route';
 
@@ -66,8 +59,15 @@ function input(method: 'PATCH' | 'DELETE', body?: unknown, id = workspaceId) {
 }
 
 describe('/api/live-workspaces/[id] lifecycle', () => {
+  const poolQuery = vi.fn();
+  const clientQuery = vi.fn();
+  const release = vi.fn();
+  const pool = { query: poolQuery, connect: vi.fn() };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    pool.connect.mockResolvedValue({ query: clientQuery, release });
+    mocks.getPool.mockReturnValue(pool);
     mocks.requireAuth.mockImplementation(async (
       req: NextRequest,
       handler: (req: NextRequest, user: typeof user) => Promise<NextResponse>
