@@ -86,11 +86,12 @@ describe('AI Practitioner durable history', () => {
     mocks.checkRateLimit.mockResolvedValue(null);
   });
 
-  it('reconstructs the owner timeline from persisted plan, execution and analysis events', async () => {
+  it('reconstructs the owner timeline and preserves the original lab identity', async () => {
     mocks.poolQuery.mockResolvedValue({
       rows: [
         {
           id: 'plan-1',
+          lab_instance_id: labId,
           event_type: 'plan',
           prompt: 'Inspect the kernel',
           command: 'uname -a',
@@ -106,6 +107,7 @@ describe('AI Practitioner durable history', () => {
         },
         {
           id: 'execution-1',
+          lab_instance_id: labId,
           event_type: 'execution',
           prompt: null,
           command: 'uname -a',
@@ -123,6 +125,7 @@ describe('AI Practitioner durable history', () => {
         },
         {
           id: 'analysis-1',
+          lab_instance_id: labId,
           event_type: 'analysis',
           prompt: 'Inspect the kernel',
           command: 'uname -a',
@@ -146,6 +149,7 @@ describe('AI Practitioner durable history', () => {
     expect(body.entries).toHaveLength(1);
     expect(body.entries[0]).toMatchObject({
       prompt: 'Inspect the kernel',
+      labInstanceId: labId,
       execution: {
         command: 'uname -a',
         evidenceId,
