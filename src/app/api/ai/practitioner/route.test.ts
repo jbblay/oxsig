@@ -165,6 +165,55 @@ describe('AI Practitioner durable history', () => {
       { id: 'analysis-1:analysis', role: 'assistant', content: 'The command returned the running kernel identity.' },
     ]);
   });
+
+  it('does not resurrect an unfinished executable plan after refresh', async () => {
+    mocks.poolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 'plan-stale',
+          lab_instance_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          event_type: 'plan',
+          prompt: 'Inspect this old lab',
+          command: 'ip addr',
+          metadata: {
+            plan: {
+              title: 'Inspect addresses',
+              objective: 'Read interface state',
+              explanation: 'Inspect the old lab network interfaces.',
+              command: 'ip addr',
+              expected: 'Interface information',
+              risk: 'read-only',
+            },
+          },
+        },
+        {
+          id: 'plan-chat',
+          lab_instance_id: null,
+          event_type: 'plan',
+          prompt: 'What is a process?',
+          command: null,
+          metadata: {
+            plan: {
+              title: 'Process explanation',
+              objective: 'Explain process basics',
+              explanation: 'A process is a running program instance with execution state.',
+              command: null,
+              risk: 'read-only',
+            },
+          },
+        },
+      ],
+    });
+
+    const response = await GET(getRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0]).toMatchObject({ prompt: 'What is a process?' });
+    expect(body.entries[0].plan.command).toBeNull();
+    expect(body.entries.find((entry: { id: string }) => entry.id === 'plan-stale')).toBeUndefined();
+  });
 });
 
 describe('AI Practitioner evidence analysis', () => {
@@ -249,7 +298,7 @@ describe('AI Practitioner evidence analysis', () => {
       exitCode: 7,
     }));
     expect(mocks.explainPractitionerEvidence).not.toHaveBeenCalledWith(expect.objectContaining({
-      stdout: 'forged-client-output',
+      stdout: 'forged-client-success',
     }));
     expect(mocks.storeExecutionEvidenceAnalysis).toHaveBeenCalledWith(expect.objectContaining({
       evidenceId,
