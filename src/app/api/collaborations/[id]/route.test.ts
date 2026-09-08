@@ -93,21 +93,24 @@ describe('/api/collaborations/[id]', () => {
     expect(response.status).toBe(404);
   });
 
-  it('deletes an owned collaboration and its attachment prefix', async () => {
+  it('cleans attachment objects before deleting an owned collaboration', async () => {
     mocks.deleteCollaborationObjects.mockResolvedValue(3);
     const args = input('DELETE');
     const response = await DELETE(args.request, args.context);
     expect(response.status).toBe(200);
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collaborations'), [collaborationId, user.id]);
     expect(mocks.deleteCollaborationObjects).toHaveBeenCalledWith(collaborationId);
-    expect(await response.json()).toEqual({ deleted: true, storageCleanupPending: false });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT id'), [collaborationId, user.id]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collaborations'), [collaborationId, user.id]);
+    expect(await response.json()).toEqual({ deleted: true });
   });
 
-  it('keeps logical deletion successful if object cleanup needs retry', async () => {
+  it('does not delete relational data if attachment cleanup fails', async () => {
     mocks.deleteCollaborationObjects.mockRejectedValue(new Error('storage unavailable'));
     const args = input('DELETE');
     const response = await DELETE(args.request, args.context);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ deleted: true, storageCleanupPending: true });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Could not delete collaboration attachments. Nothing was deleted.' });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT id'), [collaborationId, user.id]);
   });
 });
