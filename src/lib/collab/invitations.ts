@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import 'server-only';
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -213,7 +214,7 @@ export async function acceptCollaborationInvitation(args: {
       [
         invitation.id,
         args.userId,
-        JSON.stringify({ read: true, write: true, admin: false }),
+        stringifyPostgresJson({ read: true, write: true, admin: false }),
       ]
     );
     await client.query(

@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -135,7 +136,7 @@ export async function POST(
           user.id,
           parsed.data.text.trim(),
           parsed.data.type,
-          JSON.stringify(parsed.data.metadata),
+          stringifyPostgresJson(parsed.data.metadata),
         ]
       );
 

@@ -1,3 +1,4 @@
+import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
         `INSERT INTO collaborations (name, description, owner_id, status, collaboration_type, settings)
          VALUES ($1,$2,$3,'active','live-workspace',$4::jsonb)
          RETURNING id, name, description, owner_id, created_at, updated_at`,
-        [parsed.data.name, parsed.data.description || null, user.id, JSON.stringify({ liveWorkspaceVersion: 1 })]
+        [parsed.data.name, parsed.data.description || null, user.id, stringifyPostgresJson({ liveWorkspaceVersion: 1 })]
       );
       const row = created.rows[0];
       await client.query(
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
          VALUES ($1,$2,'owner',$3::jsonb,'active',$2)
          ON CONFLICT (collaboration_id, user_id)
          DO UPDATE SET role='owner', permissions=EXCLUDED.permissions, status='active'`,
-        [row.id, user.id, JSON.stringify({ read: true, write: true, admin: true })]
+        [row.id, user.id, stringifyPostgresJson({ read: true, write: true, admin: true })]
       );
       await client.query(
         `INSERT INTO live_workspaces (collaboration_id, created_by, status)
