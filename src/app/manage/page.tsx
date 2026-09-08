@@ -154,17 +154,13 @@ export default function ManageResourcesPage() {
   }
 
   if (loading && !state) {
-    return <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading resources…</div>;
+    return <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…</div>;
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 py-1">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Resources</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage what you own.</p>
-        </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading || Boolean(busy)}>
+    <div className="mx-auto max-w-6xl space-y-4 py-1">
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || Boolean(busy)}>
           <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </div>
@@ -199,7 +195,7 @@ export default function ManageResourcesPage() {
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Collaboration sessions</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {!state?.collaborations.length && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No owned collaboration sessions.</p>}
+          {!state?.collaborations.length && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No sessions</p>}
           {state?.collaborations.map((item) => (
             <div key={item.id} className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0"><p className="truncate font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.memberCount} member{item.memberCount === 1 ? '' : 's'}</p></div>
@@ -215,7 +211,7 @@ export default function ManageResourcesPage() {
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Live Workspaces</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {!state?.workspaces.length && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No owned Live Workspaces.</p>}
+          {!state?.workspaces.length && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No workspaces</p>}
           {state?.workspaces.map((item) => (
             <div key={item.id} className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
@@ -232,9 +228,9 @@ export default function ManageResourcesPage() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><MailX className="h-4 w-4" /> Pending invitations</CardTitle></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><MailX className="h-4 w-4" /> Invitations</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {!state?.invitations.length && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No pending invitations.</p>}
+          {!state?.invitations.length && <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No invitations</p>}
           {state?.invitations.map((invitation) => (
             <div key={invitation.id} className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0"><p className="truncate font-semibold">{invitation.email}</p><p className="truncate text-xs text-muted-foreground">{invitation.collaborationName} · {invitation.deliveryStatus}</p></div>
@@ -247,7 +243,7 @@ export default function ManageResourcesPage() {
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Infrastructure design</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="font-semibold">{state?.hasInfrastructureDesign ? 'Saved design' : 'No saved design'}</p><p className="text-xs text-muted-foreground">{state?.hasInfrastructureDesign ? 'Your current blueprint is persisted.' : 'Build one from Cyber Lab.'}</p></div>
+          <p className="font-semibold">{state?.hasInfrastructureDesign ? 'Saved design' : 'No saved design'}</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" asChild><Link href="/labs">Open</Link></Button>
             {state?.hasInfrastructureDesign && <Button size="sm" variant="destructive" disabled={busy === 'infrastructure-design'} onClick={() => void deleteInfrastructureDesign()}><Trash2 className="h-4 w-4" /> Reset</Button>}
