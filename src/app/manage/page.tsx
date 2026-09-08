@@ -54,6 +54,7 @@ type WorkspaceItem = {
   description: string;
   isOwner: boolean;
   role: string;
+  status: 'active' | 'ended';
   updatedAt: string;
 };
 
@@ -99,7 +100,7 @@ export default function ManageResourcesPage() {
       const [academyResponse, collaborationResponse, workspaceResponse, invitationResponse, designResponse, learningResponse] = await Promise.all([
         fetch('/api/academy/history?limit=50', { cache: 'no-store' }),
         fetch('/api/collaborations', { cache: 'no-store' }),
-        fetch('/api/live-workspaces', { cache: 'no-store' }),
+        fetch('/api/live-workspaces?includeEnded=owned', { cache: 'no-store' }),
         fetch('/api/collaborations/invitations', { cache: 'no-store' }),
         fetch('/api/labs/infrastructure-design', { cache: 'no-store' }),
         fetch('/api/learning/program-process', { cache: 'no-store' }),
@@ -333,12 +334,15 @@ export default function ManageResourcesPage() {
           <CardDescription>End a live session safely or permanently delete the workspace envelope. Attached labs, courses, boards, Vault items, and designs remain owned by you.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!state?.workspaces.length && <p className="text-sm text-muted-foreground">No owned Live Workspaces are active.</p>}
+          {!state?.workspaces.length && <p className="text-sm text-muted-foreground">No owned Live Workspaces are stored.</p>}
           {state?.workspaces.map((item) => (
             <div key={item.id} className="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div><p className="font-semibold">{item.name}</p><p className="text-xs text-muted-foreground">{item.description || 'Live technical workspace'}</p></div>
+              <div>
+                <div className="flex items-center gap-2"><p className="font-semibold">{item.name}</p><Badge variant={item.status === 'active' ? 'default' : 'outline'}>{item.status}</Badge></div>
+                <p className="text-xs text-muted-foreground">{item.description || 'Live technical workspace'}</p>
+              </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" disabled={busy === `workspace:${item.id}`} onClick={() => void endWorkspace(item)}>End</Button>
+                {item.status === 'active' && <Button size="sm" variant="outline" disabled={busy === `workspace:${item.id}`} onClick={() => void endWorkspace(item)}>End</Button>}
                 <Button size="sm" variant="destructive" disabled={busy === `workspace:${item.id}`} onClick={() => void deleteWorkspace(item)}><Trash2 className="h-4 w-4" /> Delete</Button>
               </div>
             </div>
