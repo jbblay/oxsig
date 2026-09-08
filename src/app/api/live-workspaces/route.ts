@@ -15,26 +15,40 @@ const createSchema = z.object({
 }).strict();
 
 export async function GET(request: NextRequest) {
-  return requireAuth(request, async (_req, user) => {
+  return requireAuth(request, async (req, user) => {
     try {
+      const includeEndedOwned = new URL(req.url).searchParams.get('includeEnded') === 'owned';
       const result = await getPool().query(
-        `SELECT c.id, c.name, c.description, c.owner_id, c.updated_at,
-                CASE
-                  WHEN c.owner_id = $1 THEN 'owner'
-                  WHEN lwp.role IN ('instructor','learner','observer') THEN lwp.role
-                  ELSE 'observer'
-                END AS live_role
-         FROM collaborations c
-         JOIN live_workspaces lw ON lw.collaboration_id = c.id AND lw.status = 'active'
-         LEFT JOIN collaboration_members cm
-           ON cm.collaboration_id = c.id AND cm.user_id = $1 AND cm.status = 'active'
-         LEFT JOIN live_workspace_participants lwp
-           ON lwp.collaboration_id = c.id AND lwp.user_id = $1 AND lwp.status = 'active'
-         WHERE c.collaboration_type = 'live-workspace'
-           AND c.status = 'active'
-           AND (c.owner_id = $1 OR cm.user_id = $1)
-         ORDER BY c.updated_at DESC
-         LIMIT 100`,
+        includeEndedOwned
+          ? `SELECT c.id, c.name, c.description, c.owner_id, c.updated_at,
+                    c.status AS collaboration_status, lw.status AS workspace_status,
+                    'owner'::text AS live_role
+               FROM collaborations c
+               JOIN live_workspaces lw ON lw.collaboration_id = c.id
+              WHERE c.collaboration_type = 'live-workspace'
+                AND c.owner_id = $1
+                AND c.status IN ('active', 'ended')
+                AND lw.status IN ('active', 'ended')
+              ORDER BY c.updated_at DESC
+              LIMIT 100`
+          : `SELECT c.id, c.name, c.description, c.owner_id, c.updated_at,
+                    c.status AS collaboration_status, lw.status AS workspace_status,
+                    CASE
+                      WHEN c.owner_id = $1 THEN 'owner'
+                      WHEN lwp.role IN ('instructor','learner','observer') THEN lwp.role
+                      ELSE 'observer'
+                    END AS live_role
+               FROM collaborations c
+               JOIN live_workspaces lw ON lw.collaboration_id = c.id AND lw.status = 'active'
+               LEFT JOIN collaboration_members cm
+                 ON cm.collaboration_id = c.id AND cm.user_id = $1 AND cm.status = 'active'
+               LEFT JOIN live_workspace_participants lwp
+                 ON lwp.collaboration_id = c.id AND lwp.user_id = $1 AND lwp.status = 'active'
+              WHERE c.collaboration_type = 'live-workspace'
+                AND c.status = 'active'
+                AND (c.owner_id = $1 OR cm.user_id = $1)
+              ORDER BY c.updated_at DESC
+              LIMIT 100`,
         [user.id]
       );
       return NextResponse.json({
@@ -47,6 +61,7 @@ export async function GET(request: NextRequest) {
             ownerId: row.owner_id,
             role,
             isOwner: row.owner_id === user.id,
+            status: row.workspace_status as 'active' | 'ended',
             capabilities: capabilitiesForLiveWorkspaceRole(role),
             updatedAt: row.updated_at,
           };
@@ -106,6 +121,7 @@ export async function POST(request: NextRequest) {
           ownerId: row.owner_id,
           role: 'owner',
           isOwner: true,
+          status: 'active',
           capabilities: capabilitiesForLiveWorkspaceRole('owner'),
           createdAt: row.created_at,
           updatedAt: row.updated_at,
