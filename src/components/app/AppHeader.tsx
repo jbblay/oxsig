@@ -49,51 +49,48 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
 
   return (
     <>
-      <header className="oxsig-app-header sticky top-0 z-30 border-b bg-background/80 backdrop-blur-xl">
-        <div className="flex h-14 items-center gap-2 px-2 sm:px-4 md:h-16 md:px-5 lg:px-6">
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
-              <Menu className="h-5 w-5" />
-            </Button>
-            <p className="truncate text-sm font-semibold">{pageTitle(pathname)}</p>
-          </div>
+      <header className="oxsig-app-header sticky top-0 z-30 border-b bg-background/82 backdrop-blur-xl">
+        <div className="flex h-12 items-center gap-1.5 px-2 sm:px-3 md:h-14 md:px-4">
+          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
+            <Menu className="h-4 w-4" />
+          </Button>
+
+          <p className="min-w-0 truncate text-[13px] font-semibold">{pageTitle(pathname)}</p>
 
           <button
             type="button"
             onClick={() => setCommandOpen(true)}
-            className="ml-auto hidden h-9 min-w-48 max-w-md flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-3 text-left text-sm text-muted-foreground transition hover:bg-muted/60 lg:flex"
+            className="ml-auto hidden h-8 min-w-44 max-w-sm flex-1 items-center gap-2 rounded-md border bg-muted/20 px-2.5 text-left text-xs text-muted-foreground transition hover:bg-muted/50 lg:flex"
             aria-label="Search and jump to a workspace"
           >
             <Search className="h-3.5 w-3.5" />
             <span className="truncate">Search or jump</span>
-            <kbd className="ml-auto rounded border bg-background px-1.5 py-0.5 font-mono text-xs">⌘K</kbd>
+            <kbd className="ml-auto rounded border bg-background px-1 py-0.5 font-mono text-[10px]">⌘K</kbd>
           </button>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-2">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 md:ml-1.5">
             <WorkspaceWalkthrough />
-            <Button size="icon" variant="ghost" className="h-9 w-9 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search and jump">
-              <Search className="h-4 w-4" />
+            <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search and jump">
+              <Search className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="icon"
               variant="ghost"
-              className="h-9 w-9"
+              className="h-8 w-8"
               onClick={openAi}
               aria-label={cyberLab ? 'Open AI Practitioner' : 'Open AI Helper'}
               title={cyberLab ? 'AI Practitioner' : 'AI Helper'}
             >
-              <Sparkles className="h-4 w-4" />
+              <Sparkles className="h-3.5 w-3.5" />
             </Button>
             <Link
               href="/account"
-              className="group flex min-w-0 items-center gap-2 rounded-lg border border-transparent p-1 transition hover:border-border hover:bg-muted/40"
+              className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
               aria-label="Open account"
+              title={user?.displayName || user?.email || 'Account'}
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-xs font-bold">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
                 {initials(user?.displayName || user?.email)}
-              </span>
-              <span className="hidden max-w-32 truncate text-sm font-medium sm:block">
-                {user?.displayName || 'Account'}
               </span>
             </Link>
           </div>
@@ -103,4 +100,3 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
     </>
   );
 }
-
