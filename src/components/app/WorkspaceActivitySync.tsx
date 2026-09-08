@@ -6,24 +6,37 @@ import { getCsrfToken } from '@/lib/security/csrf-client';
 import {
   getWorkspaceStateSnapshot,
   mergeWorkspaceState,
+  prepareWorkspaceLocalStateForGuest,
+  prepareWorkspaceLocalStateForUser,
   subscribeWorkspaceActivity,
   type WorkspaceActivity,
   type WorkspaceRecent,
 } from '@/lib/persistence/workspace-activity';
 
 export default function WorkspaceActivitySync() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, sessionIdentityId } = useAuth();
   const runningRef = React.useRef(false);
   const rerunRef = React.useRef(false);
   const timerRef = React.useRef<number | null>(null);
   const lastUploadedRef = React.useRef<string | null>(null);
 
   const stateKey = React.useCallback((state: ReturnType<typeof getWorkspaceStateSnapshot>) => (
-    `${user?.id || 'authenticated'}:${JSON.stringify(state)}`
-  ), [user?.id]);
+    `${sessionIdentityId || 'guest'}:${JSON.stringify(state)}`
+  ), [sessionIdentityId]);
+
+  const prepareScope = React.useCallback(() => {
+    if (isLoading) return false;
+    if (!isAuthenticated) {
+      prepareWorkspaceLocalStateForGuest();
+      return false;
+    }
+    if (!sessionIdentityId) return false;
+    prepareWorkspaceLocalStateForUser(sessionIdentityId);
+    return true;
+  }, [isAuthenticated, isLoading, sessionIdentityId]);
 
   const sync = React.useCallback(async () => {
-    if (!isAuthenticated || isLoading) return;
+    if (!prepareScope()) return;
     if (runningRef.current) {
       rerunRef.current = true;
       return;
@@ -31,6 +44,9 @@ export default function WorkspaceActivitySync() {
 
     runningRef.current = true;
     try {
+      // Re-assert the browser-account boundary immediately before reading the
+      // local cache so an account switch can never upload the previous user's data.
+      prepareWorkspaceLocalStateForUser(sessionIdentityId!);
       const snapshot = getWorkspaceStateSnapshot();
       const uploadKey = stateKey(snapshot);
       if ((snapshot.activity.length || snapshot.recents.length) && uploadKey !== lastUploadedRef.current) {
@@ -57,7 +73,7 @@ export default function WorkspaceActivitySync() {
       });
       lastUploadedRef.current = stateKey(merged);
     } catch {
-      // Local activity remains authoritative while offline or when sync is unavailable.
+      // Local activity remains usable while offline or when durable sync is unavailable.
     } finally {
       runningRef.current = false;
       if (rerunRef.current) {
@@ -65,14 +81,16 @@ export default function WorkspaceActivitySync() {
         window.setTimeout(() => void sync(), 0);
       }
     }
-  }, [isAuthenticated, isLoading, stateKey]);
+  }, [prepareScope, sessionIdentityId, stateKey]);
 
   React.useEffect(() => {
+    if (isLoading) return;
+    prepareScope();
     lastUploadedRef.current = null;
-  }, [user?.id]);
+  }, [isLoading, prepareScope, sessionIdentityId]);
 
   React.useEffect(() => {
-    if (!isAuthenticated || isLoading) return;
+    if (!isAuthenticated || isLoading || !sessionIdentityId) return;
 
     const schedule = () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -94,7 +112,7 @@ export default function WorkspaceActivitySync() {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
     };
-  }, [isAuthenticated, isLoading, sync]);
+  }, [isAuthenticated, isLoading, sessionIdentityId, sync]);
 
   return null;
 }
