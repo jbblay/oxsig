@@ -1,6 +1,5 @@
 /* Workspace routes open directly into the tool. Page components own their
-   action-first structure; this file only supplies shared workspace geometry
-   and a small Cyber Lab runtime compatibility layer. */
+   action-first structure; this file only supplies shared workspace geometry. */
 
 main[data-oxsig-workspace] {
   max-width: none;
@@ -9,26 +8,6 @@ main[data-oxsig-workspace] {
 
 main[data-oxsig-workspace] > * {
   min-width: 0;
-}
-
-/* Runtime still contains legacy duplicate chrome inside LabRuntimePanel. Keep
-   only operational status/actions visible until that panel is decomposed. */
-main[data-oxsig-workspace='labs'] > div:first-child {
-  margin-bottom: 0.5rem;
-  border-radius: 0.75rem;
-  box-shadow: none;
-}
-
-main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child {
-  justify-content: flex-end;
-}
-
-main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child > div:first-child {
-  display: none;
-}
-
-main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div.relative.overflow-hidden {
-  display: none;
 }
 
 @media (max-width: 767px) {
