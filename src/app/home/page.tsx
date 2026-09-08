@@ -5,30 +5,26 @@ import Link from 'next/link';
 import {
   ArrowRight,
   BookOpen,
+  Box,
   LibraryBig,
-  Sparkles,
+  MessageCircle,
+  RadioTower,
+  Settings2,
 } from 'lucide-react';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
-import { ProgramProcessJourney } from '@/components/learning/ProgramProcessJourney';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/use-auth';
 import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 
-function AnalyticsLoading() {
-  return (
-    <section className="space-y-4" aria-label="Loading learning analytics">
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="h-48 animate-pulse rounded-2xl border bg-muted/40" />
-        <div className="h-48 animate-pulse rounded-2xl border bg-muted/30" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl border bg-muted/30" />)}
-      </div>
-    </section>
-  );
-}
+const actions = [
+  { href: '/labs', label: 'Cyber Lab', action: 'Start lab', icon: Box },
+  { href: '/live', label: 'Live Workspace', action: 'Open workspace', icon: RadioTower },
+  { href: '/collab', label: 'Collaboration', action: 'Collaborate', icon: MessageCircle },
+  { href: '/collab/storyboards', label: 'Boards', action: 'Open board', icon: BookOpen },
+  { href: '/vault', label: 'Vault', action: 'Review saved work', icon: LibraryBig },
+  { href: '/manage', label: 'Resources', action: 'Manage resources', icon: Settings2 },
+];
 
 export default function HomePage() {
   const { user, isAuthenticated, profileError } = useAuth();
@@ -41,6 +37,7 @@ export default function HomePage() {
       setProgressLoading(false);
       return;
     }
+
     let cancelled = false;
     setProgressLoading(true);
     void fetch('/api/users/me/progress', { cache: 'no-store' })
@@ -49,100 +46,101 @@ export default function HomePage() {
         if (!cancelled && body?.progress) setProgress(body.progress as LearnerProgressSummary);
       })
       .catch(() => undefined)
-      .finally(() => { if (!cancelled) setProgressLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setProgressLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
 
-  const activeCourse = progress?.academy.activeCourse;
+  const firstName = user?.displayName?.trim().split(/\s+/)[0];
   const activeLab = progress?.labs.activeLab;
-  const hasContinuation = Boolean(activeCourse || activeLab);
 
   return (
-    <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-3xl border bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.14),transparent_36%),linear-gradient(135deg,hsl(var(--background)),hsl(var(--muted)/0.35))] shadow-sm">
-        <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(hsl(var(--border)/0.5)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.5)_1px,transparent_1px)] [background-size:32px_32px]" />
-        <div className="relative p-6 sm:p-8 lg:p-10">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="max-w-3xl">
-              <Badge variant="secondary" className="mb-4 w-fit gap-1.5"><Sparkles className="h-3.5 w-3.5" /> Your dashboard</Badge>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
-                {isAuthenticated ? `Build capability${user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}.` : 'Build capability, not a pile of unfinished courses.'}
-              </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Follow one reference journey deeply. OXSIG teaches, prepares practice, captures evidence, and only marks capability demonstrated when you prove it.
-              </p>
-            </div>
-            {progress && (
-              <div className="grid min-w-[220px] grid-cols-2 gap-2 rounded-2xl border bg-background/70 p-3 backdrop-blur-sm">
-                <div className="rounded-xl bg-muted/50 p-3"><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Level</p><p className="mt-1 text-xl font-semibold">{progress.rewards.level}</p></div>
-                <div className="rounded-xl bg-muted/50 p-3"><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Streak</p><p className="mt-1 text-xl font-semibold">{progress.activity.streakDays}<span className="ml-1 text-xs font-normal text-muted-foreground">days</span></p></div>
-              </div>
-            )}
-          </div>
-          {profileError && <p className="mt-4 text-sm text-amber-600">Your account is signed in, but some profile information is still loading.</p>}
+    <div className="space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm text-muted-foreground">{firstName ? `Ready, ${firstName}?` : 'Ready?'}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">What do you want to do?</h1>
         </div>
+
+        {progress ? (
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary" className="px-3 py-1">Level {progress.rewards.level}</Badge>
+            {progress.activity.streakDays > 0 && <Badge variant="outline" className="px-3 py-1">{progress.activity.streakDays} day streak</Badge>}
+          </div>
+        ) : progressLoading ? (
+          <div className="h-7 w-32 animate-pulse rounded-full bg-muted" />
+        ) : null}
       </section>
 
-      {hasContinuation && (
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Continue where you left off</p>
-              <h2 className="mt-1 text-xl font-semibold">Your next actions</h2>
-            </div>
-            {progress && progress.activity.streakDays > 0 && <Badge variant="outline">Current streak: {progress.activity.streakDays} days</Badge>}
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {activeCourse && (
-              <Link href="/academy" className="group">
-                <Card className="h-full transition hover:border-sky-500/30 hover:shadow-md">
-                  <CardHeader>
-                    <div><CardDescription>Continue learning</CardDescription><CardTitle className="mt-1 text-lg">{activeCourse.title}</CardTitle></div>
-                    <p className="text-xs text-muted-foreground">Open the active lesson. Capability progress is shown separately from course navigation.</p>
-                    <span className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-primary">Continue in Academy <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" /></span>
-                  </CardHeader>
-                </Card>
-              </Link>
-            )}
-            {activeLab && (
-              <Link href="/labs" className="group">
-                <Card className="h-full transition hover:border-emerald-500/30 hover:shadow-md">
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                      <div><CardDescription>Continue practicing</CardDescription><CardTitle className="mt-1 text-lg">{activeLab.name}</CardTitle></div>
-                      <Badge variant={activeLab.status === 'running' ? 'default' : 'outline'} className={activeLab.status === 'running' ? 'bg-emerald-600 capitalize' : 'capitalize'}>{activeLab.status}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Your existing lab state is still available.</p>
-                    <span className="inline-flex items-center gap-1 pt-1 text-sm font-medium text-primary">Open Cyber Lab <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" /></span>
-                  </CardHeader>
-                </Card>
-              </Link>
-            )}
-          </div>
-        </section>
+      {profileError && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          Some account details are still loading.
+        </div>
       )}
 
-      <ProgramProcessJourney isAuthenticated={isAuthenticated} />
+      {activeLab && (
+        <Link href="/labs" className="group block">
+          <Card className="overflow-hidden border-primary/20 bg-primary/[0.035] transition hover:border-primary/40 hover:shadow-md">
+            <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Box className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold">{activeLab.name}</p>
+                    <Badge variant={activeLab.status === 'running' ? 'default' : 'outline'} className="capitalize">{activeLab.status}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Your lab is ready to continue.</p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                Resume lab <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </CardContent>
+          </Card>
+        </Link>
+      )}
 
-      {isAuthenticated && progressLoading && !progress && <AnalyticsLoading />}
-      {isAuthenticated && progress && <LearningAnalyticsDashboard progress={progress} compact />}
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center gap-4 p-5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400"><BookOpen className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">Explain what you are working on</p><p className="mt-1 text-sm text-muted-foreground">Use a Board to draw the shell → fork → execve → process model in your own words.</p></div>
-            <Button variant="ghost" size="icon" asChild><Link href="/collab/storyboards" aria-label="Open Boards"><ArrowRight className="h-4 w-4" /></Link></Button>
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center gap-4 p-5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400"><LibraryBig className="h-5 w-5" /></span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">Keep what proved useful</p><p className="mt-1 text-sm text-muted-foreground">Save commands, corrections, and explanations worth revisiting after the experiment.</p></div>
-            <Button variant="ghost" size="icon" asChild><Link href="/vault" aria-label="Open Vault"><ArrowRight className="h-4 w-4" /></Link></Button>
-          </CardContent>
-        </Card>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Workspace actions">
+        {actions.map((item) => {
+          const Icon = item.icon;
+          const action = item.href === '/labs' && activeLab ? 'Open lab' : item.action;
+          return (
+            <Link key={item.href} href={item.href} className="group min-w-0">
+              <Card className="h-full transition hover:border-primary/30 hover:shadow-md">
+                <CardContent className="flex min-h-28 items-center gap-3 p-4 sm:p-5">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground transition group-hover:bg-primary/10 group-hover:text-primary">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{item.label}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{action}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary" />
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </section>
+
+      {isAuthenticated && progress && (
+        <details className="group overflow-hidden rounded-2xl border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold sm:px-5">
+            <span>Progress</span>
+            <span className="text-xs font-normal text-muted-foreground group-open:hidden">View</span>
+            <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">Hide</span>
+          </summary>
+          <div className="border-t p-3 sm:p-5">
+            <LearningAnalyticsDashboard progress={progress} compact />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
