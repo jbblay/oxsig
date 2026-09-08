@@ -58,6 +58,16 @@ function latestMatchingEntry(entries: TimelineEntry[], row: Record<string, any>,
   return null;
 }
 
+function isRestorableEntry(entry: TimelineEntry) {
+  const command = typeof entry.plan.command === 'string' ? entry.plan.command.trim() : '';
+  // A persisted non-command answer is safe to restore as ordinary chat. A command
+  // plan is executable context and may have been generated for a lab that no longer
+  // exists or is no longer active; restore it only after real execution evidence
+  // binds it to the original lab. Unfinished commands must be regenerated in the
+  // current lab context rather than becoming clickable after a later refresh.
+  return !command || Boolean(entry.execution);
+}
+
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
     const rateLimit = await checkRateLimit(req, { maxRequests: 60, windowMs: 60_000 }, user.id);
@@ -134,7 +144,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { entries, history },
+      { entries: entries.filter(isRestorableEntry), history },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   });
