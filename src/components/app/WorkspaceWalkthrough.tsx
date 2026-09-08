@@ -8,12 +8,12 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 
 const STORAGE_KEY = 'oxsig:quick-tour:v1';
 const steps = [
-  { title: 'Choose your workspace', label: 'Explore', color: 'home', icon: Compass, href: '/home', action: 'Open dashboard', description: 'Start with the tool you need. Return to the dashboard whenever you want to switch workspaces.', instructions: ['Use a workspace row to open its tool.', 'Use Search or jump in the header to move quickly.'] },
-  { title: 'Build and run a lab', label: 'Run', color: 'labs', icon: Terminal, href: '/labs', action: 'Open Cyber Lab', description: 'Work with machines, a topology canvas, and a terminal in one place.', instructions: ['In My Lab, add a machine from Machines and select it on the canvas.', 'Choose an available access mode in Inspector, then start the lab when ready.', 'Open its terminal or desktop. Use focus mode for more room.'] },
-  { title: 'Review the evidence', label: 'Review', color: 'evidence', icon: ShieldCheck, href: '/labs', action: 'Open Cyber Lab', description: 'Keep the results of your work connected to the lab that produced them.', instructions: ['Select Evidence in the Cyber Lab toolbar.', 'Review the available records and use the deployment checks when needed.'] },
-  { title: 'Keep reusable knowledge', label: 'Save', color: 'vault', icon: LibraryBig, href: '/vault', action: 'Open Vault', description: 'Store useful commands, notes, and findings so they are easy to find again.', instructions: ['Search your Vault or create a new item.', 'Add a clear title and tags, then save your changes.'] },
-  { title: 'Work with your team', label: 'Connect', color: 'collab', icon: MessageCircle, href: '/collab', action: 'Open Collaboration', description: 'Continue the conversation alongside your technical work.', instructions: ['Open or create a collaboration session.', 'Use its member controls to invite teammates when you are ready.', 'Use Live Workspace for shared work and Boards for visual planning.'] },
-  { title: 'Ask for help in context', label: 'Ask', color: 'ai', icon: Sparkles, href: '/home', action: 'Return to dashboard', description: 'Keep your question close to the workspace you are using.', instructions: ['Use the sparkle button in the header to open AI Helper.', 'Inside Cyber Lab, the same button opens AI Practitioner for lab work.'] },
+  { title: 'Choose your workspace', label: 'Explore', color: 'home', icon: Compass, href: '/home', action: 'Open dashboard', description: 'Open the tool you need, then move between workspaces from the header or navigation.', instructions: ['Choose a workspace from the dashboard.', 'Use Search or jump for faster navigation.'] },
+  { title: 'Build and run a lab', label: 'Run', color: 'labs', icon: Terminal, href: '/labs', action: 'Open Cyber Lab', description: 'Build the topology, select a machine, and open the terminal or desktop.', instructions: ['Add a machine and select it.', 'Choose an access mode and start the lab.', 'Open terminal or desktop; use focus mode when needed.'] },
+  { title: 'Review the evidence', label: 'Review', color: 'evidence', icon: ShieldCheck, href: '/labs', action: 'Open Cyber Lab', description: 'Review evidence from the environment that produced it.', instructions: ['Open Evidence in Cyber Lab.', 'Use deployment checks when you need deeper verification.'] },
+  { title: 'Keep reusable knowledge', label: 'Save', color: 'vault', icon: LibraryBig, href: '/vault', action: 'Open Vault', description: 'Save commands, notes, and findings worth reusing.', instructions: ['Search Vault or create an item.', 'Add a clear title and save.'] },
+  { title: 'Work with your team', label: 'Connect', color: 'collab', icon: MessageCircle, href: '/collab', action: 'Open Collaboration', description: 'Keep conversation close to the technical work.', instructions: ['Open or create a session.', 'Invite people when needed.', 'Use Live Workspace and Boards for shared work.'] },
+  { title: 'Ask for help in context', label: 'Ask', color: 'ai', icon: Sparkles, href: '/home', action: 'Return to dashboard', description: 'Open AI from the workspace where you are already working.', instructions: ['Use the sparkle button for AI Helper.', 'In Cyber Lab it opens AI Practitioner.'] },
 ] as const;
 
 export default function WorkspaceWalkthrough() {
@@ -43,14 +43,14 @@ export default function WorkspaceWalkthrough() {
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="oxsig-tour-trigger h-9 gap-2 px-2" aria-label="Open quick tour" title="Quick tour">
-          <Compass className="h-4 w-4" /><span className="hidden lg:inline">Quick tour</span>
+        <Button variant="ghost" size="icon" className="oxsig-tour-trigger h-8 w-8" aria-label="Open quick tour" title="Quick tour">
+          <Compass className="h-3.5 w-3.5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="oxsig-walkthrough w-[calc(100%_-_1.5rem)] max-w-2xl gap-0 overflow-y-auto rounded-2xl p-0">
-        <div className="border-b px-5 py-4 pr-14 sm:px-6">
-          <DialogTitle className="flex items-center gap-2 text-base"><BookOpen className="h-4 w-4 text-primary" />Quick tour</DialogTitle>
-          <DialogDescription className="mt-2">Explore at your pace. Close this guide anytime and return from the header.</DialogDescription>
+      <DialogContent className="oxsig-walkthrough w-[calc(100%_-_1rem)] max-w-lg gap-0 overflow-y-auto rounded-xl p-0">
+        <div className="border-b px-4 py-3 pr-12">
+          <DialogTitle className="flex items-center gap-2 text-sm"><BookOpen className="h-3.5 w-3.5 text-primary" />Quick tour</DialogTitle>
+          <DialogDescription className="mt-1 text-xs">Six quick stops. Close anytime.</DialogDescription>
         </div>
 
         <nav className="oxsig-tour-map" aria-label="Walkthrough steps">
@@ -60,7 +60,7 @@ export default function WorkspaceWalkthrough() {
               return (
                 <li key={item.label}>
                   <button type="button" className="oxsig-tour-stop" aria-current={index === step ? 'step' : undefined} aria-label={`Step ${index + 1}: ${item.title}`} onClick={() => selectStep(index)}>
-                    <span className="oxsig-workspace-icon" data-workspace-color={item.color}><StepIcon className="h-5 w-5" /></span>
+                    <span className="oxsig-workspace-icon" data-workspace-color={item.color}><StepIcon className="h-4 w-4" /></span>
                     <span>{item.label}</span>
                   </button>
                 </li>
@@ -69,28 +69,28 @@ export default function WorkspaceWalkthrough() {
           </ol>
         </nav>
 
-        <div className="px-5 pb-5 sm:px-6" aria-live="polite" aria-atomic="true">
+        <div className="px-4 pb-4" aria-live="polite" aria-atomic="true">
           <div key={step} className="oxsig-tour-step">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of {steps.length}</p>
-            <h3 className="flex items-center gap-2 text-xl font-semibold tracking-tight"><Icon className="h-5 w-5 shrink-0 text-primary" />{current.title}</h3>
-            <p className="mt-3 text-base leading-relaxed text-muted-foreground">{current.description}</p>
-            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-relaxed">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{step + 1} / {steps.length}</p>
+            <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight"><Icon className="h-4 w-4 shrink-0 text-primary" />{current.title}</h3>
+            <p className="mt-2 text-sm leading-5 text-muted-foreground">{current.description}</p>
+            <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-5">
               {current.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
             </ol>
-            <Button asChild variant="outline" className="mt-5 min-h-11">
-              <Link href={current.href} onClick={() => setOpen(false)}>{current.action}<ArrowRight className="ml-2 h-4 w-4" /></Link>
+            <Button asChild variant="outline" size="sm" className="mt-4 h-9">
+              <Link href={current.href} onClick={() => setOpen(false)}>{current.action}<ArrowRight className="ml-2 h-3.5 w-3.5" /></Link>
             </Button>
           </div>
         </div>
 
-        <div className="oxsig-tour-footer flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-5 py-4 sm:px-6">
-          <Button variant="ghost" className="min-h-11" onClick={() => setOpen(false)}>Close tour</Button>
-          <div className="flex gap-2">
-            <Button variant="outline" className="min-h-11" disabled={step === 0} onClick={() => selectStep(step - 1)}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>
-            <Button className="min-h-11" onClick={() => {
+        <div className="oxsig-tour-footer flex items-center justify-between gap-2 border-t bg-muted/15 px-3 py-2.5">
+          <Button variant="ghost" size="sm" className="h-8" onClick={() => setOpen(false)}>Close tour</Button>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" className="h-8" disabled={step === 0} onClick={() => selectStep(step - 1)}><ArrowLeft className="mr-1.5 h-3.5 w-3.5" />Back</Button>
+            <Button size="sm" className="h-8" onClick={() => {
               if (step === steps.length - 1) { selectStep(0); setOpen(false); }
               else selectStep(step + 1);
-            }}>{step === steps.length - 1 ? 'Finish tour' : 'Next'}<ArrowRight className="ml-2 h-4 w-4" /></Button>
+            }}>{step === steps.length - 1 ? 'Finish tour' : 'Next'}<ArrowRight className="ml-1.5 h-3.5 w-3.5" /></Button>
           </div>
         </div>
       </DialogContent>
