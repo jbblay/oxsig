@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
-const query = vi.fn();
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   validateCsrfToken: vi.fn(),
   checkRateLimit: vi.fn(),
   deleteCollaborationObjects: vi.fn(),
+  getPool: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
-vi.mock('@/lib/db/pool', () => ({ getPool: () => ({ query }) }));
+vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
 vi.mock('@/lib/collab/storage', () => ({ deleteCollaborationObjects: mocks.deleteCollaborationObjects }));
 
 import { DELETE, GET, PATCH } from './route';
@@ -42,6 +42,8 @@ function input(method: 'GET' | 'PATCH' | 'DELETE', body?: unknown, id = collabor
 }
 
 describe('/api/collaborations/[id]', () => {
+  const query = vi.fn();
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAuth.mockImplementation(async (
@@ -51,6 +53,7 @@ describe('/api/collaborations/[id]', () => {
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.deleteCollaborationObjects.mockResolvedValue(0);
+    mocks.getPool.mockReturnValue({ query });
     query.mockResolvedValue({ rows: [row], rowCount: 1 });
   });
 
