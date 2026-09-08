@@ -20,14 +20,14 @@ import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
 const actions = [
   { href: '/labs', label: 'Cyber Lab', action: 'Start lab', icon: Box },
   { href: '/live', label: 'Live Workspace', action: 'Open workspace', icon: RadioTower },
-  { href: '/collab', label: 'Collaboration', action: 'Collaborate', icon: MessageCircle },
+  { href: '/collab', label: 'Collaboration', action: 'Open session', icon: MessageCircle },
   { href: '/collab/storyboards', label: 'Boards', action: 'Open board', icon: BookOpen },
-  { href: '/vault', label: 'Vault', action: 'Review saved work', icon: LibraryBig },
-  { href: '/manage', label: 'Resources', action: 'Manage resources', icon: Settings2 },
+  { href: '/vault', label: 'Vault', action: 'Open Vault', icon: LibraryBig },
+  { href: '/manage', label: 'Resources', action: 'Manage', icon: Settings2 },
 ];
 
 export default function HomePage() {
-  const { user, isAuthenticated, profileError } = useAuth();
+  const { isAuthenticated, profileError } = useAuth();
   const [progress, setProgress] = React.useState<LearnerProgressSummary | null>(null);
   const [progressLoading, setProgressLoading] = React.useState(false);
 
@@ -55,30 +55,13 @@ export default function HomePage() {
     };
   }, [isAuthenticated]);
 
-  const firstName = user?.displayName?.trim().split(/\s+/)[0];
   const activeLab = progress?.labs.activeLab;
 
   return (
-    <div className="space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{firstName ? `Ready, ${firstName}?` : 'Ready?'}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">What do you want to do?</h1>
-        </div>
-
-        {progress ? (
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary" className="px-3 py-1">Level {progress.rewards.level}</Badge>
-            {progress.activity.streakDays > 0 && <Badge variant="outline" className="px-3 py-1">{progress.activity.streakDays} day streak</Badge>}
-          </div>
-        ) : progressLoading ? (
-          <div className="h-7 w-32 animate-pulse rounded-full bg-muted" />
-        ) : null}
-      </section>
-
+    <div className="space-y-5">
       {profileError && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          Some account details are still loading.
+          Account details are loading.
         </div>
       )}
 
@@ -95,7 +78,6 @@ export default function HomePage() {
                     <p className="font-semibold">{activeLab.name}</p>
                     <Badge variant={activeLab.status === 'running' ? 'default' : 'outline'} className="capitalize">{activeLab.status}</Badge>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">Your lab is ready to continue.</p>
                 </div>
               </div>
               <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
@@ -113,7 +95,7 @@ export default function HomePage() {
           return (
             <Link key={item.href} href={item.href} className="group min-w-0">
               <Card className="h-full transition hover:border-primary/30 hover:shadow-md">
-                <CardContent className="flex min-h-28 items-center gap-3 p-4 sm:p-5">
+                <CardContent className="flex min-h-24 items-center gap-3 p-4 sm:p-5">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground transition group-hover:bg-primary/10 group-hover:text-primary">
                     <Icon className="h-5 w-5" />
                   </span>
@@ -129,8 +111,10 @@ export default function HomePage() {
         })}
       </section>
 
+      {progressLoading && !progress && <div className="h-9 w-28 animate-pulse rounded-lg bg-muted" />}
+
       {isAuthenticated && progress && (
-        <details className="group overflow-hidden rounded-2xl border bg-card">
+        <details className="group overflow-hidden rounded-xl border bg-card">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold sm:px-5">
             <span>Progress</span>
             <span className="text-xs font-normal text-muted-foreground group-open:hidden">View</span>
