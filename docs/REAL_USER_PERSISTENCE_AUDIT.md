@@ -8,7 +8,7 @@ The governing rule for this audit is:
 
 > Normal user-owned product state must survive refresh, browser/device changes, and relogin because PostgreSQL or another deliberate server-side store is authoritative. Browser storage may remain only for device preferences, ephemeral handoffs, or one-time legacy migration. Integrity-sensitive evidence must preserve the identity of the real execution that produced it.
 
-This audit starts from `main` merge commit `1c71c3e86bf2fe19c34f5c7eae939708598a6bc4`, after the owner-lifecycle phase landed.
+This audit started from `main` merge commit `1c71c3e86bf2fe19c34f5c7eae939708598a6bc4`, after the owner-lifecycle phase landed. The Academy / AI Practitioner server-first phase landed in PR #116 at merge commit `12786f5229d0d7129610fbd0bf041c4b0af6e387`; Cyber Lab topology hardening continues from that exact merge.
 
 ## Findings and decisions
 
@@ -22,7 +22,8 @@ This audit starts from `main` merge commit `1c71c3e86bf2fe19c34f5c7eae939708598a
 | AI Practitioner lab provenance | Restored historical evidence could otherwise be displayed while another lab is currently running. | Evidence must retain its original resource identity. | History entries preserve their original `lab_instance_id`. Vault capture uses the original lab ID rather than whichever lab happens to be active when the user revisits the history. |
 | Migration 001 test identity | Every fresh database inserted `Test User` / `test@oxsig.local`. | MVP seed data must not appear as real product data. | Forward migration 042 removes the exact synthetic identity only when no current foreign-key reference points to it. Any seed identity that accumulated referenced data is preserved to avoid cascade data loss. |
 | Migration 004 sample collaboration | A `Test Collaboration` could be inserted when `test@example.com` existed. | MVP sample data must not become user-owned production state. | Forward migration 042 selects only the exact original sample by all seed-defining fields, then removes it only if no current foreign-key reference points to it. A reused sample collaboration is preserved rather than cascaded away. |
-| Cyber Lab topology | PostgreSQL is already hydrated first by `LabTopologyPersistenceBridge`; the runtime panel then edits a local browser copy and the bridge performs debounced PUTs to `/api/labs/topology`. | Durable server-backed data, but browser storage remains a write-behind reliability layer. Not browser-only. | Kept in this batch to avoid destabilizing terminal/desktop lifecycle while editing through GitHub only. Direct server-write topology is the next hardening target. |
+| Cyber Lab topology | PostgreSQL was hydrated first by `LabTopologyPersistenceBridge`, but `LabRuntimePanel` then edited a `localStorage` copy and relied on browser-change observation to PUT the graph back to the server. | Durable user-owned topology still had the browser in the write path. | Replaced with a durable topology provider plus direct client. The authenticated server topology is authoritative; ReactFlow hydrates from that state and debounces direct authenticated PUTs from the in-memory graph. Saves are serialized so an older request cannot finish after and overwrite a newer graph. The old bridge is removed. |
+| Legacy Cyber Lab topology | Existing browsers may still contain `oxsig:cyber-lab-topology:v1`. | Legacy user data must be migratable without allowing stale browser state to override the server. | The legacy key is consulted only after a successful server GET explicitly confirms that no durable topology exists. It is schema-validated and imported through the authenticated topology API, and is cleared only after successful persistence. A server read failure never falls back to the browser copy. |
 | Cyber Lab runtime-node mapping | Browser key associates the current ephemeral instance with a visual node. | Device/session convenience; authoritative lab instance remains server-owned. | Keep local. |
 | Cyber Lab / app panel layout | Sidebar, panel-open/collapsed and similar settings use browser storage. | Device-specific UI preference, not user resource data. | Keep local intentionally. |
 | Vault → Lab handoff | Vault stores a short-lived local handoff payload used to prefill AI Practitioner after navigation. | Ephemeral navigation intent; source Vault item is already durable. | Keep local intentionally; it is not authoritative state. |
@@ -30,7 +31,7 @@ This audit starts from `main` merge commit `1c71c3e86bf2fe19c34f5c7eae939708598a
 | Academy Explore side topic | Explicitly presented as a temporary exploration path. | Intentional ephemeral experience rather than claimed durable course ownership. | No persistence added in this batch. A user can create/activate a durable Academy course through the normal course flow. |
 | Completed reflections / execution evidence / audit receipts | Already server-produced and integrity-sensitive. | Historical proof. | Remain immutable except through deliberate parent-resource lifecycle semantics established in the owner-lifecycle phase. |
 
-## Browser-storage policy after this batch
+## Browser-storage policy after this audit
 
 Browser storage is acceptable only when at least one of these is true:
 
@@ -50,21 +51,30 @@ A feature does **not** satisfy real-user persistence merely because a later back
 5. AI Practitioner history is read back from the same owner-scoped event store already used for durable writes.
 6. Historical AI Practitioner evidence retains its original lab identity when later saved into Vault.
 7. Unfinished executable AI plans are not made runnable again by a later refresh; they are regenerated against the current lab context.
-8. Legacy MVP seed cleanup is exact-match and non-destructive; both synthetic identities and sample resources are retained whenever current foreign-key relationships show that they have accumulated data.
-9. UI/device preferences are not promoted into database tables simply to satisfy a persistence checklist.
+8. Cyber Lab topology loads from the authenticated server before the runtime editor mounts; failure to read durable state blocks editing instead of opening an empty/stale browser graph.
+9. New Cyber Lab topology mutations persist directly from the validated ReactFlow model; the legacy topology key is migration-only and is never a new-write target.
+10. Rapid topology mutations are serialized behind the previous save so stale completion order cannot overwrite newer server state.
+11. Legacy MVP seed cleanup is exact-match and non-destructive; both synthetic identities and sample resources are retained whenever current foreign-key relationships show that they have accumulated data.
+12. UI/device preferences are not promoted into database tables simply to satisfy a persistence checklist.
 
-## Deferred hardening: Cyber Lab topology
+## Completed hardening: Cyber Lab topology
 
-The remaining meaningful browser-in-the-write-path surface is Cyber Lab topology. It is already database-backed and server-hydrated first, so it does not have the Academy data-loss characteristic. The next hardening phase should nevertheless remove the write-behind dependency:
+Cyber Lab topology no longer depends on a browser write-behind bridge.
 
-- hydrate topology directly from the authenticated server response,
-- mutate the in-memory ReactFlow model,
-- debounce direct authenticated `PUT /api/labs/topology` writes from that model,
-- retain the current browser topology key only as a one-time legacy import path,
-- remove `LabTopologyPersistenceBridge` once direct persistence is validated,
-- preserve `RUNTIME_NODE_KEY` and layout keys only where they remain device/session conveniences.
+The completed flow is:
 
-This should be changed as a focused runtime-topology PR because `LabRuntimePanel` also owns terminal, desktop, lifecycle, reconciliation and active-machine mapping; a broad blind replacement would create unnecessary execution-risk surface.
+- load the authenticated owner's topology directly from `/api/labs/topology` before mounting the runtime editor,
+- validate server and legacy payloads against the same topology schema used by the API,
+- import a legacy browser topology only when the server explicitly reports no durable topology,
+- mutate the in-memory ReactFlow model normally,
+- serialize only server-supported node/edge fields,
+- debounce direct authenticated `PUT /api/labs/topology` writes,
+- retry transient `408`, `429`, `5xx`, and network failures within the direct save operation,
+- serialize saves so write completion order cannot regress the graph,
+- remove `LabTopologyPersistenceBridge`,
+- preserve `RUNTIME_NODE_KEY`, workspace mode, and layout keys only as device/session conveniences.
+
+A failed authoritative GET does not open the runtime editor on a stale browser copy. A failed legacy import does not delete the legacy browser value. This makes data-loss behavior fail closed rather than allowing local state to silently replace unknown server state.
 
 ## Validation requirement
 
