@@ -36,7 +36,7 @@ vi.mock('@/lib/execution-evidence/server', () => ({
   },
 }));
 
-import { POST } from './route';
+import { GET, POST } from './route';
 
 const user = { id: 'user-1', clerkUserId: 'clerk-1', role: 'user' as const };
 const labId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -49,6 +49,10 @@ function request(body: unknown) {
     body: JSON.stringify(body),
     headers: { 'content-type': 'application/json' },
   });
+}
+
+function getRequest() {
+  return new NextRequest('http://localhost/api/ai/practitioner', { method: 'GET' });
 }
 
 function evidence(overrides: Record<string, unknown> = {}) {
@@ -71,6 +75,93 @@ function evidence(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('AI Practitioner durable history', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireAuth.mockImplementation(async (
+      req: NextRequest,
+      handler: (req: NextRequest, currentUser: typeof user) => Promise<NextResponse>
+    ) => handler(req, user));
+    mocks.checkRateLimit.mockResolvedValue(null);
+  });
+
+  it('reconstructs the owner timeline from persisted plan, execution and analysis events', async () => {
+    mocks.poolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 'plan-1',
+          event_type: 'plan',
+          prompt: 'Inspect the kernel',
+          command: 'uname -a',
+          metadata: {
+            plan: {
+              title: 'Inspect kernel',
+              objective: 'Read kernel information',
+              explanation: 'Run a read-only kernel inspection.',
+              command: 'uname -a',
+              risk: 'read-only',
+            },
+          },
+        },
+        {
+          id: 'execution-1',
+          event_type: 'execution',
+          prompt: null,
+          command: 'uname -a',
+          stdout: 'Linux host',
+          stderr: '',
+          exit_code: 0,
+          metadata: {
+            risk: 'read-only',
+            executionId,
+            evidenceId,
+            provenance: 'browser-observed',
+            executionReceiptId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            terminalSessionId: 'session-1',
+          },
+        },
+        {
+          id: 'analysis-1',
+          event_type: 'analysis',
+          prompt: 'Inspect the kernel',
+          command: 'uname -a',
+          metadata: {
+            analysis: {
+              summary: 'The command returned the running kernel identity.',
+              interpretation: 'This confirms the kernel and architecture.',
+              nextStep: 'Inspect OS release metadata.',
+            },
+          },
+        },
+      ],
+    });
+
+    const response = await GET(getRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.poolQuery).toHaveBeenCalledWith(expect.stringContaining('WHERE owner_id = $1'), [user.id]);
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0]).toMatchObject({
+      prompt: 'Inspect the kernel',
+      execution: {
+        command: 'uname -a',
+        evidenceId,
+        executionId,
+      },
+      analysis: {
+        summary: 'The command returned the running kernel identity.',
+      },
+    });
+    expect(body.history).toEqual([
+      { id: 'plan-1:user', role: 'user', content: 'Inspect the kernel' },
+      { id: 'plan-1:plan', role: 'assistant', content: 'Run a read-only kernel inspection.' },
+      { id: 'analysis-1:analysis', role: 'assistant', content: 'The command returned the running kernel identity.' },
+    ]);
+  });
+});
 
 describe('AI Practitioner evidence analysis', () => {
   beforeEach(() => {
