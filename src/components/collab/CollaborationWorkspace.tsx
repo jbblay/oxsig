@@ -514,7 +514,7 @@ export default function CollaborationWorkspace() {
       )}
 
       <div className="grid min-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border bg-card md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)_280px]">
-        <aside className="border-b bg-muted/15 md:border-b-0 md:border-r">
+        <aside className={activeSession ? 'hidden border-b bg-muted/15 md:block md:border-b-0 md:border-r' : 'border-b bg-muted/15 md:border-b-0 md:border-r'}>
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div>
               <p className="text-sm font-semibold">Sessions</p>
@@ -558,7 +558,7 @@ export default function CollaborationWorkspace() {
           </div>
         </aside>
 
-        <section className="flex min-w-0 flex-col bg-background/50">
+        <section className={activeSession ? 'flex min-w-0 flex-col bg-background/50' : 'hidden min-w-0 flex-col bg-background/50 md:flex'}>
           {!activeSession ? (
   <div className="flex min-h-[420px] flex-1 items-center justify-center p-6">
     <Button onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
@@ -566,7 +566,16 @@ export default function CollaborationWorkspace() {
 ) : (
   <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur">
-                <div className="min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2 md:hidden"
+                  onClick={() => { activeIdRef.current = null; setActiveId(null); }}
+                >
+                  Sessions
+                </Button>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h2 className="truncate font-semibold">{activeSession.name}</h2>
                     <Badge variant="secondary" className="text-[9px]">{activeSession.memberCount} member{activeSession.memberCount === 1 ? '' : 's'}</Badge>
@@ -710,7 +719,7 @@ export default function CollaborationWorkspace() {
           )}
         </section>
 
-        <aside className="border-t bg-muted/10 md:col-span-2 xl:col-span-1 xl:border-l xl:border-t-0">
+        <aside className={activeSession ? 'border-t bg-muted/10 md:col-span-2 xl:col-span-1 xl:border-l xl:border-t-0' : 'hidden border-t bg-muted/10 md:col-span-2 md:block xl:col-span-1 xl:border-l xl:border-t-0'}>
           <div className="border-b px-4 py-3">
             <p className="text-sm font-semibold">Session</p>
           </div>

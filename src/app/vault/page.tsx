@@ -38,7 +38,6 @@ import {
 } from '@/lib/vault/api';
 import { optimisticTogglePinned, replaceVaultItem } from '@/lib/vault/optimistic';
 import {
-  VAULT_KIND_DESCRIPTIONS,
   VAULT_KIND_LABELS,
   VAULT_KINDS,
   type VaultItem,
@@ -395,13 +394,13 @@ export default function VaultPage() {
   return (
     <div className="min-h-0">
       <div className="grid min-h-[calc(100dvh-5rem)] gap-3 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <div className="space-y-4">
+        <div className={editorVisible ? 'hidden space-y-4 lg:block' : 'space-y-4'}>
           <Card>
             <CardContent className="space-y-3 p-4">
               <div className="flex flex-col gap-3 md:flex-row">
                 <div className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search commands, topics, tags or content" className="pl-9" aria-label="Search Vault" />
+                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Vault" className="pl-9" aria-label="Search Vault" />
                 </div>
                 <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as 'all' | VaultKind)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="Filter Vault by type">
                   <option value="all">All knowledge</option>
@@ -410,6 +409,7 @@ export default function VaultPage() {
                 <Button variant={pinnedOnly ? 'secondary' : 'outline'} onClick={() => setPinnedOnly((value) => !value)}>
                   <Pin className="h-4 w-4" /> {pinnedOnly ? 'Pinned only' : 'Pinned'}
                 </Button>
+                <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
               </div>
             </CardContent>
           </Card>
@@ -463,7 +463,25 @@ export default function VaultPage() {
           )}
         </div>
 
-        <div className="lg:sticky lg:top-20 lg:self-start">
+        <div className={editorVisible ? 'lg:sticky lg:top-20 lg:self-start' : 'hidden lg:block lg:sticky lg:top-20 lg:self-start'}>
+          {editorVisible && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="mb-2 lg:hidden"
+              onClick={() => {
+                if (!canDiscardChanges()) return;
+                const next = blankEditor();
+                setCreating(false);
+                setActiveId(null);
+                setEditor(next);
+                setBaselineEditor(next);
+              }}
+            >
+              Back to Vault
+            </Button>
+          )}
           {!editorVisible ? (
   <Card className="overflow-hidden">
     <CardContent className="flex min-h-[360px] items-center justify-center p-6">
@@ -478,7 +496,6 @@ export default function VaultPage() {
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-primary"><ActiveKindIcon className="h-5 w-5" /></div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2"><CardTitle className="truncate text-lg">{creating ? 'Capture knowledge' : active?.title}</CardTitle>{dirty && <Badge variant="outline" className="text-[9px]">Unsaved changes</Badge>}</div>
-                      <CardDescription>{creating ? VAULT_KIND_DESCRIPTIONS[editor.kind] : 'Edit the knowledge object, then continue it somewhere useful.'}</CardDescription>
                     </div>
                   </div>
                   {!creating && active && <Button size="icon" variant="ghost" disabled={saving} onClick={() => void togglePin(active)} title={active.pinned ? 'Unpin' : 'Pin'} aria-label={active.pinned ? 'Unpin Vault item' : 'Pin Vault item'}>{active.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
@@ -501,7 +518,7 @@ export default function VaultPage() {
 
                 {!creating && active && (
                   <div className="space-y-3 border-t pt-4">
-                    <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Continue in Oxsig</p><p className="mt-1 text-xs text-muted-foreground">The Vault keeps the knowledge object as the source while you practice, explain or discuss it.</p></div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Continue in OXSIG</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'lab')}><FlaskConical className="h-4 w-4" /> Practice in Cyber Lab</Button>
                       <Button variant="outline" className="justify-start" onClick={() => handoff(active, 'board')}><Network className="h-4 w-4" /> Explain on Board</Button>

@@ -264,7 +264,7 @@ export default function LiveWorkspacePage() {
   return (
     <div className="w-full space-y-2">
       <div className="grid gap-3 md:grid-cols-[280px_minmax(0,1fr)]">
-        <aside>
+        <aside className={selectedId ? 'hidden md:block' : ''}>
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
@@ -298,7 +298,7 @@ export default function LiveWorkspacePage() {
           </Card>
         </aside>
 
-        <main className="space-y-4">
+        <main className={selectedId ? 'space-y-4' : 'hidden space-y-4 md:block'}>
           {detailLoading ? (
             <Card><CardContent className="flex min-h-80 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading workspace…</CardContent></Card>
           ) : detailError ? (
@@ -309,7 +309,13 @@ export default function LiveWorkspacePage() {
             <>
               <Card>
                 <CardHeader>
-                  <div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{detail.workspace.name}</CardTitle><CardDescription>{detail.workspace.description || 'Persistent technical workspace'}</CardDescription></div><Badge>{ROLE_LABELS[detail.workspace.role]}</Badge></div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Button type="button" size="sm" variant="ghost" className="h-8 px-2 md:hidden" onClick={() => setSelectedId(null)}>Workspaces</Button>
+                      <div className="min-w-0"><CardTitle className="truncate">{detail.workspace.name}</CardTitle>{detail.workspace.description && <CardDescription className="truncate">{detail.workspace.description}</CardDescription>}</div>
+                    </div>
+                    <Badge>{ROLE_LABELS[detail.workspace.role]}</Badge>
+                  </div>
                 </CardHeader>
               </Card>
 

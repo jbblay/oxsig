@@ -268,7 +268,7 @@ export default function InfrastructureDesigner() {
       </div>
 
       <div className="grid min-h-[calc(100dvh-7rem)] gap-3 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_320px]">
-        <aside className="overflow-hidden rounded-2xl border bg-card">
+        <aside className="order-2 overflow-hidden rounded-xl border bg-card lg:order-1">
           <div className="border-b p-3"><p className="text-sm font-semibold">Devices</p></div>
           <div className="max-h-[620px] space-y-2 overflow-auto p-3">
             {INFRASTRUCTURE_KINDS.map((kind) => {
@@ -287,7 +287,7 @@ export default function InfrastructureDesigner() {
           </div>
         </aside>
 
-        <section className="relative min-h-[520px] overflow-hidden rounded-xl border bg-muted/10 sm:min-h-[620px] lg:min-h-[calc(100dvh-8rem)]">
+        <section className="order-1 relative min-h-[520px] overflow-hidden rounded-xl border bg-muted/10 sm:min-h-[620px] lg:order-2 lg:min-h-[calc(100dvh-8rem)]">
           <ReactFlow<InfrastructureDeviceFlowNode, Edge>
             nodes={nodes}
             edges={edges}
@@ -319,7 +319,7 @@ export default function InfrastructureDesigner() {
           </ReactFlow>
         </section>
 
-        <aside className="overflow-hidden rounded-xl border bg-card lg:col-span-2 xl:col-span-1">
+        <aside className="order-3 overflow-hidden rounded-xl border bg-card lg:col-span-2 xl:col-span-1">
           <div className="border-b p-3"><p className="text-sm font-semibold">Inspector</p></div>
           {!selectedNode ? (
             <div className="flex min-h-[220px] items-center justify-center p-6 text-sm text-muted-foreground">Select a device</div>
