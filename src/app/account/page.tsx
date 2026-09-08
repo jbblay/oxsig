@@ -8,10 +8,10 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
-  UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
+import VillainBadgeGrid from '@/components/profile/VillainBadgeGrid';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,13 +49,18 @@ export default function AccountPage() {
   const [progress, setProgress] = useState<LearnerProgressSummary | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const dirty = useMemo(() => Boolean(
-    profile && (displayName !== (profile.displayName || '') || bio !== (profile.bio || ''))
-  ), [bio, displayName, profile]);
+    profile && (
+      displayName !== (profile.displayName || '') ||
+      bio !== (profile.bio || '') ||
+      avatarUrl !== (profile.avatarUrl || '')
+    )
+  ), [avatarUrl, bio, displayName, profile]);
 
   const loadProgress = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -76,6 +81,7 @@ export default function AccountPage() {
       setProfile(next);
       setDisplayName(next.displayName || '');
       setBio(next.bio || '');
+      setAvatarUrl(next.avatarUrl || '');
       await loadProgress();
     } catch (error) {
       setProfile(null);
@@ -106,13 +112,14 @@ export default function AccountPage() {
       const response = await fetch('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': await getCsrfToken() },
-        body: JSON.stringify({ displayName: displayName.trim(), bio: bio.trim() }),
+        body: JSON.stringify({ displayName: displayName.trim(), bio: bio.trim(), avatarUrl: avatarUrl.trim() }),
       });
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Update failed');
       const next = (await response.json()).user as Profile;
       setProfile(next);
       setDisplayName(next.displayName || '');
       setBio(next.bio || '');
+      setAvatarUrl(next.avatarUrl || '');
       await refresh();
       toast.success('Saved.');
     } catch (error) {
@@ -158,8 +165,8 @@ export default function AccountPage() {
 
       {profile && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card/70 p-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border bg-primary/5 text-sm font-semibold text-primary">
-            {profile.avatarUrl ? <UserRound className="h-5 w-5" /> : initials(profile.displayName)}
+          <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg border bg-primary/5 text-sm font-semibold text-primary">
+            {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(profile.displayName)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -173,6 +180,7 @@ export default function AccountPage() {
       )}
 
       {progress && <ProgressBadgeRail progress={progress} />}
+      <VillainBadgeGrid />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
@@ -195,6 +203,19 @@ export default function AccountPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex flex-col gap-3 rounded-lg border bg-muted/10 p-3 sm:flex-row sm:items-center">
+                  <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-lg border bg-primary/5 text-lg font-semibold text-primary">
+                    {avatarUrl ? <img src={avatarUrl} alt="Avatar preview" className="h-full w-full object-cover" /> : initials(displayName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor="account-avatar-url" className="mb-1 block text-sm font-medium">Avatar</label>
+                    <Input id="account-avatar-url" type="url" value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value.slice(0, 2000))} maxLength={2000} placeholder="https://…" />
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => setAvatarUrl('')}>Use default avatar</Button>
+                      <span className="text-[10px] text-muted-foreground">Paste an image URL or keep the OXSIG initials avatar.</span>
+                    </div>
+                  </div>
+                </div>
                 <div>
                   <label htmlFor="account-display-name" className="mb-1 block text-sm font-medium">Display name</label>
                   <Input id="account-display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value.slice(0, 100))} maxLength={100} />
@@ -209,7 +230,7 @@ export default function AccountPage() {
                   <Button disabled={saving || !dirty || displayName.trim().length < 2} onClick={() => void save()}>
                     {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save
                   </Button>
-                  {dirty && <Button variant="outline" disabled={saving} onClick={() => { setDisplayName(profile.displayName || ''); setBio(profile.bio || ''); }}>Discard</Button>}
+                  {dirty && <Button variant="outline" disabled={saving} onClick={() => { setDisplayName(profile.displayName || ''); setBio(profile.bio || ''); setAvatarUrl(profile.avatarUrl || ''); }}>Discard</Button>}
                 </div>
               </CardContent>
             </Card>
