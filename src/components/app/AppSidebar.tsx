@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import {
   BookOpen,
   Box,
-  GraduationCap,
   Home,
   LibraryBig,
   LogOut,
@@ -33,13 +32,12 @@ const groups = [
       { href: '/collab', label: 'Collaborate', icon: MessageCircle },
       { href: '/live', label: 'Live Workspace', icon: RadioTower },
       { href: '/collab/storyboards', label: 'Boards', icon: BookOpen },
-      { href: '/manage', label: 'Manage resources', icon: Settings2 },
+      { href: '/manage', label: 'Resources', icon: Settings2 },
     ],
   },
   {
-    label: 'Learn & practice',
+    label: 'Practice',
     items: [
-      { href: '/academy', label: 'AI Academy', icon: GraduationCap },
       { href: '/labs', label: 'Cyber Lab', icon: Box },
       { href: '/vault', label: 'Vault', icon: LibraryBig },
     ],
@@ -83,7 +81,7 @@ function SidebarContent({
           {!compact && (
             <div className="min-w-0">
               <p className="oxsig-gradient-text truncate text-lg font-bold">Oxsig</p>
-              <p className="truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Learning workspace</p>
+              <p className="truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
             </div>
           )}
         </Link>
@@ -219,7 +217,7 @@ export default function AppSidebar({
           onClick={onMobileClose}
           aria-label="Close navigation"
         />
-        <aside className={cn('absolute inset-y-0 left-0 w-[286px] border-r bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-300 ease-in-out', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
+        <aside className={cn('absolute inset-y-0 left-0 w-[286px] max-w-[calc(100vw-24px)] border-r bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-300 ease-in-out', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
           <Button size="icon" variant="ghost" className="absolute right-2 top-3 z-10 h-9 w-9" onClick={onMobileClose} aria-label="Close navigation">
             <X className="h-4 w-4" />
           </Button>
