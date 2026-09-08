@@ -96,7 +96,7 @@ const TRANSITIONAL: LabInstanceStatus[] = ["created", "provisioning", "stopping"
 const NODE_TYPES = { machine: LabMachineNode };
 const RUNTIME_NODE_KEY = "oxsig:cyber-lab-runtime-node:v1";
 const LAYOUT_KEY = "oxsig:cyber-lab-layout:v1";
-const ACTION_BUTTON = "h-10 w-full justify-start";
+const ACTION_BUTTON = "min-h-11 h-auto w-full justify-start whitespace-normal text-left py-2";
 const TOPOLOGY_SAVE_DEBOUNCE_MS = 400;
 
 async function responseError(response: Response, fallback: string) {
@@ -177,6 +177,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [instances, setInstances] = React.useState<Instance[]>([]);
   const [reconciliationWarning, setReconciliationWarning] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<LabMachineFlowNode>([]);
@@ -203,6 +204,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [machinesOpen, setMachinesOpen] = React.useState(true);
   const [inspectorOpen, setInspectorOpen] = React.useState(true);
   const [topologyOpen, setTopologyOpen] = React.useState(true);
+  const [compactPanel, setCompactPanel] = React.useState<"machines" | "topology" | "inspector">("topology");
   const [layoutReady, setLayoutReady] = React.useState(false);
 
   const instance = instances[0];
@@ -217,12 +219,13 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const liveExpired = liveMinutesLeft !== null && liveMinutesLeft <= 0;
   const lifecycleBusy = busy === "start" || busy === "stop" || busy === "destroy";
   const topologyVisible = topologyOpen && !dockFocus;
-  const labColumns = `${machinesOpen ? "260px" : "52px"} minmax(0,1fr) ${inspectorOpen ? "300px" : "52px"}`;
+  const labColumns = `${machinesOpen ? "232px" : "52px"} minmax(0,1fr) ${inspectorOpen ? "280px" : "52px"}`;
 
   const load = React.useCallback(async (silent = false, force = false) => {
     try {
       const result = await getLabsSnapshot({ force });
       if (!result.ok) throw new Error(result.data.error || "Could not load the Cyber Lab");
+      setLoadError(null);
       const body = result.data;
       const nextCatalog = (body.catalog || []) as LearnerLabDefinition[];
       const nextInstances = (body.instances || []) as Instance[];
@@ -249,7 +252,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         if (typeof window !== "undefined") window.localStorage.removeItem(RUNTIME_NODE_KEY);
       }
     } catch (error) {
-      if (!silent) toast.error(error instanceof Error ? error.message : "Could not load the Cyber Lab");
+      if (!silent) setLoadError(error instanceof Error ? error.message : "Could not load the Cyber Lab");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -523,17 +526,25 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     setSelectedNodeId(null);
   };
 
-  if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  if (loading) return <div role="status" className="flex min-h-[40vh] items-center justify-center gap-3 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Loading lab workspace…</div>;
+
+  if (loadError) return (
+    <div role="alert" className="rounded-xl border border-destructive/30 bg-card p-5">
+      <h2 className="text-sm font-semibold">Could not load Cyber Lab</h2>
+      <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+      <Button className="mt-4" variant="outline" onClick={() => { setLoading(true); void load(false, true); }}><RefreshCw className="mr-2 h-4 w-4" />Retry</Button>
+    </div>
+  );
 
   return (
-    <div className="space-y-3 pb-2">
-      <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="oxsig-lab-runtime space-y-3 pb-2" data-session-open={dockOpen && !dockCollapsed} data-compact-panel={compactPanel}>
+      <div className="oxsig-lab-toolbar flex flex-wrap items-center justify-end gap-2">
         {!embedded && <h1 className="mr-auto text-2xl font-bold md:text-3xl">Cyber Lab</h1>}
         <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} nodes · {edges.length} links</Badge>
         <Badge variant={capabilities?.configured ? "default" : "outline"}><Server className="mr-1 h-3.5 w-3.5" />{capabilities?.configured ? "Ready" : "Unavailable"}</Badge>
         <Button size="sm" variant="outline" className="h-8" onClick={() => setTopologyOpen((open) => !open)} aria-expanded={topologyOpen}>
           {topologyOpen ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
-          {topologyOpen ? "Collapse" : "Expand"}
+          {topologyOpen ? "Hide topology" : "Show topology"}
         </Button>
       </div>
 
@@ -545,33 +556,75 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         <Card className="border-amber-500/40 bg-amber-500/5"><CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-medium">Status refresh failed</p><Button size="sm" variant="outline" onClick={() => void refreshLabStatus()} disabled={busy === "reconcile" || lifecycleBusy}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh</Button></CardContent></Card>
       )}
 
-      <div className={`grid transition-[grid-template-rows,opacity] duration-300 ${topologyVisible ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+      {dockOpen && instance && (
+        <section aria-label="Lab session" className={`oxsig-lab-session overflow-hidden rounded-xl border bg-card shadow-lg ${dockFocus ? "fixed inset-3 z-[80] overflow-y-auto shadow-2xl md:inset-5" : ""}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+            <div className="oxsig-scrollbar flex max-w-full gap-1 overflow-x-auto" role="group" aria-label="Session views">
+              {([...(liveAccessMode === "desktop" ? [["desktop", "Desktop", Monitor] as const] : []), ["terminal", "Terminal", Terminal] as const, ["events", "Events", Activity] as const, ["network", "Network", Network] as const, ["diagnostics", "Diagnostics", RefreshCw] as const]).map(([tab, label, Icon]) => <Button key={tab} size="sm" variant={dockTab === tab ? "secondary" : "ghost"} className="h-10 shrink-0" aria-pressed={dockTab === tab} onClick={() => { setDockTab(tab as DockTab); setDockCollapsed(false); }}><Icon className="mr-1.5 h-3.5 w-3.5" />{label}</Button>)}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{liveNodeLabel}</span><Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge><Badge variant="outline" className="h-5 capitalize">{liveAccessMode}</Badge>{instance.expiresAt && <Badge variant={liveExpired ? "destructive" : liveExpiringSoon ? "secondary" : "outline"} className="h-5">{relativeExpiry(instance.expiresAt)}</Badge>}
+              {(terminalId || desktopId) && <Button size="icon" variant={dockFocus ? "secondary" : "ghost"} className="h-10 w-10" onClick={() => { setDockCollapsed(false); setDockFocus((focus) => !focus); }} aria-label={dockFocus ? "Exit focus mode" : "Focus lab session"}>{dockFocus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
+              <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => { if (dockFocus) setDockFocus(false); setDockCollapsed((value) => !value); }} aria-label={dockCollapsed ? "Expand lab dock" : "Collapse lab dock"}>{dockCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
+              <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => { setTerminalId(null); setDesktopId(null); setDockOpen(false); setDockFocus(false); }} aria-label="Close lab dock"><X className="h-4 w-4" /></Button>
+            </div>
+          </div>
+
+          <div hidden={dockCollapsed}>
+            {dockTab === "desktop" && liveAccessMode === "desktop" && <div className="p-3">{desktopId ? <InteractiveSsmDesktop labInstanceId={desktopId} machineLabel={liveNodeLabel} focusMode={dockFocus} /> : <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center"><Monitor className="h-9 w-9 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">Desktop closed</p><Button className="mt-4" size="sm" onClick={openDesktop}><Monitor className="mr-2 h-3.5 w-3.5" />Open desktop</Button></div>}</div>}
+
+            {terminalId && terminalDiagnostics?.ready && <div className={dockTab === "terminal" ? "p-3" : "hidden"}><InteractiveSsmTerminal labInstanceId={terminalId} machineLabel={liveNodeLabel} focusMode={dockFocus} /></div>}
+            {dockTab === "terminal" && (!terminalId || !terminalDiagnostics?.ready) && <div className="grid gap-3 p-3 lg:grid-cols-[1fr_260px]"><div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center"><Terminal className="h-9 w-9 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">{terminalId ? `Waiting for ${liveNodeLabel}` : "Terminal closed"}</p>{instance.expiresAt && <p className={`mt-2 text-xs ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>{relativeExpiry(instance.expiresAt)}</p>}{terminalId && <Button className="mt-4" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh</Button>}</div><div className="space-y-2 text-xs"><p className="font-medium">Session</p><div className="space-y-1 rounded-xl border p-3 text-xs text-muted-foreground"><div>Machine <span className="float-right font-medium text-foreground">{liveNodeLabel}</span></div><div>Access <span className="float-right capitalize">{liveAccessMode}</span></div><div>Status <span className="float-right capitalize">{instance.status}</span></div><div>Terminal <span className="float-right">{terminalDiagnostics?.ready ? "ready" : "checking"}</span></div></div>{terminalFailure && <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">Open Diagnostics.</div>}</div></div>}
+
+            {dockTab === "events" && <div className="grid gap-3 p-4 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Access</p><p className="mt-1 text-sm capitalize">{liveAccessMode}</p></div><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Terminal</p><p className="mt-1 text-sm">Managed</p></div>{liveAccessMode === "desktop" && <div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Desktop</p><p className="mt-1 text-sm">Browser</p></div>}<div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div></div>}
+
+            {dockTab === "network" && <div className="p-4"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Nodes</p><p className="mt-1 text-xl font-semibold">{nodes.length}</p></div><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Links</p><p className="mt-1 text-xl font-semibold">{edges.length}</p></div><div className="rounded-xl border p-3"><p className="text-xs uppercase text-muted-foreground">Running</p><p className="mt-1 text-xl font-semibold">{instance.status === "running" ? 1 : 0}</p></div></div><p className="mt-3 text-xs text-muted-foreground">Links are design-only.</p></div>}
+
+            {dockTab === "diagnostics" && <div className="p-4 text-xs"><div className="mb-3 flex flex-wrap items-center gap-2"><span className="font-semibold">Diagnostics — {liveNodeLabel}</span><Badge variant="outline" className="text-xs capitalize">{liveAccessMode}</Badge></div><div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground"><span className="rounded bg-muted px-2 py-1">OXSIG {short(instance.id)}</span><span>›</span><span className="rounded bg-muted px-2 py-1">EC2 {short(terminalDiagnostics?.instanceId, 18)}</span><span>›</span><span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.ec2State || instance.status}</span><span>›</span><span className="rounded bg-muted px-2 py-1">SSM {terminalDiagnostics?.ssmPingStatus || (terminalDiagnostics?.ssmRegistered ? "registered" : "checking")}</span><span>›</span><span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.region || "region"}</span></div>{terminalDiagnostics ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl border p-3"><span className="text-muted-foreground">SSM registered</span><strong className="mt-1 block">{terminalDiagnostics.ssmRegistered ? "Yes" : "No"}</strong></div><div className="rounded-xl border p-3"><span className="text-muted-foreground">Agent</span><strong className="mt-1 block">{terminalDiagnostics.ssmAgentVersion || "—"}</strong></div><div className="rounded-xl border p-3"><span className="text-muted-foreground">Platform</span><strong className="mt-1 block">{terminalDiagnostics.platformType || "—"}</strong></div><div className="rounded-xl border p-3"><span className="text-muted-foreground">OS</span><strong className="mt-1 block">{[terminalDiagnostics.platformName, terminalDiagnostics.platformVersion].filter(Boolean).join(" ") || "—"}</strong></div></div> : <p className="mt-3 text-muted-foreground">No diagnostics yet.</p>}{terminalFailure && <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-destructive"><span className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</span><p className="mt-1">{terminalFailure.error}</p></div>}<Button className="mt-3" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh</Button></div>}
+          </div>
+        </section>
+      )}
+
+
+      {topologyVisible && (
+        <div className="oxsig-lab-panel-switcher" role="group" aria-label="Lab panels">
+          {([['machines', 'Machines', Server], ['topology', 'Topology', Network], ['inspector', 'Inspector', Info]] as const).map(([panel, label, Icon]) => (
+            <Button key={panel} size="sm" variant={compactPanel === panel ? 'secondary' : 'ghost'} aria-pressed={compactPanel === panel} className="min-h-11 flex-1" onClick={() => {
+              setCompactPanel(panel);
+              if (panel === 'machines') setMachinesOpen(true);
+              if (panel === 'inspector') setInspectorOpen(true);
+            }}><Icon className="mr-1.5 h-4 w-4" />{label}</Button>
+          ))}
+        </div>
+      )}
+
+      <div className={topologyVisible ? "block" : "hidden"}>
         <div className="min-h-0 overflow-hidden">
-          <div className="grid min-h-[650px] gap-3 transition-[grid-template-columns] duration-300 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[var(--lab-columns)]" style={{ "--lab-columns": labColumns } as React.CSSProperties}>
-            <aside className="order-2 overflow-hidden rounded-xl border bg-card lg:order-1">
+          <div className="oxsig-lab-grid" style={{ "--lab-columns": labColumns } as React.CSSProperties}>
+            <aside aria-label="Machine catalog" className="oxsig-lab-machines overflow-hidden rounded-xl border bg-card">
               <div className={`flex items-center border-b ${machinesOpen ? "justify-between p-3" : "justify-center p-2"}`}>
                 {machinesOpen && <p className="text-sm font-semibold">Machines</p>}
                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setMachinesOpen((open) => !open)} aria-label={machinesOpen ? "Collapse machines" : "Expand machines"}>{machinesOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</Button>
               </div>
               {machinesOpen ? (
-                <div className="max-h-[590px] space-y-2 overflow-auto p-3">
+                <div className="oxsig-machine-list space-y-2 overflow-auto p-3">
                   {catalog.map((lab) => (
                     <div key={lab.slug} draggable onDragStart={(event) => { event.dataTransfer.setData("application/x-oxsig-lab", lab.slug); event.dataTransfer.effectAllowed = "move"; }} className="rounded-xl border bg-background p-3 transition hover:border-primary/40 hover:shadow-sm">
                       <div className="flex items-start gap-2.5">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/60 ring-1 ring-border"><LabOsIcon osFamily={lab.osFamily} className="h-7 w-7" /></div>
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><p className="truncate text-sm font-medium">{lab.shortName}</p>{!lab.available && <Badge variant="outline" className="text-[9px]">Locked</Badge>}{lab.accessModes.includes("desktop") && <Badge variant="secondary" className="text-[9px]">Desktop</Badge>}</div><p className="mt-0.5 text-[11px] text-muted-foreground">{lab.category}</p><p className="mt-2 text-[10px] text-muted-foreground">{lab.accessModes.includes("desktop") ? "Terminal + Desktop" : lab.shell === "powershell" ? "PowerShell" : "Bash"}</p></div>
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/60 ring-1 ring-border"><LabOsIcon osFamily={lab.osFamily} className="h-10 w-10" /></div>
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><p className="truncate text-sm font-medium">{lab.shortName}</p>{!lab.available && <Badge variant="outline" className="text-xs">Locked</Badge>}{lab.accessModes.includes("desktop") && <Badge variant="secondary" className="text-xs">Desktop</Badge>}</div><p className="mt-0.5 text-xs text-muted-foreground">{lab.category}</p><p className="mt-2 text-xs text-muted-foreground">{lab.accessModes.includes("desktop") ? "Terminal + Desktop" : lab.shell === "powershell" ? "PowerShell" : "Bash"}</p></div>
                         <GripVertical className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/60" />
                       </div>
-                      <Button size="sm" variant="ghost" className="mt-2 h-8 w-full" onClick={() => addMachine(lab.slug)}><Plus className="mr-1.5 h-3.5 w-3.5" />Add</Button>
+                      <Button size="sm" variant="ghost" className="mt-2 h-8 w-full" onClick={() => { addMachine(lab.slug); setCompactPanel("topology"); }}><Plus className="mr-1.5 h-3.5 w-3.5" />Add</Button>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="flex h-[590px] w-full flex-col items-center gap-2 py-4">{catalog.map((lab) => <button key={lab.slug} type="button" onClick={() => addMachine(lab.slug)} className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background" title={`Add ${lab.shortName}`}><LabOsIcon osFamily={lab.osFamily} className="h-5 w-5" /></button>)}</div>
+                <div className="oxsig-machine-rail flex w-full flex-col items-center gap-2 py-4">{catalog.map((lab) => <button key={lab.slug} type="button" onClick={() => { addMachine(lab.slug); setCompactPanel("topology"); }} className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background" title={`Add ${lab.shortName}`}><LabOsIcon osFamily={lab.osFamily} className="h-5 w-5" /></button>)}</div>
               )}
             </aside>
 
-            <section className="order-1 relative min-h-[520px] overflow-hidden rounded-xl border bg-muted/10 sm:min-h-[620px] lg:order-2 lg:min-h-[650px]">
+            <section aria-label="Lab topology" className="oxsig-lab-canvas relative overflow-hidden rounded-xl border bg-muted/10">
               <ReactFlow<LabMachineFlowNode, Edge>
                 nodes={nodes}
                 edges={edges}
@@ -580,7 +633,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onInit={setFlow}
-                onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
+                onNodeClick={(_event, node) => { setSelectedNodeId(node.id); setInspectorOpen(true); setCompactPanel("inspector"); }}
                 onPaneClick={() => setSelectedNodeId(null)}
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
                 onDrop={(event) => { event.preventDefault(); const slug = event.dataTransfer.getData("application/x-oxsig-lab"); if (!slug) return; addMachine(slug, flow?.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}
@@ -590,14 +643,14 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 maxZoom={1.7}
                 defaultEdgeOptions={{ type: "smoothstep" }}
               >
-                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} /><Controls position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" className="!bg-background/90" />
+                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} /><Controls position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" className="oxsig-lab-minimap !bg-background/90" />
                 {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Add a machine</div>}
               </ReactFlow>
-              <div className="pointer-events-none absolute left-3 top-3 rounded-lg border bg-background/90 px-3 py-2 text-[10px] text-muted-foreground shadow-sm">Design-only links · 1 running machine max</div>
+              <div className="pointer-events-none absolute bottom-14 left-3 right-3 rounded-lg border bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">Design-only links · 1 running machine max</div>
               <Button size="sm" variant="secondary" className="absolute right-3 top-3 z-10 h-8 bg-background/90" onClick={() => setTopologyOpen(false)}><ChevronUp className="mr-1.5 h-3.5 w-3.5" />Collapse</Button>
             </section>
 
-            <aside className="order-3 overflow-hidden rounded-xl border bg-card lg:col-span-2 xl:col-span-1">
+            <aside aria-label="Machine inspector" className="oxsig-lab-inspector overflow-hidden rounded-xl border bg-card">
               <div className={`flex items-center border-b ${inspectorOpen ? "justify-between p-3" : "justify-center p-2"}`}>
                 {inspectorOpen && <p className="text-sm font-semibold">Inspector</p>}
                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setInspectorOpen((open) => !open)} aria-label={inspectorOpen ? "Collapse inspector" : "Expand inspector"}>{inspectorOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</Button>
@@ -605,24 +658,24 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               {inspectorOpen && (!selectedNode || !selectedLab ? (
                 <div className="flex min-h-[220px] items-center justify-center p-6 text-sm text-muted-foreground"><Info className="mr-2 h-4 w-4 opacity-50" />Select a machine</div>
               ) : (
-                <div className="space-y-4 p-4">
-                  <div><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{selectedNode.data.label}</p><p className="text-xs text-muted-foreground">{selectedLab.name}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="secondary" className="text-[9px] uppercase">Selected</Badge>{selectedIsLive && <Badge className="text-[9px]"><Server className="mr-1 h-3 w-3" />Running</Badge>}{selectedIsLive && <Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge>}</div></div><Badge variant="outline" className="capitalize">{selectedIsLive ? instance?.status : "planned"}</Badge></div></div>
-                  <div className="grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Platform</span>{selectedLab.platform}</div><div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Shell</span>{selectedLab.shell}</div><div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Access</span><span className="capitalize">{selectedIsLive ? liveAccessMode : selectedAccessMode}</span></div><div className="rounded-lg bg-muted/60 p-2"><span className="block text-[10px] text-muted-foreground">Availability</span>{selectedLab.available ? "Ready" : "Unavailable"}</div></div>
-                  {!instance && selectedLab.accessModes.length > 1 && <div className="space-y-2 rounded-xl border p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Access</p><div className="grid grid-cols-2 gap-2"><Button type="button" size="sm" variant={selectedAccessMode === "terminal" ? "default" : "outline"} onClick={() => setSelectedAccessMode("terminal")}><Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal</Button><Button type="button" size="sm" variant={selectedAccessMode === "desktop" ? "default" : "outline"} onClick={() => setSelectedAccessMode("desktop")}><Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop</Button></div></div>}
-                  {!selectedLab.available && selectedLab.availabilityNote && <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] text-amber-700 dark:text-amber-300">{selectedLab.availabilityNote}</div>}
-                  {selectedIsLive && instance?.expiresAt && <p className={`text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Expires {new Date(instance.expiresAt).toLocaleString()} ({relativeExpiry(instance.expiresAt)})</p>}
+                <div className="oxsig-inspector-content space-y-4 p-4">
+                  <div><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{selectedNode.data.label}</p><p className="text-xs text-muted-foreground">{selectedLab.name}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="secondary" className="text-xs uppercase">Selected</Badge>{selectedIsLive && <Badge className="text-xs"><Server className="mr-1 h-3 w-3" />Live machine</Badge>}{selectedIsLive && <Badge variant="outline" className="text-xs capitalize">{liveAccessMode}</Badge>}</div></div><Badge variant="outline" className="capitalize">{selectedIsLive ? instance?.status : "planned"}</Badge></div></div>
+                  <div className="grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg bg-muted/60 p-2"><span className="block text-xs text-muted-foreground">Platform</span>{selectedLab.platform}</div><div className="rounded-lg bg-muted/60 p-2"><span className="block text-xs text-muted-foreground">Shell</span>{selectedLab.shell}</div><div className="rounded-lg bg-muted/60 p-2"><span className="block text-xs text-muted-foreground">Access</span><span className="capitalize">{selectedIsLive ? liveAccessMode : selectedAccessMode}</span></div><div className="rounded-lg bg-muted/60 p-2"><span className="block text-xs text-muted-foreground">Availability</span>{selectedLab.available ? "Ready" : "Unavailable"}</div></div>
+                  {!instance && selectedLab.accessModes.length > 1 && <div className="space-y-2 rounded-xl border p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Access</p><div className="grid grid-cols-2 gap-2"><Button type="button" size="sm" variant={selectedAccessMode === "terminal" ? "default" : "outline"} onClick={() => setSelectedAccessMode("terminal")}><Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal</Button><Button type="button" size="sm" variant={selectedAccessMode === "desktop" ? "default" : "outline"} onClick={() => setSelectedAccessMode("desktop")}><Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop</Button></div></div>}
+                  {!selectedLab.available && selectedLab.availabilityNote && <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">{selectedLab.availabilityNote}</div>}
+                  {selectedIsLive && instance?.expiresAt && <p className={`text-xs ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Expires {new Date(instance.expiresAt).toLocaleString()} ({relativeExpiry(instance.expiresAt)})</p>}
 
                   <div className="space-y-2 rounded-xl border p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Actions</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</p>
                     {!instance && <Button className={ACTION_BUTTON} onClick={() => void createLab()} disabled={!capabilities?.configured || !selectedLab.available || busy === "create"}>{busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : selectedAccessMode === "desktop" ? <Monitor className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{selectedLab.available ? `Start ${selectedAccessMode} lab` : "Activation required"}</Button>}
-                    {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground">{liveNodeLabel} is running.</div>}
+                    {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">{liveNodeLabel} is running.</div>}
                     {selectedIsLive && instance?.status === "stopped" && <Button className={ACTION_BUTTON} onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}>{busy === "start" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Start {selectedNode.data.label}</Button>}
                     {selectedIsLive && instance?.status === "running" && <>{liveAccessMode === "desktop" && <Button className={ACTION_BUTTON} onClick={openDesktop}><Monitor className="mr-2 h-4 w-4" />Open desktop</Button>}{capabilities?.supportsTerminal && <Button className={ACTION_BUTTON} variant={liveAccessMode === "desktop" ? "outline" : "default"} onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open terminal</Button>}<Button className={ACTION_BUTTON} variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button></>}
                     {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className={ACTION_BUTTON} variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}><Trash2 className="mr-2 h-4 w-4" />Destroy {selectedNode.data.label}</Button>}
                     {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <Button className={ACTION_BUTTON} variant="outline" onClick={() => void refreshLabStatus()} disabled={busy === "reconcile" || lifecycleBusy}><RefreshCw className={`mr-2 h-4 w-4 ${busy === "reconcile" ? "animate-spin" : ""}`} />Refresh status</Button>}
                     <Button className={ACTION_BUTTON} variant="ghost" onClick={removeSelectedNode} disabled={selectedIsLive}><X className="mr-2 h-4 w-4" />Remove</Button>
                   </div>
-                  {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Updating…</div>}
+                  {selectedIsLive && instance && TRANSITIONAL.includes(instance.status) && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Updating…</div>}
                 </div>
               ))}
             </aside>
@@ -632,34 +685,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
 
       {!topologyVisible && !dockFocus && <button type="button" onClick={() => setTopologyOpen(true)} className="flex w-full items-center justify-between rounded-xl border bg-card px-4 py-3 text-left shadow-sm"><p className="text-sm font-semibold">Lab topology</p><ChevronDown className="h-4 w-4 text-muted-foreground" /></button>}
 
-      {dockOpen && instance && (
-        <section className={`overflow-hidden rounded-xl border bg-card shadow-lg ${dockFocus ? "fixed inset-3 z-[80] overflow-y-auto shadow-2xl md:inset-5" : ""}`}>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-            <div className="flex flex-wrap gap-1">
-              {([...(liveAccessMode === "desktop" ? [["desktop", "Desktop", Monitor] as const] : []), ["terminal", "Terminal", Terminal] as const, ["events", "Events", Activity] as const, ["network", "Network", Network] as const, ["diagnostics", "Diagnostics", RefreshCw] as const]).map(([tab, label, Icon]) => <Button key={tab} size="sm" variant={dockTab === tab ? "secondary" : "ghost"} className="h-8" onClick={() => { setDockTab(tab as DockTab); setDockCollapsed(false); }}><Icon className="mr-1.5 h-3.5 w-3.5" />{label}</Button>)}
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-              <span className="font-medium text-foreground">{liveNodeLabel}</span><Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge><Badge variant="outline" className="h-5 capitalize">{liveAccessMode}</Badge>{instance.expiresAt && <Badge variant={liveExpired ? "destructive" : liveExpiringSoon ? "secondary" : "outline"} className="h-5">{relativeExpiry(instance.expiresAt)}</Badge>}
-              {(terminalId || desktopId) && <Button size="icon" variant={dockFocus ? "secondary" : "ghost"} className="h-7 w-7" onClick={() => { setDockCollapsed(false); setDockFocus((focus) => !focus); }} aria-label={dockFocus ? "Exit focus mode" : "Focus lab session"}>{dockFocus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { if (dockFocus) setDockFocus(false); setDockCollapsed((value) => !value); }} aria-label={dockCollapsed ? "Expand lab dock" : "Collapse lab dock"}>{dockCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setTerminalId(null); setDesktopId(null); setDockOpen(false); setDockFocus(false); }} aria-label="Close lab dock"><X className="h-4 w-4" /></Button>
-            </div>
-          </div>
-
-          {!dockCollapsed && <div>
-            {dockTab === "desktop" && liveAccessMode === "desktop" && <div className="p-3">{desktopId ? <InteractiveSsmDesktop labInstanceId={desktopId} machineLabel={liveNodeLabel} focusMode={dockFocus} /> : <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center"><Monitor className="h-9 w-9 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">Desktop closed</p><Button className="mt-4" size="sm" onClick={openDesktop}><Monitor className="mr-2 h-3.5 w-3.5" />Open desktop</Button></div>}</div>}
-
-            {terminalId && terminalDiagnostics?.ready && <div className={dockTab === "terminal" ? "p-3" : "hidden"}><InteractiveSsmTerminal labInstanceId={terminalId} machineLabel={liveNodeLabel} focusMode={dockFocus} /></div>}
-            {dockTab === "terminal" && (!terminalId || !terminalDiagnostics?.ready) && <div className="grid gap-3 p-3 lg:grid-cols-[1fr_260px]"><div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border bg-muted/20 p-6 text-center"><Terminal className="h-9 w-9 text-muted-foreground/50" /><p className="mt-3 text-sm font-medium">{terminalId ? `Waiting for ${liveNodeLabel}` : "Terminal closed"}</p>{instance.expiresAt && <p className={`mt-2 text-[11px] ${liveExpired ? "text-destructive" : liveExpiringSoon ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>{relativeExpiry(instance.expiresAt)}</p>}{terminalId && <Button className="mt-4" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh</Button>}</div><div className="space-y-2 text-xs"><p className="font-medium">Session</p><div className="space-y-1 rounded-xl border p-3 text-[11px] text-muted-foreground"><div>Machine <span className="float-right font-medium text-foreground">{liveNodeLabel}</span></div><div>Access <span className="float-right capitalize">{liveAccessMode}</span></div><div>Status <span className="float-right capitalize">{instance.status}</span></div><div>Terminal <span className="float-right">{terminalDiagnostics?.ready ? "ready" : "checking"}</span></div></div>{terminalFailure && <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-[11px] text-amber-700 dark:text-amber-300">Open Diagnostics.</div>}</div></div>}
-
-            {dockTab === "events" && <div className="grid gap-3 p-4 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Machine</p><p className="mt-1 text-sm font-medium">{liveNodeLabel}</p></div><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Lifecycle</p><p className="mt-1 text-sm font-medium capitalize">{instance.status}</p></div><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Access</p><p className="mt-1 text-sm capitalize">{liveAccessMode}</p></div><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Terminal</p><p className="mt-1 text-sm">Managed</p></div>{liveAccessMode === "desktop" && <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Desktop</p><p className="mt-1 text-sm">Browser</p></div>}<div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Created</p><p className="mt-1 text-sm">{new Date(instance.createdAt).toLocaleString()}</p></div></div>}
-
-            {dockTab === "network" && <div className="p-4"><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Nodes</p><p className="mt-1 text-xl font-semibold">{nodes.length}</p></div><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Links</p><p className="mt-1 text-xl font-semibold">{edges.length}</p></div><div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-muted-foreground">Running</p><p className="mt-1 text-xl font-semibold">{instance ? 1 : 0}</p></div></div><p className="mt-3 text-xs text-muted-foreground">Links are design-only.</p></div>}
-
-            {dockTab === "diagnostics" && <div className="p-4 text-xs"><div className="mb-3 flex flex-wrap items-center gap-2"><span className="font-semibold">Diagnostics — {liveNodeLabel}</span><Badge variant="outline" className="text-[9px] capitalize">{liveAccessMode}</Badge></div><div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground"><span className="rounded bg-muted px-2 py-1">OXSIG {short(instance.id)}</span><span>›</span><span className="rounded bg-muted px-2 py-1">EC2 {short(terminalDiagnostics?.instanceId, 18)}</span><span>›</span><span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.ec2State || instance.status}</span><span>›</span><span className="rounded bg-muted px-2 py-1">SSM {terminalDiagnostics?.ssmPingStatus || (terminalDiagnostics?.ssmRegistered ? "registered" : "checking")}</span><span>›</span><span className="rounded bg-muted px-2 py-1">{terminalDiagnostics?.region || "region"}</span></div>{terminalDiagnostics ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl border p-3"><span className="text-muted-foreground">SSM registered</span><strong className="mt-1 block">{terminalDiagnostics.ssmRegistered ? "Yes" : "No"}</strong></div><div className="rounded-xl border p-3"><span className="text-muted-foreground">Agent</span><strong className="mt-1 block">{terminalDiagnostics.ssmAgentVersion || "—"}</strong></div><div className="rounded-xl border p-3"><span className="text-muted-foreground">Platform</span><strong className="mt-1 block">{terminalDiagnostics.platformType || "—"}</strong></div><div className="rounded-xl border p-3"><span className="text-muted-foreground">OS</span><strong className="mt-1 block">{[terminalDiagnostics.platformName, terminalDiagnostics.platformVersion].filter(Boolean).join(" ") || "—"}</strong></div></div> : <p className="mt-3 text-muted-foreground">No diagnostics yet.</p>}{terminalFailure && <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-destructive"><span className="font-mono">{terminalFailure.stage || "unknown"}/{terminalFailure.code || "ERROR"}</span><p className="mt-1">{terminalFailure.error}</p></div>}<Button className="mt-3" size="sm" variant="outline" onClick={() => void refreshTerminal(instance.id)} disabled={busy === "diagnostics"}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${busy === "diagnostics" ? "animate-spin" : ""}`} />Refresh</Button></div>}
-          </div>}
-        </section>
-      )}
 
       {!dockOpen && instance && <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setDockOpen(true); setDockCollapsed(false); setDockTab(liveAccessMode === "desktop" && desktopId ? "desktop" : "terminal"); if (!terminalId) void refreshTerminal(instance.id); }}><PanelBottom className="mr-2 h-4 w-4" />Open lab dock</Button>}
     </div>

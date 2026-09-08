@@ -148,13 +148,14 @@ describe('CollaborationWorkspace session isolation', () => {
 
     render(<CollaborationWorkspace />);
 
-    await waitFor(() => expect(screen.getByText(/loading conversation/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^loading…$/i)).toBeInTheDocument());
     expect(mocks.realtimeCallbacks).not.toBeNull();
 
     act(() => mocks.realtimeCallbacks?.onMessageCreated());
 
     await waitFor(() => expect(screen.getByText('Fresh realtime message')).toBeInTheDocument());
-    expect(screen.queryByText(/loading conversation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^loading…$/i)).not.toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 });
+
