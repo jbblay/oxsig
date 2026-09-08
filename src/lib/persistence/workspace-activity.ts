@@ -46,7 +46,9 @@ function read<T>(key: string): T[] {
 
 function write<T>(key: string, value: T[]) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  const next = JSON.stringify(value);
+  if (window.localStorage.getItem(key) === next) return;
+  window.localStorage.setItem(key, next);
   notifyLocalStorageChange(key);
 }
 
@@ -56,6 +58,36 @@ export function getWorkspaceActivity() {
 
 export function getWorkspaceRecents() {
   return read<WorkspaceRecent>(WORKSPACE_RECENTS_KEY).slice(0, 8);
+}
+
+export function getWorkspaceStateSnapshot() {
+  return {
+    activity: getWorkspaceActivity(),
+    recents: getWorkspaceRecents(),
+  };
+}
+
+export function mergeWorkspaceState(input: {
+  activity?: WorkspaceActivity[];
+  recents?: WorkspaceRecent[];
+}) {
+  const activityById = new Map<string, WorkspaceActivity>();
+  for (const item of [...getWorkspaceActivity(), ...(input.activity || [])]) {
+    const current = activityById.get(item.id);
+    if (!current || item.at > current.at) activityById.set(item.id, item);
+  }
+  const activity = [...activityById.values()].sort((a, b) => b.at - a.at).slice(0, 24);
+
+  const recentByHref = new Map<string, WorkspaceRecent>();
+  for (const item of [...getWorkspaceRecents(), ...(input.recents || [])]) {
+    const current = recentByHref.get(item.href);
+    if (!current || item.at > current.at) recentByHref.set(item.href, item);
+  }
+  const recents = [...recentByHref.values()].sort((a, b) => b.at - a.at).slice(0, 8);
+
+  write(WORKSPACE_ACTIVITY_KEY, activity);
+  write(WORKSPACE_RECENTS_KEY, recents);
+  return { activity, recents };
 }
 
 export function recordWorkspaceActivity(input: Omit<WorkspaceActivity, 'id' | 'at'>) {
