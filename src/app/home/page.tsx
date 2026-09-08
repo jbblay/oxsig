@@ -17,6 +17,7 @@ import {
   Terminal,
   UserRound,
 } from 'lucide-react';
+import GuestSampleFlow from '@/components/app/GuestSampleFlow';
 import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
 import RecentWorkspaceStrip from '@/components/app/RecentWorkspaceStrip';
 import TerminalActivityStrip from '@/components/app/TerminalActivityStrip';
@@ -103,6 +104,8 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      {guestMode && <GuestSampleFlow />}
 
       {profileError && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
