@@ -18,6 +18,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
+import RecentWorkspaceStrip from '@/components/app/RecentWorkspaceStrip';
 import TerminalActivityStrip from '@/components/app/TerminalActivityStrip';
 import { LearningAnalyticsDashboard } from '@/components/learning/LearningAnalyticsDashboard';
 import { Badge } from '@/components/ui/badge';
@@ -125,6 +126,7 @@ export default function HomePage() {
         </Link>
       )}
 
+      <RecentWorkspaceStrip />
       <TerminalActivityStrip running={labRunning} label={activeLab ? `${activeLab.name} activity` : 'Terminal activity'} />
 
       <section aria-labelledby="workspace-launcher-title">
