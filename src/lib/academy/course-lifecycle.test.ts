@@ -33,7 +33,7 @@ describe('Academy course lifecycle alignment', () => {
     mocks.detachOwnerResourceFromLiveWorkspaces.mockResolvedValue(undefined);
   });
 
-  it('activating the curated reference course activates its enrollment', async () => {
+  it('activating the curated reference course creates or resumes its enrollment', async () => {
     clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT id, status, source_prompt')) {
         return { rows: [{ id: courseId, status: 'archived', source_prompt: PROGRAM_PROCESS_SOURCE_PROMPT }], rowCount: 1 };
@@ -44,7 +44,11 @@ describe('Academy course lifecycle alignment', () => {
     await expect(activateAcademyCourse(ownerId, courseId)).resolves.toBe(true);
 
     expect(clientQuery).toHaveBeenCalledWith(
-      expect.stringContaining("SET status='active'"),
+      expect.stringContaining('INSERT INTO learning_path_enrollments'),
+      expect.arrayContaining([ownerId])
+    );
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining('ON CONFLICT (owner_id, path_id, path_version)'),
       expect.arrayContaining([ownerId])
     );
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
