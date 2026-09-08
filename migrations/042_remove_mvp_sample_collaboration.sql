@@ -2,17 +2,65 @@
 -- user-created data. These rows were created by migrations 001 and 004.
 
 -- Migration 004 inserted this exact sample collaboration when test@example.com
--- happened to exist. Match every original seed field so normal collaborations
--- are never selected.
-DELETE FROM collaborations collaboration
-USING users owner
-WHERE collaboration.owner_id = owner.id
-  AND owner.email = 'test@example.com'
-  AND collaboration.name = 'Test Collaboration'
-  AND collaboration.description = 'A sample collaboration for testing real-time features'
-  AND collaboration.collaboration_type = 'document'
-  AND collaboration.metadata = '{}'::jsonb
-  AND collaboration.settings = '{}'::jsonb;
+-- happened to exist. Remove it only when no current foreign-key reference points
+-- at it. If anyone ever reused the seeded collaboration for members, messages,
+-- documents, workspaces or other real data, keep it rather than cascading data.
+DO $$
+DECLARE
+    sample_id UUID;
+    reference_record RECORD;
+    has_reference BOOLEAN;
+BEGIN
+    SELECT collaboration.id
+      INTO sample_id
+      FROM collaborations collaboration
+      JOIN users owner ON owner.id = collaboration.owner_id
+     WHERE owner.email = 'test@example.com'
+       AND collaboration.name = 'Test Collaboration'
+       AND collaboration.description = 'A sample collaboration for testing real-time features'
+       AND collaboration.collaboration_type = 'document'
+       AND collaboration.metadata = '{}'::jsonb
+       AND collaboration.settings = '{}'::jsonb
+     LIMIT 1;
+
+    IF sample_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    FOR reference_record IN
+        SELECT constraint_table.oid::regclass::text AS table_name,
+               source_attribute.attname AS column_name
+          FROM pg_constraint constraint_row
+          JOIN pg_class constraint_table
+            ON constraint_table.oid = constraint_row.conrelid
+          JOIN unnest(constraint_row.conkey) WITH ORDINALITY AS source_key(attnum, position)
+            ON true
+          JOIN unnest(constraint_row.confkey) WITH ORDINALITY AS target_key(attnum, position)
+            ON target_key.position = source_key.position
+          JOIN pg_attribute source_attribute
+            ON source_attribute.attrelid = constraint_row.conrelid
+           AND source_attribute.attnum = source_key.attnum
+          JOIN pg_attribute target_attribute
+            ON target_attribute.attrelid = constraint_row.confrelid
+           AND target_attribute.attnum = target_key.attnum
+         WHERE constraint_row.contype = 'f'
+           AND constraint_row.confrelid = 'collaborations'::regclass
+           AND target_attribute.attname = 'id'
+    LOOP
+        EXECUTE format(
+            'SELECT EXISTS (SELECT 1 FROM %s WHERE %I = $1)',
+            reference_record.table_name,
+            reference_record.column_name
+        ) INTO has_reference USING sample_id;
+
+        IF has_reference THEN
+            RETURN;
+        END IF;
+    END LOOP;
+
+    DELETE FROM collaborations WHERE id = sample_id;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Migration 001 inserted a synthetic user in every fresh database. Remove that
 -- exact seed only when nothing in the current schema references it. The generic
