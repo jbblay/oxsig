@@ -1,6 +1,6 @@
 /* Workspace routes open directly into the tool. Page components own their
    action-first structure; this file only supplies shared workspace geometry
-   and a small Cyber Lab compatibility layer. */
+   and a small Cyber Lab runtime compatibility layer. */
 
 main[data-oxsig-workspace] {
   max-width: none;
@@ -28,12 +28,6 @@ main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div:first-child > d
 }
 
 main[data-oxsig-workspace='labs'] #cyber-lab-runtime > div > div.relative.overflow-hidden {
-  display: none;
-}
-
-/* AI Practitioner is intentionally richer than the global helper, but its
-   legacy onboarding article is hidden so the composer opens as the tool. */
-body:has(main[data-oxsig-workspace='labs']) aside[class*='w-[460px]'] > div:nth-child(2) > div.space-y-4 {
   display: none;
 }
 
