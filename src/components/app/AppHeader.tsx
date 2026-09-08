@@ -15,6 +15,8 @@ function pageTitle(pathname: string) {
   if (pathname === '/collab') return 'Collaboration';
   if (pathname.startsWith('/collab/storyboards')) return 'Boards';
   if (pathname.startsWith('/live')) return 'Live Workspace';
+  if (pathname.startsWith('/operations')) return 'Operations';
+  if (pathname.startsWith('/warroom')) return 'WarRoom';
   if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'Vault';
   if (pathname.startsWith('/labs')) return 'Cyber Lab';
   if (pathname.startsWith('/manage')) return 'Resources';
@@ -31,7 +33,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   const pathname = usePathname();
   const { user } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
-  const cyberLab = pathname.startsWith('/labs');
+  const cyberLab = pathname.startsWith('/labs') || pathname.startsWith('/operations') || pathname.startsWith('/warroom');
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -91,8 +93,8 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               aria-label="Open account"
               title={user?.displayName || user?.email || 'Account'}
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
-                {initials(user?.displayName || user?.email)}
+              <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
+                {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(user?.displayName || user?.email)}
               </span>
             </Link>
           </div>
