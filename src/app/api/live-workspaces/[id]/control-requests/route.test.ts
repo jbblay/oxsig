@@ -3,13 +3,14 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(), getPool: vi.fn(),
-  createControlRequest: vi.fn(), listControlState: vi.fn(),
+  createControlRequest: vi.fn(), listControlState: vi.fn(), createWorkspaceNotification: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
+vi.mock('@/lib/notifications/server', () => ({ createWorkspaceNotification: mocks.createWorkspaceNotification }));
 vi.mock('@/lib/live-workspace/control', () => ({
   createControlRequest: mocks.createControlRequest,
   listControlState: mocks.listControlState,
@@ -44,6 +45,8 @@ describe('Live Workspace control request API', () => {
     mocks.getPool.mockReturnValue(pool);
     mocks.createControlRequest.mockResolvedValue({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', status: 'pending' });
     mocks.listControlState.mockResolvedValue({ requests: [], leases: [] });
+    mocks.createWorkspaceNotification.mockResolvedValue(null);
+    pool.query.mockResolvedValue({ rows: [] });
   });
 
   it('binds a request to the authenticated participant rather than browser identity', async () => {
@@ -56,6 +59,23 @@ describe('Live Workspace control request API', () => {
       bindingId,
       surface: 'terminal',
     });
+  });
+
+  it('notifies the workspace owner when another participant requests control', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{
+      owner_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      workspace_name: 'Incident room',
+      participant_name: 'Learner',
+    }] });
+
+    const response = await POST(request('POST', { bindingId, surface: 'desktop' }), { params: Promise.resolve({ id: workspaceId }) });
+    expect(response.status).toBe(201);
+    expect(mocks.createWorkspaceNotification).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      type: 'live.control_request',
+      href: '/live',
+      sourceId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    }));
   });
 
   it('rejects browser attempts to supply extra authorization identity fields', async () => {
