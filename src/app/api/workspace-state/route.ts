@@ -11,6 +11,7 @@ export const runtime = 'nodejs';
 const colorSchema = z.enum(['home', 'labs', 'live', 'collab', 'boards', 'vault', 'manage']);
 const kindSchema = z.enum(['navigation', 'action', 'system']);
 const internalHrefSchema = z.string().max(320).refine((value) => value.startsWith('/') && !value.startsWith('//'), 'Use an internal workspace path');
+const MAX_DURABLE_ACTIVITY_EVENTS = 500;
 
 const activitySchema = z.object({
   id: z.string().min(1).max(96),
@@ -147,6 +148,20 @@ export async function POST(request: NextRequest) {
           ]
         );
       }
+
+      await client.query(
+        `WITH stale AS (
+           SELECT id
+             FROM workspace_activity_events
+            WHERE owner_id = $1
+            ORDER BY occurred_at DESC, created_at DESC
+            OFFSET $2
+         )
+         DELETE FROM workspace_activity_events event
+          USING stale
+          WHERE event.id = stale.id`,
+        [user.id, MAX_DURABLE_ACTIVITY_EVENTS]
+      );
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
