@@ -27,6 +27,7 @@ type TimelineEntry = {
   id: string;
   prompt: string;
   plan: Record<string, unknown>;
+  labInstanceId?: string;
   execution?: Record<string, unknown>;
   analysis?: Record<string, unknown>;
 };
@@ -51,6 +52,7 @@ function latestMatchingEntry(entries: TimelineEntry[], row: Record<string, any>,
     if (row.prompt && entry.prompt !== String(row.prompt)) continue;
     const planCommand = typeof entry.plan.command === 'string' ? entry.plan.command : null;
     if (row.command && planCommand && planCommand !== String(row.command)) continue;
+    if (row.lab_instance_id && entry.labInstanceId && entry.labInstanceId !== String(row.lab_instance_id)) continue;
     return entry;
   }
   return null;
@@ -86,6 +88,7 @@ export async function GET(request: NextRequest) {
           id: String(row.id),
           prompt: String(row.prompt),
           plan: plan as Record<string, unknown>,
+          ...(row.lab_instance_id ? { labInstanceId: String(row.lab_instance_id) } : {}),
         };
         entries.push(entry);
         history.push({ id: `${row.id}:user`, role: 'user', content: String(row.prompt) });
@@ -99,6 +102,7 @@ export async function GET(request: NextRequest) {
       if (row.event_type === 'execution') {
         const entry = latestMatchingEntry(entries, row, false);
         if (!entry) continue;
+        if (row.lab_instance_id) entry.labInstanceId = String(row.lab_instance_id);
         entry.execution = {
           command: String(row.command || ''),
           stdout: String(row.stdout || ''),
@@ -120,6 +124,7 @@ export async function GET(request: NextRequest) {
         if (!analysis || typeof analysis !== 'object') continue;
         const entry = latestMatchingEntry(entries, row, true);
         if (!entry) continue;
+        if (row.lab_instance_id) entry.labInstanceId = String(row.lab_instance_id);
         entry.analysis = analysis as Record<string, unknown>;
         const summary = (analysis as Record<string, unknown>).summary;
         if (typeof summary === 'string' && summary.trim()) {
