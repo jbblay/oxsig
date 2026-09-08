@@ -119,24 +119,38 @@ export async function DELETE(request: NextRequest, context: Context) {
       return NextResponse.json({ error: 'Invalid collaboration session' }, { status: 400 });
     }
 
-    const result = await getPool().query(
+    const pool = getPool();
+    const owned = await pool.query(
+      `SELECT id
+         FROM collaborations
+        WHERE id = $1 AND owner_id = $2
+        LIMIT 1`,
+      [id, user.id]
+    );
+    if (!owned.rows[0]) {
+      return NextResponse.json({ error: 'Collaboration not found or owner access required' }, { status: 404 });
+    }
+
+    try {
+      await deleteCollaborationObjects(id);
+    } catch (error) {
+      console.warn('Collaboration attachment cleanup failed; database deletion was not attempted:', error);
+      return NextResponse.json(
+        { error: 'Could not delete collaboration attachments. Nothing was deleted.' },
+        { status: 503 }
+      );
+    }
+
+    const result = await pool.query(
       `DELETE FROM collaborations
         WHERE id = $1 AND owner_id = $2
         RETURNING id`,
       [id, user.id]
     );
     if (!result.rows[0]) {
-      return NextResponse.json({ error: 'Collaboration not found or owner access required' }, { status: 404 });
+      return NextResponse.json({ error: 'Collaboration changed before deletion; try again' }, { status: 409 });
     }
 
-    let storageCleanupPending = false;
-    try {
-      await deleteCollaborationObjects(id);
-    } catch (error) {
-      storageCleanupPending = true;
-      console.warn('Collaboration data deleted but attachment cleanup is pending:', error);
-    }
-
-    return NextResponse.json({ deleted: true, storageCleanupPending });
+    return NextResponse.json({ deleted: true });
   });
 }
