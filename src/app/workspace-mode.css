@@ -135,6 +135,13 @@ main[data-oxsig-workspace='labs'] #cyber-lab-planner > div > div:nth-child(2) {
   padding-bottom: 2rem;
 }
 
+/* The full AI Practitioner remains operationally richer than the global
+   helper, but its empty state should still open as a tool, not an onboarding
+   article. Leave the live lab/terminal status and composer visible. */
+body:has(main[data-oxsig-workspace='labs']) aside.fixed.z-50 > div:nth-child(2) > div.space-y-4 {
+  display: none;
+}
+
 /* Boards are a drawing application. Preserve live status badges and canvas
    controls, remove the duplicate title/description and the capabilities card
    that merely describes tools which are already visible above it. */
