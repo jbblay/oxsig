@@ -15,8 +15,8 @@ import { AuthProvider } from '@/lib/auth/use-auth';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Oxsig — Learn, collaborate, practice',
-  description: 'Visual lessons, shared resources, and cloud labs in one workspace.',
+  title: 'Oxsig — Technical workspace',
+  description: 'Collaborate, practice, run cloud labs, and capture technical evidence in one workspace.',
   applicationName: 'Oxsig',
 };
 
