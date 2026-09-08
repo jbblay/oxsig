@@ -38,11 +38,23 @@ export type AcademyQuestionAnswer = {
   suggestedAction: string | null;
 };
 
+export type AcademyPracticeEvidenceBinding = {
+  evidenceId: string;
+  executionId: string;
+  labInstanceId: string;
+  provenance: 'browser-observed' | 'server-executed' | 'provider-attested' | 'learner-provided';
+  executionReceiptId?: string;
+  terminalSessionId?: string;
+  risk?: 'read-only' | 'changes-system';
+  surface: 'academy';
+};
+
 export type AcademyPracticeEvaluation = {
   status: 'passed' | 'needs-attention';
   summary: string;
   feedback: string;
   nextStep: string | null;
+  evidenceBinding?: AcademyPracticeEvidenceBinding;
 };
 
 export type AcademyReflectionEvaluation = {

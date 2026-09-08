@@ -53,6 +53,7 @@ type PlanEntry = {
   id: string;
   prompt: string;
   plan: AiPractitionerPlan;
+  labInstanceId?: string;
   execution?: AiPractitionerExecution;
   analysis?: AiPractitionerAnalysis;
 };
@@ -127,6 +128,7 @@ export default function AiPractitionerDock() {
   const [prompt, setPrompt] = React.useState('');
   const [instance, setInstance] = React.useState<LabInstance | null>(null);
   const [loadingLab, setLoadingLab] = React.useState(true);
+  const [historyLoading, setHistoryLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [entries, setEntries] = React.useState<PlanEntry[]>([]);
   const [history, setHistory] = React.useState<ChatLine[]>([]);
@@ -160,6 +162,27 @@ export default function AiPractitionerDock() {
     const timer = window.setInterval(() => void loadLab(), 7000);
     return () => window.clearInterval(timer);
   }, [loadLab]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch('/api/ai/practitioner', { cache: 'no-store' });
+        if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner history could not be loaded'));
+        const body = await response.json() as { entries?: PlanEntry[]; history?: ChatLine[] };
+        if (cancelled) return;
+        setEntries(Array.isArray(body.entries) ? body.entries : []);
+        setHistory(Array.isArray(body.history) ? body.history : []);
+      } catch (error) {
+        console.warn('[oxsig] AI Practitioner durable history restore failed:', error);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     const onTerminalState = (event: Event) => {
@@ -204,7 +227,7 @@ export default function AiPractitionerDock() {
 
   async function ask(value = prompt) {
     const question = value.trim();
-    if (!question) return;
+    if (!question || historyLoading) return;
     if (question.length > MAX_PROMPT_LENGTH) {
       toast.error(`Keep the request under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`);
       return;
@@ -232,8 +255,13 @@ export default function AiPractitionerDock() {
         }),
       });
       if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner could not answer'));
-      const body = await response.json() as { plan: AiPractitionerPlan };
-      setEntries((current) => [...current, { id, prompt: question, plan: body.plan }]);
+      const body = await response.json() as { plan: AiPractitionerPlan; lab?: { id?: string } | null };
+      setEntries((current) => [...current, {
+        id,
+        prompt: question,
+        plan: body.plan,
+        ...(body.lab?.id ? { labInstanceId: body.lab.id } : {}),
+      }]);
       setHistory((current) => [...current, { id: uid(), role: 'assistant', content: body.plan.explanation }]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI Practitioner failed');
@@ -283,7 +311,9 @@ export default function AiPractitionerDock() {
         terminalSessionId: terminalResult.terminalSessionId,
         surface: 'ai-practitioner',
       };
-      setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, execution } : item));
+      setEntries((current) => current.map((item) => item.id === entry.id
+        ? { ...item, labInstanceId: instance.id, execution }
+        : item));
 
       const analysisToken = await getCsrfToken();
       const analysisResponse = await fetch('/api/ai/practitioner', {
@@ -302,7 +332,9 @@ export default function AiPractitionerDock() {
       });
       if (!analysisResponse.ok) throw new Error(await apiError(analysisResponse, 'The command ran, but AI could not explain the result'));
       const analysisBody = await analysisResponse.json() as { analysis: AiPractitionerAnalysis };
-      setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, execution, analysis: analysisBody.analysis } : item));
+      setEntries((current) => current.map((item) => item.id === entry.id
+        ? { ...item, labInstanceId: instance.id, execution, analysis: analysisBody.analysis }
+        : item));
       setHistory((current) => [...current, { id: uid(), role: 'assistant', content: analysisBody.analysis.summary }]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI Practitioner execution failed');
@@ -312,7 +344,13 @@ export default function AiPractitionerDock() {
   }
 
   async function saveToVault(entry: PlanEntry) {
-    if (!instance || !entry.execution || !entry.analysis) return;
+    if (!entry.execution || !entry.analysis) return;
+    const sourceLabId = entry.labInstanceId || instance?.id;
+    if (!sourceLabId) {
+      toast.error('The original lab binding for this evidence is unavailable.');
+      return;
+    }
+    const sameActiveLab = instance?.id === sourceLabId;
     setBusy(`save:${entry.id}`);
     try {
       const token = await getCsrfToken();
@@ -333,9 +371,11 @@ export default function AiPractitionerDock() {
           summary: entry.analysis.summary.slice(0, 500),
           body,
           language: null,
-          tags: ['ai-practitioner', 'cyber-lab', instance.slug].slice(0, 12),
+          tags: (sameActiveLab && instance
+            ? ['ai-practitioner', 'cyber-lab', instance.slug]
+            : ['ai-practitioner', 'cyber-lab']).slice(0, 12),
           sourceType: 'lab',
-          sourceId: instance.id,
+          sourceId: sourceLabId,
           metadata: {
             aiPractitioner: true,
             exitCode: entry.execution.exitCode,
@@ -402,13 +442,15 @@ export default function AiPractitionerDock() {
                     <Badge variant="secondary" className="text-[10px]">Ask → Approve → Run → Explain</Badge>
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {loadingLab
-                      ? 'Checking Cyber Lab…'
-                      : running && instance
-                        ? terminalConnected
-                          ? `Chat ready · ${instance.name} terminal connected`
-                          : `Chat ready · ${instance.name} running · open terminal for execution`
-                        : 'Chat ready · start a lab only when you want execution'}
+                    {historyLoading
+                      ? 'Restoring your practitioner history…'
+                      : loadingLab
+                        ? 'Checking Cyber Lab…'
+                        : running && instance
+                          ? terminalConnected
+                            ? `Chat ready · ${instance.name} terminal connected`
+                            : `Chat ready · ${instance.name} running · open terminal for execution`
+                          : 'Chat ready · start a lab only when you want execution'}
                   </p>
                 </div>
               </div>
@@ -419,7 +461,13 @@ export default function AiPractitionerDock() {
           </div>
 
           <div ref={scrollRef} className="oxsig-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-            {history.length === 0 && entries.length === 0 && (
+            {historyLoading && (
+              <div className="flex items-center gap-2 rounded-xl border p-3 text-xs text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Restoring your persisted AI Practitioner history…
+              </div>
+            )}
+
+            {!historyLoading && history.length === 0 && entries.length === 0 && (
               <div className="space-y-4">
                 <div className="rounded-xl border bg-muted/25 p-4 text-sm leading-6">
                   <p className="font-medium">Ask first. Use the lab when you need evidence.</p>
@@ -440,7 +488,7 @@ export default function AiPractitionerDock() {
                       key={suggestion}
                       type="button"
                       className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm transition hover:bg-muted/40 disabled:opacity-50"
-                      disabled={!!busy || voiceInputBusy}
+                      disabled={!!busy || voiceInputBusy || historyLoading}
                       onClick={() => void ask(suggestion)}
                     >
                       <span>{suggestion}</span><ChevronRight className="h-4 w-4 shrink-0" />
@@ -555,20 +603,20 @@ export default function AiPractitionerDock() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
-                    if (!busy && !voiceInputBusy) void ask();
+                    if (!busy && !voiceInputBusy && !historyLoading) void ask();
                   }
                 }}
                 maxLength={MAX_PROMPT_LENGTH}
-                placeholder={voiceInput.recording ? 'Listening… press stop when you are finished.' : voiceInput.processing ? 'Transcribing your question…' : 'Ask a question, or ask me to run something in your lab…'}
+                placeholder={historyLoading ? 'Restoring your history…' : voiceInput.recording ? 'Listening… press stop when you are finished.' : voiceInput.processing ? 'Transcribing your question…' : 'Ask a question, or ask me to run something in your lab…'}
                 className="min-h-[64px] resize-none"
-                disabled={!!busy || voiceInputBusy}
+                disabled={historyLoading || !!busy || voiceInputBusy}
               />
               <Button
                 type="button"
                 size="icon"
                 variant={voiceInput.recording ? 'destructive' : 'outline'}
                 className="h-10 w-10 shrink-0"
-                disabled={!!busy || voiceInput.processing || voiceInput.state === 'requesting-permission' || !voiceInput.supported}
+                disabled={historyLoading || !!busy || voiceInput.processing || voiceInput.state === 'requesting-permission' || !voiceInput.supported}
                 onClick={toggleVoiceInput}
                 title={voiceInput.recording ? 'Stop recording' : 'Speak your question'}
                 aria-label={voiceInput.recording ? 'Stop recording' : 'Speak your question'}
@@ -579,8 +627,8 @@ export default function AiPractitionerDock() {
                     ? <Square className="h-4 w-4" />
                     : <Mic className="h-4 w-4" />}
               </Button>
-              <Button size="icon" className="h-10 w-10 shrink-0" disabled={!!busy || voiceInputBusy || !prompt.trim()} onClick={() => void ask()} aria-label="Ask AI Practitioner">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              <Button size="icon" className="h-10 w-10 shrink-0" disabled={historyLoading || !!busy || voiceInputBusy || !prompt.trim()} onClick={() => void ask()} aria-label="Ask AI Practitioner">
+                {busy || historyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               </Button>
             </div>
             <p className="mt-2 text-[10px] text-muted-foreground">
@@ -588,7 +636,9 @@ export default function AiPractitionerDock() {
                 ? 'Microphone active. Recording stops when you press stop or after 60 seconds.'
                 : voiceInput.processing
                   ? 'ElevenLabs is transcribing. Review the text before you send it.'
-                  : 'Voice input is user-initiated and review-first. AI can make mistakes; lab execution still requires explicit approval.'}
+                  : historyLoading
+                    ? 'Loading your recent owner-scoped practitioner history from PostgreSQL.'
+                    : 'Voice input is user-initiated and review-first. AI can make mistakes; lab execution still requires explicit approval.'}
             </p>
           </div>
         </aside>

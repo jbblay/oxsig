@@ -27,6 +27,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AcademyPracticeWorkspace from '@/components/academy/AcademyPracticeWorkspace';
+import {
+  useAcademyDurableState,
+  type AcademyDurableState,
+} from '@/components/academy/AcademyDurableStateProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,13 +47,9 @@ import {
   type AiTerminalState,
 } from '@/lib/labs/ai-terminal-events';
 import { getLabsSnapshot } from '@/lib/labs/client';
-import { notifyLocalStorageChange } from '@/lib/persistence/storage-change-observer';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import { useOxsigVoiceInput } from '@/lib/voice/use-voice-input';
 import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
-
-const COURSE_KEY = 'oxsig:academy-course:v1';
-const PROGRESS_KEY = 'oxsig:academy-progress:v1';
 
 type LessonQa = { question: string; answer: AcademyQuestionAnswer };
 type LabInstance = { id: string; slug: string; name: string; status: string };
@@ -58,12 +58,12 @@ type AcademyExecution = {
   stdout: string;
   stderr: string;
   exitCode: number;
-  risk: 'read-only' | 'changes-system';
-  executionId: string;
-  evidenceId: string;
-  provenance: 'browser-observed' | 'server-executed' | 'provider-attested' | 'learner-provided';
-  executionReceiptId: string;
-  terminalSessionId: string;
+  risk?: 'read-only' | 'changes-system';
+  executionId?: string;
+  evidenceId?: string;
+  provenance?: 'browser-observed' | 'server-executed' | 'provider-attested' | 'learner-provided';
+  executionReceiptId?: string;
+  terminalSessionId?: string;
   surface: 'academy';
 };
 type PracticeResult = {
@@ -106,6 +106,13 @@ function reviewPercent(course: AcademyCourse, reviewed: Set<string>) {
 }
 
 export default function AcademyPage() {
+  const {
+    state: durableState,
+    ready: hydrated,
+    migrationError,
+    persistProgress,
+    refresh,
+  } = useAcademyDurableState();
   const [course, setCourse] = React.useState<AcademyCourse | null>(null);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [reviewed, setReviewed] = React.useState<Set<string>>(() => new Set());
@@ -124,38 +131,64 @@ export default function AcademyPage() {
   });
   const narrating = speakingKey === 'academy-lesson';
   const voiceInputBusy = voiceInput.recording || voiceInput.processing || voiceInput.state === 'requesting-permission';
-  const [hydrated, setHydrated] = React.useState(false);
   const [instructorCollapsed, setInstructorCollapsed] = React.useState(false);
   const [runningLab, setRunningLab] = React.useState<LabInstance | null>(null);
   const [loadingLab, setLoadingLab] = React.useState(true);
   const [terminalConnected, setTerminalConnected] = React.useState(false);
   const [practiceResults, setPracticeResults] = React.useState<Record<string, PracticeResult>>({});
+  const hydratedCourseRef = React.useRef<string | null | undefined>(undefined);
 
-  React.useEffect(() => {
-    try {
-      const savedCourse = window.localStorage.getItem(COURSE_KEY);
-      const savedProgress = window.localStorage.getItem(PROGRESS_KEY);
-      if (savedCourse) setCourse(JSON.parse(savedCourse) as AcademyCourse);
-      if (savedProgress) {
-        const value = JSON.parse(savedProgress) as { activeIndex?: number; completed?: string[] };
-        setActiveIndex(Math.max(0, value.activeIndex || 0));
-        setReviewed(new Set(value.completed || []));
-      }
-    } catch {
-      window.localStorage.removeItem(COURSE_KEY);
-      window.localStorage.removeItem(PROGRESS_KEY);
-    } finally {
-      setHydrated(true);
-    }
+  const applyDurableState = React.useCallback((state: AcademyDurableState) => {
+    setCourse(state?.course || null);
+    setActiveIndex(Math.max(0, state?.progress.activeIndex || 0));
+    setReviewed(new Set(state?.progress.completed || []));
+    setQa(Object.fromEntries(
+      Object.entries(state?.qa || {}).map(([lessonId, entries]) => [
+        lessonId,
+        entries.map(({ question: savedQuestion, answer }) => ({ question: savedQuestion, answer })),
+      ])
+    ));
+    setPracticeResults(Object.fromEntries(
+      Object.entries(state?.practiceResults || {}).map(([lessonId, result]) => [
+        lessonId,
+        {
+          execution: {
+            ...result.execution,
+            surface: 'academy' as const,
+          },
+          evaluation: result.evaluation,
+        },
+      ])
+    ));
   }, []);
 
   React.useEffect(() => {
     if (!hydrated) return;
-    if (course) window.localStorage.setItem(COURSE_KEY, JSON.stringify(course));
-    else window.localStorage.removeItem(COURSE_KEY);
-    window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({ activeIndex, completed: Array.from(reviewed) }));
-    notifyLocalStorageChange(COURSE_KEY);
-  }, [activeIndex, reviewed, course, hydrated]);
+    const courseId = durableState?.courseId || null;
+    if (hydratedCourseRef.current === courseId) return;
+    hydratedCourseRef.current = courseId;
+    applyDurableState(durableState);
+  }, [applyDurableState, durableState, hydrated]);
+
+  React.useEffect(() => {
+    if (!hydrated || !migrationError) return;
+    toast.error('Your old browser-only Academy state could not be migrated yet. It was preserved locally and will be retried on the next Academy load.');
+  }, [hydrated, migrationError]);
+
+  const persistProgressState = React.useCallback(async (nextIndex: number, nextReviewed: Set<string>) => {
+    try {
+      await persistProgress(nextIndex, Array.from(nextReviewed));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Academy progress could not be saved');
+      try {
+        const restored = await refresh();
+        hydratedCourseRef.current = restored?.courseId || null;
+        applyDurableState(restored);
+      } catch {
+        // Keep the current optimistic view; the next page load remains server-authoritative.
+      }
+    }
+  }, [applyDurableState, persistProgress, refresh]);
 
   const loadLab = React.useCallback(async () => {
     try {
@@ -249,20 +282,24 @@ export default function AcademyPage() {
   }
 
   function selectLesson(index: number) {
+    if (!course) return;
     voiceInput.cancel();
     stopVoice();
-    setActiveIndex(index);
+    const nextIndex = Math.min(Math.max(0, index), Math.max(0, course.lessons.length - 1));
+    setActiveIndex(nextIndex);
     setQuestion('');
+    void persistProgressState(nextIndex, reviewed);
   }
 
   function markLessonReviewed() {
     if (!course || !activeLesson) return;
-    setReviewed((current) => {
-      const next = new Set(current);
-      next.add(activeLesson.id);
-      return next;
-    });
-    if (activeIndex < course.lessons.length - 1) selectLesson(activeIndex + 1);
+    const nextReviewed = new Set(reviewed);
+    nextReviewed.add(activeLesson.id);
+    const nextIndex = activeIndex < course.lessons.length - 1 ? activeIndex + 1 : activeIndex;
+    setReviewed(nextReviewed);
+    setActiveIndex(nextIndex);
+    setQuestion('');
+    void persistProgressState(nextIndex, nextReviewed);
   }
 
   if (!hydrated) {
@@ -277,7 +314,9 @@ export default function AcademyPage() {
             <Badge variant="secondary" className="mb-2 w-fit gap-1.5"><Compass className="h-3.5 w-3.5" /> Academy navigation</Badge>
             <CardTitle>No lesson material is active.</CardTitle>
             <CardDescription>
-              Return to your curated capability journey, or use Explore for a temporary side topic. Academy no longer creates a new durable course from this fallback screen.
+              {migrationError
+                ? 'Your previous browser-only Academy course is still safe on this device, but it could not be migrated to your account yet. Reload when the server connection is healthy to retry.'
+                : 'Return to your curated capability journey, or use Explore for a temporary side topic. Academy no longer creates a new durable course from this fallback screen.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -438,7 +477,11 @@ export default function AcademyPage() {
                       </div>
                       <p className="mt-3 text-sm font-medium">{currentPracticeResult.evaluation.summary}</p>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">{currentPracticeResult.evaluation.feedback}</p>
-                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">Verified practice evidence · receipt {currentPracticeResult.execution.evidenceId.slice(0, 8)}…</p>
+                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                        {currentPracticeResult.execution.evidenceId
+                          ? `Verified practice evidence · receipt ${currentPracticeResult.execution.evidenceId.slice(0, 8)}…`
+                          : 'Persisted practice evaluation restored from your Academy record'}
+                      </p>
                       {currentPracticeResult.evaluation.nextStep && <p className="mt-3 border-t pt-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">Next step:</span> {currentPracticeResult.evaluation.nextStep}</p>}
                     </div>
                   )}

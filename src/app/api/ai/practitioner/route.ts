@@ -23,6 +23,133 @@ export const runtime = 'nodejs';
 
 const evidenceIdSchema = z.string().uuid();
 
+type TimelineEntry = {
+  id: string;
+  prompt: string;
+  plan: Record<string, unknown>;
+  labInstanceId?: string;
+  execution?: Record<string, unknown>;
+  analysis?: Record<string, unknown>;
+};
+
+type TimelineLine = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+function metadata(row: Record<string, any>) {
+  return row.metadata && typeof row.metadata === 'object'
+    ? row.metadata as Record<string, unknown>
+    : {};
+}
+
+function latestMatchingEntry(entries: TimelineEntry[], row: Record<string, any>, requireExecution: boolean) {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (requireExecution && !entry.execution) continue;
+    if (!requireExecution && entry.execution) continue;
+    if (row.prompt && entry.prompt !== String(row.prompt)) continue;
+    const planCommand = typeof entry.plan.command === 'string' ? entry.plan.command : null;
+    if (row.command && planCommand && planCommand !== String(row.command)) continue;
+    if (row.lab_instance_id && entry.labInstanceId && entry.labInstanceId !== String(row.lab_instance_id)) continue;
+    return entry;
+  }
+  return null;
+}
+
+function isRestorableEntry(entry: TimelineEntry) {
+  const command = typeof entry.plan.command === 'string' ? entry.plan.command.trim() : '';
+  // A persisted non-command answer is safe to restore as ordinary chat. A command
+  // plan is executable context and may have been generated for a lab that no longer
+  // exists or is no longer active; restore it only after real execution evidence
+  // binds it to the original lab. Unfinished commands must be regenerated in the
+  // current lab context rather than becoming clickable after a later refresh.
+  return !command || Boolean(entry.execution);
+}
+
+export async function GET(request: NextRequest) {
+  return requireAuth(request, async (req, user) => {
+    const rateLimit = await checkRateLimit(req, { maxRequests: 60, windowMs: 60_000 }, user.id);
+    if (rateLimit) return rateLimit;
+
+    const result = await getPool().query(
+      `WITH recent AS (
+         SELECT id, lab_instance_id, event_type, prompt, command, stdout, stderr,
+                exit_code, metadata, created_at
+           FROM ai_practitioner_events
+          WHERE owner_id = $1
+          ORDER BY created_at DESC
+          LIMIT 100
+       )
+       SELECT * FROM recent ORDER BY created_at ASC`,
+      [user.id]
+    );
+
+    const entries: TimelineEntry[] = [];
+    const history: TimelineLine[] = [];
+
+    for (const row of result.rows) {
+      const eventMetadata = metadata(row);
+      if (row.event_type === 'plan') {
+        const plan = eventMetadata.plan;
+        if (!plan || typeof plan !== 'object' || !row.prompt) continue;
+        const entry: TimelineEntry = {
+          id: String(row.id),
+          prompt: String(row.prompt),
+          plan: plan as Record<string, unknown>,
+          ...(row.lab_instance_id ? { labInstanceId: String(row.lab_instance_id) } : {}),
+        };
+        entries.push(entry);
+        history.push({ id: `${row.id}:user`, role: 'user', content: String(row.prompt) });
+        const explanation = (plan as Record<string, unknown>).explanation;
+        if (typeof explanation === 'string' && explanation.trim()) {
+          history.push({ id: `${row.id}:plan`, role: 'assistant', content: explanation });
+        }
+        continue;
+      }
+
+      if (row.event_type === 'execution') {
+        const entry = latestMatchingEntry(entries, row, false);
+        if (!entry) continue;
+        if (row.lab_instance_id) entry.labInstanceId = String(row.lab_instance_id);
+        entry.execution = {
+          command: String(row.command || ''),
+          stdout: String(row.stdout || ''),
+          stderr: String(row.stderr || ''),
+          exitCode: Number(row.exit_code ?? -1),
+          risk: eventMetadata.risk,
+          executionId: eventMetadata.executionId,
+          evidenceId: eventMetadata.evidenceId,
+          provenance: eventMetadata.provenance,
+          executionReceiptId: eventMetadata.executionReceiptId,
+          terminalSessionId: eventMetadata.terminalSessionId,
+          surface: 'ai-practitioner',
+        };
+        continue;
+      }
+
+      if (row.event_type === 'analysis') {
+        const analysis = eventMetadata.analysis;
+        if (!analysis || typeof analysis !== 'object') continue;
+        const entry = latestMatchingEntry(entries, row, true);
+        if (!entry) continue;
+        if (row.lab_instance_id) entry.labInstanceId = String(row.lab_instance_id);
+        entry.analysis = analysis as Record<string, unknown>;
+        const summary = (analysis as Record<string, unknown>).summary;
+        if (typeof summary === 'string' && summary.trim()) {
+          history.push({ id: `${row.id}:analysis`, role: 'assistant', content: summary });
+        }
+      }
+    }
+
+    return NextResponse.json(
+      { entries: entries.filter(isRestorableEntry), history },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
+  });
+}
+
 async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
   const result = await getPool().query(
     `SELECT instance.id,

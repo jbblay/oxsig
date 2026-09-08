@@ -15,6 +15,7 @@ import {
   recordAcademyPractice,
   recordAcademyQuestion,
 } from '@/lib/academy/persistence';
+import type { AcademyPracticeEvaluation } from '@/lib/academy/types';
 import {
   ExecutionEvidenceConflictError,
   getTerminalEvidenceForAnalysis,
@@ -137,16 +138,42 @@ export async function POST(request: NextRequest) {
         analysis: evaluation as unknown as Record<string, unknown>,
         model,
       });
+      const evidencePayload = analyzedEvidence.payload || {};
+      const risk = evidencePayload.risk === 'changes-system'
+        ? 'changes-system' as const
+        : evidencePayload.risk === 'read-only'
+          ? 'read-only' as const
+          : undefined;
+      const executionReceiptId = typeof evidencePayload.executionReceiptId === 'string'
+        ? evidencePayload.executionReceiptId
+        : undefined;
+      const terminalSessionId = typeof evidencePayload.terminalSessionId === 'string'
+        ? evidencePayload.terminalSessionId
+        : undefined;
+      const persistedEvaluation: AcademyPracticeEvaluation = {
+        ...evaluation,
+        evidenceBinding: {
+          evidenceId: analyzedEvidence.id,
+          executionId: analyzedEvidence.executionId,
+          labInstanceId: exactLabInstanceId!,
+          provenance: analyzedEvidence.provenance,
+          ...(executionReceiptId ? { executionReceiptId } : {}),
+          ...(terminalSessionId ? { terminalSessionId } : {}),
+          ...(risk ? { risk } : {}),
+          surface: 'academy',
+        },
+      };
 
       await recordAcademyPractice({
         ownerId: user.id,
         courseTitle: parsed.data.courseTitle,
         lessonTitle: parsed.data.lessonTitle,
+        labInstanceId: exactLabInstanceId,
         command,
         stdout: evidence.stdout,
         stderr: evidence.stderr,
         exitCode,
-        evaluation,
+        evaluation: persistedEvaluation,
       });
       await captureProductEvent({
         distinctId: user.clerkUserId || user.id,

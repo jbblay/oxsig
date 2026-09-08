@@ -50,6 +50,8 @@ const user = { id: 'user-1', clerkUserId: 'clerk-1', role: 'user' as const };
 const evidenceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const executionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const labId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const executionReceiptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const terminalSessionId = 'session-academy-1';
 
 function request(body: unknown) {
   return new NextRequest('http://localhost/api/academy', {
@@ -73,7 +75,11 @@ function evidence(overrides: Record<string, unknown> = {}) {
     stdout: 'ledger-container-output',
     stderr: 'ledger-warning',
     exitCode: 4,
-    payload: {},
+    payload: {
+      risk: 'read-only',
+      executionReceiptId,
+      terminalSessionId,
+    },
     createdAt: '2026-09-06T01:00:00.000Z',
     updatedAt: '2026-09-06T01:00:00.000Z',
     ...overrides,
@@ -161,7 +167,7 @@ describe('Academy request evidence and adaptive instruction', () => {
     expect(mocks.getTerminalEvidenceForAnalysis).not.toHaveBeenCalled();
   });
 
-  it('ignores resubmitted browser output and evaluates the exact Academy evidence record', async () => {
+  it('ignores resubmitted browser output and persists the exact Academy evidence binding', async () => {
     const response = await POST(request(evaluationRequest()));
     const body = await response.json();
 
@@ -183,9 +189,23 @@ describe('Academy request evidence and adaptive instruction', () => {
       stdout: 'forged-client-success',
     }));
     expect(mocks.recordAcademyPractice).toHaveBeenCalledWith(expect.objectContaining({
+      labInstanceId: labId,
       stdout: 'ledger-container-output',
       stderr: 'ledger-warning',
       exitCode: 4,
+      evaluation: {
+        ...evaluation,
+        evidenceBinding: {
+          evidenceId,
+          executionId,
+          labInstanceId: labId,
+          provenance: 'browser-observed',
+          executionReceiptId,
+          terminalSessionId,
+          risk: 'read-only',
+          surface: 'academy',
+        },
+      },
     }));
     expect(body.evidence).toMatchObject({
       id: evidenceId,
