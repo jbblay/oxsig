@@ -91,7 +91,10 @@ function windowsInstanceType() {
 }
 
 export function operationPublicIpEnabled() {
-  return process.env.LAB_AWS_OPERATION_PUBLIC_IP === 'true';
+  // The current OXSIG VPC uses public subnets plus an internet gateway and has no
+  // NAT gateway/VPC endpoints. Preserve outbound SSM/bootstrap connectivity unless
+  // an operator explicitly opts into private addressing after providing egress.
+  return process.env.LAB_AWS_OPERATION_PUBLIC_IP !== 'false';
 }
 
 async function resolveImage(osFamily: 'ubuntu' | 'windows') {
@@ -160,6 +163,17 @@ export async function assertOperationRuntimeReady() {
       'The dedicated Operation security group must allow all-protocol traffic from itself so AD, DNS, Kerberos and SMB can communicate without exposing ordinary labs.',
       503,
       'OPERATION_INTERNAL_NETWORK_BLOCKED'
+    );
+  }
+
+  const permitsDirectIngress = (securityGroup.IpPermissions || []).some((permission) =>
+    Boolean(permission.IpRanges?.length || permission.Ipv6Ranges?.length || permission.PrefixListIds?.length)
+  );
+  if (permitsDirectIngress) {
+    throw new OperationRuntimeError(
+      'The dedicated Operation security group must not expose CIDR, IPv6, or prefix-list ingress. Use SSM and same-group private traffic only.',
+      503,
+      'OPERATION_EXTERNAL_INGRESS_FORBIDDEN'
     );
   }
 
