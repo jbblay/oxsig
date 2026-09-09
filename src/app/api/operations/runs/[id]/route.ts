@@ -17,13 +17,25 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: 'Could not operate the Operation run' }, { status: 500 });
 }
 
+function publicRun(run: Awaited<ReturnType<typeof getOperationRun>>) {
+  const metadata = run.metadata && typeof run.metadata === 'object'
+    ? { ...run.metadata } as Record<string, unknown>
+    : {};
+  const initialAccess = metadata.initialAccess;
+  if (initialAccess && typeof initialAccess === 'object') {
+    const { password: _password, ...safeInitialAccess } = initialAccess as Record<string, unknown>;
+    metadata.initialAccess = safeInitialAccess;
+  }
+  return { ...run, metadata };
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return requireAuth(request, async (_req, user) => {
     const { id } = await params;
     if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'Invalid Operation run' }, { status: 400 });
     try {
       const run = await getOperationRun({ pool: getPool(), runId: id, ownerId: user.id });
-      return NextResponse.json({ run }, { headers: { 'Cache-Control': 'private, no-store' } });
+      return NextResponse.json({ run: publicRun(run) }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
       return errorResponse(error);
     }
