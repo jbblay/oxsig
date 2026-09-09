@@ -16,30 +16,36 @@ try {
   const result = await reconcileEnvFiles({ write: !checkOnly });
 
   if (checkOnly) {
-    console.log('[oxsig] Environment reconciliation check (no files changed).');
+    console.log('[oxsig] Environment key coverage check (no files changed).');
+    if (productionStrict) {
+      list('Missing from .env.production', result.addedProductionKeys);
+    } else {
+      list('Missing from .env.local', result.addedLocalKeys);
+    }
   } else {
     console.log('[oxsig] Environment files reconciled without overwriting existing values.');
+    list('Added to .env.local', result.addedLocalKeys);
+    list('Added to .env.production', result.addedProductionKeys);
   }
 
-  list('Added to .env.local', result.addedLocalKeys);
-  list('Added to .env.production', result.addedProductionKeys);
-
-  if (result.localOnlyInProduction.length) {
+  if ((!checkOnly || productionStrict) && result.localOnlyInProduction.length) {
     console.warn('[oxsig] Local-only variables found in .env.production; remove them before Vercel import:');
     for (const key of result.localOnlyInProduction) console.warn(`  - ${key}`);
   }
 
   const localValidation = validateEnvironment(result.localValues);
-  if (localValidation.errors.length) {
-    console.error('[oxsig] Local configuration is missing values required before startup/migrations:');
-    for (const key of localValidation.errors) console.error(`  - ${key}`);
-  } else {
-    console.log('[oxsig] Local startup configuration is complete.');
-  }
+  if (!productionStrict) {
+    if (localValidation.errors.length) {
+      console.error('[oxsig] Local configuration is missing values required before startup/migrations:');
+      for (const key of localValidation.errors) console.error(`  - ${key}`);
+    } else {
+      console.log('[oxsig] Local startup configuration is complete.');
+    }
 
-  if (result.missingLocalValues.length) {
-    console.log(`[oxsig] ${result.missingLocalValues.length} optional/unused local contract value(s) are blank. This does not block startup.`);
-    list('Blank local values', result.missingLocalValues.filter((key) => !localValidation.errors.includes(key)));
+    if (result.missingLocalValues.length) {
+      console.log(`[oxsig] ${result.missingLocalValues.length} optional/unused local contract value(s) are blank. This does not block startup.`);
+      list('Blank local values', result.missingLocalValues.filter((key) => !localValidation.errors.includes(key)));
+    }
   }
 
   const productionValidation = validateEnvironment(result.productionValues, { production: true });
@@ -50,18 +56,22 @@ try {
     } else {
       console.log('[oxsig] Required production environment values are present.');
     }
-  } else if (productionValidation.errors.length) {
+
+    if (result.missingProductionValues.length) {
+      console.log(`[oxsig] ${result.missingProductionValues.length} production contract value(s) are currently blank.`);
+    }
+  } else if (!checkOnly && productionValidation.errors.length) {
     console.log('[oxsig] Production is not complete yet. Required values still to supply:');
     for (const key of productionValidation.errors) console.log(`  - ${key}`);
   }
 
-  if (result.missingProductionValues.length) {
-    console.log(`[oxsig] ${result.missingProductionValues.length} production contract value(s) are currently blank.`);
-  }
-
-  const shouldFail =
-    localValidation.errors.length > 0 ||
-    (productionStrict && (productionValidation.errors.length > 0 || result.localOnlyInProduction.length > 0));
+  const shouldFail = checkOnly
+    ? productionStrict
+      ? result.addedProductionKeys.length > 0 ||
+        productionValidation.errors.length > 0 ||
+        result.localOnlyInProduction.length > 0
+      : result.addedLocalKeys.length > 0 || localValidation.errors.length > 0
+    : localValidation.errors.length > 0;
 
   if (shouldFail) process.exit(1);
 } catch (error) {
