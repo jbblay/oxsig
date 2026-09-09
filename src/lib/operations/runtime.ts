@@ -12,6 +12,7 @@ import {
   type _InstanceType,
 } from '@aws-sdk/client-ec2';
 import type { Pool } from 'pg';
+import { awsClientConfig } from '@/lib/aws/client-config';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 
@@ -19,7 +20,7 @@ const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-centr
 const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
 const OPERATION_SECURITY_GROUP_ID = process.env.LAB_AWS_OPERATION_SECURITY_GROUP_ID;
 const INSTANCE_PROFILE = process.env.LAB_AWS_INSTANCE_PROFILE;
-const ec2 = new EC2Client({ region: REGION });
+const ec2 = new EC2Client(awsClientConfig(REGION));
 
 const BLACK_DOMAIN_SLUG = 'black-domain';
 const DOMAIN_NAME = 'blackdomain.local';
