@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import {
   DescribeImagesCommand,
   DescribeInstancesCommand,
@@ -15,6 +15,8 @@ import type { Pool } from 'pg';
 import { awsClientConfig } from '@/lib/aws/client-config';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
+import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
+import { probeOperationNodeReadiness } from '@/lib/operations/readiness';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
@@ -26,6 +28,10 @@ const BLACK_DOMAIN_SLUG = 'black-domain';
 const DOMAIN_NAME = 'blackdomain.local';
 const DOMAIN_NETBIOS = 'BLACKDOMAIN';
 const ONE_LAB_INDEX = 'idx_lab_instances_one_nonterminal_per_owner';
+const READINESS_VERSION = 1;
+const READINESS_RETRY_MS = 30_000;
+
+const WEAK_SERVICE_WORDS = ['Winter', 'Spring', 'Welcome', 'Password'] as const;
 
 type OperationNodeRole = 'operator' | 'target' | 'infrastructure';
 type NodeRecord = {
@@ -44,6 +50,13 @@ type LaunchedNode = {
   instanceType: string;
 };
 
+type OperationNodeMetadata = {
+  bootstrapReadyAt?: string;
+  readinessCheckedAt?: string;
+  readinessReason?: string;
+  [key: string]: unknown;
+};
+
 export class OperationRuntimeError extends Error {
   constructor(message: string, readonly status = 409, readonly code = 'OPERATION_RUNTIME_CONFLICT') {
     super(message);
@@ -53,6 +66,11 @@ export class OperationRuntimeError extends Error {
 
 function generatedPassword() {
   return `${randomBytes(14).toString('hex')}Aa1!`;
+}
+
+function generatedWeakServicePassword() {
+  const word = WEAK_SERVICE_WORDS[randomInt(WEAK_SERVICE_WORDS.length)];
+  return `${word}${randomInt(1000, 10_000)}!`;
 }
 
 function expiryMinutes(estimatedMinutes: number) {
@@ -70,6 +88,13 @@ function windowsInstanceType() {
   return process.env.LAB_AWS_OPERATION_WINDOWS_INSTANCE_TYPE
     || process.env.LAB_AWS_WINDOWS_INSTANCE_TYPE
     || 't3.medium';
+}
+
+export function operationPublicIpEnabled() {
+  // The current OXSIG VPC uses public subnets plus an internet gateway and has no
+  // NAT gateway/VPC endpoints. Preserve outbound SSM/bootstrap connectivity unless
+  // an operator explicitly opts into private addressing after providing egress.
+  return process.env.LAB_AWS_OPERATION_PUBLIC_IP !== 'false';
 }
 
 async function resolveImage(osFamily: 'ubuntu' | 'windows') {
@@ -141,7 +166,22 @@ export async function assertOperationRuntimeReady() {
     );
   }
 
-  return { subnetId: SUBNET_ID, securityGroupId: OPERATION_SECURITY_GROUP_ID };
+  const permitsDirectIngress = (securityGroup.IpPermissions || []).some((permission) =>
+    Boolean(permission.IpRanges?.length || permission.Ipv6Ranges?.length || permission.PrefixListIds?.length)
+  );
+  if (permitsDirectIngress) {
+    throw new OperationRuntimeError(
+      'The dedicated Operation security group must not expose CIDR, IPv6, or prefix-list ingress. Use SSM and same-group private traffic only.',
+      503,
+      'OPERATION_EXTERNAL_INGRESS_FORBIDDEN'
+    );
+  }
+
+  return {
+    subnetId: SUBNET_ID,
+    securityGroupId: OPERATION_SECURITY_GROUP_ID,
+    publicIpEnabled: operationPublicIpEnabled(),
+  };
 }
 
 function linuxUserData(expiresAt: string, extra: string) {
@@ -200,11 +240,17 @@ function domainControllerBootstrap(args: { joinPassword: string; learnerPassword
   return String.raw`
 New-Item -ItemType Directory -Path 'C:\ProgramData\OXSIG' -Force | Out-Null
 $post = @'
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 Import-Module ActiveDirectory
+$domainReady = $false
 for ($i=0; $i -lt 60; $i++) {
-  try { Get-ADDomain -Identity "${DOMAIN_NAME}" -ErrorAction Stop | Out-Null; break } catch { Start-Sleep -Seconds 10 }
+  try {
+    Get-ADDomain -Identity "${DOMAIN_NAME}" -ErrorAction Stop | Out-Null
+    $domainReady = $true
+    break
+  } catch { Start-Sleep -Seconds 10 }
 }
+if (-not $domainReady) { throw "OXSIG domain controller did not become ready before the bootstrap deadline." }
 function Ensure-LabUser($name, $password, $description) {
   if (-not (Get-ADUser -Filter "SamAccountName -eq '$name'" -ErrorAction SilentlyContinue)) {
     $secure = ConvertTo-SecureString $password -AsPlainText -Force
@@ -215,6 +261,8 @@ Ensure-LabUser "joinbot" "${args.joinPassword}" "OXSIG ephemeral domain join acc
 Ensure-LabUser "labuser" "${args.learnerPassword}" "OXSIG low privilege starting identity"
 Ensure-LabUser "svc_web" "${args.servicePassword}" "OXSIG intentionally weak service identity"
 & setspn.exe -S "HTTP/web.${DOMAIN_NAME}" "${DOMAIN_NETBIOS}\svc_web" | Out-Null
+if (-not (Get-ADUser -Identity 'labuser' -ErrorAction SilentlyContinue)) { throw "OXSIG lab user was not created." }
+if (-not (Get-ADUser -Identity 'svc_web' -ErrorAction SilentlyContinue)) { throw "OXSIG service user was not created." }
 "ready" | Set-Content 'C:\ProgramData\OXSIG\domain-ready.txt'
 Unregister-ScheduledTask -TaskName 'OxsigDomainPostConfig' -Confirm:$false -ErrorAction SilentlyContinue
 '@
@@ -232,14 +280,22 @@ function workstationBootstrap(args: { dcIp: string; joinPassword: string }) {
   return String.raw`
 New-Item -ItemType Directory -Path 'C:\ProgramData\OXSIG' -Force | Out-Null
 $postJoin = @'
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
+$domainJoined = $false
 for ($i=0; $i -lt 60; $i++) {
   try {
-    if ((Get-CimInstance Win32_ComputerSystem).Domain -eq "${DOMAIN_NAME}") { break }
+    if ((Get-CimInstance Win32_ComputerSystem).Domain -eq "${DOMAIN_NAME}") {
+      $domainJoined = $true
+      break
+    }
   } catch {}
   Start-Sleep -Seconds 10
 }
-try { Add-LocalGroupMember -Group 'Administrators' -Member '${DOMAIN_NETBIOS}\svc_web' -ErrorAction Stop } catch {}
+if (-not $domainJoined) { throw "OXSIG workstation did not join ${DOMAIN_NAME} before the bootstrap deadline." }
+try { Add-LocalGroupMember -Group 'Administrators' -Member '${DOMAIN_NETBIOS}\svc_web' -ErrorAction Stop } catch {
+  if (-not (Get-LocalGroupMember -Group 'Administrators' -ErrorAction SilentlyContinue | Where-Object Name -eq '${DOMAIN_NETBIOS}\svc_web')) { throw }
+}
+if ((Get-CimInstance Win32_ComputerSystem).Domain -ne "${DOMAIN_NAME}") { throw "OXSIG workstation domain verification failed." }
 "ready" | Set-Content 'C:\ProgramData\OXSIG\workstation-ready.txt'
 Unregister-ScheduledTask -TaskName 'OxsigWorkstationPostJoin' -Confirm:$false -ErrorAction SilentlyContinue
 '@
@@ -336,7 +392,7 @@ async function launchNode(args: {
       DeviceIndex: 0,
       SubnetId: SUBNET_ID,
       Groups: [OPERATION_SECURITY_GROUP_ID],
-      AssociatePublicIpAddress: true,
+      AssociatePublicIpAddress: operationPublicIpEnabled(),
       DeleteOnTermination: true,
     }],
     IamInstanceProfile: INSTANCE_PROFILE ? { Name: INSTANCE_PROFILE } : undefined,
@@ -386,7 +442,10 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
   const expiresAt = new Date(Date.now() + expiryMinutes(operation.estimatedMinutes) * 60_000).toISOString();
   const joinPassword = generatedPassword();
   const learnerPassword = generatedPassword();
-  const servicePassword = `Winter${new Date().getUTCFullYear()}!Lab`;
+  // This account is intentionally crackable inside the disposable scenario, but
+  // its value is randomized per run so the weakness never becomes a shared secret.
+  const servicePassword = generatedWeakServicePassword();
+  const initialUsername = `${DOMAIN_NETBIOS}\\labuser`;
   const client = await args.pool.connect();
 
   let runId = '';
@@ -429,11 +488,18 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
       [args.ownerId, operation.slug, args.mode, expiresAt, stringifyPostgresJson({
         domain: DOMAIN_NAME,
         domainNetbios: DOMAIN_NETBIOS,
-        initialAccess: { username: `${DOMAIN_NETBIOS}\\labuser`, password: learnerPassword },
+        initialAccess: { username: initialUsername },
+        readinessVersion: READINESS_VERSION,
         scenario: 'active-directory',
+        network: { publicIp: operationPublicIpEnabled() },
       })]
     );
     runId = run.rows[0].id;
+    const passwordSecret = sealOperationAccessSecret({ ownerId: args.ownerId, runId, password: learnerPassword });
+    await client.query(
+      `UPDATE operation_runs SET metadata=metadata || $1::jsonb, updated_at=NOW() WHERE id=$2 AND owner_id=$3`,
+      [stringifyPostgresJson({ initialAccess: { username: initialUsername, passwordSecret } }), runId, args.ownerId]
+    );
 
     const operatorLab = await client.query(
       `INSERT INTO lab_instances (definition_id,owner_id,status,runtime_provider,expires_at,metadata)
@@ -558,6 +624,34 @@ function mapEc2State(value?: string) {
   return 'provisioning';
 }
 
+function metadataObject(value: unknown): OperationNodeMetadata {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as OperationNodeMetadata
+    : {};
+}
+
+function readinessCheckDue(metadata: OperationNodeMetadata) {
+  if (!metadata.readinessCheckedAt) return true;
+  const checkedAt = Date.parse(metadata.readinessCheckedAt);
+  return !Number.isFinite(checkedAt) || Date.now() - checkedAt >= READINESS_RETRY_MS;
+}
+
+function publicOperationMetadata(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const metadata = { ...(value as Record<string, unknown>) };
+  const rawAccess = metadata.initialAccess;
+  if (rawAccess && typeof rawAccess === 'object' && !Array.isArray(rawAccess)) {
+    const access = rawAccess as Record<string, unknown>;
+    const username = typeof access.username === 'string' ? access.username : undefined;
+    const available = typeof access.passwordSecret === 'string' || typeof access.password === 'string';
+    metadata.initialAccess = {
+      ...(username ? { username } : {}),
+      available,
+    };
+  }
+  return metadata;
+}
+
 export async function getOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
   const runResult = await args.pool.query(
     `SELECT id,operation_slug,mode,status,operator_lab_instance_id,expires_at,metadata,last_error,created_at,updated_at
@@ -591,17 +685,97 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
       // Preserve stored state if EC2 reconciliation is temporarily unavailable.
     }
   }
-  const nodes = nodeResult.rows.map((node) => ({
-    id: node.id,
-    key: node.node_key,
-    label: node.label,
-    role: node.role,
-    osFamily: node.os_family,
-    status: node.runtime_external_id && states.has(node.runtime_external_id) ? mapEc2State(states.get(node.runtime_external_id)) : node.status,
-    privateIp: node.private_ip || null,
-    labInstanceId: node.lab_instance_id || null,
-    lastError: node.last_error || null,
-  }));
+
+  const runMetadata = metadataObject(run.metadata);
+  const readinessRequired = Number(runMetadata.readinessVersion || 0) >= READINESS_VERSION;
+  const readinessByNode = new Map<string, { ready: boolean; reason: string }>();
+
+  if (readinessRequired && run.status !== 'failed' && run.status !== 'destroying') {
+    const candidates = nodeResult.rows.filter((node) => {
+      if (!node.runtime_external_id || !states.has(node.runtime_external_id)) return false;
+      if (mapEc2State(states.get(node.runtime_external_id)) !== 'running') return false;
+      if (node.status === 'failed' || node.status === 'destroying') return false;
+      const metadata = metadataObject(node.metadata);
+      if (metadata.bootstrapReadyAt) {
+        readinessByNode.set(node.id, { ready: true, reason: 'ready' });
+        return false;
+      }
+      if (!readinessCheckDue(metadata)) {
+        readinessByNode.set(node.id, { ready: false, reason: metadata.readinessReason || 'bootstrapping' });
+        return false;
+      }
+      return true;
+    });
+
+    const checkedAt = new Date().toISOString();
+    const results = await Promise.all(candidates.map(async (node) => {
+      try {
+        const result = await probeOperationNodeReadiness({
+          instanceId: node.runtime_external_id,
+          nodeKey: node.node_key,
+          osFamily: node.os_family,
+        });
+        return { node, result };
+      } catch {
+        return { node, result: { ready: false, reason: 'probe-failed' as const } };
+      }
+    }));
+
+    await Promise.all(results.map(async ({ node, result }) => {
+      const patch = result.ready
+        ? { readinessCheckedAt: checkedAt, readinessReason: result.reason, bootstrapReadyAt: checkedAt }
+        : { readinessCheckedAt: checkedAt, readinessReason: result.reason };
+      await args.pool.query(
+        `UPDATE operation_nodes
+            SET status=CASE WHEN $1::boolean THEN 'running' ELSE status END,
+                metadata=metadata || $2::jsonb,
+                updated_at=NOW()
+          WHERE id=$3 AND run_id=$4`,
+        [result.ready, stringifyPostgresJson(patch), node.id, args.runId]
+      );
+      readinessByNode.set(node.id, { ready: result.ready, reason: result.reason });
+    }));
+  }
+
+  const nodes = nodeResult.rows.map((node) => {
+    const externalId = node.runtime_external_id as string | null;
+    const hasFreshComputeState = Boolean(externalId && states.has(externalId));
+    const computeStatus = hasFreshComputeState ? mapEc2State(states.get(externalId!)) : node.status;
+    const metadata = metadataObject(node.metadata);
+    const knownReady = Boolean(metadata.bootstrapReadyAt) || readinessByNode.get(node.id)?.ready === true;
+
+    let status = node.status as string;
+    if (hasFreshComputeState) {
+      if (computeStatus === 'destroyed') status = 'destroyed';
+      else if (node.status === 'failed') status = 'failed';
+      else if (node.status === 'destroying') status = 'destroying';
+      else if (computeStatus !== 'running') status = 'provisioning';
+      else if (!readinessRequired || knownReady) status = 'running';
+      else status = 'provisioning';
+    }
+
+    const readiness = !readinessRequired
+      ? 'legacy'
+      : status === 'destroyed' || status === 'failed' || status === 'destroying'
+        ? 'unavailable'
+        : knownReady
+          ? 'ready'
+          : readinessByNode.get(node.id)?.reason || metadata.readinessReason || 'bootstrapping';
+
+    return {
+      id: node.id,
+      key: node.node_key,
+      label: node.label,
+      role: node.role,
+      osFamily: node.os_family,
+      status,
+      computeStatus,
+      readiness,
+      privateIp: node.private_ip || null,
+      labInstanceId: node.lab_instance_id || null,
+      lastError: node.last_error || null,
+    };
+  });
   const allRunning = nodes.length > 0 && nodes.every((node) => node.status === 'running');
   const allDestroyed = nodes.length > 0 && nodes.every((node) => node.status === 'destroyed');
   const nextStatus = run.status === 'failed' ? 'failed' : allDestroyed ? 'destroyed' : allRunning ? 'running' : run.status === 'destroying' ? 'destroying' : 'provisioning';
@@ -621,7 +795,7 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
     status: nextStatus,
     operatorLabInstanceId: run.operator_lab_instance_id,
     expiresAt: run.expires_at,
-    metadata: run.metadata || {},
+    metadata: publicOperationMetadata(run.metadata),
     lastError: run.last_error || null,
     nodes,
   };
