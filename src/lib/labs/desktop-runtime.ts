@@ -1,11 +1,12 @@
 import 'server-only';
 
 import { SendCommandCommand, SSMClient, StartSessionCommand } from '@aws-sdk/client-ssm';
+import { awsClientConfig } from '@/lib/aws/client-config';
 import { executeLabCommand } from './aws-runtime';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const INSTANCE_ID = /^i-[0-9a-f]+$/i;
-const ssm = new SSMClient({ region: REGION });
+const ssm = new SSMClient(awsClientConfig(REGION));
 
 export type DesktopPlatform = 'linux' | 'windows';
 
