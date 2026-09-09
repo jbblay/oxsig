@@ -6,11 +6,12 @@ import {
   SendCommandCommand,
   SSMClient,
 } from '@aws-sdk/client-ssm';
+import { awsClientConfig } from '@/lib/aws/client-config';
 import { describeLabVmStates } from './aws-runtime';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const INSTANCE_PROFILE = process.env.LAB_AWS_INSTANCE_PROFILE;
-const ssm = new SSMClient({ region: REGION });
+const ssm = new SSMClient(awsClientConfig(REGION));
 
 const INSTANCE_ID = /^i-[0-9a-f]+$/i;
 
