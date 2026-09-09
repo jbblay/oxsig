@@ -16,6 +16,7 @@
     "readiness": "node scripts/readiness-check.mjs",
     "elevenlabs:voices": "node scripts/elevenlabs-voices.mjs",
     "typecheck": "tsc --noEmit",
+    "audit:reachability": "node scripts/source-reachability-audit.mjs",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
