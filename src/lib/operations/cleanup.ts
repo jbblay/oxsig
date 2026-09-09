@@ -22,31 +22,39 @@ function tagsOf(tags: Array<{ Key?: string; Value?: string }> | undefined) {
 }
 
 export async function listExpiredTaggedOperationNodes(now = new Date()): Promise<ExpiredTaggedOperationNode[]> {
-  const response = await ec2.send(new DescribeInstancesCommand({
-    Filters: [
-      { Name: 'tag:App', Values: ['Oxsig'] },
-      { Name: 'tag:Purpose', Values: ['OperationNode'] },
-      { Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] },
-    ],
-  }));
-
   const expired: ExpiredTaggedOperationNode[] = [];
-  for (const reservation of response.Reservations || []) {
-    for (const instance of reservation.Instances || []) {
-      if (!instance.InstanceId) continue;
-      const tags = tagsOf(instance.Tags);
-      const expiresAt = tags.get('ExpiresAt');
-      if (!expiresAt) continue;
-      const expires = new Date(expiresAt);
-      if (!Number.isFinite(expires.getTime()) || expires.getTime() > now.getTime()) continue;
-      expired.push({
-        externalId: instance.InstanceId,
-        operationRunId: tags.get('OperationRunId'),
-        operationNodeId: tags.get('OperationNodeId'),
-        ownerId: tags.get('OwnerId'),
-        expiresAt,
-      });
+  let nextToken: string | undefined;
+
+  do {
+    const response = await ec2.send(new DescribeInstancesCommand({
+      Filters: [
+        { Name: 'tag:App', Values: ['Oxsig'] },
+        { Name: 'tag:Purpose', Values: ['OperationNode'] },
+        { Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] },
+      ],
+      NextToken: nextToken,
+    }));
+
+    for (const reservation of response.Reservations || []) {
+      for (const instance of reservation.Instances || []) {
+        if (!instance.InstanceId) continue;
+        const tags = tagsOf(instance.Tags);
+        const expiresAt = tags.get('ExpiresAt');
+        if (!expiresAt) continue;
+        const expires = new Date(expiresAt);
+        if (!Number.isFinite(expires.getTime()) || expires.getTime() > now.getTime()) continue;
+        expired.push({
+          externalId: instance.InstanceId,
+          operationRunId: tags.get('OperationRunId'),
+          operationNodeId: tags.get('OperationNodeId'),
+          ownerId: tags.get('OwnerId'),
+          expiresAt,
+        });
+      }
     }
-  }
+
+    nextToken = response.NextToken;
+  } while (nextToken);
+
   return expired;
 }
