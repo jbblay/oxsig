@@ -44,6 +44,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm server:check
+      - run: pnpm env:contract
       - run: node --check scripts/readiness-check.mjs
       - name: Apply database migrations
         run: pnpm db:migrate
