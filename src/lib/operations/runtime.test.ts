@@ -45,7 +45,22 @@ describe('Operation AWS network readiness', () => {
     await expect(assertOperationRuntimeReady()).rejects.toMatchObject({ code: 'OPERATION_INTERNAL_NETWORK_BLOCKED', status: 503 });
   });
 
-  it('accepts a same-VPC security group that permits internal all-protocol traffic', async () => {
+  it('rejects direct CIDR ingress on the dedicated Operation security group', async () => {
+    mocks.send
+      .mockResolvedValueOnce({ Subnets: [{ VpcId: 'vpc-1', CidrBlock: '10.0.1.0/24' }] })
+      .mockResolvedValueOnce({ SecurityGroups: [{
+        GroupId: 'sg-123',
+        VpcId: 'vpc-1',
+        IpPermissions: [
+          { IpProtocol: '-1', UserIdGroupPairs: [{ GroupId: 'sg-123' }] },
+          { IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] },
+        ],
+      }] });
+    const { assertOperationRuntimeReady } = await import('./runtime');
+    await expect(assertOperationRuntimeReady()).rejects.toMatchObject({ code: 'OPERATION_EXTERNAL_INGRESS_FORBIDDEN', status: 503 });
+  });
+
+  it('accepts a same-VPC self-only security group and preserves public egress compatibility by default', async () => {
     mocks.send
       .mockResolvedValueOnce({ Subnets: [{ VpcId: 'vpc-1', CidrBlock: '10.0.1.0/24' }] })
       .mockResolvedValueOnce({ SecurityGroups: [{
@@ -57,15 +72,15 @@ describe('Operation AWS network readiness', () => {
     await expect(assertOperationRuntimeReady()).resolves.toMatchObject({
       subnetId: 'subnet-123',
       securityGroupId: 'sg-123',
-      publicIpEnabled: false,
+      publicIpEnabled: true,
     });
   });
 
-  it('keeps Operation public IPs disabled unless explicitly opted in', async () => {
+  it('allows an explicit private-addressing opt-in once outbound networking exists', async () => {
     const { operationPublicIpEnabled } = await import('./runtime');
-    expect(operationPublicIpEnabled()).toBe(false);
-    vi.stubEnv('LAB_AWS_OPERATION_PUBLIC_IP', 'true');
     expect(operationPublicIpEnabled()).toBe(true);
+    vi.stubEnv('LAB_AWS_OPERATION_PUBLIC_IP', 'false');
+    expect(operationPublicIpEnabled()).toBe(false);
   });
 
   it('returns a clean slot conflict when concurrent allocation hits the one-lab unique index', async () => {
