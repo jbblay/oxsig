@@ -62,7 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       password = access.password;
       try {
         const passwordSecret = sealOperationAccessSecret({ ownerId: user.id, runId: id, password });
-        const migratedAccess = { ...access, passwordSecret };
+        const migratedAccess: Record<string, unknown> = { ...access, passwordSecret };
         delete migratedAccess.password;
         await pool.query(
           `UPDATE operation_runs
