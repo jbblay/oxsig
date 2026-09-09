@@ -21,7 +21,9 @@ export default clerkMiddleware(
 
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // The terminal bridge performs its own same-origin + one-time ticket auth and
+    // must reach Vercel's WebSocket upgrade route without edge middleware handling.
+    '/((?!_next|__oxsig|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
     '/(api|trpc)(.*)',
     '/__clerk/(.*)',
   ],
