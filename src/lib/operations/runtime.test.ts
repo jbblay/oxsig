@@ -15,8 +15,19 @@ describe('Operation AWS network readiness', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('LAB_AWS_ENABLED', 'true');
     vi.stubEnv('LAB_AWS_SUBNET_ID', 'subnet-123');
-    vi.stubEnv('LAB_AWS_SECURITY_GROUP_ID', 'sg-123');
+    vi.stubEnv('LAB_AWS_OPERATION_SECURITY_GROUP_ID', 'sg-123');
     vi.stubEnv('LAB_AWS_INSTANCE_PROFILE', 'oxsig-lab');
+  });
+
+  it('refuses to fall back to the ordinary Cyber Lab security group', async () => {
+    vi.stubEnv('LAB_AWS_OPERATION_SECURITY_GROUP_ID', '');
+    vi.stubEnv('LAB_AWS_SECURITY_GROUP_ID', 'sg-ordinary');
+    const { assertOperationRuntimeReady } = await import('./runtime');
+    await expect(assertOperationRuntimeReady()).rejects.toMatchObject({
+      code: 'OPERATION_AWS_CONFIGURATION_INCOMPLETE',
+      status: 503,
+    });
+    expect(mocks.send).not.toHaveBeenCalled();
   });
 
   it('requires an internally connected security group for multi-node scenarios', async () => {

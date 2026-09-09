@@ -17,8 +17,7 @@ import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
-const DEFAULT_SECURITY_GROUP_ID = process.env.LAB_AWS_SECURITY_GROUP_ID;
-const OPERATION_SECURITY_GROUP_ID = process.env.LAB_AWS_OPERATION_SECURITY_GROUP_ID || DEFAULT_SECURITY_GROUP_ID;
+const OPERATION_SECURITY_GROUP_ID = process.env.LAB_AWS_OPERATION_SECURITY_GROUP_ID;
 const INSTANCE_PROFILE = process.env.LAB_AWS_INSTANCE_PROFILE;
 const ec2 = new EC2Client({ region: REGION });
 
@@ -113,7 +112,7 @@ export async function assertOperationRuntimeReady() {
   }
   if (!SUBNET_ID || !OPERATION_SECURITY_GROUP_ID || !INSTANCE_PROFILE) {
     throw new OperationRuntimeError(
-      'Multi-node Operations require LAB_AWS_SUBNET_ID, LAB_AWS_OPERATION_SECURITY_GROUP_ID (or LAB_AWS_SECURITY_GROUP_ID), and LAB_AWS_INSTANCE_PROFILE.',
+      'Multi-node Operations require LAB_AWS_SUBNET_ID, a dedicated LAB_AWS_OPERATION_SECURITY_GROUP_ID, and LAB_AWS_INSTANCE_PROFILE.',
       503,
       'OPERATION_AWS_CONFIGURATION_INCOMPLETE'
     );
@@ -129,16 +128,13 @@ export async function assertOperationRuntimeReady() {
     throw new OperationRuntimeError('The Operation subnet and security group must belong to the same VPC.', 503, 'OPERATION_NETWORK_MISMATCH');
   }
 
-  const privateCidr = subnet.CidrBlock;
   const permitsInternalTraffic = (securityGroup.IpPermissions || []).some((permission) => {
     if (permission.IpProtocol !== '-1') return false;
-    const selfReferenced = (permission.UserIdGroupPairs || []).some((pair) => pair.GroupId === securityGroup.GroupId);
-    const subnetReferenced = Boolean(privateCidr && (permission.IpRanges || []).some((range) => range.CidrIp === privateCidr));
-    return selfReferenced || subnetReferenced;
+    return (permission.UserIdGroupPairs || []).some((pair) => pair.GroupId === securityGroup.GroupId);
   });
   if (!permitsInternalTraffic) {
     throw new OperationRuntimeError(
-      'The Operation security group must allow internal all-protocol traffic from itself or the configured lab subnet so AD, DNS, Kerberos and SMB can communicate.',
+      'The dedicated Operation security group must allow all-protocol traffic from itself so AD, DNS, Kerberos and SMB can communicate without exposing ordinary labs.',
       503,
       'OPERATION_INTERNAL_NETWORK_BLOCKED'
     );

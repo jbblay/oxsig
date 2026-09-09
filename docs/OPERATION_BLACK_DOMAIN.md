@@ -8,7 +8,7 @@
 - Domain controller: Windows Server 2022, promoted to `blackdomain.local` with DNS.
 - Workstation: Windows Server 2022, configured to use the domain controller for DNS and joined to `blackdomain.local`.
 
-The three EC2 instances share the configured lab subnet and Operation security group. The security group must allow internal all-protocol traffic from itself or the configured subnet so DNS, LDAP, Kerberos, RPC and SMB can function inside the scenario boundary.
+The three EC2 instances share the configured lab subnet and a dedicated Operation security group. That group must allow all-protocol traffic from itself so DNS, LDAP, Kerberos, RPC and SMB work inside the scenario boundary without opening ordinary Cyber Labs to the Operation.
 
 ## Safety and lifecycle
 
@@ -31,7 +31,7 @@ The Operation UI reports EC2 lifecycle separately from guest bootstrap: `running
 - `LAB_AWS_ENABLED=true`
 - `LAB_AWS_SUBNET_ID`
 - `LAB_AWS_INSTANCE_PROFILE`
-- `LAB_AWS_OPERATION_SECURITY_GROUP_ID` or fallback `LAB_AWS_SECURITY_GROUP_ID`
+- `LAB_AWS_OPERATION_SECURITY_GROUP_ID` (dedicated; self-referencing; no fallback to the ordinary lab group)
 - AWS credentials with the same EC2/SSM permissions already required by Cyber Lab
 
 Optional overrides:
