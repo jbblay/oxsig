@@ -1,111 +1,106 @@
-# OXSIG Database State Audit
+# OXSIG Database and Dead-Code Audit
 
 Last audited: 2026-09-09
 
-This audit compares the current `feature/operations-warroom-villain-badges-v1` application contract with the connected Neon database. It separates migration history from actual runtime schema and classifies tables by product ownership.
+This audit compares PR #120 (`feature/operations-warroom-villain-badges-v1`) with the connected Neon production branch and with a clean database built from the complete numbered migration history.
 
-## Immediate findings
+## Current database state
 
-1. The connected Neon database has repository migrations applied through `042_remove_mvp_sample_collaboration.sql` only.
-2. This branch contains `043_operation_runs.sql`; `operation_runs` and `operation_nodes` are therefore absent from the connected database until migration 043 is applied.
-3. The current Clerk user creation path inserts a fresh internal OXSIG user without `password_hash`, while the connected `users.password_hash` column is still `NOT NULL`. Migration 044 relaxes that legacy-only requirement while retaining a constraint that legacy accounts must keep a password hash.
-4. `pnpm db:parity` currently verifies migration-history parity. It does not prove that every historical relation still exists or that no historical table remains unused.
-5. Several historical tables are still present even though current application code does not use them as active product storage: `oauth_accounts`, legacy `sessions`, `documents`, `signatures`, `schema_migrations`, and `oxisg_auth_bootstrap`.
-6. Historical migration 004 created additional collaboration/file tables (`collaboration_documents`, `webrtc_sessions`, `files`, `file_shares`) that are not present in the connected database. Their absence appears to come from historical cleanup/bootstrap work outside the current numbered migration record, so they must not be recreated blindly.
+The connected Neon database is applied through `044_clerk_password_hash_nullable.sql`.
 
-## Active product tables
+Confirmed live state:
 
-These are directly used by current application code or current platform lifecycle logic:
+- `operation_runs` and `operation_nodes` exist.
+- `users.password_hash` is nullable for Clerk-created identities.
+- `oauth_accounts`, `documents`, and `signatures` exist but contain zero rows.
+- legacy `sessions` contains 8 rows and is retained.
+- legacy `schema_migrations` contains 5 rows and is retained.
+- `oxisg_auth_bootstrap` contains 2 rows and is retained.
+- older migration-only recovery, WebAuthn, device-key, document-share, WebRTC, and file-share relations are already absent from connected Neon.
 
-- `users`
-- `academy_courses`
-- `academy_progress`
-- `academy_questions`
-- `academy_practice_attempts`
-- `academy_sessions`
-- `academy_mastery`
-- `academy_learning_reflections`
-- `academy_instructor_interventions`
-- `academy_failure_attempts`
-- `learning_activity_days`
-- `learning_path_enrollments`
-- `learning_capability_evidence`
-- `ai_practitioner_events`
-- `collaborations`
-- `collaboration_members`
-- `collaboration_messages`
-- `collaboration_invitations`
-- `live_workspaces`
-- `live_workspace_participants`
-- `live_workspace_resources`
-- `live_workspace_control_requests`
-- `live_workspace_control_leases`
-- `lab_definitions`
-- `lab_instances`
-- `lab_events`
-- `lab_topologies`
-- `infrastructure_designs`
-- `deployment_authorizations`
-- `execution_evidence`
-- `storyboard_sessions`
-- `storyboard_shares`
-- `vault_items`
-- `terminal_bridge_ticket_uses`
-- `rate_limit_buckets`
-- `audit_logs`
-- `oxisg_schema_migrations`
-- after migration 043: `operation_runs`, `operation_nodes`
+Migration `045_retire_unused_legacy_storage.sql` is therefore pending on production. It has a fail-closed data guard: any targeted legacy relation that still contains rows causes the migration to stop instead of deleting data.
 
-## Intentionally retained Academy storage
+## Runtime schema contract
 
-Academy is no longer a primary visible navigation surface, but its persistence is still part of the current learning engine. Current code reads Academy state for adaptive instruction, progress, reflections, program-process assessment, learning-path state, and Live Workspace attachable resources. These tables are therefore dormant in UI terms, not obsolete database structures.
+`pnpm db:parity` no longer checks migration filenames alone. It now verifies both:
 
-Do not drop Academy tables unless the learning architecture is intentionally redesigned and every dependent API/query is migrated first.
+1. every repository migration is recorded and no unknown migration is recorded;
+2. every required runtime relation exists and every explicitly retired relation is absent.
 
-## Historical / cleanup candidates
+This prevents a database from reporting “in sync” merely because its migration ledger matches while its actual runtime shape is wrong.
 
-These relations need a separate deprecation migration, not ad-hoc deletion:
+## Active runtime relations
 
-### `oauth_accounts`
+The supported runtime contract includes:
 
-No current application code reference was found. Connected database row count is zero.
+- identity and platform: `users`, `audit_logs`, `rate_limit_buckets`, `oxisg_schema_migrations`;
+- Academy/learning: `academy_courses`, `academy_progress`, `academy_questions`, `academy_practice_attempts`, `academy_sessions`, `academy_mastery`, `academy_learning_reflections`, `academy_instructor_interventions`, `academy_failure_attempts`, `learning_activity_days`, `learning_path_enrollments`, `learning_capability_evidence`;
+- AI: `ai_practitioner_events`;
+- collaboration: `collaborations`, `collaboration_members`, `collaboration_messages`, `collaboration_invitations`;
+- Live Workspace: `live_workspaces`, `live_workspace_participants`, `live_workspace_resources`, `live_workspace_control_requests`, `live_workspace_control_leases`;
+- Cyber Lab / Operations: `lab_definitions`, `lab_instances`, `lab_events`, `lab_topologies`, `operation_runs`, `operation_nodes`, `terminal_bridge_ticket_uses`;
+- infrastructure/evidence: `infrastructure_designs`, `deployment_authorizations`, `execution_evidence`;
+- knowledge/storyboards: `vault_items`, `storyboard_sessions`, `storyboard_shares`.
 
-### `sessions`
+Academy persistence remains part of the current learning engine even though Academy is no longer a primary navigation surface. It is not dead schema.
 
-Legacy refresh-token session store. Current browser authentication is Clerk. The connected database still contains legacy rows, so this table should be treated as historical data until a retention/deprecation decision is made.
+## Explicitly retired schema
 
-### `documents` and `signatures`
+Migration 045 retires the following relations after verifying they are empty when present:
 
-Part of the original document-signing schema. Current Vault uses `vault_items`, and current code search does not show active document/signature product paths. Both connected tables are currently empty.
+- original OAuth/document model: `oauth_accounts`, `documents`, `signatures`, `document_shares`;
+- obsolete collaboration/file model: `collaboration_documents`, `collaboration_activity`, `webrtc_sessions`, `files`, `file_shares`;
+- pre-Clerk social recovery: `recovery_packages`, `recovery_sessions`, `recovery_session_shares`;
+- pre-Clerk WebAuthn storage: `webauthn_credentials`, `webauthn_challenges` plus `cleanup_expired_webauthn_challenges()`;
+- obsolete key/device storage: `user_crypto_keys`, `paired_devices`.
 
-### `schema_migrations`
+Historical migration files are intentionally retained. Deleting old numbered migrations would make clean database reconstruction impossible and would corrupt migration provenance.
 
-Old migration ledger. Current migration tooling uses `oxisg_schema_migrations`. Keep until migration history is formally consolidated.
+## Explicitly retained historical schema
 
-### `oxisg_auth_bootstrap`
+These are not considered safe-to-drop in this audit:
 
-Historical authentication bootstrap ledger not referenced by current repository code. Keep until the old auth bootstrap provenance is documented and retired.
+- `sessions` — legacy authentication rows still exist;
+- `schema_migrations` — old migration ledger with retained provenance;
+- `oxisg_auth_bootstrap` — auth-bootstrap provenance rows remain.
 
-## Test-account reset contract
+They can be retired only by a separate retention/provenance decision.
 
-The Account page now has a testing-only reset capability. It must never `DROP` tables or rebuild the schema.
+## Dead production source removed
 
-Reset order:
+The production import graph identified and removed six unreachable source files:
 
-1. terminate active Operation topology nodes;
-2. terminate remaining active user-owned AWS labs;
-3. delete user-owned S3 namespaces, Storyboard audio, Collaboration objects, and referenced legacy storage keys;
-4. neutralize foreign-key blockers owned by other resources;
-5. delete the internal OXSIG `users` row in a transaction, letting reviewed `ON DELETE` relationships clear user-owned relational state;
-6. sign the browser out of Clerk while leaving the external Clerk account intact;
-7. next Clerk sign-in creates a new internal OXSIG UUID and starts with fresh product state.
+- `src/components/academy/AcademyPathGate.tsx`
+- `src/components/app/MobileNav.tsx`
+- `src/components/app/TopNav.tsx`
+- `src/components/learning/ProgramProcessJourney.tsx`
+- `src/components/ui/dropdown-menu.tsx`
+- `src/lib/labs/ssm-websocket-presign.ts`
 
-The reset endpoint is enabled automatically for local development and Vercel Preview deployments. Production requires explicit `OXSIG_TEST_RESET_ENABLED=true`.
+The now-unused direct dependency `@radix-ui/react-dropdown-menu` was also removed. `src/test/setup.ts` was correctly retained as test infrastructure.
 
-## Production actions still requiring explicit approval
+CI now runs `pnpm audit:reachability` so newly orphaned production TS/JS files fail validation instead of accumulating silently.
 
-- apply migration 043 to create Operation runtime tables;
-- apply migration 044 to permit genuinely fresh Clerk users;
-- later, create a dedicated deprecation migration for confirmed historical tables after backup/retention review.
+## Operations security correction
 
-No historical table should be dropped merely because it is empty or currently unused.
+Black Domain no longer falls back to the ordinary Cyber Lab security group. Multi-node Operations require `LAB_AWS_OPERATION_SECURITY_GROUP_ID`, and readiness requires that dedicated group to allow all-protocol traffic from itself. Whole-subnet allowance is no longer accepted as an isolation boundary.
+
+This keeps AD/DNS/Kerberos/SMB traffic inside the Operation group without widening the ordinary lab boundary.
+
+## Deliberately not removed
+
+Low PostgreSQL index scan counts were not treated as proof of dead indexes. The production database is low-volume enough that statistics alone are insufficient evidence for destructive index removal.
+
+Historical numbered migrations are also not dead code: they are required to reconstruct the schema from zero.
+
+## Remaining production validation gates
+
+Before PR #120 can truthfully be called end-to-end production-proven:
+
+1. migration 045 must be explicitly approved and applied to connected Neon, then runtime parity must be rechecked;
+2. a real three-node Black Domain AWS run must verify provisioning, AD DS promotion, DNS, domain join, SSM operator access, expiry/termination, and complete teardown;
+3. the deployed two-user Live Workspace terminal observer/control path still needs a real multi-user acceptance run.
+
+The AWS acceptance run can create billable EC2 resources and must be explicitly authorized before launch.
+
+Shared desktop control and durable WarRoom-to-Live-Workspace Operation/run persistence remain declared product roadmap gaps rather than completed functionality.

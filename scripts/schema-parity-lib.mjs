@@ -46,9 +46,22 @@ export const REQUIRED_RUNTIME_RELATIONS = [
 ];
 
 export const RETIRED_RUNTIME_RELATIONS = [
+  'collaboration_activity',
+  'collaboration_documents',
+  'document_shares',
   'documents',
+  'file_shares',
+  'files',
   'oauth_accounts',
+  'paired_devices',
+  'recovery_packages',
+  'recovery_session_shares',
+  'recovery_sessions',
   'signatures',
+  'user_crypto_keys',
+  'webauthn_challenges',
+  'webauthn_credentials',
+  'webrtc_sessions',
 ];
 
 export async function listRepositoryMigrations(rootDir = process.cwd()) {
