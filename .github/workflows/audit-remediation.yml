@@ -1,0 +1,97 @@
+name: One-shot audit remediation
+
+on:
+  push:
+    branches:
+      - feature/operations-warroom-villain-badges-v1
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Apply audited isolation and dependency cleanup
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected text not found in {path}: {old[:80]!r}')
+              file.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'src/lib/operations/runtime.ts',
+              "const DEFAULT_SECURITY_GROUP_ID = process.env.LAB_AWS_SECURITY_GROUP_ID;\nconst OPERATION_SECURITY_GROUP_ID = process.env.LAB_AWS_OPERATION_SECURITY_GROUP_ID || DEFAULT_SECURITY_GROUP_ID;",
+              "const OPERATION_SECURITY_GROUP_ID = process.env.LAB_AWS_OPERATION_SECURITY_GROUP_ID;"
+          )
+          replace_once(
+              'src/lib/operations/runtime.ts',
+              "'Multi-node Operations require LAB_AWS_SUBNET_ID, LAB_AWS_OPERATION_SECURITY_GROUP_ID (or LAB_AWS_SECURITY_GROUP_ID), and LAB_AWS_INSTANCE_PROFILE.',",
+              "'Multi-node Operations require LAB_AWS_SUBNET_ID, a dedicated LAB_AWS_OPERATION_SECURITY_GROUP_ID, and LAB_AWS_INSTANCE_PROFILE.',"
+          )
+          replace_once(
+              'src/lib/operations/runtime.ts',
+              "  const privateCidr = subnet.CidrBlock;\n  const permitsInternalTraffic = (securityGroup.IpPermissions || []).some((permission) => {\n    if (permission.IpProtocol !== '-1') return false;\n    const selfReferenced = (permission.UserIdGroupPairs || []).some((pair) => pair.GroupId === securityGroup.GroupId);\n    const subnetReferenced = Boolean(privateCidr && (permission.IpRanges || []).some((range) => range.CidrIp === privateCidr));\n    return selfReferenced || subnetReferenced;\n  });",
+              "  const permitsInternalTraffic = (securityGroup.IpPermissions || []).some((permission) => {\n    if (permission.IpProtocol !== '-1') return false;\n    return (permission.UserIdGroupPairs || []).some((pair) => pair.GroupId === securityGroup.GroupId);\n  });"
+          )
+          replace_once(
+              'src/lib/operations/runtime.ts',
+              "'The Operation security group must allow internal all-protocol traffic from itself or the configured lab subnet so AD, DNS, Kerberos and SMB can communicate.',",
+              "'The dedicated Operation security group must allow all-protocol traffic from itself so AD, DNS, Kerberos and SMB can communicate without exposing ordinary labs.',"
+          )
+
+          replace_once(
+              'src/lib/operations/runtime.test.ts',
+              "    vi.stubEnv('LAB_AWS_SECURITY_GROUP_ID', 'sg-123');",
+              "    vi.stubEnv('LAB_AWS_OPERATION_SECURITY_GROUP_ID', 'sg-123');"
+          )
+          marker = "  it('requires an internally connected security group for multi-node scenarios', async () => {"
+          insert = """  it('refuses to fall back to the ordinary Cyber Lab security group', async () => {\n    vi.stubEnv('LAB_AWS_OPERATION_SECURITY_GROUP_ID', '');\n    vi.stubEnv('LAB_AWS_SECURITY_GROUP_ID', 'sg-ordinary');\n    const { assertOperationRuntimeReady } = await import('./runtime');\n    await expect(assertOperationRuntimeReady()).rejects.toMatchObject({\n      code: 'OPERATION_AWS_CONFIGURATION_INCOMPLETE',\n      status: 503,\n    });\n    expect(mocks.send).not.toHaveBeenCalled();\n  });\n\n"""
+          replace_once('src/lib/operations/runtime.test.ts', marker, insert + marker)
+
+          replace_once(
+              '.env.example',
+              "# Optional dedicated self-referencing security group for multi-node Operations.\n# Falls back to LAB_AWS_SECURITY_GROUP_ID when omitted.\nLAB_AWS_OPERATION_SECURITY_GROUP_ID=",
+              "# Required dedicated self-referencing security group for multi-node Operations.\n# Do not reuse the ordinary Cyber Lab security group.\nLAB_AWS_OPERATION_SECURITY_GROUP_ID="
+          )
+          replace_once(
+              'docs/OPERATION_BLACK_DOMAIN.md',
+              'The three EC2 instances share the configured lab subnet and Operation security group. The security group must allow internal all-protocol traffic from itself or the configured subnet so DNS, LDAP, Kerberos, RPC and SMB can function inside the scenario boundary.',
+              'The three EC2 instances share the configured lab subnet and a dedicated Operation security group. That group must allow all-protocol traffic from itself so DNS, LDAP, Kerberos, RPC and SMB work inside the scenario boundary without opening ordinary Cyber Labs to the Operation.'
+          )
+          replace_once(
+              'docs/OPERATION_BLACK_DOMAIN.md',
+              '- `LAB_AWS_OPERATION_SECURITY_GROUP_ID` or fallback `LAB_AWS_SECURITY_GROUP_ID`',
+              '- `LAB_AWS_OPERATION_SECURITY_GROUP_ID` (dedicated; self-referencing; no fallback to the ordinary lab group)'
+          )
+          PY
+          pnpm remove @radix-ui/react-dropdown-menu --lockfile-only
+      - run: pnpm typecheck
+      - run: pnpm audit:reachability
+      - run: pnpm exec vitest run src/lib/operations/runtime.test.ts scripts/schema-parity-lib.test.mjs
+      - name: Commit remediation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/operations/runtime.ts src/lib/operations/runtime.test.ts .env.example docs/OPERATION_BLACK_DOMAIN.md package.json pnpm-lock.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: isolate operations network and remove dead dependency"
+          git push origin HEAD:${GITHUB_REF_NAME}
