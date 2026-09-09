@@ -6,46 +6,56 @@
 -- collaborations/live workspaces, and the current lab/operation model.
 --
 -- Safety contract: never silently destroy retained legacy data. Every relation
--- targeted by this migration must either be absent or empty. If an older
--- environment still contains rows, migration stops and requires an explicit
--- retention/migration decision for that environment.
+-- targeted by this migration must either be absent or empty. Older production
+-- databases may already lack some of these historical relations, while a fresh
+-- replay still creates them in migrations 001-009. CREATE TABLE IF NOT EXISTS
+-- gives absent relations a transaction-local retirement placeholder so one
+-- plain-SQL guard can verify every target without procedural DO blocks. The
+-- migration runner wraps this file in a transaction, so a failed guard rolls
+-- the placeholders back with the rest of the migration.
 
-DO $$
-DECLARE
-  relation_name text;
-  has_rows boolean;
-BEGIN
-  FOREACH relation_name IN ARRAY ARRAY[
-    'document_shares',
-    'signatures',
-    'collaboration_documents',
-    'collaboration_activity',
-    'documents',
-    'webrtc_sessions',
-    'file_shares',
-    'files',
-    'oauth_accounts',
-    'recovery_session_shares',
-    'recovery_sessions',
-    'recovery_packages',
-    'webauthn_challenges',
-    'webauthn_credentials',
-    'user_crypto_keys',
-    'paired_devices'
-  ]
-  LOOP
-    IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
-      EXECUTE format('SELECT EXISTS (SELECT 1 FROM public.%I LIMIT 1)', relation_name)
-        INTO has_rows;
-      IF has_rows THEN
-        RAISE EXCEPTION
-          'Refusing to retire legacy relation % because it still contains data',
-          relation_name;
-      END IF;
-    END IF;
-  END LOOP;
-END
-$$;
+CREATE TABLE IF NOT EXISTS public.document_shares (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.signatures (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.collaboration_documents (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.collaboration_activity (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.documents (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.webrtc_sessions (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.file_shares (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.files (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.oauth_accounts (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.recovery_session_shares (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.recovery_sessions (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.recovery_packages (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.webauthn_challenges (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.webauthn_credentials (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.user_crypto_keys (_migration_045_placeholder boolean);
+CREATE TABLE IF NOT EXISTS public.paired_devices (_migration_045_placeholder boolean);
+
+CREATE TEMP TABLE migration_045_data_guard (
+  is_empty boolean NOT NULL CHECK (is_empty)
+);
+
+INSERT INTO migration_045_data_guard (is_empty)
+SELECT NOT EXISTS (
+  SELECT 1 FROM public.document_shares
+  UNION ALL SELECT 1 FROM public.signatures
+  UNION ALL SELECT 1 FROM public.collaboration_documents
+  UNION ALL SELECT 1 FROM public.collaboration_activity
+  UNION ALL SELECT 1 FROM public.documents
+  UNION ALL SELECT 1 FROM public.webrtc_sessions
+  UNION ALL SELECT 1 FROM public.file_shares
+  UNION ALL SELECT 1 FROM public.files
+  UNION ALL SELECT 1 FROM public.oauth_accounts
+  UNION ALL SELECT 1 FROM public.recovery_session_shares
+  UNION ALL SELECT 1 FROM public.recovery_sessions
+  UNION ALL SELECT 1 FROM public.recovery_packages
+  UNION ALL SELECT 1 FROM public.webauthn_challenges
+  UNION ALL SELECT 1 FROM public.webauthn_credentials
+  UNION ALL SELECT 1 FROM public.user_crypto_keys
+  UNION ALL SELECT 1 FROM public.paired_devices
+);
+
+DROP TABLE migration_045_data_guard;
 
 -- Remove explicit dependents before their parent relations. Do not use CASCADE:
 -- any unexpected dependency should fail loudly and be audited rather than
