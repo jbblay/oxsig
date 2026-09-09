@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  parseEnvExample,
   reconcileContents,
   validateEnvironment,
 } from './env-reconcile-lib.mjs';
@@ -60,6 +61,18 @@ describe('environment reconciliation', () => {
     const result = reconcileContents({ exampleContent: EXAMPLE });
     expect(result.contract.map((entry) => entry.key)).toContain('LAB_AWS_WINDOWS_INSTANCE_TYPE');
     expect(result.nextLocalContent).toContain('LAB_AWS_WINDOWS_INSTANCE_TYPE=t3.small');
+  });
+
+  it('treats reordered and regrouped env files as complete when all contract keys exist', () => {
+    const local = parseEnvExample(EXAMPLE)
+      .map((entry) => `${entry.key}=${entry.defaultValue}`)
+      .reverse()
+      .join('\n');
+
+    const result = reconcileContents({ exampleContent: EXAMPLE, localContent: local });
+
+    expect(result.addedLocalKeys).toEqual([]);
+    expect(result.nextLocalContent).toBe(local);
   });
 
   it('requires the dedicated Operations security group whenever AWS labs are enabled', () => {
