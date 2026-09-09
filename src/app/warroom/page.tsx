@@ -139,7 +139,7 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
                 </div>
               ))}
               <Button asChild size="sm" variant="outline" className="mt-2 w-full">
-                <Link href={`/labs?operation=${selected.slug}&mode=challenge${params.run ? `&operationRun=${params.run}` : ''}`}>Open operation lab <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                <Link href={`/labs?operation=${selected.slug}&mode=challenge${params.run ? `&run=${params.run}` : ''}`}>Open operation lab <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
             </CardContent>
           </Card>
