@@ -3,6 +3,7 @@ import process from 'node:process';
 import { EC2Client, DescribeSecurityGroupsCommand, DescribeSubnetsCommand } from '@aws-sdk/client-ec2';
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import pg from 'pg';
+import { awsClientConfig } from './aws-client-config.mjs';
 import { describeSchemaParity, inspectSchemaParity } from './schema-parity-lib.mjs';
 
 const { Pool } = pg;
@@ -144,7 +145,7 @@ async function checkStorage() {
   }
 
   try {
-    const client = new S3Client({ region });
+    const client = new S3Client(awsClientConfig(region));
     await withTimeout(client.send(new HeadBucketCommand({ Bucket: bucket })), 7000, 'S3 bucket check');
     record('AWS S3 storage', 'READY', `Bucket is reachable in configured region ${region}.`, { critical: true });
   } catch (error) {
@@ -167,7 +168,7 @@ async function checkLabs() {
   }
 
   try {
-    const client = new EC2Client({ region });
+    const client = new EC2Client(awsClientConfig(region));
     await withTimeout(
       Promise.all([
         client.send(new DescribeSubnetsCommand({ SubnetIds: [subnet] })),
