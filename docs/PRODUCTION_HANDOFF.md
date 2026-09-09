@@ -22,7 +22,7 @@ Always read the live `main` ref before treating any SHA in this historical hando
 
 ## Terminal transport state
 
-Production uses a Vercel-native App Router WebSocket endpoint at `src/app/__oxsig/terminal-bridge/route.ts` via `experimental_upgradeWebSocket` from `@vercel/functions`. The existing custom `server.mjs` WebSocket bridge remains for local/custom Node deployments.
+Production uses a Vercel-native App Router WebSocket endpoint at `src/app/%5F_oxsig/terminal-bridge/route.ts` via `experimental_upgradeWebSocket` from `@vercel/functions`. The existing custom `server.mjs` WebSocket bridge remains for local/custom Node deployments.
 
 The Vercel route performs encrypted terminal-ticket verification, PostgreSQL one-time ticket consumption, same-origin checks, AWS SSM stream URL validation, SigV4 upstream authentication, buffering limits, handshake timeout, keepalive, and Sentry error capture. AWS credentials and the SSM StreamUrl remain server-side.
 
@@ -195,3 +195,4 @@ These are environment/operator/live-validation tasks rather than unfinished feat
 Separate code verification from live configuration verification. A committed integration is not proof that an external provider is configured, a database migration is applied, a cloud permission is correct, or a production E2E path works.
 
 Target final audit flow: canonical main and CI; auth/security boundaries; database/migrations and schema parity; Clerk; Academy/AI Practitioner; AWS labs and SSM terminal/desktop; Infrastructure Designer controlled execution; S3/Storyboard/Vault/collaboration media; Resend/Ably/Sentry/PostHog/OpenAI; scheduler/cleanup; dependency reproducibility; production health/readiness; live E2E; documentation; final release score out of 100.
+
