@@ -19,7 +19,7 @@ function isIgnored(file) {
   const rel = path.relative(root, file).split(path.sep).join('/');
   return rel.includes('/node_modules/') || rel.startsWith('node_modules/') ||
     rel.includes('/.next/') || rel.startsWith('.next/') ||
-    rel.includes('/__tests__/') || rel.includes('/src/test/') || rel.includes('/src/tests/') ||
+    rel.includes('/__tests__/') || rel.startsWith('src/test/') || rel.startsWith('src/tests/') ||
     /\.(test|spec)\.[cm]?[jt]sx?$/.test(rel) || rel.endsWith('.d.ts');
 }
 
