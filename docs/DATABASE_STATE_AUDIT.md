@@ -6,19 +6,19 @@ This audit compares PR #120 (`feature/operations-warroom-villain-badges-v1`) wit
 
 ## Current database state
 
-The connected Neon database is applied through `044_clerk_password_hash_nullable.sql`.
+The connected Neon database is applied through `045_retire_unused_legacy_storage.sql`.
 
 Confirmed live state:
 
 - `operation_runs` and `operation_nodes` exist.
 - `users.password_hash` is nullable for Clerk-created identities.
-- `oauth_accounts`, `documents`, and `signatures` exist but contain zero rows.
-- legacy `sessions` contains 8 rows and is retained.
-- legacy `schema_migrations` contains 5 rows and is retained.
-- `oxisg_auth_bootstrap` contains 2 rows and is retained.
-- older migration-only recovery, WebAuthn, device-key, document-share, WebRTC, and file-share relations are already absent from connected Neon.
+- `oauth_accounts`, `documents`, `signatures`, and every other relation retired by migration 045 are absent.
+- legacy `sessions` is intentionally retained because it contains historical rows.
+- legacy `schema_migrations` is intentionally retained for migration provenance.
+- `oxisg_auth_bootstrap` is intentionally retained for auth-bootstrap provenance.
+- older migration-only recovery, WebAuthn, device-key, document-share, WebRTC, and file-share relations remain absent.
 
-Migration `045_retire_unused_legacy_storage.sql` is therefore pending on production. It has a fail-closed data guard: any targeted legacy relation that still contains rows causes the migration to stop instead of deleting data.
+Migration `045_retire_unused_legacy_storage.sql` was rehearsed against a temporary Neon branch cloned from production before being applied to the production parent branch. Its fail-closed data guard verified every targeted relation was absent or empty before retirement. The production schema diff removed only the confirmed legacy relations and their owned indexes, constraints, and document trigger.
 
 ## Runtime schema contract
 
@@ -77,7 +77,7 @@ The production import graph identified and removed six unreachable source files:
 - `src/components/ui/dropdown-menu.tsx`
 - `src/lib/labs/ssm-websocket-presign.ts`
 
-The now-unused direct dependency `@radix-ui/react-dropdown-menu` was also removed. `src/test/setup.ts` was correctly retained as test infrastructure.
+The obsolete `src/lib/labs/ssm-websocket-presign.test.ts` coverage was also removed with its implementation. The now-unused direct dependency `@radix-ui/react-dropdown-menu` was removed. `src/test/setup.ts` was correctly retained as test infrastructure.
 
 CI now runs `pnpm audit:reachability` so newly orphaned production TS/JS files fail validation instead of accumulating silently.
 
@@ -95,11 +95,10 @@ Historical numbered migrations are also not dead code: they are required to reco
 
 ## Remaining production validation gates
 
-Before PR #120 can truthfully be called end-to-end production-proven:
+The code, clean-database migration path, and connected Neon production schema are aligned. Remaining live integration validation is environment-dependent:
 
-1. migration 045 must be explicitly approved and applied to connected Neon, then runtime parity must be rechecked;
-2. a real three-node Black Domain AWS run must verify provisioning, AD DS promotion, DNS, domain join, SSM operator access, expiry/termination, and complete teardown;
-3. the deployed two-user Live Workspace terminal observer/control path still needs a real multi-user acceptance run.
+1. a real three-node Black Domain AWS run must verify provisioning, AD DS promotion, DNS, domain join, SSM operator access, expiry/termination, and complete teardown;
+2. the deployed two-user Live Workspace terminal observer/control path still needs a real multi-user acceptance run.
 
 The AWS acceptance run can create billable EC2 resources and must be explicitly authorized before launch.
 
