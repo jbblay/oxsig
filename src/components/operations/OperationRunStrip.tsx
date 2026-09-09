@@ -27,11 +27,17 @@ type Run = {
   expiresAt: string;
   metadata: {
     domain?: string;
-    initialAccess?: { username?: string; password?: string };
+    initialAccess?: { username?: string };
   };
   lastError: string | null;
   nodes: RunNode[];
 };
+
+function statusLabel(status: string) {
+  if (status === 'running') return 'instances up';
+  if (status === 'provisioning') return 'bootstrapping';
+  return status;
+}
 
 export function OperationRunStrip({ runId }: { runId: string }) {
   const [run, setRun] = React.useState<Run | null>(null);
@@ -88,7 +94,7 @@ export function OperationRunStrip({ runId }: { runId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <Network className="h-4 w-4 text-primary" />
         <span className="text-xs font-semibold">Provisioned topology</span>
-        <Badge variant={run.status === 'running' ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{run.status}</Badge>
+        <Badge variant={run.status === 'running' ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{statusLabel(run.status)}</Badge>
         {run.metadata?.domain && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.domain}</Badge>}
         <div className="ml-auto flex items-center gap-1">
           <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => void refresh()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
@@ -105,21 +111,23 @@ export function OperationRunStrip({ runId }: { runId: string }) {
           <div key={node.id} className="rounded-lg border px-2.5 py-2">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-[11px] font-semibold">{node.label}</span>
-              <Badge variant="outline" className="h-4 px-1 text-[8px] capitalize">{node.status}</Badge>
+              <Badge variant="outline" className="h-4 px-1 text-[8px] capitalize">{node.status === 'running' ? 'instance up' : node.status}</Badge>
             </div>
             <p className="mt-1 text-[9px] text-muted-foreground">{node.osFamily} · {node.role}{node.privateIp ? ` · ${node.privateIp}` : ''}</p>
           </div>
         ))}
       </div>
 
-      {initialAccess?.username && initialAccess?.password && (
+      {initialAccess?.username && (
         <details className="mt-2 rounded-lg border bg-muted/20 px-2.5 py-2">
           <summary className="cursor-pointer text-[10px] font-medium">Starting identity</summary>
-          <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{initialAccess.username} / {initialAccess.password}</p>
+          <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">{initialAccess.username}</p>
+          <p className="mt-1 text-[9px] text-muted-foreground">The ephemeral password stays inside the managed operator machine at /opt/oxsig/operation.env instead of being returned by the run API.</p>
         </details>
       )}
       {run.lastError && <p className="mt-2 text-[10px] text-destructive">{run.lastError}</p>}
-      {run.status !== 'running' && !['failed','destroyed'].includes(run.status) && <p className="mt-2 text-[10px] text-muted-foreground">EC2 machines are launching now. AD DS promotion and workstation domain join continue inside the guests after the instances become reachable.</p>}
+      {run.status === 'running' && <p className="mt-2 text-[10px] text-muted-foreground">All EC2 instances are up. Scenario services may still be completing guest bootstrap; use the operator terminal and scenario readiness checks before treating Active Directory as ready.</p>}
+      {run.status !== 'running' && !['failed','destroyed'].includes(run.status) && <p className="mt-2 text-[10px] text-muted-foreground">EC2 machines are launching. AD DS promotion and workstation domain join continue inside the guests after the instances become reachable.</p>}
     </div>
   );
 }
