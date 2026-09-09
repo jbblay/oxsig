@@ -7,6 +7,7 @@ import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
+import WorkspaceActivitySync from './WorkspaceActivitySync';
 import WorkspaceEnhancements, { type WorkspaceKind } from './WorkspaceEnhancements';
 
 const SIDEBAR_KEY = 'oxsig:app-sidebar:v1';
@@ -77,6 +78,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="oxsig-app-background min-h-screen">
+      <WorkspaceActivitySync />
       <div className="flex min-h-screen w-full">
         <AppSidebar
           collapsed={effectiveSidebarCollapsed}

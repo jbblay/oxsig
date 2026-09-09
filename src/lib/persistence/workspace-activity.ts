@@ -4,6 +4,8 @@ import { notifyLocalStorageChange, subscribeToLocalStorageChanges } from './stor
 
 export const WORKSPACE_ACTIVITY_KEY = 'oxsig:workspace-activity:v1';
 export const WORKSPACE_RECENTS_KEY = 'oxsig:workspace-recents:v1';
+export const WORKSPACE_LOCAL_OWNER_KEY = 'oxsig:workspace-local-owner:v1';
+const GUEST_OWNER = 'guest';
 
 export type WorkspaceColor = 'home' | 'labs' | 'live' | 'collab' | 'boards' | 'vault' | 'manage';
 export type WorkspaceActivity = {
@@ -48,8 +50,48 @@ function read<T>(key: string): T[] {
 
 function write<T>(key: string, value: T[]) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  const next = JSON.stringify(value);
+  if (window.localStorage.getItem(key) === next) return;
+  window.localStorage.setItem(key, next);
   notifyLocalStorageChange(key);
+}
+
+export function getWorkspaceLocalOwner() {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(WORKSPACE_LOCAL_OWNER_KEY);
+}
+
+export function prepareWorkspaceLocalStateForGuest() {
+  if (typeof window === 'undefined') return 'unavailable' as const;
+  const current = getWorkspaceLocalOwner();
+  if (!current) {
+    window.localStorage.setItem(WORKSPACE_LOCAL_OWNER_KEY, GUEST_OWNER);
+    return 'guest' as const;
+  }
+  if (current === GUEST_OWNER) return 'guest' as const;
+
+  window.localStorage.setItem(WORKSPACE_LOCAL_OWNER_KEY, GUEST_OWNER);
+  write(WORKSPACE_ACTIVITY_KEY, []);
+  write(WORKSPACE_RECENTS_KEY, []);
+  return 'cleared' as const;
+}
+
+export function prepareWorkspaceLocalStateForUser(identityId: string) {
+  if (typeof window === 'undefined') return 'unavailable' as const;
+  const current = getWorkspaceLocalOwner();
+  if (!current || current === GUEST_OWNER) {
+    // Legacy/unclaimed state and explicit guest state may be adopted by the
+    // first authenticated account so Try-as-guest can continue after sign-up.
+    window.localStorage.setItem(WORKSPACE_LOCAL_OWNER_KEY, identityId);
+    return 'adopted' as const;
+  }
+  if (current === identityId) return 'same' as const;
+
+  // Never upload one signed-in account's browser activity into another account.
+  window.localStorage.setItem(WORKSPACE_LOCAL_OWNER_KEY, identityId);
+  write(WORKSPACE_ACTIVITY_KEY, []);
+  write(WORKSPACE_RECENTS_KEY, []);
+  return 'switched' as const;
 }
 
 export function getWorkspaceActivity() {
@@ -58,6 +100,36 @@ export function getWorkspaceActivity() {
 
 export function getWorkspaceRecents() {
   return read<WorkspaceRecent>(WORKSPACE_RECENTS_KEY).slice(0, 8);
+}
+
+export function getWorkspaceStateSnapshot() {
+  return {
+    activity: getWorkspaceActivity(),
+    recents: getWorkspaceRecents(),
+  };
+}
+
+export function mergeWorkspaceState(input: {
+  activity?: WorkspaceActivity[];
+  recents?: WorkspaceRecent[];
+}) {
+  const activityById = new Map<string, WorkspaceActivity>();
+  for (const item of [...getWorkspaceActivity(), ...(input.activity || [])]) {
+    const current = activityById.get(item.id);
+    if (!current || item.at > current.at) activityById.set(item.id, item);
+  }
+  const activity = [...activityById.values()].sort((a, b) => b.at - a.at).slice(0, 24);
+
+  const recentByHref = new Map<string, WorkspaceRecent>();
+  for (const item of [...getWorkspaceRecents(), ...(input.recents || [])]) {
+    const current = recentByHref.get(item.href);
+    if (!current || item.at > current.at) recentByHref.set(item.href, item);
+  }
+  const recents = [...recentByHref.values()].sort((a, b) => b.at - a.at).slice(0, 8);
+
+  write(WORKSPACE_ACTIVITY_KEY, activity);
+  write(WORKSPACE_RECENTS_KEY, recents);
+  return { activity, recents };
 }
 
 export function recordWorkspaceActivity(input: Omit<WorkspaceActivity, 'id' | 'at'>) {
