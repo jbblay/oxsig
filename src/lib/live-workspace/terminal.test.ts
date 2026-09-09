@@ -65,7 +65,7 @@ describe('Live Workspace terminal authorization', () => {
     mocks.diagnostics.mockResolvedValue(diagnostics);
   });
 
-  it('revalidates the exact server-bound lease and current owner-bound attachment before terminal input is accepted', async () => {
+  it('revalidates the exact server-bound lease and current contributor-owned attachment before terminal input is accepted', async () => {
     const pool = { query: vi.fn().mockResolvedValue({ rows: [{ '?column?': 1 }], rowCount: 1 }) } as any;
     await expect(assertLiveWorkspaceTerminalAuthorization({
       pool,
@@ -79,7 +79,7 @@ describe('Live Workspace terminal authorization', () => {
       bindingId,
       surface: 'terminal',
     });
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('resource.resource_owner_id=collaboration.owner_id'), [
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('resource.resource_owner_id=lab.owner_id'), [
       bindingId,
       workspaceId,
       labInstanceId,
@@ -102,7 +102,7 @@ describe('Live Workspace terminal authorization', () => {
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  it('rejects an already-open shared terminal when current attachment ownership no longer matches the workspace owner', async () => {
+  it('rejects an already-open shared terminal when current attachment ownership no longer matches the contributing user', async () => {
     const pool = { query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }) } as any;
     await expect(assertLiveWorkspaceTerminalAuthorization({
       pool,
@@ -123,14 +123,13 @@ describe('Live Workspace terminal authorization', () => {
     expect(mocks.diagnostics).not.toHaveBeenCalled();
   });
 
-  it('resolves only the exact attached owner-owned terminal lab covered by the lease', async () => {
+  it('resolves the exact attached contributor-owned terminal lab covered by the lease', async () => {
     const pool = {
       query: vi.fn().mockResolvedValue({ rows: [{
         binding_id: bindingId,
         lab_instance_id: labInstanceId,
-        resource_owner_id: ownerId,
-        workspace_owner_id: ownerId,
-        lab_owner_id: ownerId,
+        resource_owner_id: participantId,
+        lab_owner_id: participantId,
         label: 'Ubuntu Security Lab',
         access_mode: 'terminal',
         status: 'running',
@@ -159,5 +158,31 @@ describe('Live Workspace terminal authorization', () => {
       },
     });
     expect(mocks.diagnostics).toHaveBeenCalledWith(diagnostics.instanceId);
+  });
+
+  it('rejects a binding when its recorded resource owner differs from the actual lab owner', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({ rows: [{
+        binding_id: bindingId,
+        lab_instance_id: labInstanceId,
+        resource_owner_id: participantId,
+        lab_owner_id: ownerId,
+        label: 'Ubuntu Security Lab',
+        access_mode: 'terminal',
+        status: 'running',
+        runtime_provider: 'aws-ec2',
+        runtime_external_id: diagnostics.instanceId,
+        expires_at: '2099-01-01T01:00:00.000Z',
+        last_error: null,
+      }] }),
+    } as any;
+
+    await expect(prepareLiveWorkspaceTerminal({
+      pool,
+      collaborationId: workspaceId,
+      participantId,
+      bindingId,
+    })).rejects.toMatchObject({ code: 'TERMINAL_LAB_OWNERSHIP_MISMATCH', status: 403 });
+    expect(mocks.diagnostics).not.toHaveBeenCalled();
   });
 });

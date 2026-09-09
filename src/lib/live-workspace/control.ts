@@ -99,18 +99,17 @@ async function getAttachedLabBinding(
     `SELECT lwr.id AS binding_id,
             lwr.resource_id AS lab_instance_id,
             lwr.resource_owner_id,
-            c.owner_id,
+            li.owner_id AS lab_owner_id,
             COALESCE(lwr.metadata->>'label', ld.name, ld.slug, 'Cyber Lab') AS lab_label,
             CASE WHEN li.metadata->>'accessMode' = 'desktop' THEN 'desktop' ELSE 'terminal' END AS access_mode
      FROM live_workspace_resources lwr
-     JOIN collaborations c ON c.id = lwr.collaboration_id
      JOIN lab_instances li ON li.id = lwr.resource_id
      JOIN lab_definitions ld ON ld.id = li.definition_id
      WHERE lwr.id = $1
        AND lwr.collaboration_id = $2
        AND lwr.resource_type = 'lab-instance'
        AND lwr.status = 'attached'
-       AND li.status <> 'destroyed'
+       AND li.status NOT IN ('destroying','destroyed','failed')
      LIMIT 1${lock ? ' FOR UPDATE OF lwr' : ''}`,
     [bindingId, collaborationId]
   );
@@ -118,8 +117,8 @@ async function getAttachedLabBinding(
   if (!row) {
     throw new LiveWorkspaceError('The attached lab is unavailable for control.', 404, 'CONTROL_LAB_BINDING_NOT_FOUND');
   }
-  if (row.resource_owner_id !== row.owner_id) {
-    throw new LiveWorkspaceError('The attached lab is no longer owned by the workspace owner.', 403, 'CONTROL_LAB_OWNERSHIP_MISMATCH');
+  if (row.resource_owner_id !== row.lab_owner_id) {
+    throw new LiveWorkspaceError('The attached lab no longer belongs to its contributing participant.', 403, 'CONTROL_LAB_OWNERSHIP_MISMATCH');
   }
   return {
     bindingId: row.binding_id,
@@ -524,7 +523,8 @@ export async function getActiveControlLease(args: {
      JOIN lab_instances lab
        ON lab.id = lease.lab_instance_id
       AND lab.id = resource.resource_id
-      AND lab.status <> 'destroyed'
+      AND resource.resource_owner_id = lab.owner_id
+      AND lab.status NOT IN ('destroying','destroyed','failed')
      JOIN users u ON u.id = lease.participant_id
      LEFT JOIN collaboration_members cm
        ON cm.collaboration_id = lease.collaboration_id AND cm.user_id = lease.participant_id AND cm.status='active'
@@ -532,6 +532,14 @@ export async function getActiveControlLease(args: {
        ON participant.collaboration_id = lease.collaboration_id
       AND participant.user_id = lease.participant_id
       AND participant.status='active'
+     LEFT JOIN collaboration_members resource_owner_member
+       ON resource_owner_member.collaboration_id = lease.collaboration_id
+      AND resource_owner_member.user_id = resource.resource_owner_id
+      AND resource_owner_member.status='active'
+     LEFT JOIN live_workspace_participants resource_owner_participant
+       ON resource_owner_participant.collaboration_id = lease.collaboration_id
+      AND resource_owner_participant.user_id = resource.resource_owner_id
+      AND resource_owner_participant.status='active'
      WHERE lease.collaboration_id=$1
        AND lease.participant_id=$2
        AND lease.resource_binding_id=$3
@@ -540,6 +548,8 @@ export async function getActiveControlLease(args: {
        AND lease.expires_at > NOW()
        AND (c.owner_id = lease.participant_id OR cm.user_id IS NOT NULL)
        AND (c.owner_id = lease.participant_id OR participant.role IN ('instructor','learner'))
+       AND (c.owner_id = resource.resource_owner_id OR resource_owner_member.user_id IS NOT NULL)
+       AND (c.owner_id = resource.resource_owner_id OR resource_owner_participant.role IN ('instructor','learner'))
        AND (CASE WHEN lab.metadata->>'accessMode' = 'desktop' THEN 'desktop' ELSE 'terminal' END) = lease.surface
      LIMIT 1`,
     [args.collaborationId, args.participantId, args.bindingId, args.surface]

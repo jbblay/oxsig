@@ -104,7 +104,7 @@ describe('Live Workspace foundation policy', () => {
   it('discovers only owner-scoped resources and preserves their control surface', async () => {
     const pool = poolWith((sql, values) => {
       expect(values).toEqual(['owner-1']);
-      expect(sql).toContain("li.status NOT IN ('destroying', 'destroyed')");
+      expect(sql).toContain("li.status NOT IN ('destroying', 'destroyed', 'failed')");
       expect(sql).toContain("course.status = 'active'");
       return { rows: [
         { id: 'lab-1', type: 'lab-instance', label: 'Ubuntu Lab', access_mode: 'terminal' },
@@ -130,10 +130,10 @@ describe('Live Workspace foundation policy', () => {
       .rejects.toMatchObject({ code: 'RESOURCE_OWNERSHIP_MISMATCH', status: 403 });
   });
 
-  it('rejects destroying labs even when the caller bypasses the attachable-resource list', async () => {
+  it('rejects destroying or failed labs even when the caller bypasses the attachable-resource list', async () => {
     const pool = poolWith((sql, values) => {
       expect(values).toEqual(['lab-1', 'owner-1']);
-      expect(sql).toContain("li.status NOT IN ('destroying', 'destroyed')");
+      expect(sql).toContain("li.status NOT IN ('destroying', 'destroyed', 'failed')");
       return { rows: [], rowCount: 0 };
     });
     await expect(assertOwnerResource(pool, 'owner-1', 'lab-instance', 'lab-1'))

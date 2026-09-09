@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Clock3, Loader2, Monitor, ShieldCheck, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { SharedWorkspaceTerminal } from '@/components/live-workspace/SharedWorkspaceTerminal';
+import { SharedWorkspaceTerminalObserver } from '@/components/live-workspace/SharedWorkspaceTerminalObserver';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ type Surface = 'terminal' | 'desktop';
 type WorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design' | 'storyboard' | 'vault-item';
 
 type Capabilities = {
+  observe: boolean;
   requestControl: boolean;
   grantControl: boolean;
   eligibleForTerminalControl: boolean;
@@ -128,7 +130,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Machine control</CardTitle>
-            <CardDescription>Only attached Cyber Labs participate in machine control. Boards, Vault items, Academy material and designs remain shared context only.</CardDescription>
+            <CardDescription>Only attached Cyber Labs participate in machine control. Terminal output can be observed by workspace participants; input always remains lease-gated.</CardDescription>
           </div>
           <Badge variant="outline">Explicit control</Badge>
         </div>
@@ -146,6 +148,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
           const canRevoke = Boolean(lease && (capabilities.grantControl || lease.participantId === viewerId));
           const ownsLease = Boolean(lease && lease.participantId === viewerId);
           const ownsTerminalLease = Boolean(ownsLease && lease?.surface === 'terminal');
+          const observesTerminalLease = Boolean(capabilities.observe && lease && !ownsLease && lease.surface === 'terminal');
 
           return (
             <div key={resource.id} className="rounded-xl border p-3 sm:p-4">
@@ -156,7 +159,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                 </div>
                 {lease ? (
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Badge>{ownsLease ? 'You have control' : 'Control active'}</Badge>
+                    <Badge>{ownsLease ? 'You have control' : observesTerminalLease ? 'Watching live' : 'Control active'}</Badge>
                     <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" /> {remaining(lease.expiresAt, now)} remaining</span>
                     {canRevoke && (
                       <Button
@@ -198,7 +201,9 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                 <div className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">Controller: {lease.participantName}.</span>{' '}
                   {lease.surface === 'terminal'
-                    ? ownsLease ? 'Open the shared terminal below when you are ready to work.' : 'Only that participant can open and send input through the shared terminal.'
+                    ? ownsLease
+                      ? 'Open the terminal below when you are ready. Authorized teammates receive output only.'
+                      : 'The terminal below mirrors the controller output. Your view cannot send input.'
                     : 'Desktop control is authorized, but shared desktop transport is not connected yet.'}
                 </div>
               )}
@@ -208,6 +213,18 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
                   bindingId={resource.id}
                   labInstanceId={resource.resourceId}
                   machineLabel={resource.label}
+                  leaseId={lease.id}
+                  leaseExpiresAt={lease.expiresAt}
+                  onAuthorizationChanged={onRefresh}
+                />
+              )}
+              {observesTerminalLease && lease && (
+                <SharedWorkspaceTerminalObserver
+                  workspaceId={workspaceId}
+                  bindingId={resource.id}
+                  machineLabel={resource.label}
+                  controllerName={lease.participantName}
+                  leaseId={lease.id}
                   leaseExpiresAt={lease.expiresAt}
                   onAuthorizationChanged={onRefresh}
                 />

@@ -29,6 +29,19 @@ function mapCollaboration(row: Record<string, any>, viewerId: string) {
   };
 }
 
+async function hasPersistedAttachments(pool: ReturnType<typeof getPool>, collaborationId: string) {
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM collaboration_messages
+        WHERE collaboration_id = $1
+          AND metadata ? 'attachment'
+     ) AS has_attachments`,
+    [collaborationId]
+  );
+  return Boolean(result.rows[0]?.has_attachments);
+}
+
 export async function GET(request: NextRequest, context: Context) {
   return requireAuth(request, async (req, user) => {
     const rateLimit = await checkRateLimit(req, { maxRequests: 90, windowMs: 60_000 }, user.id);
@@ -131,14 +144,20 @@ export async function DELETE(request: NextRequest, context: Context) {
       return NextResponse.json({ error: 'Collaboration not found or owner access required' }, { status: 404 });
     }
 
+    let attachmentCleanupDeferred = false;
     try {
       await deleteCollaborationObjects(id);
     } catch (error) {
-      console.warn('Collaboration attachment cleanup failed; database deletion was not attempted:', error);
-      return NextResponse.json(
-        { error: 'Could not delete collaboration attachments. Nothing was deleted.' },
-        { status: 503 }
-      );
+      const persistedAttachments = await hasPersistedAttachments(pool, id).catch(() => true);
+      if (persistedAttachments) {
+        console.warn('Collaboration attachment cleanup failed; database deletion was not attempted:', error);
+        return NextResponse.json(
+          { error: 'Could not delete collaboration attachments. Nothing was deleted.' },
+          { status: 503 }
+        );
+      }
+      attachmentCleanupDeferred = true;
+      console.warn('Collaboration storage cleanup was unavailable, but no persisted attachment references exist; continuing relational deletion:', error);
     }
 
     const result = await pool.query(
@@ -151,6 +170,6 @@ export async function DELETE(request: NextRequest, context: Context) {
       return NextResponse.json({ error: 'Collaboration changed before deletion; try again' }, { status: 409 });
     }
 
-    return NextResponse.json({ deleted: true });
+    return NextResponse.json({ deleted: true, ...(attachmentCleanupDeferred ? { attachmentCleanupDeferred: true } : {}) });
   });
 }

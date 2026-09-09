@@ -4,7 +4,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
-import { revokeControlForParticipant } from '@/lib/live-workspace/control';
+import { revokeControlForBinding, revokeControlForParticipant } from '@/lib/live-workspace/control';
 import { assignLiveWorkspaceRole, LiveWorkspaceError } from '@/lib/live-workspace/server';
 
 export const runtime = 'nodejs';
@@ -35,16 +35,47 @@ export async function PATCH(
         targetUserId: userId,
         role: parsed.data.role,
       });
+
+      let detachedResources = 0;
       if (parsed.data.role === 'observer') {
-        await revokeControlForParticipant({
-          queryable: pool,
-          collaborationId: id,
-          participantId: userId,
-          actorId: user.id,
-          reason: 'role_became_observer',
-        });
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const detached = await client.query(
+            `UPDATE live_workspace_resources
+                SET status='detached', detached_at=NOW(), updated_at=NOW()
+              WHERE collaboration_id=$1
+                AND resource_owner_id=$2
+                AND status='attached'
+              RETURNING id`,
+            [id, userId]
+          );
+          for (const row of detached.rows) {
+            await revokeControlForBinding({
+              queryable: client,
+              collaborationId: id,
+              bindingId: row.id,
+              actorId: user.id,
+              reason: 'role_became_observer',
+            });
+          }
+          await revokeControlForParticipant({
+            queryable: client,
+            collaborationId: id,
+            participantId: userId,
+            actorId: user.id,
+            reason: 'role_became_observer',
+          });
+          await client.query('COMMIT');
+          detachedResources = detached.rowCount || 0;
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          client.release();
+        }
       }
-      return NextResponse.json({ participant: { userId, ...assigned } }, { headers: { 'Cache-Control': 'no-store' } });
+      return NextResponse.json({ participant: { userId, ...assigned }, detachedResources }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       if (error instanceof LiveWorkspaceError) {
         return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: { 'Cache-Control': 'no-store' } });
@@ -101,7 +132,8 @@ export async function DELETE(
         `SELECT 1
            FROM collaboration_members
           WHERE collaboration_id = $1 AND user_id = $2 AND status = 'active'
-          LIMIT 1`,
+          LIMIT 1
+          FOR UPDATE`,
         [id, userId]
       );
       if (!member.rowCount) {
@@ -109,12 +141,36 @@ export async function DELETE(
         return NextResponse.json({ error: 'Participant not found' }, { status: 404 });
       }
 
+      const reason = user.id === userId ? 'participant_left' : 'participant_removed';
+
+      // A contributed lab is participant-owned. Once that participant leaves,
+      // detach every owned binding in the same transaction and revoke control
+      // held by any controller against those bindings before membership commits.
+      const detached = await client.query(
+        `UPDATE live_workspace_resources
+            SET status='detached', detached_at=NOW(), updated_at=NOW()
+          WHERE collaboration_id=$1
+            AND resource_owner_id=$2
+            AND status='attached'
+          RETURNING id`,
+        [id, userId]
+      );
+      for (const row of detached.rows) {
+        await revokeControlForBinding({
+          queryable: client,
+          collaborationId: id,
+          bindingId: row.id,
+          actorId: user.id,
+          reason,
+        });
+      }
+
       await revokeControlForParticipant({
         queryable: client,
         collaborationId: id,
         participantId: userId,
         actorId: user.id,
-        reason: user.id === userId ? 'participant_left' : 'participant_removed',
+        reason,
       });
       await client.query(
         `UPDATE live_workspace_participants
@@ -129,7 +185,7 @@ export async function DELETE(
         [id, userId]
       );
       await client.query('COMMIT');
-      return NextResponse.json({ removed: true, left: user.id === userId });
+      return NextResponse.json({ removed: true, left: user.id === userId, detachedResources: detached.rowCount || 0 });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       console.error('Live Workspace participant removal failed:', error);

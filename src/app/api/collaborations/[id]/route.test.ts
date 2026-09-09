@@ -104,13 +104,35 @@ describe('/api/collaborations/[id]', () => {
     expect(await response.json()).toEqual({ deleted: true });
   });
 
-  it('does not delete relational data if attachment cleanup fails', async () => {
+  it('deletes an attachment-free collaboration when storage cleanup is unavailable', async () => {
     mocks.deleteCollaborationObjects.mockRejectedValue(new Error('storage unavailable'));
+    query.mockImplementation(async (sql: string) => {
+      if (sql.includes("metadata ? 'attachment'")) return { rows: [{ has_attachments: false }], rowCount: 1 };
+      if (sql.includes('DELETE FROM collaborations')) return { rows: [{ id: collaborationId }], rowCount: 1 };
+      return { rows: [row], rowCount: 1 };
+    });
+
+    const args = input('DELETE');
+    const response = await DELETE(args.request, args.context);
+    expect(response.status).toBe(200);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("metadata ? 'attachment'"), [collaborationId]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collaborations'), [collaborationId, user.id]);
+    expect(await response.json()).toEqual({ deleted: true, attachmentCleanupDeferred: true });
+  });
+
+  it('does not delete relational data if referenced attachment cleanup fails', async () => {
+    mocks.deleteCollaborationObjects.mockRejectedValue(new Error('storage unavailable'));
+    query.mockImplementation(async (sql: string) => {
+      if (sql.includes("metadata ? 'attachment'")) return { rows: [{ has_attachments: true }], rowCount: 1 };
+      return { rows: [row], rowCount: 1 };
+    });
+
     const args = input('DELETE');
     const response = await DELETE(args.request, args.context);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'Could not delete collaboration attachments. Nothing was deleted.' });
-    expect(query).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT id'), [collaborationId, user.id]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("metadata ? 'attachment'"), [collaborationId]);
+    expect(query.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM collaborations'))).toBe(false);
   });
 });

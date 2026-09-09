@@ -15,6 +15,8 @@ function pageTitle(pathname: string) {
   if (pathname === '/collab') return 'Collaboration';
   if (pathname.startsWith('/collab/storyboards')) return 'Boards';
   if (pathname.startsWith('/live')) return 'Live Workspace';
+  if (pathname.startsWith('/operations')) return 'Operations';
+  if (pathname.startsWith('/warroom')) return 'WarRoom';
   if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'Vault';
   if (pathname.startsWith('/labs')) return 'Cyber Lab';
   if (pathname.startsWith('/manage')) return 'Resources';
@@ -31,7 +33,9 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   const pathname = usePathname();
   const { user } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
-  const cyberLab = pathname.startsWith('/labs');
+  // AI Practitioner is mounted inside Cyber Lab. Operations and WarRoom use the
+  // global AI Helper, which already receives those workspace contexts.
+  const practitionerSurface = pathname.startsWith('/labs');
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -45,7 +49,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   }, []);
 
   function openAi() {
-    window.dispatchEvent(new CustomEvent(cyberLab ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+    window.dispatchEvent(new CustomEvent(practitionerSurface ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
   }
 
   return (
@@ -80,8 +84,8 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               variant="ghost"
               className="h-8 w-8"
               onClick={openAi}
-              aria-label={cyberLab ? 'Open AI Practitioner' : 'Open AI Helper'}
-              title={cyberLab ? 'AI Practitioner' : 'AI Helper'}
+              aria-label={practitionerSurface ? 'Open AI Practitioner' : 'Open AI Helper'}
+              title={practitionerSurface ? 'AI Practitioner' : 'AI Helper'}
             >
               <Sparkles className="h-3.5 w-3.5" />
             </Button>
@@ -91,8 +95,8 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               aria-label="Open account"
               title={user?.displayName || user?.email || 'Account'}
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
-                {initials(user?.displayName || user?.email)}
+              <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
+                {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(user?.displayName || user?.email)}
               </span>
             </Link>
           </div>

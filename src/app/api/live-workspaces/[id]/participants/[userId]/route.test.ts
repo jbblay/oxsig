@@ -4,13 +4,17 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(),
   getPool: vi.fn(), assignLiveWorkspaceRole: vi.fn(), revokeControlForParticipant: vi.fn(),
+  revokeControlForBinding: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
-vi.mock('@/lib/live-workspace/control', () => ({ revokeControlForParticipant: mocks.revokeControlForParticipant }));
+vi.mock('@/lib/live-workspace/control', () => ({
+  revokeControlForParticipant: mocks.revokeControlForParticipant,
+  revokeControlForBinding: mocks.revokeControlForBinding,
+}));
 vi.mock('@/lib/live-workspace/server', () => ({
   assignLiveWorkspaceRole: mocks.assignLiveWorkspaceRole,
   LiveWorkspaceError: class LiveWorkspaceError extends Error {
@@ -23,6 +27,7 @@ import { DELETE, PATCH } from './route';
 const workspaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const targetId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ownerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const bindingId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const user = { id: ownerId, clerkUserId: 'clerk-1', role: 'user' as const };
 
 function request(body: unknown, method: 'PATCH' | 'DELETE' = 'PATCH') {
@@ -51,9 +56,11 @@ describe('Live Workspace participant role API', () => {
       capabilities: { observe: true, collaborate: true, requestControl: true, grantControl: false, manageParticipants: false, manageResources: false, eligibleForTerminalControl: true, eligibleForDesktopControl: true },
     });
     mocks.revokeControlForParticipant.mockResolvedValue(undefined);
+    mocks.revokeControlForBinding.mockResolvedValue(undefined);
     clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: ownerId }], rowCount: 1 };
       if (sql.includes('FROM collaboration_members')) return { rows: [{ exists: 1 }], rowCount: 1 };
+      if (sql.includes('UPDATE live_workspace_resources')) return { rows: [], rowCount: 0 };
       return { rows: [], rowCount: 1 };
     });
   });
@@ -73,17 +80,28 @@ describe('Live Workspace participant role API', () => {
     expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
   });
 
-  it('revokes leases and cancels pending requests when a participant becomes observer', async () => {
+  it('revokes control and detaches contributions when a participant becomes observer', async () => {
     mocks.assignLiveWorkspaceRole.mockResolvedValue({ role: 'observer', capabilities: {} });
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('UPDATE live_workspace_resources')) return { rows: [{ id: bindingId }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
     const response = await PATCH(request({ role: 'observer' }), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
     expect(response.status).toBe(200);
-    expect(mocks.revokeControlForParticipant).toHaveBeenCalledWith({
-      queryable: pool,
+    expect(mocks.revokeControlForBinding).toHaveBeenCalledWith(expect.objectContaining({
+      collaborationId: workspaceId,
+      bindingId,
+      actorId: user.id,
+      reason: 'role_became_observer',
+    }));
+    expect(mocks.revokeControlForParticipant).toHaveBeenCalledWith(expect.objectContaining({
       collaborationId: workspaceId,
       participantId: targetId,
       actorId: user.id,
       reason: 'role_became_observer',
-    });
+    }));
+    expect(await response.json()).toMatchObject({ detachedResources: 1 });
+    expect(clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('lets the owner remove a participant and revokes machine control first', async () => {
@@ -99,6 +117,26 @@ describe('Live Workspace participant role API', () => {
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
+  it('detaches participant-owned resources and revokes binding control before removal commits', async () => {
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: ownerId }], rowCount: 1 };
+      if (sql.includes('FROM collaboration_members')) return { rows: [{ exists: 1 }], rowCount: 1 };
+      if (sql.includes('UPDATE live_workspace_resources')) return { rows: [{ id: bindingId }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const response = await DELETE(request(undefined, 'DELETE'), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
+    expect(response.status).toBe(200);
+    expect(mocks.revokeControlForBinding).toHaveBeenCalledWith({
+      queryable: expect.anything(),
+      collaborationId: workspaceId,
+      bindingId,
+      actorId: ownerId,
+      reason: 'participant_removed',
+    });
+    expect(await response.json()).toMatchObject({ detachedResources: 1 });
+  });
+
   it('never allows the workspace owner to be removed', async () => {
     clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: targetId }], rowCount: 1 };
@@ -107,5 +145,6 @@ describe('Live Workspace participant role API', () => {
     const response = await DELETE(request(undefined, 'DELETE'), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
     expect(response.status).toBe(409);
     expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
+    expect(mocks.revokeControlForBinding).not.toHaveBeenCalled();
   });
 });

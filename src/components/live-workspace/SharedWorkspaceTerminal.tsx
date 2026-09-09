@@ -7,6 +7,7 @@ import type { FitAddon } from '@xterm/addon-fit';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SsmBrowserDataChannel } from '@/lib/labs/ssm-browser-channel';
+import { LiveTerminalOutputPublisher } from '@/lib/live-workspace/terminal-realtime-client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
@@ -26,6 +27,7 @@ type Props = {
   bindingId: string;
   labInstanceId: string;
   machineLabel: string;
+  leaseId: string;
   leaseExpiresAt: string;
   onAuthorizationChanged: () => Promise<void>;
 };
@@ -60,6 +62,7 @@ export function SharedWorkspaceTerminal({
   bindingId,
   labInstanceId,
   machineLabel,
+  leaseId,
   leaseExpiresAt,
   onAuthorizationChanged,
 }: Props) {
@@ -67,6 +70,7 @@ export function SharedWorkspaceTerminal({
   const terminalRef = React.useRef<XTermTerminal | null>(null);
   const fitRef = React.useRef<FitAddon | null>(null);
   const channelRef = React.useRef<SsmBrowserDataChannel | null>(null);
+  const publisherRef = React.useRef<LiveTerminalOutputPublisher | null>(null);
   const sessionRef = React.useRef<SessionResponse | null>(null);
   const csrfRef = React.useRef<string | null>(null);
   const inputBufferRef = React.useRef('');
@@ -81,6 +85,15 @@ export function SharedWorkspaceTerminal({
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  React.useEffect(() => {
+    const publisher = new LiveTerminalOutputPublisher({ workspaceId, bindingId, leaseId });
+    publisherRef.current = publisher;
+    return () => {
+      publisher.close();
+      if (publisherRef.current === publisher) publisherRef.current = null;
+    };
+  }, [bindingId, leaseId, workspaceId]);
 
   const flushInput = React.useCallback(() => {
     if (inputTimerRef.current) clearTimeout(inputTimerRef.current);
@@ -150,17 +163,20 @@ export function SharedWorkspaceTerminal({
       const session = await response.json() as SessionResponse;
       if (
         !session.sessionId || !session.bridgePath || !session.tokenValue ||
-        !session.leaseId || session.bindingId !== bindingId || session.labInstanceId !== labInstanceId
+        session.leaseId !== leaseId || session.bindingId !== bindingId || session.labInstanceId !== labInstanceId
       ) {
         throw new Error('Oxsig returned an incomplete or mismatched shared terminal session.');
       }
       sessionRef.current = session;
 
       const channel = new SsmBrowserDataChannel({
-        onOutput: (data) => terminalRef.current?.write(data),
+        onOutput: (data, payloadType) => {
+          terminalRef.current?.write(data);
+          publisherRef.current?.publish(data, payloadType);
+        },
         onReady: (customerMessage) => {
           setState('connected');
-          setDetail('Connected. Oxsig continues checking your control permission while this terminal is open.');
+          setDetail('Connected. Authorized workspace participants can observe output; only your active control lease can send input.');
           if (customerMessage) terminalRef.current?.writeln(`\r\n${customerMessage}`);
           requestAnimationFrame(() => {
             fitRef.current?.fit();
@@ -198,7 +214,7 @@ export function SharedWorkspaceTerminal({
       await endServerSession();
       void onAuthorizationChanged();
     }
-  }, [bindingId, endServerSession, flushInput, labInstanceId, machineLabel, onAuthorizationChanged, state, terminalReady, workspaceId]);
+  }, [bindingId, endServerSession, flushInput, labInstanceId, leaseId, machineLabel, onAuthorizationChanged, state, terminalReady, workspaceId]);
 
   React.useEffect(() => {
     let disposed = false;

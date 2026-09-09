@@ -5,7 +5,7 @@ import * as React from 'react';
 const ABLY_BROWSER_SDK = 'https://cdn.ably.com/lib/ably.min-2.js';
 const ABLY_SCRIPT_ID = 'oxsig-ably-browser-sdk';
 
-type RealtimeMessage = {
+export type RealtimeMessage = {
   name?: string;
   data?: unknown;
   clientId?: string;
@@ -16,9 +16,10 @@ type RealtimePresenceMessage = {
   action?: string;
 };
 
-type RealtimeChannel = {
+export type RealtimeChannel = {
   subscribe(name: string, listener: (message: RealtimeMessage) => void): Promise<void>;
   unsubscribe(): void;
+  publish(name: string, data?: unknown): Promise<void>;
   presence: {
     get(): Promise<RealtimePresenceMessage[]>;
     subscribe(listener: (message: RealtimePresenceMessage) => void): Promise<void>;
@@ -28,7 +29,7 @@ type RealtimeChannel = {
   };
 };
 
-type RealtimeClient = {
+export type RealtimeClient = {
   connection: {
     state: string;
     on(listener: () => void): void;
@@ -52,7 +53,7 @@ declare global {
 
 let ablyLoadPromise: Promise<AblyBrowserGlobal> | null = null;
 
-function loadAblyBrowser(): Promise<AblyBrowserGlobal> {
+export function loadAblyBrowser(): Promise<AblyBrowserGlobal> {
   if (window.Ably?.Realtime) return Promise.resolve(window.Ably);
   if (ablyLoadPromise) return ablyLoadPromise;
 

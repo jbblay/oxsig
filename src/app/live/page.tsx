@@ -44,6 +44,7 @@ type Resource = {
   type: ResourceType;
   resourceId: string;
   resourceOwnerId: string;
+  resourceOwnerName: string;
   label: string;
   accessMode: 'terminal' | 'desktop' | null;
   ownershipTransferred: false;
@@ -147,8 +148,17 @@ export default function LiveWorkspacePage() {
   }, [loadDetail, selectedId]);
 
   React.useEffect(() => {
-    if (!detail?.workspace.capabilities.manageResources) {
+    if (!detail) {
       setResourceId('');
+      return;
+    }
+    const canAttach = detail.workspace.capabilities.manageResources || detail.workspace.capabilities.collaborate;
+    if (!canAttach) {
+      setResourceId('');
+      return;
+    }
+    if (!detail.workspace.capabilities.manageResources && resourceType !== 'lab-instance') {
+      setResourceType('lab-instance');
       return;
     }
     const options = detail.attachableResources.filter((resource) => resource.type === resourceType && !resource.attached);
@@ -217,6 +227,33 @@ export default function LiveWorkspacePage() {
     }
   }
 
+  async function removeParticipant(userId: string) {
+    if (!selectedId || !detail) return;
+    const leaving = userId === detail.viewerId;
+    setBusy(`participant:${userId}`);
+    try {
+      const token = await getCsrfToken();
+      const response = await fetch(`/api/live-workspaces/${selectedId}/participants/${userId}`, {
+        method: 'DELETE',
+        headers: { 'x-csrf-token': token },
+      });
+      if (!response.ok) throw new Error(await apiError(response, leaving ? 'Could not leave workspace' : 'Could not remove participant'));
+      if (leaving) {
+        setDetail(null);
+        setSelectedId(null);
+        await loadList();
+        toast.success('Left workspace.');
+      } else {
+        await loadDetail(selectedId);
+        toast.success('Participant removed.');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (leaving ? 'Could not leave workspace' : 'Could not remove participant'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function attachResource() {
     if (!selectedId || !resourceId) return;
     setBusy('resource');
@@ -229,7 +266,7 @@ export default function LiveWorkspacePage() {
       });
       if (!response.ok) throw new Error(await apiError(response, 'Could not attach resource'));
       await loadDetail(selectedId);
-      toast.success('Resource attached.');
+      toast.success(resourceType === 'lab-instance' ? 'Lab contributed to the workspace.' : 'Resource attached.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not attach resource');
     } finally {
@@ -259,6 +296,7 @@ export default function LiveWorkspacePage() {
 
   if (loading) return <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…</div>;
 
+  const canAttachResources = Boolean(detail && (detail.workspace.capabilities.manageResources || detail.workspace.capabilities.collaborate));
   const availableResources = detail?.attachableResources.filter((resource) => resource.type === resourceType && !resource.attached) || [];
 
   return (
@@ -337,38 +375,54 @@ export default function LiveWorkspacePage() {
                       <div className="flex gap-2"><Input id="live-participant-email" className="min-w-0 flex-1" type="email" autoComplete="email" placeholder="participant@example.com" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value.slice(0, 320))} /><Button variant="outline" onClick={() => void inviteParticipant()} disabled={busy === 'invite' || !inviteEmail.trim()}>{busy === 'invite' && <Loader2 className="h-4 w-4 animate-spin" />} Invite</Button></div>
                     </div>
                   )}
-                  {detail.participants.map((participant) => (
-                    <div key={participant.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-                      <div><p className="text-sm font-semibold">{participant.displayName}</p><p className="text-xs text-muted-foreground">{participant.email || 'Participant'}</p></div>
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        {participant.role === 'owner' || !detail.workspace.capabilities.manageParticipants ? <Badge variant="secondary">{ROLE_LABELS[participant.role]}</Badge> : <label className="sr-only" htmlFor={`role-${participant.id}`}>Role for {participant.displayName}</label>}
-                        {participant.role !== 'owner' && detail.workspace.capabilities.manageParticipants && (
-                          <select id={`role-${participant.id}`} aria-label={`Role for ${participant.displayName}`} className="rounded-md border bg-background px-2 py-1.5 text-xs" value={participant.role} disabled={busy === `role:${participant.id}`} onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}>
-                            <option value="observer">Observer</option>
-                            <option value="learner">Learner</option>
-                            {(detail.workspace.isOwner || participant.role === 'instructor') && <option value="instructor" disabled={!detail.workspace.isOwner}>Instructor</option>}
-                          </select>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'Control eligible' : 'Observe only'}</span>
+                  {detail.participants.map((participant) => {
+                    const canRemove = participant.role !== 'owner' && (detail.workspace.isOwner || participant.id === detail.viewerId);
+                    const removing = busy === `participant:${participant.id}`;
+                    return (
+                      <div key={participant.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+                        <div><p className="text-sm font-semibold">{participant.displayName}</p><p className="text-xs text-muted-foreground">{participant.email || 'Participant'}</p></div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {participant.role === 'owner' || !detail.workspace.capabilities.manageParticipants ? <Badge variant="secondary">{ROLE_LABELS[participant.role]}</Badge> : <label className="sr-only" htmlFor={`role-${participant.id}`}>Role for {participant.displayName}</label>}
+                          {participant.role !== 'owner' && detail.workspace.capabilities.manageParticipants && (
+                            <select id={`role-${participant.id}`} aria-label={`Role for ${participant.displayName}`} className="rounded-md border bg-background px-2 py-1.5 text-xs" value={participant.role} disabled={busy === `role:${participant.id}` || removing} onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}>
+                              <option value="observer">Observer</option>
+                              <option value="learner">Learner</option>
+                              {(detail.workspace.isOwner || participant.role === 'instructor') && <option value="instructor" disabled={!detail.workspace.isOwner}>Instructor</option>}
+                            </select>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'Control eligible' : 'Observe only'}</span>
+                          {canRemove && (
+                            <Button size="sm" variant="ghost" disabled={removing} onClick={() => void removeParticipant(participant.id)}>
+                              {removing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : participant.id === detail.viewerId ? 'Leave' : 'Remove'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Resources</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Resources</CardTitle>
+                  <CardDescription>Owners can attach workspace resources. Learners and instructors can contribute their own running Cyber Lab.</CardDescription>
+                </CardHeader>
                 <CardContent className="space-y-3">
-                  {detail.workspace.capabilities.manageResources && (
+                  {canAttachResources && (
                     <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 sm:grid-cols-[180px_minmax(0,1fr)_auto] sm:items-end">
                       <div className="space-y-1.5">
                         <label htmlFor="live-resource-type" className="text-xs font-medium">Type</label>
-                        <select id="live-resource-type" className="h-10 w-full rounded-md border bg-background px-2 text-sm" value={resourceType} onChange={(event) => setResourceType(event.target.value as ResourceType)}>
-                          <option value="lab-instance">Cyber Lab</option>
-                          <option value="storyboard">Board</option>
-                          <option value="vault-item">Vault item</option>
-                          <option value="infrastructure-design">Infrastructure design</option>
-                        </select>
+                        {detail.workspace.capabilities.manageResources ? (
+                          <select id="live-resource-type" className="h-10 w-full rounded-md border bg-background px-2 text-sm" value={resourceType} onChange={(event) => setResourceType(event.target.value as ResourceType)}>
+                            <option value="lab-instance">Cyber Lab</option>
+                            <option value="storyboard">Board</option>
+                            <option value="vault-item">Vault item</option>
+                            <option value="infrastructure-design">Infrastructure design</option>
+                          </select>
+                        ) : (
+                          <div id="live-resource-type" className="flex h-10 items-center rounded-md border bg-background px-2 text-sm">My Cyber Lab</div>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <label htmlFor="live-resource" className="text-xs font-medium">Resource</label>
@@ -376,13 +430,25 @@ export default function LiveWorkspacePage() {
                           {availableResources.length === 0 ? <option value="">No available {RESOURCE_LABELS[resourceType].toLowerCase()}</option> : availableResources.map((resource) => <option key={`${resource.type}:${resource.id}`} value={resource.id}>{resource.label}{resource.accessMode ? ` · ${resource.accessMode}` : ''}</option>)}
                         </select>
                       </div>
-                      <Button variant="outline" onClick={() => void attachResource()} disabled={busy === 'resource' || !resourceId}>{busy === 'resource' && <Loader2 className="h-4 w-4 animate-spin" />} Attach</Button>
+                      <Button variant="outline" onClick={() => void attachResource()} disabled={busy === 'resource' || !resourceId}>{busy === 'resource' && <Loader2 className="h-4 w-4 animate-spin" />} {detail.workspace.capabilities.manageResources ? 'Attach' : 'Contribute'}</Button>
                     </div>
                   )}
                   {detail.resources.length === 0 && <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">No resources</p>}
-                  {detail.resources.map((resource) => (
-                    <div key={resource.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div><p className="text-sm font-semibold">{resource.label}</p><p className="text-xs text-muted-foreground">{RESOURCE_LABELS[resource.type]}{resource.accessMode ? ` · ${resource.accessMode === 'terminal' ? 'Terminal' : 'Desktop'}` : ''}</p></div><div className="flex items-center gap-2"><Badge variant="outline">Owner retained</Badge>{detail.workspace.capabilities.manageResources && <Button size="sm" variant="ghost" disabled={busy === `resource:${resource.id}`} onClick={() => void detachResource(resource.id)}>{busy === `resource:${resource.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Detach'}</Button>}</div></div>
-                  ))}
+                  {detail.resources.map((resource) => {
+                    const canDetach = detail.workspace.capabilities.manageResources || resource.resourceOwnerId === detail.viewerId;
+                    return (
+                      <div key={resource.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+                        <div>
+                          <p className="text-sm font-semibold">{resource.label}</p>
+                          <p className="text-xs text-muted-foreground">{RESOURCE_LABELS[resource.type]}{resource.accessMode ? ` · ${resource.accessMode === 'terminal' ? 'Terminal' : 'Desktop'}` : ''} · {resource.resourceOwnerName}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">Owner retained</Badge>
+                          {canDetach && <Button size="sm" variant="ghost" disabled={busy === `resource:${resource.id}`} onClick={() => void detachResource(resource.id)}>{busy === `resource:${resource.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Detach'}</Button>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </CardContent>
               </Card>
             </>

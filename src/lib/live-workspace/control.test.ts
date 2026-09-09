@@ -79,8 +79,14 @@ describe('Live Workspace control lease policy', () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 
-  it('returns no authority when the server-side active-lease lookup has no matching row', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
+  it('revalidates controller, contributor, resource attachment and usable lab state for every active lease lookup', async () => {
+    const query = vi.fn(async (sql: string) => {
+      expect(sql).toContain("lab.status NOT IN ('destroying','destroyed','failed')");
+      expect(sql).toContain('resource_owner_member');
+      expect(sql).toContain("resource_owner_participant.role IN ('instructor','learner')");
+      expect(sql).toContain("resource.status='attached'");
+      return { rows: [], rowCount: 0 };
+    });
     await expect(getActiveControlLease({
       queryable: { query } as any,
       collaborationId: workspaceId,

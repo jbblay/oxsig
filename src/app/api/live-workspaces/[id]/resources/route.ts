@@ -28,15 +28,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const rateLimit = await checkRateLimit(req, { maxRequests: 20, windowMs: 60 * 60_000 }, `${user.id}:${id}`);
     if (rateLimit) return rateLimit;
     const parsed = attachSchema.safeParse(await req.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: 'Choose a supported owner-owned resource' }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: 'Choose a supported resource' }, { status: 400 });
 
     const pool = getPool();
     try {
       const access = await getLiveWorkspaceAccess(pool, id, user.id);
       if (!access) throw new LiveWorkspaceError('Live Workspace not found or access denied.', 404, 'WORKSPACE_NOT_FOUND');
-      if (!access.capabilities.manageResources) throw new LiveWorkspaceError('You cannot attach Live Workspace resources.', 403, 'RESOURCE_MANAGEMENT_DENIED');
 
-      const resource = await assertOwnerResource(pool, access.ownerId, parsed.data.resourceType, parsed.data.resourceId);
+      const contributesOwnLab = parsed.data.resourceType === 'lab-instance' && access.capabilities.collaborate;
+      if (!access.capabilities.manageResources && !contributesOwnLab) {
+        throw new LiveWorkspaceError('You can only contribute your own Cyber Lab to this workspace.', 403, 'RESOURCE_MANAGEMENT_DENIED');
+      }
+
+      const resourceOwnerId = access.capabilities.manageResources ? access.ownerId : user.id;
+      const resource = await assertOwnerResource(pool, resourceOwnerId, parsed.data.resourceType, parsed.data.resourceId);
       const result = await pool.query(
         `INSERT INTO live_workspace_resources (
            collaboration_id, resource_type, resource_id, resource_owner_id, attached_by, status, metadata
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                        resource_owner_id=EXCLUDED.resource_owner_id, metadata=EXCLUDED.metadata,
                        updated_at=NOW()
          RETURNING id, resource_type, resource_id, resource_owner_id, attached_by, metadata, attached_at`,
-        [id, parsed.data.resourceType, resource.id, access.ownerId, user.id, stringifyPostgresJson({ label: resource.label })]
+        [id, parsed.data.resourceType, resource.id, resourceOwnerId, user.id, stringifyPostgresJson({ label: resource.label })]
       );
       const row = result.rows[0];
       return NextResponse.json({
@@ -82,7 +87,19 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     try {
       const access = await getLiveWorkspaceAccess(pool, id, user.id);
       if (!access) throw new LiveWorkspaceError('Live Workspace not found or access denied.', 404, 'WORKSPACE_NOT_FOUND');
-      if (!access.capabilities.manageResources) throw new LiveWorkspaceError('You cannot detach Live Workspace resources.', 403, 'RESOURCE_MANAGEMENT_DENIED');
+
+      const binding = await pool.query(
+        `SELECT resource_owner_id
+           FROM live_workspace_resources
+          WHERE id=$1 AND collaboration_id=$2 AND status='attached'
+          LIMIT 1`,
+        [parsed.data.bindingId, id]
+      );
+      const resourceOwnerId = binding.rows[0]?.resource_owner_id as string | undefined;
+      if (!resourceOwnerId) throw new LiveWorkspaceError('Resource binding not found.', 404, 'RESOURCE_BINDING_NOT_FOUND');
+      if (!access.capabilities.manageResources && resourceOwnerId !== user.id) {
+        throw new LiveWorkspaceError('You can only detach a Cyber Lab you contributed.', 403, 'RESOURCE_MANAGEMENT_DENIED');
+      }
 
       const client = await pool.connect();
       try {

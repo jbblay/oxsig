@@ -18,7 +18,6 @@ type TerminalTargetRow = {
   binding_id: string;
   lab_instance_id: string;
   resource_owner_id: string;
-  workspace_owner_id: string;
   lab_owner_id: string;
   label: string;
   access_mode: 'terminal' | 'desktop';
@@ -82,15 +81,13 @@ export async function assertLiveWorkspaceTerminalAuthorization(args: {
   const ownership = await args.pool.query(
     `SELECT 1
        FROM live_workspace_resources resource
-       JOIN collaborations collaboration ON collaboration.id=resource.collaboration_id
        JOIN lab_instances lab ON lab.id=resource.resource_id
       WHERE resource.id=$1
         AND resource.collaboration_id=$2
         AND resource.resource_id=$3
         AND resource.resource_type='lab-instance'
         AND resource.status='attached'
-        AND resource.resource_owner_id=collaboration.owner_id
-        AND lab.owner_id=collaboration.owner_id
+        AND resource.resource_owner_id=lab.owner_id
         AND lab.status <> 'destroyed'
         AND (CASE WHEN lab.metadata->>'accessMode'='desktop' THEN 'desktop' ELSE 'terminal' END)='terminal'
       LIMIT 1`,
@@ -124,7 +121,6 @@ export async function prepareLiveWorkspaceTerminal(args: {
     `SELECT resource.id AS binding_id,
             resource.resource_id AS lab_instance_id,
             resource.resource_owner_id,
-            collaboration.owner_id AS workspace_owner_id,
             lab.owner_id AS lab_owner_id,
             COALESCE(resource.metadata->>'label', definition.name, definition.slug, 'Cyber Lab') AS label,
             CASE WHEN lab.metadata->>'accessMode' = 'desktop' THEN 'desktop' ELSE 'terminal' END AS access_mode,
@@ -152,8 +148,8 @@ export async function prepareLiveWorkspaceTerminal(args: {
   if (!row || row.lab_instance_id !== lease.labInstanceId) {
     throw new LiveWorkspaceError('The leased lab is no longer attached to this Live Workspace.', 409, 'TERMINAL_LAB_BINDING_CHANGED');
   }
-  if (row.resource_owner_id !== row.workspace_owner_id || row.lab_owner_id !== row.workspace_owner_id) {
-    throw new LiveWorkspaceError('The attached lab is no longer owned by the Live Workspace owner.', 403, 'TERMINAL_LAB_OWNERSHIP_MISMATCH');
+  if (row.resource_owner_id !== row.lab_owner_id) {
+    throw new LiveWorkspaceError('The attached lab no longer belongs to its contributing participant.', 403, 'TERMINAL_LAB_OWNERSHIP_MISMATCH');
   }
   if (row.access_mode !== 'terminal') {
     throw new LiveWorkspaceError('This attached lab was not provisioned for terminal access.', 409, 'TERMINAL_SURFACE_UNAVAILABLE');
