@@ -14,7 +14,6 @@
     "server:check": "node --check server.mjs && node --check scripts/start-production.mjs && node --check scripts/env-loader.mjs && node --check scripts/env-reconcile-lib.mjs && node --check scripts/env-reconcile.mjs && node --check scripts/env-contract-check.mjs && node --check scripts/elevenlabs-voices-lib.mjs && node --check scripts/elevenlabs-voices.mjs && node --check scripts/schema-parity-lib.mjs && node --check scripts/schema-parity-check.mjs",
     "env:reconcile": "node scripts/env-reconcile.mjs",
     "env:check": "node scripts/env-reconcile.mjs --check",
-    "env:check:production": "node scripts/env-reconcile.mjs --check --production",
     "env:contract": "node scripts/env-contract-check.mjs",
     "prod:check": "node scripts/production-check-runner.mjs",
     "readiness": "node scripts/readiness-check.mjs",
