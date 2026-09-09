@@ -68,7 +68,7 @@ Ordinary owner terminal and desktop bridge tickets do not need this additional f
 
 ## WebSocket enforcement
 
-Production continues to use `src/app/__oxsig/terminal-bridge/route.ts` with Vercel's App Router WebSocket upgrade support.
+Production continues to use `src/app/%5F_oxsig/terminal-bridge/route.ts` with Vercel's App Router WebSocket upgrade support.
 
 For a shared terminal ticket, the bridge:
 
@@ -116,3 +116,4 @@ After merge, live validation should cover:
 - existing desktop transport continues to work.
 
 Do not describe the AWS/Vercel shared-terminal path as live-proven until those tests are performed against the deployed environment.
+

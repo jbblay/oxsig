@@ -44,6 +44,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: node --test scripts/tests/production-regressions.mjs
       - run: pnpm server:check
       - run: pnpm env:contract
       - run: node --check scripts/readiness-check.mjs
@@ -81,3 +82,4 @@ jobs:
           STORAGE_REGION: eu-central-1
           LAB_AWS_ENABLED: 'false'
           OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
+

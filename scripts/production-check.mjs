@@ -103,8 +103,21 @@ if (!ablyKey) {
 
 const sentryServerDsn = value('SENTRY_DSN');
 const sentryBrowserDsn = value('NEXT_PUBLIC_SENTRY_DSN');
-validateHttpUrl('SENTRY_DSN');
-validateHttpUrl('NEXT_PUBLIC_SENTRY_DSN');
+for (const name of ['SENTRY_DSN', 'NEXT_PUBLIC_SENTRY_DSN']) {
+  const raw = value(name);
+  if (!raw) continue;
+  try {
+    const dsn = new URL(raw);
+    const projectId = dsn.pathname.split('/').pop();
+    if (!['http:', 'https:'].includes(dsn.protocol) || !dsn.hostname ||
+        !dsn.username || !/^\d+$/.test(projectId || '') || dsn.search || dsn.hash) {
+      throw new Error('Invalid DSN');
+    }
+  } catch {
+    // Never print the configured value: DSNs may contain credentials.
+    errors.push(`${name} must be a Sentry DSN with a public key and numeric project ID, not a homepage URL`);
+  }
+}
 
 if (!sentryServerDsn && !sentryBrowserDsn) {
   warnings.push('Sentry is not configured; application errors will not be sent to centralized monitoring');
@@ -165,3 +178,4 @@ if (warnings.length) {
 
 if (errors.length) process.exit(1);
 console.log(`[oxsig] Production configuration contract passed${warnings.length ? ` with ${warnings.length} warning(s)` : ''}.`);
+

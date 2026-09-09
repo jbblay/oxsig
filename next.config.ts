@@ -2,7 +2,8 @@ import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs/config';
 
 const nextConfig: NextConfig = {
-  compiler: { removeConsole: process.env.NODE_ENV === 'production' },
+  // Keep operational failures visible even when external monitoring is unavailable.
+  compiler: { removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false },
   experimental: { optimizePackageImports: ['lucide-react', 'framer-motion'] },
   serverExternalPackages: ['ably'],
   async headers() {
@@ -38,3 +39,4 @@ export default sentrySourceMapsConfigured
       },
     })
   : nextConfig;
+
