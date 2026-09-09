@@ -9,7 +9,7 @@ export default async function CyberLabPage({ searchParams }: { searchParams: Sea
   return (
     <>
       {params.run ? <OperationRunStrip runId={params.run} /> : <OperationRunRecovery compact />}
-      <CyberLabWorkspace operationSlug={params.operation} operationMode={params.mode} />
+      <CyberLabWorkspace operationSlug={params.operation} operationMode={params.mode} operationRunId={params.run} />
     </>
   );
 }
