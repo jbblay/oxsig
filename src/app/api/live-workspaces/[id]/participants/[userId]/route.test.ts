@@ -80,17 +80,28 @@ describe('Live Workspace participant role API', () => {
     expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
   });
 
-  it('revokes leases and cancels pending requests when a participant becomes observer', async () => {
+  it('revokes control and detaches contributions when a participant becomes observer', async () => {
     mocks.assignLiveWorkspaceRole.mockResolvedValue({ role: 'observer', capabilities: {} });
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('UPDATE live_workspace_resources')) return { rows: [{ id: bindingId }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
     const response = await PATCH(request({ role: 'observer' }), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
     expect(response.status).toBe(200);
-    expect(mocks.revokeControlForParticipant).toHaveBeenCalledWith({
-      queryable: pool,
+    expect(mocks.revokeControlForBinding).toHaveBeenCalledWith(expect.objectContaining({
+      collaborationId: workspaceId,
+      bindingId,
+      actorId: user.id,
+      reason: 'role_became_observer',
+    }));
+    expect(mocks.revokeControlForParticipant).toHaveBeenCalledWith(expect.objectContaining({
       collaborationId: workspaceId,
       participantId: targetId,
       actorId: user.id,
       reason: 'role_became_observer',
-    });
+    }));
+    expect(await response.json()).toMatchObject({ detachedResources: 1 });
+    expect(clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('lets the owner remove a participant and revokes machine control first', async () => {
