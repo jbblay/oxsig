@@ -1,17 +1,23 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-export const LOCAL_ONLY_KEYS = new Set(['AWS_PROFILE']);
+export const LOCAL_ONLY_KEYS = new Set([
+  'AWS_PROFILE',
+  'OXSIG_TEST_RESET_ENABLED',
+]);
 
 // These values must be chosen explicitly for production. Reusing a local value
-// automatically can silently point production at development identity, data, or
-// shared secrets.
+// automatically can silently point production at development identity, data,
+// host binding, CORS, or shared secrets.
 export const PRODUCTION_REPLACE_KEYS = new Set([
   'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',
   'CLERK_SECRET_KEY',
   'CLERK_WEBHOOK_SIGNING_SECRET',
   'DATABASE_URL',
   'OXSIG_APP_URL',
+  'ALLOWED_ORIGINS',
+  'OXSIG_HOST',
+  'OXSIG_APP_HOST',
   'CRON_SECRET',
   'OXSIG_TERMINAL_BRIDGE_SECRET',
 ]);
