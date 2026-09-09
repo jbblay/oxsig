@@ -33,7 +33,9 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   const pathname = usePathname();
   const { user } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
-  const cyberLab = pathname.startsWith('/labs') || pathname.startsWith('/operations') || pathname.startsWith('/warroom');
+  // AI Practitioner is mounted inside Cyber Lab. Operations and WarRoom use the
+  // global AI Helper, which already receives those workspace contexts.
+  const practitionerSurface = pathname.startsWith('/labs');
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -47,7 +49,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   }, []);
 
   function openAi() {
-    window.dispatchEvent(new CustomEvent(cyberLab ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+    window.dispatchEvent(new CustomEvent(practitionerSurface ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
   }
 
   return (
@@ -82,8 +84,8 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               variant="ghost"
               className="h-8 w-8"
               onClick={openAi}
-              aria-label={cyberLab ? 'Open AI Practitioner' : 'Open AI Helper'}
-              title={cyberLab ? 'AI Practitioner' : 'AI Helper'}
+              aria-label={practitionerSurface ? 'Open AI Practitioner' : 'Open AI Helper'}
+              title={practitionerSurface ? 'AI Practitioner' : 'AI Helper'}
             >
               <Sparkles className="h-3.5 w-3.5" />
             </Button>
