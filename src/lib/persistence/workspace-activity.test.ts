@@ -7,6 +7,7 @@ import {
   prepareWorkspaceLocalStateForGuest,
   prepareWorkspaceLocalStateForUser,
   recordWorkspaceActivity,
+  recordWorkspaceVisit,
 } from './workspace-activity';
 
 describe('workspace activity cache', () => {
@@ -43,6 +44,20 @@ describe('workspace activity cache', () => {
     expect(getWorkspaceRecents()).toEqual([
       { href: '/vault', label: 'Vault', color: 'vault', at: 2000 },
       { href: '/labs', label: 'Cyber Lab', color: 'labs', at: 1000 },
+    ]);
+  });
+
+  it('preserves Operations and WarRoom routes added after the durable branch diverged', () => {
+    recordWorkspaceVisit('/operations/black-domain');
+    recordWorkspaceVisit('/warroom/session-1');
+
+    expect(getWorkspaceRecents().map((item) => ({ href: item.href, label: item.label, color: item.color }))).toEqual([
+      { href: '/warroom', label: 'WarRoom', color: 'live' },
+      { href: '/operations', label: 'Operations', color: 'labs' },
+    ]);
+    expect(getWorkspaceActivity().map((item) => item.label)).toEqual([
+      'Opened WarRoom',
+      'Opened Operations',
     ]);
   });
 
