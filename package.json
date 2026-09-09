@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node server.mjs --dev",
     "dev:up": "bash scripts/dev-up.sh",
-    "build": "next build && node scripts/verify-built-routes.mjs",
+    "build": "next build && node scripts/verify-built-routes.mjs && node scripts/verify-built-websocket.mjs",
     "start": "node scripts/start-production.mjs --prod",
     "server:check": "node --check server.mjs && node --check scripts/start-production.mjs && node --check scripts/env-loader.mjs && node --check scripts/env-reconcile-lib.mjs && node --check scripts/env-reconcile.mjs && node --check scripts/env-contract-check.mjs && node --check scripts/elevenlabs-voices-lib.mjs && node --check scripts/elevenlabs-voices.mjs && node --check scripts/schema-parity-lib.mjs && node --check scripts/schema-parity-check.mjs",
     "env:reconcile": "node scripts/env-reconcile.mjs",
