@@ -130,13 +130,35 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
     expect(mocks.deleteCollaborationObjects).not.toHaveBeenCalled();
   });
 
-  it('does not delete relational data if attachment cleanup fails', async () => {
+  it('deletes an attachment-free workspace when storage cleanup is unavailable', async () => {
     mocks.deleteCollaborationObjects.mockRejectedValue(new Error('storage unavailable'));
+    poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("metadata ? 'attachment'")) return { rows: [{ has_attachments: false }], rowCount: 1 };
+      if (sql.includes('DELETE FROM collaborations')) return { rows: [{ id: workspaceId }], rowCount: 1 };
+      return { rows: [{ id: workspaceId }], rowCount: 1 };
+    });
+
+    const args = input('DELETE');
+    const response = await DELETE(args.request, args.context);
+    expect(response.status).toBe(200);
+    expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining("metadata ? 'attachment'"), [workspaceId]);
+    expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collaborations'), [workspaceId, user.id]);
+    expect(await response.json()).toEqual({ deleted: true, attachmentCleanupDeferred: true });
+  });
+
+  it('does not delete relational data if referenced attachment cleanup fails', async () => {
+    mocks.deleteCollaborationObjects.mockRejectedValue(new Error('storage unavailable'));
+    poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("metadata ? 'attachment'")) return { rows: [{ has_attachments: true }], rowCount: 1 };
+      return { rows: [{ id: workspaceId }], rowCount: 1 };
+    });
+
     const args = input('DELETE');
     const response = await DELETE(args.request, args.context);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'Could not delete Live Workspace attachments. Nothing was deleted.' });
-    expect(poolQuery).toHaveBeenCalledTimes(1);
     expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining('SELECT id'), [workspaceId, user.id]);
+    expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining("metadata ? 'attachment'"), [workspaceId]);
+    expect(poolQuery.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM collaborations'))).toBe(false);
   });
 });
