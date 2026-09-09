@@ -227,6 +227,33 @@ export default function LiveWorkspacePage() {
     }
   }
 
+  async function removeParticipant(userId: string) {
+    if (!selectedId || !detail) return;
+    const leaving = userId === detail.viewerId;
+    setBusy(`participant:${userId}`);
+    try {
+      const token = await getCsrfToken();
+      const response = await fetch(`/api/live-workspaces/${selectedId}/participants/${userId}`, {
+        method: 'DELETE',
+        headers: { 'x-csrf-token': token },
+      });
+      if (!response.ok) throw new Error(await apiError(response, leaving ? 'Could not leave workspace' : 'Could not remove participant'));
+      if (leaving) {
+        setDetail(null);
+        setSelectedId(null);
+        await loadList();
+        toast.success('Left workspace.');
+      } else {
+        await loadDetail(selectedId);
+        toast.success('Participant removed.');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (leaving ? 'Could not leave workspace' : 'Could not remove participant'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function attachResource() {
     if (!selectedId || !resourceId) return;
     setBusy('resource');
@@ -348,22 +375,31 @@ export default function LiveWorkspacePage() {
                       <div className="flex gap-2"><Input id="live-participant-email" className="min-w-0 flex-1" type="email" autoComplete="email" placeholder="participant@example.com" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value.slice(0, 320))} /><Button variant="outline" onClick={() => void inviteParticipant()} disabled={busy === 'invite' || !inviteEmail.trim()}>{busy === 'invite' && <Loader2 className="h-4 w-4 animate-spin" />} Invite</Button></div>
                     </div>
                   )}
-                  {detail.participants.map((participant) => (
-                    <div key={participant.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-                      <div><p className="text-sm font-semibold">{participant.displayName}</p><p className="text-xs text-muted-foreground">{participant.email || 'Participant'}</p></div>
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        {participant.role === 'owner' || !detail.workspace.capabilities.manageParticipants ? <Badge variant="secondary">{ROLE_LABELS[participant.role]}</Badge> : <label className="sr-only" htmlFor={`role-${participant.id}`}>Role for {participant.displayName}</label>}
-                        {participant.role !== 'owner' && detail.workspace.capabilities.manageParticipants && (
-                          <select id={`role-${participant.id}`} aria-label={`Role for ${participant.displayName}`} className="rounded-md border bg-background px-2 py-1.5 text-xs" value={participant.role} disabled={busy === `role:${participant.id}`} onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}>
-                            <option value="observer">Observer</option>
-                            <option value="learner">Learner</option>
-                            {(detail.workspace.isOwner || participant.role === 'instructor') && <option value="instructor" disabled={!detail.workspace.isOwner}>Instructor</option>}
-                          </select>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'Control eligible' : 'Observe only'}</span>
+                  {detail.participants.map((participant) => {
+                    const canRemove = participant.role !== 'owner' && (detail.workspace.isOwner || participant.id === detail.viewerId);
+                    const removing = busy === `participant:${participant.id}`;
+                    return (
+                      <div key={participant.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+                        <div><p className="text-sm font-semibold">{participant.displayName}</p><p className="text-xs text-muted-foreground">{participant.email || 'Participant'}</p></div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {participant.role === 'owner' || !detail.workspace.capabilities.manageParticipants ? <Badge variant="secondary">{ROLE_LABELS[participant.role]}</Badge> : <label className="sr-only" htmlFor={`role-${participant.id}`}>Role for {participant.displayName}</label>}
+                          {participant.role !== 'owner' && detail.workspace.capabilities.manageParticipants && (
+                            <select id={`role-${participant.id}`} aria-label={`Role for ${participant.displayName}`} className="rounded-md border bg-background px-2 py-1.5 text-xs" value={participant.role} disabled={busy === `role:${participant.id}` || removing} onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}>
+                              <option value="observer">Observer</option>
+                              <option value="learner">Learner</option>
+                              {(detail.workspace.isOwner || participant.role === 'instructor') && <option value="instructor" disabled={!detail.workspace.isOwner}>Instructor</option>}
+                            </select>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'Control eligible' : 'Observe only'}</span>
+                          {canRemove && (
+                            <Button size="sm" variant="ghost" disabled={removing} onClick={() => void removeParticipant(participant.id)}>
+                              {removing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : participant.id === detail.viewerId ? 'Leave' : 'Remove'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </CardContent>
               </Card>
 
