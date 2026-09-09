@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Clock3, Crosshair, Shield, Swords, UsersRound } from 'lucide-react';
 import { OperationLaunchButton } from '@/components/operations/OperationLaunchButton';
+import { OperationRunRecovery } from '@/components/operations/OperationRunRecovery';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,6 +26,8 @@ export default function OperationsPage() {
           <Link href="/warroom"><Swords className="mr-2 h-4 w-4" />Open WarRoom</Link>
         </Button>
       </div>
+
+      <OperationRunRecovery />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {operations.map((operation) => {
