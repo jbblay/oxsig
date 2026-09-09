@@ -1,9 +1,10 @@
 import 'server-only';
 
 import { DescribeInstancesCommand, EC2Client } from '@aws-sdk/client-ec2';
+import { awsClientConfig } from '@/lib/aws/client-config';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
-const ec2 = new EC2Client({ region: REGION });
+const ec2 = new EC2Client(awsClientConfig(REGION));
 
 export type ExpiredTaggedOperationNode = {
   externalId: string;
