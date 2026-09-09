@@ -39,6 +39,12 @@ function resumeHref(run: RunSummary) {
   return `${destination}?${query.toString()}`;
 }
 
+function runExpired(run: RunSummary) {
+  if (!run.expiresAt) return false;
+  const expiresAt = new Date(run.expiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
 function expiryLabel(value: string | null) {
   if (!value) return null;
   const ms = new Date(value).getTime() - Date.now();
@@ -88,7 +94,10 @@ export function OperationRunRecovery({ compact = false, modeFilter }: Props) {
     }
   };
 
-  const filtered = runs.filter((run) => (!modeFilter || run.mode === modeFilter) && (!compact || ACTIVE.has(run.status)));
+  const filtered = runs.filter((run) => (
+    (!modeFilter || run.mode === modeFilter)
+    && (!compact || (ACTIVE.has(run.status) && !runExpired(run)))
+  ));
   if (!loading && filtered.length === 0) return null;
 
   return (
@@ -104,12 +113,15 @@ export function OperationRunRecovery({ compact = false, modeFilter }: Props) {
           {filtered.map((run) => {
             const operation = getOperation(run.operationSlug);
             const active = ACTIVE.has(run.status);
+            const expired = runExpired(run);
+            const resumable = active && !expired && run.status !== 'destroying';
+            const endable = active && run.status !== 'destroying';
             return (
               <div key={run.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-xs font-semibold">{operation?.codename || run.operationSlug}</span>
-                    <Badge variant={run.status === 'running' ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{run.status}</Badge>
+                    <Badge variant={run.status === 'running' && !expired ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{expired ? 'expired' : run.status}</Badge>
                     <Badge variant="secondary" className="h-5 text-[9px] capitalize">{run.mode}</Badge>
                   </div>
                   <p className="mt-1 text-[10px] text-muted-foreground">
@@ -117,17 +129,17 @@ export function OperationRunRecovery({ compact = false, modeFilter }: Props) {
                   </p>
                 </div>
 
-                {active && run.status !== 'destroying' ? (
-                  <>
-                    <Button asChild size="sm" variant="outline" className="h-8">
-                      <Link href={resumeHref(run)}><Play className="mr-1.5 h-3.5 w-3.5" />Resume</Link>
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-8" onClick={() => void endRun(run.id)} disabled={busy === run.id}>
-                      {busy === run.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}
-                      {!compact ? <span className="ml-1.5">End</span> : null}
-                    </Button>
-                  </>
-                ) : null}
+                {resumable && (
+                  <Button asChild size="sm" variant="outline" className="h-8">
+                    <Link href={resumeHref(run)}><Play className="mr-1.5 h-3.5 w-3.5" />Resume</Link>
+                  </Button>
+                )}
+                {endable && (
+                  <Button size="sm" variant="ghost" className="h-8" onClick={() => void endRun(run.id)} disabled={busy === run.id}>
+                    {busy === run.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}
+                    {!compact ? <span className="ml-1.5">End</span> : null}
+                  </Button>
+                )}
               </div>
             );
           })}
