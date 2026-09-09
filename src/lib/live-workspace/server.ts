@@ -207,7 +207,7 @@ export async function listOwnerAttachableResources(
            FROM lab_instances li
            JOIN lab_definitions ld ON ld.id = li.definition_id
           WHERE li.owner_id = $1
-            AND li.status NOT IN ('destroying', 'destroyed')
+            AND li.status NOT IN ('destroying', 'destroyed', 'failed')
          UNION ALL
          SELECT course.id,
                 'academy-course'::text AS type,
@@ -269,7 +269,7 @@ export async function assertOwnerResource(
        FROM lab_instances li
        JOIN lab_definitions ld ON ld.id = li.definition_id
        WHERE li.id = $1 AND li.owner_id = $2
-         AND li.status NOT IN ('destroying', 'destroyed')
+         AND li.status NOT IN ('destroying', 'destroyed', 'failed')
        LIMIT 1`,
       [resourceId, ownerId]
     );
