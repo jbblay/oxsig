@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { inspectSchemaParity } from './schema-parity-lib.mjs';
+import { inspectSchemaParity, REQUIRED_RUNTIME_RELATIONS } from './schema-parity-lib.mjs';
 
 const tempDirs = [];
 
@@ -16,7 +16,7 @@ async function repositoryWithMigrations(names) {
   return root;
 }
 
-function database({ migrationTable = true, applied = [] } = {}) {
+function database({ migrationTable = true, applied = [], relations = REQUIRED_RUNTIME_RELATIONS } = {}) {
   return {
     async query(sql) {
       if (sql.includes("to_regclass('public.oxisg_schema_migrations')")) {
@@ -24,6 +24,9 @@ function database({ migrationTable = true, applied = [] } = {}) {
       }
       if (sql.includes('SELECT filename FROM oxisg_schema_migrations')) {
         return { rows: applied.map((filename) => ({ filename })) };
+      }
+      if (sql.includes('FROM pg_class c')) {
+        return { rows: relations.map((relation_name) => ({ relation_name })) };
       }
       throw new Error(`Unexpected query: ${sql}`);
     },
@@ -35,7 +38,7 @@ afterEach(async () => {
 });
 
 describe('inspectSchemaParity', () => {
-  it('reports ready when every repository migration is applied', async () => {
+  it('reports ready when every repository migration is applied and runtime shape matches', async () => {
     const migrations = ['001_initial.sql', '002_second.sql'];
     const rootDir = await repositoryWithMigrations(migrations);
 
@@ -45,6 +48,8 @@ describe('inspectSchemaParity', () => {
     expect(result.reason).toBe('in_sync');
     expect(result.pendingMigrations).toEqual([]);
     expect(result.unknownAppliedMigrations).toEqual([]);
+    expect(result.missingRuntimeRelations).toEqual([]);
+    expect(result.unexpectedRetiredRelations).toEqual([]);
   });
 
   it('reports every repository migration pending when the history table is missing', async () => {
@@ -79,5 +84,31 @@ describe('inspectSchemaParity', () => {
     expect(result.ready).toBe(false);
     expect(result.reason).toBe('unknown_applied_migrations');
     expect(result.unknownAppliedMigrations).toEqual(['999_unknown.sql']);
+  });
+
+  it('rejects current migration history when a required runtime relation is missing', async () => {
+    const migrations = ['001_initial.sql'];
+    const rootDir = await repositoryWithMigrations(migrations);
+    const relations = REQUIRED_RUNTIME_RELATIONS.filter((name) => name !== 'vault_items');
+
+    const result = await inspectSchemaParity(database({ applied: migrations, relations }), { rootDir });
+
+    expect(result.ready).toBe(false);
+    expect(result.reason).toBe('runtime_relations_missing');
+    expect(result.missingRuntimeRelations).toEqual(['vault_items']);
+  });
+
+  it('rejects current migration history when a retired relation is still present', async () => {
+    const migrations = ['001_initial.sql'];
+    const rootDir = await repositoryWithMigrations(migrations);
+
+    const result = await inspectSchemaParity(
+      database({ applied: migrations, relations: [...REQUIRED_RUNTIME_RELATIONS, 'documents'] }),
+      { rootDir }
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.reason).toBe('retired_relations_present');
+    expect(result.unexpectedRetiredRelations).toEqual(['documents']);
   });
 });
