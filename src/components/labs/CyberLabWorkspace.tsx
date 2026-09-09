@@ -12,6 +12,7 @@ import LabEvidenceTimeline from '@/components/labs/LabEvidenceTimeline';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
+import { OperationLabRuntimePanel } from '@/components/operations/OperationLabRuntimePanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getOperation } from '@/lib/operations/catalog';
@@ -38,9 +39,11 @@ const ALL_MODES = new Set<WorkspaceMode>([...PRIMARY_STAGES, ...ADVANCED_STAGES]
 export default function CyberLabWorkspace({
   operationSlug,
   operationMode,
+  operationRunId,
 }: {
   operationSlug?: string;
   operationMode?: string;
+  operationRunId?: string;
 }) {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
   const [designerMounted, setDesignerMounted] = React.useState(false);
@@ -146,9 +149,13 @@ export default function CyberLabWorkspace({
       </div>
 
       <div id="cyber-lab-runtime" role="tabpanel" aria-labelledby="cyber-lab-tab-runtime" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
-        <LabTopologyDurableStateProvider>
-          <LabRuntimePanel embedded />
-        </LabTopologyDurableStateProvider>
+        {operationRunId && operationSlug === 'black-domain' ? (
+          <OperationLabRuntimePanel runId={operationRunId} />
+        ) : (
+          <LabTopologyDurableStateProvider>
+            <LabRuntimePanel embedded />
+          </LabTopologyDurableStateProvider>
+        )}
       </div>
 
       {designerMounted && (

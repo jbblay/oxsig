@@ -1,3 +1,4 @@
+import LabAccessReadinessBanner from '@/components/labs/LabAccessReadinessBanner';
 import CyberLabWorkspace from '@/components/labs/CyberLabWorkspace';
 import { OperationRunRecovery } from '@/components/operations/OperationRunRecovery';
 import { OperationRunStrip } from '@/components/operations/OperationRunStrip';
@@ -9,7 +10,8 @@ export default async function CyberLabPage({ searchParams }: { searchParams: Sea
   return (
     <>
       {params.run ? <OperationRunStrip runId={params.run} /> : <OperationRunRecovery compact />}
-      <CyberLabWorkspace operationSlug={params.operation} operationMode={params.mode} />
+      {!params.run && <LabAccessReadinessBanner />}
+      <CyberLabWorkspace operationSlug={params.operation} operationMode={params.mode} operationRunId={params.run} />
     </>
   );
 }

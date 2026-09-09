@@ -36,7 +36,8 @@ const requestStore = new Map<string, RequestRecord>();
 
 export const RATE_LIMITS = {
   API_DEFAULT: { maxRequests: 100, windowMs: 60 * 1000 },
-  LAB_PROVISION: { maxRequests: 2, windowMs: 60 * 60 * 1000, failClosed: true },
+  // Acceptance testing needs several destroy/reprovision passes in one hour.
+  LAB_PROVISION: { maxRequests: 6, windowMs: 60 * 60 * 1000, failClosed: true },
 } as const satisfies Record<string, RateLimitConfig>;
 
 function getClientId(request: NextRequest): string {
@@ -58,14 +59,6 @@ function normalizedPath(request: NextRequest): string {
   }
 }
 
-/**
- * Build the opaque shared bucket key. Query strings are deliberately excluded
- * so callers cannot evade a limit by adding arbitrary query parameters.
- *
- * `bucketScope` lets multiple endpoints intentionally share one policy bucket.
- * This is useful for cost-bearing operations exposed through more than one
- * product surface, such as normal lab creation and Designer deployment.
- */
 export function buildRateLimitBucketKey(
   request: NextRequest,
   config: RateLimitConfig,
@@ -210,10 +203,6 @@ export function withRateLimit(
   };
 }
 
-/**
- * Local fallback diagnostics retained for tests/development. Production shared
- * bucket state lives in PostgreSQL and is intentionally not exposed here.
- */
 export function getRateLimitInfo(
   request: NextRequest,
   config: RateLimitConfig
