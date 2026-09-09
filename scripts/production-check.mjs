@@ -72,6 +72,10 @@ if (labsEnabled) {
   requireValue('LAB_AWS_REGION', 'LAB_AWS_REGION is required when LAB_AWS_ENABLED=true');
   requireValue('LAB_AWS_SUBNET_ID', 'LAB_AWS_SUBNET_ID is required when LAB_AWS_ENABLED=true');
   requireValue('LAB_AWS_SECURITY_GROUP_ID', 'LAB_AWS_SECURITY_GROUP_ID is required when LAB_AWS_ENABLED=true');
+  requireValue(
+    'LAB_AWS_OPERATION_SECURITY_GROUP_ID',
+    'LAB_AWS_OPERATION_SECURITY_GROUP_ID is required when LAB_AWS_ENABLED=true so multi-node Operations can use their dedicated private security group'
+  );
   requireValue('LAB_AWS_INSTANCE_PROFILE', 'LAB_AWS_INSTANCE_PROFILE is required when LAB_AWS_ENABLED=true');
 }
 

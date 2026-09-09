@@ -68,6 +68,12 @@ if [[ ! -f .env.local ]]; then
   fail ".env.local is missing. Oxsig local development requires your existing local environment configuration."
 fi
 
+info "Reconciling local and production environment contracts"
+# This only appends keys that are missing from .env.local/.env.production. It
+# never rewrites an existing assignment or prints secret values. Required local
+# values are validated before the migration step below can run.
+node scripts/env-reconcile.mjs
+
 info "Checking dependencies"
 if git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
   pnpm install --frozen-lockfile
