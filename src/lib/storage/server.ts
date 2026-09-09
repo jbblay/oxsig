@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { S3Client } from '@aws-sdk/client-s3';
+import { awsClientConfig } from '@/lib/aws/client-config';
 
 let storageClient: S3Client | null = null;
 
@@ -26,9 +27,8 @@ export function getStorageBucket(): string {
 
 export function getStorageClient(): S3Client {
   if (!storageClient) {
-    storageClient = new S3Client({
-      region: process.env.STORAGE_REGION || process.env.AWS_REGION || 'eu-central-1',
-    });
+    const region = process.env.STORAGE_REGION || process.env.AWS_REGION || 'eu-central-1';
+    storageClient = new S3Client(awsClientConfig(region));
   }
   return storageClient;
 }

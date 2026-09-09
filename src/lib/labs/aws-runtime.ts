@@ -20,6 +20,7 @@ import {
   StartSessionCommand,
   TerminateSessionCommand,
 } from '@aws-sdk/client-ssm';
+import { awsClientConfig } from '@/lib/aws/client-config';
 import type { LabDefinition, LabInstanceStatus, LabOsFamily, LabRuntimeCapabilities } from './types';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
@@ -27,8 +28,8 @@ const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
 const SECURITY_GROUP_ID = process.env.LAB_AWS_SECURITY_GROUP_ID;
 const INSTANCE_PROFILE = process.env.LAB_AWS_INSTANCE_PROFILE;
 
-const ec2 = new EC2Client({ region: REGION });
-const ssm = new SSMClient({ region: REGION });
+const ec2 = new EC2Client(awsClientConfig(REGION));
+const ssm = new SSMClient(awsClientConfig(REGION));
 
 const INSTANCE_ID = /^i-[0-9a-f]+$/i;
 

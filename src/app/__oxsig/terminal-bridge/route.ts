@@ -9,6 +9,7 @@ import {
 } from '@vercel/functions';
 import * as Sentry from '@sentry/nextjs';
 import { WebSocket } from 'ws';
+import { awsClientConfig } from '@/lib/aws/client-config';
 import { getPool } from '@/lib/db/pool';
 import { terminateInteractiveLabSession } from '@/lib/labs/aws-runtime';
 import { terminalFrameRequiresControlRevalidation } from '@/lib/labs/terminal-bridge-frame';
@@ -91,7 +92,7 @@ function queryObject(searchParams: URLSearchParams): Record<string, string | str
 
 async function signedAwsHeaders(streamUrl: string, region: string) {
   const endpoint = validateAwsStreamUrl(streamUrl, region);
-  const client = new SSMClient({ region });
+  const client = new SSMClient(awsClientConfig(region));
   try {
     const credentials = await client.config.credentials();
     const signer = new SignatureV4({

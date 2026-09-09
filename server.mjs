@@ -6,6 +6,7 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { HttpRequest } from '@smithy/protocol-http';
 import { SignatureV4 } from '@smithy/signature-v4';
+import { awsClientConfig } from './scripts/aws-client-config.mjs';
 import { verifyTerminalBridgeTicket } from './src/lib/labs/terminal-bridge-ticket.js';
 
 const { Pool } = pg;
@@ -164,7 +165,7 @@ function queryObject(searchParams) {
 
 async function signedAwsHeaders(streamUrl, region) {
   const endpoint = validateAwsStreamUrl(streamUrl, region);
-  const client = new SSMClient({ region });
+  const client = new SSMClient(awsClientConfig(region));
   try {
     const credentials = await client.config.credentials();
     const signer = new SignatureV4({
@@ -247,7 +248,6 @@ async function bridgeConnection(browserSocket, payload) {
   try {
     const headers = await signedAwsHeaders(payload.streamUrl, payload.region);
     if (browserSocket.readyState !== WebSocket.OPEN) return;
-
     awsSocket = new WebSocket(payload.streamUrl, {
       headers,
       handshakeTimeout: 12_000,

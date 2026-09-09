@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { awsClientConfig } from './aws-client-config.mjs';
 
 const { Client } = pg;
 
@@ -43,7 +44,7 @@ if (!bucket) {
 }
 
 const client = new Client({ connectionString });
-const s3 = new S3Client({ region });
+const s3 = new S3Client(awsClientConfig(region));
 
 function etag(value) {
   return value ? String(value).replace(/^"|"$/g, '') : null;

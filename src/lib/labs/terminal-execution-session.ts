@@ -1,9 +1,10 @@
 import 'server-only';
 
 import { DescribeSessionsCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { awsClientConfig } from '@/lib/aws/client-config';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
-const ssm = new SSMClient({ region: REGION });
+const ssm = new SSMClient(awsClientConfig(REGION));
 const INSTANCE_ID = /^i-[0-9a-f]+$/i;
 const SESSION_ID = /^[A-Za-z0-9_.:@-]+$/;
 
