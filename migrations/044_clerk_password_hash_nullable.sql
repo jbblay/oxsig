@@ -5,18 +5,11 @@
 ALTER TABLE users
 ALTER COLUMN password_hash DROP NOT NULL;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'check_legacy_user_password_hash'
-          AND conrelid = 'users'::regclass
-    ) THEN
-        ALTER TABLE users
-        ADD CONSTRAINT check_legacy_user_password_hash
-        CHECK (auth_provider <> 'legacy' OR password_hash IS NOT NULL);
-    END IF;
-END $$;
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS check_legacy_user_password_hash;
+
+ALTER TABLE users
+ADD CONSTRAINT check_legacy_user_password_hash
+CHECK (auth_provider <> 'legacy' OR password_hash IS NOT NULL);
 
 COMMENT ON COLUMN users.password_hash IS 'Legacy/local authentication password hash. NULL for Clerk-authenticated users.';
