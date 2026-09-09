@@ -25,6 +25,7 @@ const ec2 = new EC2Client({ region: REGION });
 const BLACK_DOMAIN_SLUG = 'black-domain';
 const DOMAIN_NAME = 'blackdomain.local';
 const DOMAIN_NETBIOS = 'BLACKDOMAIN';
+const ONE_LAB_INDEX = 'idx_lab_instances_one_nonterminal_per_owner';
 
 type OperationNodeRole = 'operator' | 'target' | 'infrastructure';
 type NodeRecord = {
@@ -465,6 +466,14 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
+    const dbError = error as { code?: string; constraint?: string } | null;
+    if (dbError?.code === '23505' && dbError.constraint === ONE_LAB_INDEX) {
+      throw new OperationRuntimeError(
+        'A lab allocation already exists for this account. Wait for cleanup or destroy it before starting the Operation.',
+        409,
+        'OPERATION_LAB_SLOT_OCCUPIED'
+      );
+    }
     throw error;
   } finally {
     client.release();
@@ -565,15 +574,23 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
        FROM operation_nodes WHERE run_id=$1 ORDER BY CASE role WHEN 'operator' THEN 0 WHEN 'target' THEN 1 ELSE 2 END,node_key`,
     [args.runId]
   );
-  const externalIds = nodeResult.rows.map((node) => node.runtime_external_id).filter(Boolean);
+  const externalIds = nodeResult.rows
+    .map((node) => node.runtime_external_id as string | null)
+    .filter((value): value is string => Boolean(value));
   const states = new Map<string, string>();
   if (externalIds.length) {
     try {
       const response = await ec2.send(new DescribeInstancesCommand({ InstanceIds: externalIds }));
+      // A successful DescribeInstances response that omits a requested id means
+      // that runtime is no longer present. Seed requested ids as terminated and
+      // overwrite the entries AWS actually returns. If the request itself fails,
+      // the catch below preserves durable stored state instead.
+      for (const externalId of externalIds) states.set(externalId, 'terminated');
       for (const reservation of response.Reservations || []) {
         for (const instance of reservation.Instances || []) if (instance.InstanceId) states.set(instance.InstanceId, instance.State?.Name || 'pending');
       }
     } catch {
+      states.clear();
       // Preserve stored state if EC2 reconciliation is temporarily unavailable.
     }
   }
