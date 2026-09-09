@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-  requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(), getPool: vi.fn(), approveControlRequest: vi.fn(),
+  requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(), getPool: vi.fn(), approveControlRequest: vi.fn(), createWorkspaceNotification: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
+vi.mock('@/lib/notifications/server', () => ({ createWorkspaceNotification: mocks.createWorkspaceNotification }));
 vi.mock('@/lib/live-workspace/control', () => ({
   approveControlRequest: mocks.approveControlRequest,
   CONTROL_LEASE_MINUTES: { min: 5, max: 60, default: 15 },
@@ -40,6 +41,7 @@ describe('Live Workspace control approval API', () => {
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.getPool.mockReturnValue(pool);
     mocks.approveControlRequest.mockResolvedValue({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', status: 'active' });
+    mocks.createWorkspaceNotification.mockResolvedValue(null);
   });
 
   it('derives the grantor from authentication and defaults leases to 15 minutes', async () => {
@@ -52,6 +54,25 @@ describe('Live Workspace control approval API', () => {
       grantorId: user.id,
       durationMinutes: 15,
     });
+  });
+
+  it('notifies the participant when control is granted', async () => {
+    mocks.approveControlRequest.mockResolvedValueOnce({
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      status: 'active',
+      participantId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      surface: 'terminal',
+      labLabel: 'Kali target',
+    });
+
+    const response = await POST(request({ durationMinutes: 20 }), { params: Promise.resolve({ id: workspaceId, requestId }) });
+    expect(response.status).toBe(201);
+    expect(mocks.createWorkspaceNotification).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      type: 'live.control_granted',
+      href: '/live',
+      sourceId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    }));
   });
 
   it('rejects lease durations outside the bounded policy before authorization runs', async () => {

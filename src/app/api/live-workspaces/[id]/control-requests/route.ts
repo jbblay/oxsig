@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { createWorkspaceNotification } from '@/lib/notifications/server';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { createControlRequest, listControlState } from '@/lib/live-workspace/control';
@@ -60,13 +61,45 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     try {
+      const pool = getPool();
       const controlRequest = await createControlRequest({
-        pool: getPool(),
+        pool,
         collaborationId: id,
         participantId: user.id,
         bindingId: parsed.data.bindingId,
         surface: parsed.data.surface,
       });
+
+      try {
+        const contextResult = await pool.query(
+          `SELECT c.owner_id,
+                  c.name AS workspace_name,
+                  COALESCE(participant.display_name, participant.email, 'A participant') AS participant_name
+             FROM collaborations c
+             JOIN users participant ON participant.id = $2
+            WHERE c.id = $1
+            LIMIT 1`,
+          [id, user.id]
+        );
+        const context = contextResult?.rows?.[0];
+        if (context?.owner_id && context.owner_id !== user.id) {
+          await createWorkspaceNotification({
+            ownerId: context.owner_id,
+            type: 'live.control_request',
+            title: `${parsed.data.surface === 'desktop' ? 'Desktop' : 'Terminal'} control requested`,
+            detail: `${context.participant_name} requested control in ${context.workspace_name || 'Live Workspace'}.`,
+            href: '/live',
+            severity: 'warning',
+            sourceType: 'live-control-request',
+            sourceId: controlRequest.id,
+            dedupeKey: `live-control-request:${controlRequest.id}`,
+            queryable: pool,
+          });
+        }
+      } catch (notificationError) {
+        console.warn('Live Workspace control request notification failed:', notificationError);
+      }
+
       return NextResponse.json(
         { request: controlRequest },
         { status: 201, headers: { 'Cache-Control': 'no-store' } }
