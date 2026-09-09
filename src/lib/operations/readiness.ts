@@ -43,7 +43,7 @@ export function operationReadinessCommand(target: Pick<OperationReadinessTarget,
   }
   return {
     documentName: 'AWS-RunShellScript',
-    command: `test -s /opt/oxsig/operation.env && test -s /opt/oxsig/README && printf '%s\\n' '${READY_SENTINEL}'`,
+    command: `test -s /opt/oxsig/operation.env && test -s /opt/oxsig/README && command -v nmap >/dev/null && command -v smbclient >/dev/null && command -v ldapsearch >/dev/null && command -v python3 >/dev/null && printf '%s\\n' '${READY_SENTINEL}'`,
   };
 }
 
