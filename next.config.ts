@@ -5,7 +5,9 @@ const nextConfig: NextConfig = {
   // Keep operational failures visible even when external monitoring is unavailable.
   compiler: { removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false },
   experimental: { optimizePackageImports: ['lucide-react', 'framer-motion'] },
-  serverExternalPackages: ['ably'],
+  // ws optionally loads native addons; bundling them can replace bufferutil with
+  // a stub and crash on the first masked browser frame (unmask is not a function).
+  serverExternalPackages: ['ably', 'ws', 'bufferutil', 'utf-8-validate'],
   async headers() {
     return [{
       source: '/:path*',
