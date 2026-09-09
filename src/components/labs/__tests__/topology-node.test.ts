@@ -17,10 +17,20 @@ describe('Cyber Lab topology catalog', () => {
     }
   });
 
-  it('keeps unavailable Marketplace machines explicit instead of silently launchable', () => {
+  it('keeps unavailable profiles explicit about why they cannot be launched directly', () => {
     for (const lab of LAB_CATALOG.filter((item) => !item.available)) {
       expect(lab.availabilityNote).toBeTruthy();
+    }
+  });
+
+  it('keeps unavailable Marketplace machines explicit instead of silently launchable', () => {
+    const marketplaceLabs = LAB_CATALOG.filter((item) => Boolean(item.marketplaceProductCode));
+    expect(marketplaceLabs.length).toBeGreaterThan(0);
+
+    for (const lab of marketplaceLabs) {
+      expect(lab.available).toBe(false);
       expect(lab.marketplaceProductCode).toBeTruthy();
+      expect(lab.availabilityNote).toMatch(/Marketplace/i);
     }
   });
 });
