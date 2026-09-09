@@ -13,6 +13,7 @@ export type LiveTerminalRealtimeState = 'connecting' | 'connected' | 'disconnect
 export type LiveTerminalOutputPacket = {
   bindingId: string;
   leaseId: string;
+  publisherId: string;
   sequence: number;
   payloadType: number;
   data: string;
@@ -52,10 +53,16 @@ export function base64ToBytes(value: string) {
   return bytes;
 }
 
+function newPublisherId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function parsePacket(message: RealtimeMessage, args: TerminalRealtimeArgs): LiveTerminalOutputPacket | null {
   const packet = message.data as Partial<LiveTerminalOutputPacket> | null | undefined;
   if (!packet || typeof packet !== 'object') return null;
   if (packet.bindingId !== args.bindingId || packet.leaseId !== args.leaseId) return null;
+  if (typeof packet.publisherId !== 'string' || packet.publisherId.length < 1 || packet.publisherId.length > 160) return null;
   if (!Number.isSafeInteger(packet.sequence) || Number(packet.sequence) < 0) return null;
   if (!Number.isSafeInteger(packet.payloadType) || Number(packet.payloadType) < 0) return null;
   if (typeof packet.data !== 'string' || packet.data.length > 2_800_000) return null;
@@ -67,6 +74,7 @@ export class LiveTerminalOutputPublisher {
   private client: RealtimeClient | null = null;
   private channel: RealtimeChannel | null = null;
   private sequence = 0;
+  private readonly publisherId = newPublisherId();
   private closed = false;
   private connectPromise: Promise<RealtimeChannel> | null = null;
   private publishChain: Promise<void> = Promise.resolve();
@@ -99,6 +107,7 @@ export class LiveTerminalOutputPublisher {
     const packet: LiveTerminalOutputPacket = {
       bindingId: this.args.bindingId,
       leaseId: this.args.leaseId,
+      publisherId: this.publisherId,
       sequence: this.sequence,
       payloadType,
       data: bytesToBase64(data),
@@ -129,6 +138,7 @@ export class LiveTerminalOutputObserver {
   private listener: ((message: RealtimeMessage) => void) | null = null;
   private connectionListener: (() => void) | null = null;
   private closed = false;
+  private publisherId: string | null = null;
   private lastSequence = -1;
 
   constructor(
@@ -164,7 +174,12 @@ export class LiveTerminalOutputObserver {
       };
       this.listener = (message) => {
         const packet = parsePacket(message, this.args);
-        if (!packet || packet.sequence <= this.lastSequence) return;
+        if (!packet) return;
+        if (this.publisherId !== packet.publisherId) {
+          this.publisherId = packet.publisherId;
+          this.lastSequence = -1;
+        }
+        if (packet.sequence <= this.lastSequence) return;
         this.lastSequence = packet.sequence;
         this.onOutput(packet);
       };
