@@ -20,6 +20,19 @@ const updateSchema = z.object({
   action: z.literal('end').optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, 'No Live Workspace changes supplied');
 
+async function hasPersistedAttachments(pool: ReturnType<typeof getPool>, collaborationId: string) {
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM collaboration_messages
+        WHERE collaboration_id = $1
+          AND metadata ? 'attachment'
+     ) AS has_attachments`,
+    [collaborationId]
+  );
+  return Boolean(result.rows[0]?.has_attachments);
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return requireAuth(request, async (_req, user) => {
     const { id } = await params;
@@ -210,14 +223,20 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Live Workspace not found or owner access required' }, { status: 404 });
     }
 
+    let attachmentCleanupDeferred = false;
     try {
       await deleteCollaborationObjects(id);
     } catch (error) {
-      console.warn('Live Workspace attachment cleanup failed; database deletion was not attempted:', error);
-      return NextResponse.json(
-        { error: 'Could not delete Live Workspace attachments. Nothing was deleted.' },
-        { status: 503 }
-      );
+      const persistedAttachments = await hasPersistedAttachments(pool, id).catch(() => true);
+      if (persistedAttachments) {
+        console.warn('Live Workspace attachment cleanup failed; database deletion was not attempted:', error);
+        return NextResponse.json(
+          { error: 'Could not delete Live Workspace attachments. Nothing was deleted.' },
+          { status: 503 }
+        );
+      }
+      attachmentCleanupDeferred = true;
+      console.warn('Live Workspace storage cleanup was unavailable, but no persisted attachment references exist; continuing relational deletion:', error);
     }
 
     const result = await pool.query(
@@ -230,6 +249,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Live Workspace changed before deletion; try again' }, { status: 409 });
     }
 
-    return NextResponse.json({ deleted: true });
+    return NextResponse.json({ deleted: true, ...(attachmentCleanupDeferred ? { attachmentCleanupDeferred: true } : {}) });
   });
 }
