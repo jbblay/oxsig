@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ProgressBadgeRail from '@/components/app/ProgressBadgeRail';
@@ -37,6 +38,7 @@ const UI_PREFERENCE_KEYS = [
   'oxsig:cyber-lab-layout-hint:v1',
   'oxsig:cyber-lab-workspace-mode:v1',
 ];
+const RESET_CONFIRMATION = 'RESET MY OXSIG DATA';
 
 function initials(value?: string) {
   const parts = (value || 'O').trim().split(/\s+/).filter(Boolean);
@@ -44,7 +46,7 @@ function initials(value?: string) {
 }
 
 export default function AccountPage() {
-  const { isAuthenticated, isLoading: authLoading, profileError, refresh } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, profileError, refresh, logout } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [progress, setProgress] = useState<LearnerProgressSummary | null>(null);
   const [displayName, setDisplayName] = useState('');
@@ -53,6 +55,9 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [testResetEnabled, setTestResetEnabled] = useState(false);
+  const [resetText, setResetText] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   const dirty = useMemo(() => Boolean(
     profile && (
@@ -96,6 +101,14 @@ export default function AccountPage() {
   }, [load]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+    void fetch('/api/users/me/reset', { cache: 'no-store' })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((body) => setTestResetEnabled(Boolean(body?.enabled)))
+      .catch(() => setTestResetEnabled(false));
+  }, [isAuthenticated]);
+
+  useEffect(() => {
     if (!dirty) return;
     const preventUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -133,6 +146,25 @@ export default function AccountPage() {
     for (const key of UI_PREFERENCE_KEYS) window.localStorage.removeItem(key);
     toast.success('Interface reset.');
     window.location.assign('/home');
+  }
+
+  async function resetTestAccount() {
+    if (resetText !== RESET_CONFIRMATION || resetting) return;
+    setResetting(true);
+    try {
+      const response = await fetch('/api/users/me/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': await getCsrfToken() },
+        body: JSON.stringify({ confirmation: RESET_CONFIRMATION }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Test-account reset failed');
+      for (const key of UI_PREFERENCE_KEYS) window.localStorage.removeItem(key);
+      await logout();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Test-account reset failed');
+      setResetting(false);
+    }
   }
 
   if (authLoading) {
@@ -237,12 +269,33 @@ export default function AccountPage() {
           ) : null}
         </div>
 
-        <Card className="h-fit">
-          <CardHeader className="pb-3"><CardTitle className="text-base">Interface</CardTitle></CardHeader>
-          <CardContent>
-            <Button variant="outline" className="w-full" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset interface</Button>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <Card className="h-fit">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Interface</CardTitle></CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full" onClick={resetInterface}><RotateCcw className="h-4 w-4" /> Reset interface</Button>
+            </CardContent>
+          </Card>
+
+          {testResetEnabled && (
+            <Card className="h-fit border-destructive/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base text-destructive">Testing reset</CardTitle>
+                <CardDescription>
+                  Terminates active OXSIG cloud resources, removes your OXSIG-owned data and signs you out. The Clerk login remains so signing in again creates a fresh internal user.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-[11px] text-muted-foreground">Type <span className="font-mono font-semibold text-foreground">{RESET_CONFIRMATION}</span> to continue.</p>
+                <Input value={resetText} onChange={(event) => setResetText(event.target.value)} disabled={resetting} aria-label="Test account reset confirmation" />
+                <Button variant="destructive" className="w-full" disabled={resetting || resetText !== RESET_CONFIRMATION} onClick={() => void resetTestAccount()}>
+                  {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Reset test account
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </section>
 
       {progress && (
