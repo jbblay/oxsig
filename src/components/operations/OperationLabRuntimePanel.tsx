@@ -5,12 +5,12 @@ import { Activity, Loader2, Monitor, Network, RefreshCw, Server, Terminal } from
 import { toast } from 'sonner';
 import InteractiveSsmDesktop from '@/components/labs/InteractiveSsmDesktop';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
-import OperationAiInstructor from '@/components/operations/OperationAiInstructor';
 import OperationNodeTerminal from '@/components/operations/OperationNodeTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { getOperation } from '@/lib/operations/catalog';
+import type { OperationAiRuntimeContext } from '@/lib/operations/ai-context';
 
 type RunNode = {
   id: string;
@@ -72,7 +72,13 @@ function roleHelp(node: RunNode) {
   return 'Domain controller — Active Directory, DNS and authentication services for the exercise.';
 }
 
-export function OperationLabRuntimePanel({ runId }: { runId: string }) {
+export function OperationLabRuntimePanel({
+  runId,
+  onAiContextChange,
+}: {
+  runId: string;
+  onAiContextChange?: (context: OperationAiRuntimeContext | null) => void;
+}) {
   const [run, setRun] = React.useState<Run | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -122,11 +128,23 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
   const accessAvailable = Boolean(selected && !paused && !['failed', 'destroying', 'destroyed'].includes(run?.status || '') && !['failed', 'destroying', 'destroyed'].includes(selected.status) && (selected.computeStatus === 'running' || selected.status === 'running'));
   const windows = Boolean(selected?.osFamily.toLowerCase().includes('windows'));
   const selectedReadiness = readinessLabel(selected?.readiness);
-  const operation = run ? getOperation(run.operationSlug) : null;
 
   React.useEffect(() => {
     setAccessMode(null);
   }, [selectedId]);
+
+  React.useEffect(() => {
+    if (!onAiContextChange || !run || run.id !== runId) return;
+    onAiContextChange({
+      runId: run.id,
+      operationSlug: run.operationSlug,
+      operationMode: run.mode,
+      nodes: run.nodes,
+      selectedNode: selected,
+    });
+  }, [onAiContextChange, run, runId, selected]);
+
+  React.useEffect(() => () => onAiContextChange?.(null), [onAiContextChange]);
 
   if (loading && !run) {
     return <div className="flex min-h-56 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading the live Operation…</div>;
@@ -145,16 +163,6 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
               {paused ? 'Environment paused' : run.status === 'running' ? 'Environment ready' : 'Environment initializing'}
             </Badge>
             {run.metadata?.domain && <Badge variant="secondary">{run.metadata.domain}</Badge>}
-            {run.operationSlug === 'black-domain' && (
-              <OperationAiInstructor
-                runId={run.id}
-                operationSlug={run.operationSlug}
-                operationMode={run.mode}
-                objectives={operation?.objectives || []}
-                nodes={run.nodes}
-                selectedNode={selected}
-              />
-            )}
             <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
           </div>
           <p className="text-xs text-muted-foreground">These are the same three machines provisioned by Operations and shown in Build. Select the machine you want to use, then choose one of its available access methods.</p>
