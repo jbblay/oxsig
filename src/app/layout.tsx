@@ -10,6 +10,7 @@ import './workspace-enhancements.css';
 import './lab-flow.css';
 import './workspace-mode.css';
 import './workspace-personalities.css';
+import './readability.css';
 import AppShell from '@/components/app/AppShell';
 import GuestAuthGate from '@/components/auth/guest-auth-gate';
 import { Toaster } from '@/components/ui/sonner';
