@@ -8,6 +8,7 @@ import ActivityCenter from './ActivityCenter';
 import AppCommandPalette from './AppCommandPalette';
 import WorkspaceWalkthrough from './WorkspaceWalkthrough';
 import { Button } from '@/components/ui/button';
+import { getAiSurface, openAiForPath } from '@/lib/ai/client-routing';
 import { useAuth } from '@/lib/auth/use-auth';
 
 function pageTitle(pathname: string) {
@@ -33,9 +34,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   const pathname = usePathname();
   const { user } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
-  // AI Practitioner is mounted inside Cyber Lab. Operations and WarRoom use the
-  // global AI Helper, which already receives those workspace contexts.
-  const practitionerSurface = pathname.startsWith('/labs');
+  const practitionerSurface = getAiSurface(pathname) === 'practitioner';
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -49,7 +48,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   }, []);
 
   function openAi() {
-    window.dispatchEvent(new CustomEvent(practitionerSurface ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+    openAiForPath(pathname);
   }
 
   return (
