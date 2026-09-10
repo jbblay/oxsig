@@ -1,1 +1,65 @@
-/* test */
+/* Workspace routes open directly into the tool. AppShell owns the shared
+   content canvas; page components own their action-first structure. */
+
+main[data-oxsig-workspace] {
+  min-height: 0;
+  overflow-x: hidden;
+}
+
+main[data-oxsig-content-mode="standard"] {
+  width: 100%;
+  max-width: 80rem;
+  margin-inline: auto;
+}
+
+main[data-oxsig-content-mode="wide"],
+main[data-oxsig-content-mode="immersive"] {
+  width: 100%;
+  max-width: none;
+}
+
+main[data-oxsig-workspace] > * {
+  min-width: 0;
+}
+
+/* Collaboration and Boards are viewport-bound application surfaces. Their
+   components own their internal scrolling while the shell owns the viewport. */
+main[data-oxsig-workspace="collab"],
+main[data-oxsig-workspace="boards"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail,
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail {
+  flex: 0 0 auto;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div,
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+/* Boards use the same centered content geometry as Collaboration/Resources,
+   while the drawing viewport remains scrollable and zoomable inside it. */
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail,
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 767px) {
+  main[data-oxsig-workspace] {
+    padding-left: 0.375rem;
+    padding-right: 0.375rem;
+  }
+}
