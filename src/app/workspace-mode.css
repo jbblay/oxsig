@@ -22,13 +22,20 @@ main[data-oxsig-workspace] > * {
   min-width: 0;
 }
 
-/* Collaboration behaves like an application surface rather than a long page:
-   the shell owns the viewport and the message history owns vertical scrolling. */
+/* Collaboration follows the same centered inner canvas as Resources. It is
+   still viewport-bound, but its own panels decide what scrolls. */
 main[data-oxsig-workspace="collab"] {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   overflow: hidden;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail,
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
 }
 
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail {
@@ -38,8 +45,6 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail {
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
   position: relative;
   display: flex;
-  width: 100%;
-  max-width: 100%;
   min-width: 0;
   min-height: 0;
   align-self: stretch;
@@ -66,9 +71,10 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .flex.justif
   box-shadow: 0 18px 50px rgb(2 6 23 / 0.24);
 }
 
-/* Own the Collaboration grid geometry here instead of relying on page-level
-   arbitrary grid utilities. This prevents the chat surface from shrinking to
-   content width or drifting toward the right edge inside the centered shell. */
+/* Collaboration is intentionally single-pane until a wide desktop. At tablet
+   widths the application sidebar reduces the real working width, so switching
+   to the old 220px + chat layout at the viewport's 768px breakpoint squeezed
+   the conversation and composer into a narrow strip. */
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
   width: 100%;
   max-width: 100%;
@@ -89,12 +95,18 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > sect
   min-height: 0;
 }
 
-@media (min-width: 768px) {
-  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
-    grid-template-columns: 220px minmax(0, 1fr);
+/* Below wide desktop, Sessions and Chat are staged views just like a responsive
+   resource/detail flow. Tailwind's md:block/md:flex rules in the page component
+   are deliberately overridden here so iPad/tablet widths do not show both. */
+@media (max-width: 1279px) {
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > aside:first-child.hidden,
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > section.hidden {
+    display: none;
   }
 }
 
+/* The persistent Sessions + Chat + People layout is reserved for widths where
+   all three panes remain genuinely usable after the application sidebar. */
 @media (min-width: 1280px) {
   main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
     grid-template-columns: 250px minmax(0, 1fr) 280px;
