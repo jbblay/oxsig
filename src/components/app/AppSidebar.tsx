@@ -9,6 +9,7 @@ import {
   Crosshair,
   Home,
   LibraryBig,
+  LogIn,
   LogOut,
   MessageCircle,
   Moon,
@@ -66,6 +67,15 @@ function workspaceColor(href: string) {
   return href.slice(1);
 }
 
+function guestHref(href: string) {
+  if (href === '/home' || href === '/operations') return href;
+  if (href === '/collab' || href === '/live' || href === '/warroom') return '/explore#collaboration';
+  if (href === '/labs') return '/explore#live-environments';
+  if (href === '/vault') return '/explore#proof';
+  if (href === '/collab/storyboards' || href === '/manage') return '/explore#platform';
+  return '/explore';
+}
+
 function SidebarContent({
   collapsed,
   mobile,
@@ -79,13 +89,13 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const compact = collapsed && !mobile;
 
   return (
     <div className="oxsig-navigation flex h-full min-h-0 w-full flex-col">
       <div className={cn('flex h-14 items-center border-b border-sidebar-border/70', compact ? 'justify-center px-2' : 'justify-between px-3')}>
-        <Link href="/home" onClick={onNavigate} className={cn('flex min-w-0 items-center gap-2.5', compact && 'justify-center')}>
+        <Link href={isAuthenticated ? '/home' : '/explore'} onClick={onNavigate} className={cn('flex min-w-0 items-center gap-2.5', compact && 'justify-center')}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/10">
             <Network className="h-4 w-4" />
           </div>
@@ -113,10 +123,11 @@ function SidebarContent({
                 {group.items.map((item) => {
                   const active = isItemActive(pathname, item.href);
                   const Icon = item.icon;
+                  const destination = isAuthenticated ? item.href : guestHref(item.href);
                   return (
                     <Link
                       key={item.href}
-                      href={item.href}
+                      href={destination}
                       onClick={onNavigate}
                       title={compact ? item.label : undefined}
                       aria-current={active ? 'page' : undefined}
@@ -143,15 +154,15 @@ function SidebarContent({
 
       <div className="border-t border-sidebar-border/70 p-2">
         <Link
-          href="/account"
+          href={isAuthenticated ? '/account' : '/sign-up'}
           onClick={onNavigate}
-          title={compact ? 'Account' : undefined}
+          title={compact ? (isAuthenticated ? 'Account' : 'Create account') : undefined}
           className={cn('flex min-h-9 items-center rounded-md transition hover:bg-sidebar-accent/70', compact ? 'justify-center px-1' : 'gap-2 px-2')}
         >
           <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
             {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(user?.displayName || user?.email)}
           </div>
-          {!compact && <span className="min-w-0 flex-1 truncate text-xs font-medium">{user?.displayName || 'Account'}</span>}
+          {!compact && <span className="min-w-0 flex-1 truncate text-xs font-medium">{isAuthenticated ? (user?.displayName || 'Account') : 'Create account'}</span>}
         </Link>
 
         <div className={cn('mt-1 flex items-center gap-0.5', compact ? 'flex-col' : 'justify-between')}>
@@ -166,16 +177,22 @@ function SidebarContent({
             <Sun className="h-3.5 w-3.5 dark:hidden" />
             <Moon className="hidden h-3.5 w-3.5 dark:block" />
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 text-muted-foreground"
-            onClick={() => void logout()}
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-          </Button>
+          {isAuthenticated ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 text-muted-foreground"
+              onClick={() => void logout()}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button asChild size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground">
+              <Link href="/sign-in" onClick={onNavigate} aria-label="Log in" title="Log in"><LogIn className="h-3.5 w-3.5" /></Link>
+            </Button>
+          )}
         </div>
       </div>
     </div>
