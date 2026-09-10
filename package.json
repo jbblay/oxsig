@@ -21,7 +21,8 @@
     "typecheck": "tsc --noEmit",
     "audit:reachability": "node scripts/source-reachability-audit.mjs",
     "test": "vitest",
-    "test:run": "vitest run",
+    "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs",
+    "test:operation-access": "node --experimental-vm-modules --test scripts/check-operation-access.mjs",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "node scripts/migrate.mjs",
     "db:parity": "node scripts/schema-parity-check.mjs",
@@ -81,4 +82,5 @@
     "vitest": "4.0.4"
   }
 }
+
 

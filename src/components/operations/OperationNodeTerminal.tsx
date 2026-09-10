@@ -86,7 +86,16 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Could not start the Operation terminal');
       if (!body.sessionId || !body.bridgePath || !body.tokenValue) throw new Error('OXSIG did not return a complete terminal session');
-      if (generation !== generationRef.current || disposedRef.current) return;
+      if (generation !== generationRef.current || disposedRef.current) {
+        // A switch or disconnect may finish while AWS is creating the session.
+        await fetch(endpoint, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+          body: JSON.stringify({ sessionId: body.sessionId }),
+          keepalive: true,
+        }).catch(() => undefined);
+        return;
+      }
 
       const session = body as SessionResponse;
       sessionIdRef.current = session.sessionId;
@@ -235,3 +244,4 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
     </div>
   );
 }
+

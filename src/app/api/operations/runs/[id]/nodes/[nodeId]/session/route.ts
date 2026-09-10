@@ -64,8 +64,10 @@ async function validateReady(node: OperationNodeRow) {
   if (new Date(node.expires_at).getTime() <= Date.now()) {
     return { failure: failure(410, 'OPERATION_EXPIRED', 'This Operation has expired and cannot open a terminal.', 'expiry') };
   }
-  if (node.status !== 'running') {
-    return { failure: failure(425, 'OPERATION_NODE_BOOTSTRAP_PENDING', `${node.label} is still initializing. OXSIG will make Terminal available when its secure access path is ready.`, 'readiness') };
+  // Exercise bootstrap does not determine whether an owned machine can open a session.
+  // The live EC2, SSM and (for desktops) service checks below remain authoritative.
+  if (['failed', 'destroying', 'destroyed'].includes(node.status)) {
+    return { failure: failure(409, 'OPERATION_NODE_NOT_ACTIVE', 'This machine is not available for interactive access.', 'operation') };
   }
   if (node.runtime_provider !== 'aws-ec2' || !node.runtime_external_id) {
     return { failure: failure(409, 'OPERATION_RUNTIME_MISSING', 'This Operation node does not have an AWS EC2 runtime attached.', 'database') };
@@ -166,3 +168,4 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     }
   });
 }
+
