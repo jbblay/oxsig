@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { History, Loader2, Play, Power } from 'lucide-react';
+import { ArrowRight, History, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ type RunSummary = {
   operationSlug: string;
   mode: string;
   status: string;
+  lifecycleState?: 'active' | 'paused';
   operatorLabInstanceId: string | null;
   expiresAt: string | null;
   lastError: string | null;
@@ -76,6 +77,7 @@ export function OperationRunRecovery({ compact = false, modeFilter }: Props) {
   React.useEffect(() => { void load(); }, [load]);
 
   const endRun = async (runId: string) => {
+    if (!window.confirm('End and permanently destroy this Operation? All of its machines will be terminated.')) return;
     setBusy(runId);
     try {
       const csrf = await getCsrfToken();
@@ -85,7 +87,7 @@ export function OperationRunRecovery({ compact = false, modeFilter }: Props) {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'Could not end Operation');
-      toast.success('Operation shutdown started.');
+      toast.success('Destruction started for the Operation machines.');
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not end Operation');
@@ -114,30 +116,32 @@ export function OperationRunRecovery({ compact = false, modeFilter }: Props) {
             const operation = getOperation(run.operationSlug);
             const active = ACTIVE.has(run.status);
             const expired = runExpired(run);
-            const resumable = active && !expired && run.status !== 'destroying';
+            const paused = run.lifecycleState === 'paused' && active && !expired;
+            const openable = active && !expired && run.status !== 'destroying';
             const endable = active && run.status !== 'destroying';
+            const visibleStatus = expired ? 'expired' : paused ? 'paused' : run.status;
             return (
               <div key={run.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-xs font-semibold">{operation?.codename || run.operationSlug}</span>
-                    <Badge variant={run.status === 'running' && !expired ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{expired ? 'expired' : run.status}</Badge>
+                    <Badge variant={run.status === 'running' && !expired && !paused ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{visibleStatus}</Badge>
                     <Badge variant="secondary" className="h-5 text-[9px] capitalize">{run.mode}</Badge>
                   </div>
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    {active ? expiryLabel(run.expiresAt) || 'active' : `Started ${new Date(run.createdAt).toLocaleString()}`}
+                    {paused ? `Paused · ${expiryLabel(run.expiresAt) || 'session active'}` : active ? expiryLabel(run.expiresAt) || 'active' : `Started ${new Date(run.createdAt).toLocaleString()}`}
                   </p>
                 </div>
 
-                {resumable && (
+                {openable && (
                   <Button asChild size="sm" variant="outline" className="h-8">
-                    <Link href={resumeHref(run)}><Play className="mr-1.5 h-3.5 w-3.5" />Resume</Link>
+                    <Link href={resumeHref(run)}><ArrowRight className="mr-1.5 h-3.5 w-3.5" />Open</Link>
                   </Button>
                 )}
                 {endable && (
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => void endRun(run.id)} disabled={busy === run.id}>
-                    {busy === run.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Power className="h-3.5 w-3.5" />}
-                    {!compact ? <span className="ml-1.5">End</span> : null}
+                    {busy === run.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    {!compact ? <span className="ml-1.5">End &amp; destroy</span> : null}
                   </Button>
                 )}
               </div>
