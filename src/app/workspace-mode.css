@@ -27,6 +27,7 @@ main[data-oxsig-workspace] > * {
 main[data-oxsig-workspace="collab"] {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   overflow: hidden;
 }
 
@@ -37,9 +38,15 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail {
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
   position: relative;
   display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
+  align-self: stretch;
   flex: 1 1 0%;
   flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 /* The old page-level New session button remains as the behavior hook for the
@@ -59,15 +66,39 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .flex.justif
   box-shadow: 0 18px 50px rgb(2 6 23 / 0.24);
 }
 
+/* Own the Collaboration grid geometry here instead of relying on page-level
+   arbitrary grid utilities. This prevents the chat surface from shrinking to
+   content width or drifting toward the right edge inside the centered shell. */
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0 !important;
   height: 100%;
+  margin-top: 0 !important;
+  align-self: stretch;
+  justify-self: stretch;
   flex: 1 1 0%;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > aside,
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > section {
+  min-width: 0;
   min-height: 0;
+}
+
+@media (min-width: 768px) {
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
+    grid-template-columns: 250px minmax(0, 1fr) 280px;
+  }
 }
 
 @media (max-width: 767px) {
