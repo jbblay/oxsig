@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const pool = getPool();
     const result = await pool.query(
       `SELECT id, operation_slug, mode, status, operator_lab_instance_id,
-              expires_at, last_error, created_at, updated_at
+              expires_at, metadata, last_error, created_at, updated_at
          FROM operation_runs
         WHERE owner_id=$1
         ORDER BY CASE WHEN status IN ('provisioning','running','destroying') THEN 0 ELSE 1 END,
@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       let status = row.status as string;
       let operatorLabInstanceId = row.operator_lab_instance_id as string | null;
       let lastError = row.last_error as string | null;
+      let lifecycleState = row.metadata?.lifecycleState === 'paused' ? 'paused' : 'active';
 
       if (RECONCILE_STATUSES.has(status)) {
         try {
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
           status = reconciled.status;
           operatorLabInstanceId = reconciled.operatorLabInstanceId || operatorLabInstanceId;
           lastError = reconciled.lastError;
+          lifecycleState = reconciled.metadata?.lifecycleState === 'paused' ? 'paused' : 'active';
         } catch (error) {
           // Discovery remains available even if AWS reconciliation is temporarily
           // unavailable; opening the run performs the normal detailed retry path.
@@ -49,6 +51,7 @@ export async function GET(request: NextRequest) {
         operationSlug: row.operation_slug,
         mode: row.mode,
         status,
+        lifecycleState,
         operatorLabInstanceId,
         expiresAt: row.expires_at,
         lastError,
