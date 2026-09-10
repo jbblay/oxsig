@@ -168,7 +168,7 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
       await client.query(
         `UPDATE operation_nodes
             SET status='provisioning',
-                metadata=metadata - 'bootstrapReadyAt' - 'readinessCheckedAt' - 'readinessReason',
+                metadata=metadata - 'bootstrapReadyAt' - 'readinessCheckedAt' - 'readinessReason' - 'readinessCommandId' - 'readinessCommandStartedAt' - 'readinessError',
                 last_error=NULL,
                 updated_at=NOW()
           WHERE run_id=$1 AND status NOT IN ('destroying','destroyed','failed')`,
@@ -190,3 +190,4 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
 
   return { resumed: true, starting: stoppedIds.length };
 }
+

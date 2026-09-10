@@ -16,7 +16,7 @@ import { awsClientConfig } from '@/lib/aws/client-config';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
-import { probeOperationNodeReadiness } from '@/lib/operations/readiness';
+import { probeOperationNodeReadiness, operationReadinessError, type OperationReadinessResult } from '@/lib/operations/readiness';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
@@ -633,7 +633,7 @@ function metadataObject(value: unknown): OperationNodeMetadata {
 function readinessCheckDue(metadata: OperationNodeMetadata) {
   if (!metadata.readinessCheckedAt) return true;
   const checkedAt = Date.parse(metadata.readinessCheckedAt);
-  return !Number.isFinite(checkedAt) || Date.now() - checkedAt >= READINESS_RETRY_MS;
+  return !Number.isFinite(checkedAt) || Date.now() - checkedAt >= (metadata.readinessReason === 'probe-pending' ? 5_000 : READINESS_RETRY_MS);
 }
 
 function publicOperationMetadata(value: unknown) {
@@ -688,9 +688,9 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
 
   const runMetadata = metadataObject(run.metadata);
   const readinessRequired = Number(runMetadata.readinessVersion || 0) >= READINESS_VERSION;
-  const readinessByNode = new Map<string, { ready: boolean; reason: string }>();
+  const readinessByNode = new Map<string, OperationReadinessResult>();
 
-  if (readinessRequired && run.status !== 'failed' && run.status !== 'destroying') {
+  if (readinessRequired && !['failed', 'destroying', 'destroyed'].includes(run.status) && runMetadata.lifecycleState !== 'paused') {
     const candidates = nodeResult.rows.filter((node) => {
       if (!node.runtime_external_id || !states.has(node.runtime_external_id)) return false;
       if (mapEc2State(states.get(node.runtime_external_id)) !== 'running') return false;
@@ -701,7 +701,7 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
         return false;
       }
       if (!readinessCheckDue(metadata)) {
-        readinessByNode.set(node.id, { ready: false, reason: metadata.readinessReason || 'bootstrapping' });
+        readinessByNode.set(node.id, { ready: false, reason: (metadata.readinessReason || 'probe-pending') as OperationReadinessResult['reason'], error: typeof metadata.readinessError === 'string' ? metadata.readinessError : undefined });
         return false;
       }
       return true;
@@ -714,10 +714,12 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
           instanceId: node.runtime_external_id,
           nodeKey: node.node_key,
           osFamily: node.os_family,
+          commandStartedAt: typeof node.metadata?.readinessCommandStartedAt === 'string' ? node.metadata.readinessCommandStartedAt : undefined,
+          commandId: typeof node.metadata?.readinessCommandId === 'string' ? node.metadata.readinessCommandId : undefined,
         });
         return { node, result };
-      } catch {
-        return { node, result: { ready: false, reason: 'probe-failed' as const } };
+      } catch (error) {
+        return { node, result: { ready: false, reason: 'probe-failed' as const, error: operationReadinessError(error, 'probe') } as OperationReadinessResult };
       }
     }));
 
@@ -731,9 +733,9 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
                 metadata=metadata || $2::jsonb,
                 updated_at=NOW()
           WHERE id=$3 AND run_id=$4`,
-        [result.ready, stringifyPostgresJson(patch), node.id, args.runId]
+        [result.ready, stringifyPostgresJson({ ...patch, readinessCommandId: result.commandId || null, readinessCommandStartedAt: result.commandId ? node.metadata?.readinessCommandStartedAt || checkedAt : null, readinessError: result.error || null }), node.id, args.runId]
       );
-      readinessByNode.set(node.id, { ready: result.ready, reason: result.reason });
+      readinessByNode.set(node.id, result);
     }));
   }
 
@@ -771,6 +773,7 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
       status,
       computeStatus,
       readiness,
+      readinessError: readinessByNode.has(node.id) ? readinessByNode.get(node.id)?.error || null : metadata.readinessError || null,
       privateIp: node.private_ip || null,
       labInstanceId: node.lab_instance_id || null,
       lastError: node.last_error || null,
@@ -818,3 +821,4 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
   if (externalIds.length) await ec2.send(new TerminateInstancesCommand({ InstanceIds: externalIds }));
   return { destroyed: true, alreadyDestroyed: false, terminating: externalIds.length };
 }
+

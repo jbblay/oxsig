@@ -68,8 +68,10 @@ async function validateReady(node: OperationNodeRow) {
   if (new Date(node.expires_at).getTime() <= Date.now()) {
     return { failure: failure(410, 'OPERATION_EXPIRED', 'This Operation has expired and cannot open a desktop.', 'expiry') };
   }
-  if (node.status !== 'running') {
-    return { failure: failure(425, 'OPERATION_NODE_BOOTSTRAP_PENDING', `${node.label} is still initializing. OXSIG will make Desktop available when its secure access path is ready.`, 'readiness') };
+  // Exercise bootstrap does not determine whether an owned machine can open a session.
+  // The live EC2, SSM and (for desktops) service checks below remain authoritative.
+  if (['failed', 'destroying', 'destroyed'].includes(node.status)) {
+    return { failure: failure(409, 'OPERATION_NODE_NOT_ACTIVE', 'This machine is not available for interactive access.', 'operation') };
   }
   if (node.runtime_provider !== 'aws-ec2' || !node.runtime_external_id) {
     return { failure: failure(409, 'OPERATION_RUNTIME_MISSING', 'This Operation node does not have an AWS EC2 runtime attached.', 'database') };
@@ -88,11 +90,11 @@ async function validateReady(node: OperationNodeRow) {
     return { failure: failure(425, 'SSM_NOT_READY', 'The machine is running, but its secure Systems Manager session is still initializing.', 'ssm', diagnostics) };
   }
 
-  const desktop = await ensureDesktopRuntime(node.runtime_external_id, 'windows');
-  if (!desktop.ready) {
-    return { failure: failure(425, 'DESKTOP_BOOTSTRAP_PENDING', 'The Windows desktop service is being prepared. OXSIG will retry automatically.', 'desktop-bootstrap', diagnostics) };
-  }
   try {
+    const desktop = await ensureDesktopRuntime(node.runtime_external_id, 'windows');
+    if (!desktop.ready) {
+      return { failure: failure(425, 'DESKTOP_BOOTSTRAP_PENDING', 'The Windows desktop service is being prepared. OXSIG will retry automatically.', 'desktop-bootstrap', diagnostics) };
+    }
     const service = await inspectDesktopService(node.runtime_external_id, 'windows');
     if (!service.ready) {
       return { failure: failure(425, 'DESKTOP_SERVICE_NOT_READY', 'The Windows desktop service is starting. OXSIG will retry automatically.', 'desktop-service', diagnostics) };
@@ -186,3 +188,4 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     }
   });
 }
+
