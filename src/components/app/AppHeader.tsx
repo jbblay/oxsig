@@ -31,7 +31,7 @@ function initials(value?: string | null) {
 
 export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
   // AI Practitioner is mounted inside Cyber Lab. Operations and WarRoom use the
   // global AI Helper, which already receives those workspace contexts.
@@ -74,26 +74,32 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
           </button>
 
           <div className="ml-auto flex shrink-0 items-center gap-0.5 md:ml-1.5">
-            <ActivityCenter />
-            <WorkspaceWalkthrough />
+            {isAuthenticated ? <ActivityCenter /> : null}
+            {isAuthenticated ? <WorkspaceWalkthrough /> : null}
             <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search commands and workspaces">
               <Search className="h-3.5 w-3.5" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              onClick={openAi}
-              aria-label={practitionerSurface ? 'Open AI Practitioner' : 'Open AI Helper'}
-              title={practitionerSurface ? 'AI Practitioner' : 'AI Helper'}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-            </Button>
+            {isAuthenticated ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={openAi}
+                aria-label={practitionerSurface ? 'Open AI Practitioner' : 'Open AI Helper'}
+                title={practitionerSurface ? 'AI Practitioner' : 'AI Helper'}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+              </Button>
+            ) : (
+              <Button asChild size="icon" variant="ghost" className="h-8 w-8">
+                <Link href="/explore#ai" aria-label="Preview AI Operator" title="Preview AI Operator"><Sparkles className="h-3.5 w-3.5" /></Link>
+              </Button>
+            )}
             <Link
-              href="/account"
+              href={isAuthenticated ? '/account' : '/sign-up'}
               className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
-              aria-label="Open account"
-              title={user?.displayName || user?.email || 'Account'}
+              aria-label={isAuthenticated ? 'Open account' : 'Create account'}
+              title={isAuthenticated ? (user?.displayName || user?.email || 'Account') : 'Create account'}
             >
               <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
                 {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(user?.displayName || user?.email)}
