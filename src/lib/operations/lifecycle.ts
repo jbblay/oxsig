@@ -6,7 +6,7 @@ import {
   StartInstancesCommand,
   StopInstancesCommand,
 } from '@aws-sdk/client-ec2';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { awsClientConfig } from '@/lib/aws/client-config';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
@@ -62,6 +62,21 @@ async function getEc2States(ids: string[]) {
   return states;
 }
 
+async function inTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function pauseOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
   const run = await getOwnedRun(args.pool, args.runId, args.ownerId);
   if (['destroying', 'destroyed', 'failed'].includes(run.status)) {
@@ -83,9 +98,8 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
   }
 
   await ec2.send(new StopInstancesCommand({ InstanceIds: runningIds }));
-  await args.pool.query('BEGIN');
-  try {
-    await args.pool.query(
+  await inTransaction(args.pool, async (client) => {
+    await client.query(
       `UPDATE operation_runs
           SET status='provisioning',
               metadata=jsonb_set(metadata, '{lifecycleState}', '"paused"'::jsonb, true),
@@ -93,25 +107,21 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
         WHERE id=$1 AND owner_id=$2`,
       [args.runId, args.ownerId]
     );
-    await args.pool.query(
+    await client.query(
       `UPDATE operation_nodes
           SET status='provisioning', updated_at=NOW()
         WHERE run_id=$1 AND status NOT IN ('destroying','destroyed','failed')`,
       [args.runId]
     );
     if (run.operator_lab_instance_id) {
-      await args.pool.query(
+      await client.query(
         `UPDATE lab_instances
             SET status='stopping', updated_at=NOW()
           WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroying','destroyed','failed')`,
         [run.operator_lab_instance_id, args.ownerId]
       );
     }
-    await args.pool.query('COMMIT');
-  } catch (error) {
-    await args.pool.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
+  });
 
   return { paused: true, alreadyPaused: false, stopping: runningIds.length };
 }
@@ -137,9 +147,8 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
   }
 
   await ec2.send(new StartInstancesCommand({ InstanceIds: stoppedIds }));
-  await args.pool.query('BEGIN');
-  try {
-    await args.pool.query(
+  await inTransaction(args.pool, async (client) => {
+    await client.query(
       `UPDATE operation_runs
           SET status='provisioning',
               metadata=jsonb_set(metadata, '{lifecycleState}', '"active"'::jsonb, true),
@@ -148,7 +157,7 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
         WHERE id=$1 AND owner_id=$2`,
       [args.runId, args.ownerId]
     );
-    await args.pool.query(
+    await client.query(
       `UPDATE operation_nodes
           SET status='provisioning',
               metadata=metadata - 'bootstrapReadyAt' - 'readinessCheckedAt' - 'readinessReason',
@@ -158,18 +167,14 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
       [args.runId]
     );
     if (run.operator_lab_instance_id) {
-      await args.pool.query(
+      await client.query(
         `UPDATE lab_instances
             SET status='provisioning', last_error=NULL, updated_at=NOW()
           WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroying','destroyed','failed')`,
         [run.operator_lab_instance_id, args.ownerId]
       );
     }
-    await args.pool.query('COMMIT');
-  } catch (error) {
-    await args.pool.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
+  });
 
   return { resumed: true, starting: stoppedIds.length };
 }
