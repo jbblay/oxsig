@@ -93,4 +93,37 @@ describe('labs client cache', () => {
     expect(forced.data.instances?.[0]?.id).toBe('lab-2');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps the last successful snapshot while the document is hidden', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-10T00:00:00.000Z'));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(labsResponse('lab-visible'))
+      .mockResolvedValueOnce(labsResponse('lab-refreshed'));
+
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ id: 'lab-visible' }] } });
+    vi.setSystemTime(new Date('2026-09-10T00:00:02.000Z'));
+    visibility.mockReturnValue('hidden');
+
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ id: 'lab-visible' }] } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    visibility.mockReturnValue('visible');
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ id: 'lab-refreshed' }] } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not issue a background snapshot request while offline without cache', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(getLabsSnapshot()).resolves.toMatchObject({
+      ok: false,
+      status: 0,
+      data: { error: expect.stringContaining('offline') },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
