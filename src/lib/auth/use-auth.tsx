@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useClerk, useUser as useClerkUser } from '@clerk/nextjs';
+import { setStoryboardDraftScope } from '@/lib/storyboards/storage';
 
 export interface User {
   id: string;
@@ -42,6 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<User | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Browser recovery storage must know the account boundary before child effects
+  // enumerate drafts. Keep the scope unresolved while Clerk is loading instead
+  // of temporarily exposing the shared guest namespace to a signed-in account.
+  setStoryboardDraftScope(!isLoaded ? undefined : (isSignedIn ? clerkUser?.id : null));
 
   const fetchUserProfile = useCallback(async () => {
     if (!isSignedIn) {
