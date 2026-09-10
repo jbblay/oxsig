@@ -1,0 +1,267 @@
+.oxsig-surface {
+  --surface-rgb: 34 211 238;
+  --surface-hsl: 187 85% 58%;
+  --primary: var(--surface-hsl);
+  --ring: var(--surface-hsl);
+  position: relative;
+  isolation: isolate;
+}
+
+.oxsig-surface-collab {
+  --surface-rgb: 168 85 247;
+  --surface-hsl: 270 91% 65%;
+}
+
+.oxsig-surface-live {
+  --surface-rgb: 16 185 129;
+  --surface-hsl: 160 84% 39%;
+}
+
+.oxsig-surface-manage {
+  --surface-rgb: 59 130 246;
+  --surface-hsl: 217 91% 60%;
+}
+
+.oxsig-surface-vault {
+  --surface-rgb: 245 158 11;
+  --surface-hsl: 38 92% 50%;
+}
+
+.oxsig-surface-academy {
+  --surface-rgb: 99 102 241;
+  --surface-hsl: 239 84% 67%;
+}
+
+.oxsig-surface-head {
+  position: relative;
+  display: flex;
+  min-height: 5.25rem;
+  align-items: center;
+  gap: 0.85rem;
+  overflow: hidden;
+  border: 1px solid rgb(var(--surface-rgb) / 0.22);
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  color: rgb(226 232 240);
+  background:
+    radial-gradient(circle at 78% -40%, rgb(var(--surface-rgb) / 0.18), transparent 24rem),
+    linear-gradient(105deg, rgb(var(--surface-rgb) / 0.10), transparent 42%),
+    rgb(2 6 23 / 0.96);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+.oxsig-surface-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.28;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 3px,
+    rgb(255 255 255 / 0.025) 4px
+  );
+}
+
+.oxsig-surface-head::after {
+  content: '';
+  position: absolute;
+  inset: auto -10% -70% 44%;
+  height: 180%;
+  pointer-events: none;
+  opacity: 0.18;
+  transform: rotate(-8deg);
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 26px,
+    rgb(var(--surface-rgb) / 0.32) 27px,
+    transparent 28px 52px
+  );
+}
+
+.oxsig-surface-collab .oxsig-surface-head::after {
+  inset: -100% -10% auto 50%;
+  height: 260%;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle, transparent 0 18px, rgb(var(--surface-rgb) / 0.34) 19px, transparent 20px 32px);
+}
+
+.oxsig-surface-live .oxsig-surface-head::after {
+  inset: 18% -4% auto 55%;
+  height: 64%;
+  transform: none;
+  background:
+    linear-gradient(105deg, transparent 0 4%, rgb(var(--surface-rgb) / 0.55) 4.5% 5%, transparent 5.5% 12%, rgb(var(--surface-rgb) / 0.35) 12.5% 13%, transparent 13.5% 22%, rgb(var(--surface-rgb) / 0.5) 22.5% 23%, transparent 23.5% 100%);
+}
+
+.oxsig-surface-manage .oxsig-surface-head::after {
+  inset: 0 -2% 0 56%;
+  height: auto;
+  transform: none;
+  background-image:
+    linear-gradient(rgb(var(--surface-rgb) / 0.24) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--surface-rgb) / 0.24) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.oxsig-surface-vault .oxsig-surface-head::after {
+  inset: -40% -4% -40% 62%;
+  height: auto;
+  transform: none;
+  border: 1px solid rgb(var(--surface-rgb) / 0.36);
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 0 28%, rgb(var(--surface-rgb) / 0.18) 29% 30%, transparent 31% 48%, rgb(var(--surface-rgb) / 0.15) 49% 50%, transparent 51%);
+}
+
+.oxsig-surface-mark {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgb(var(--surface-rgb) / 0.34);
+  border-radius: 0.7rem;
+  color: rgb(var(--surface-rgb));
+  background: rgb(var(--surface-rgb) / 0.08);
+  box-shadow: inset 0 0 18px rgb(var(--surface-rgb) / 0.07);
+}
+
+.oxsig-surface-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.oxsig-surface-kicker {
+  margin: 0 0 0.2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--surface-rgb));
+}
+
+.oxsig-surface-title {
+  margin: 0;
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: rgb(248 250 252);
+}
+
+.oxsig-surface-description {
+  margin: 0.2rem 0 0;
+  max-width: 52rem;
+  font-size: 0.7rem;
+  line-height: 1.05rem;
+  color: rgb(148 163 184);
+}
+
+.oxsig-surface-signals {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.oxsig-surface-signal {
+  display: inline-flex;
+  min-height: 1.55rem;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.52rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(148 163 184);
+  background: rgb(255 255 255 / 0.025);
+}
+
+.oxsig-surface-signal strong {
+  color: rgb(var(--surface-rgb));
+  font-weight: 700;
+}
+
+.oxsig-surface-live-dot {
+  display: inline-flex;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: rgb(var(--surface-rgb));
+  box-shadow: 0 0 0 0 rgb(var(--surface-rgb) / 0.42);
+  animation: oxsig-surface-pulse 1.8s ease-out infinite;
+}
+
+.oxsig-surface-content {
+  position: relative;
+}
+
+.oxsig-surface-content::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -0.4rem -0.4rem auto;
+  height: 12rem;
+  pointer-events: none;
+  opacity: 0.55;
+  background: radial-gradient(ellipse at 50% 0%, rgb(var(--surface-rgb) / 0.06), transparent 70%);
+}
+
+/* The same primitives remain, but primary actions and focus inherit each workspace identity. */
+.oxsig-surface :where(button, a, input, textarea, select):focus-visible {
+  outline-color: rgb(var(--surface-rgb) / 0.9);
+}
+
+.oxsig-surface .oxsig-personality-panel {
+  border-color: rgb(var(--surface-rgb) / 0.18);
+  background:
+    linear-gradient(135deg, rgb(var(--surface-rgb) / 0.045), transparent 40%),
+    hsl(var(--card));
+}
+
+.oxsig-surface-vault .oxsig-surface-content > div:first-child {
+  border-color: rgb(var(--surface-rgb) / 0.18);
+  background:
+    linear-gradient(90deg, rgb(var(--surface-rgb) / 0.045), transparent 34%),
+    hsl(var(--card) / 0.78);
+}
+
+@keyframes oxsig-surface-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(var(--surface-rgb) / 0.4); }
+  70% { box-shadow: 0 0 0 8px rgb(var(--surface-rgb) / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(var(--surface-rgb) / 0); }
+}
+
+@media (max-width: 720px) {
+  .oxsig-surface-head {
+    min-height: 0;
+    align-items: flex-start;
+    padding: 0.8rem;
+  }
+
+  .oxsig-surface-signals {
+    display: none;
+  }
+
+  .oxsig-surface-mark {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxsig-surface-live-dot {
+    animation: none;
+  }
+}
