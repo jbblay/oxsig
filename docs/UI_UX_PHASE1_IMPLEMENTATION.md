@@ -12,6 +12,7 @@ This branch applies the first interface consistency pass without changing authen
   - **immersive** — full-width viewport-oriented work surface, currently used by Cyber Lab.
 - Standard is the default for normal application pages. Dashboard, Operations, WarRoom, Resources, Account, Collaboration, Live Workspace, Vault, and similar screens therefore share the same overall canvas behavior instead of independently stretching across large displays.
 - Boards and Cyber Lab remain intentional exceptions because drawing and machine interaction require additional horizontal space.
+- This geometry is now defined at shell level rather than solved independently in every page.
 
 ### Collaboration
 - Collaboration owns the remaining workspace height instead of creating a second viewport-height page.
