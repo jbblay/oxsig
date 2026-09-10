@@ -5,6 +5,7 @@ import { Eye, Loader2, Network, Pause, Play, RefreshCw, Trash2 } from 'lucide-re
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { RuntimeProgress } from '@/components/warroom/RuntimeProgress';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type RunNode = {
@@ -48,7 +49,7 @@ function readinessLabel(node: RunNode, paused: boolean) {
   return node.computeStatus || node.status;
 }
 
-export function OperationRunStrip({ runId }: { runId: string }) {
+export function OperationRunStrip({ runId, compact = false }: { runId: string; compact?: boolean }) {
   const [run, setRun] = React.useState<Run | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<BusyAction>(null);
@@ -154,13 +155,13 @@ export function OperationRunStrip({ runId }: { runId: string }) {
     <div className="mb-3 rounded-xl border bg-card/70 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Network className="h-4 w-4 text-primary" />
-        <span className="text-xs font-semibold">Provisioned topology</span>
+        <span className="text-xs font-semibold">{compact ? 'Environment readiness' : 'Provisioned topology'}</span>
         <Badge variant={run.status === 'running' && !paused ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">
           {paused ? 'paused' : run.status}
         </Badge>
         {run.metadata?.domain && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.domain}</Badge>}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
-          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => void refresh()} disabled={loading || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2" aria-label="Refresh environment status" onClick={() => void refresh()} disabled={loading || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
           {!terminalState && paused && (
             <Button size="sm" variant="outline" className="h-7" onClick={() => void changeLifecycle('resume')} disabled={Boolean(busy)}>
               {busy === 'resume' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}Resume
@@ -179,7 +180,7 @@ export function OperationRunStrip({ runId }: { runId: string }) {
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      {compact ? <RuntimeProgress nodes={run.nodes} paused={paused} status={run.status} /> : <div className="mt-3 grid gap-2 sm:grid-cols-3">
         {run.nodes.map((node) => (
           <div key={node.id} className="rounded-lg border px-2.5 py-2">
             <div className="flex items-center justify-between gap-2">
@@ -192,7 +193,7 @@ export function OperationRunStrip({ runId }: { runId: string }) {
             </p>
           </div>
         ))}
-      </div>
+      </div>}
 
       {initialAccess?.username && initialAccess.available && !paused && !terminalState && (
         <details className="mt-2 rounded-lg border bg-muted/20 px-2.5 py-2" onToggle={(event) => {
@@ -213,7 +214,7 @@ export function OperationRunStrip({ runId }: { runId: string }) {
         </details>
       )}
       {run.lastError && <p className="mt-2 text-[10px] text-destructive">{run.lastError}</p>}
-      {paused ? (
+      {!compact && (paused ? (
         <p className="mt-2 text-[10px] text-muted-foreground">Operation paused. All three EC2 machines are being kept as the same environment without being destroyed. Resume when you are ready to continue.</p>
       ) : run.status !== 'running' && !['failed', 'destroyed'].includes(run.status) ? (
         <p className="mt-2 text-[10px] text-muted-foreground">
@@ -221,7 +222,8 @@ export function OperationRunStrip({ runId }: { runId: string }) {
             ? 'EC2 is online. OXSIG is checking Systems Manager and guest readiness while AD DS promotion, domain join, and operator tooling finish.'
             : 'EC2 machines are launching. OXSIG will keep the Operation in provisioning until guest readiness is verified.'}
         </p>
-      ) : null}
+      ) : null)}
     </div>
   );
 }
+

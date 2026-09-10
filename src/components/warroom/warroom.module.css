@@ -1,0 +1,27 @@
+.console {
+  background-image: radial-gradient(circle at top right, hsl(var(--primary) / .07), transparent 45%);
+}
+.track {
+  position: relative;
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+.sweep {
+  position: absolute;
+  inset-block: 0;
+  width: 35%;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  animation: provision 2s ease-in-out infinite;
+}
+.ready { width: 100%; height: 100%; background: #10b981; }
+@keyframes provision {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(390%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sweep { animation: none; width: 100%; opacity: .4; }
+}

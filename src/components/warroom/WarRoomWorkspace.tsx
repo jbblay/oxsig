@@ -6,7 +6,10 @@ import {
   CheckCircle2,
   Loader2,
   Monitor,
-  Network,
+  Bot,
+  Crosshair,
+  FileCheck2,
+  ShieldCheck,
   RefreshCw,
   Server,
   Terminal,
@@ -14,13 +17,15 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ControlLeasePanel, type LiveWorkspaceControlState } from '@/components/live-workspace/ControlLeasePanel';
-import { TopologyNodeIcon } from '@/components/operations/OperationVisuals';
+import { type LiveWorkspaceControlState } from '@/components/live-workspace/ControlLeasePanel';
+import OperationAiInstructor from '@/components/operations/OperationAiInstructor';
+import { WarRoomConsole } from './WarRoomConsole';
+import type { OperationAiNodeContext } from '@/lib/operations/ai-context';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { Operation, OperationTopologyKind } from '@/lib/operations/catalog';
+import type { Operation } from '@/lib/operations/catalog';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Role = 'owner' | 'instructor' | 'learner' | 'observer';
@@ -127,20 +132,6 @@ function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 }
 
-function nodeKind(node: RunNode): OperationTopologyKind {
-  if (node.role === 'operator') return 'operator';
-  if (node.role === 'target' && node.osFamily.toLowerCase().includes('windows')) return 'workstation';
-  return 'server';
-}
-
-function nodeStatus(node: RunNode) {
-  if (node.status === 'running') return 'Ready';
-  if (node.status === 'failed') return 'Failed';
-  if (node.status === 'destroyed' || node.status === 'destroying') return 'Stopping';
-  if (node.computeStatus === 'running') return 'Initializing';
-  return 'Provisioning';
-}
-
 function resourceStatus(detail: WorkspaceDetail, resource: Resource) {
   const lease = detail.control.leases.find((item) => item.bindingId === resource.id && item.surface === resource.accessMode);
   if (lease) {
@@ -170,8 +161,10 @@ export default function WarRoomWorkspace({
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [selectedResourceId, setSelectedResourceId] = React.useState<string | null>(null);
+  const [selectionRevision, setSelectionRevision] = React.useState(0);
   const [inviteEmail, setInviteEmail] = React.useState('');
   const [contributionId, setContributionId] = React.useState('');
+  const [aiNode, setAiNode] = React.useState<OperationAiNodeContext | null>(null);
 
   const loadContext = React.useCallback(async () => {
     const response = await fetch(`/api/warroom/runs/${encodeURIComponent(runId)}/workspace`, { cache: 'no-store' });
@@ -339,47 +332,29 @@ export default function WarRoomWorkspace({
 
   const labs = detail.resources.filter((resource) => resource.type === 'lab-instance');
   const availableLabs = detail.attachableResources.filter((resource) => resource.type === 'lab-instance' && !resource.attached);
-  const selectedResource = labs.find((resource) => resource.id === selectedResourceId) || null;
   const participantSlots: Array<Participant | null> = [...detail.participants.slice(0, 4)];
   while (participantSlots.length < 4) participantSlots.push(null);
-  const selectedControl: LiveWorkspaceControlState = selectedResource ? {
-    ...detail.control,
-    requests: detail.control.requests.filter((request) => request.bindingId === selectedResource.id),
-    leases: detail.control.leases.filter((lease) => lease.bindingId === selectedResource.id),
-  } : { ...detail.control, requests: [], leases: [] };
   const lifecyclePaused = run?.metadata?.lifecycleState === 'paused';
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_310px]">
-      <div className="space-y-3">
-        <Card className="overflow-hidden">
-          <CardContent className="space-y-3 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Network className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold">{operation.codename} — live environment</span>
-              <Badge variant={run?.status === 'running' && !lifecyclePaused ? 'default' : 'outline'}>
-                {lifecyclePaused ? 'Paused' : run?.status === 'running' ? 'Environment ready' : 'Environment initializing'}
-              </Badge>
-              {run?.metadata?.domain ? <Badge variant="secondary">{run.metadata.domain}</Badge> : null}
-              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void refreshAll()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
-            </div>
-            <p className="text-xs text-muted-foreground">This is the same authoritative Operation topology shown in Cyber Lab. WarRoom adds people, contributed labs and lease-gated collaboration without creating a second runtime.</p>
-
-            <div className="grid gap-2 md:grid-cols-3">
-              {(run?.nodes || []).map((node) => (
-                <div key={node.id} className="rounded-xl border p-3">
-                  <div className="flex items-center gap-2">
-                    <span className="grid h-7 w-7 place-items-center rounded-md bg-primary/10 text-primary"><TopologyNodeIcon kind={nodeKind(node)} className="h-4 w-4" /></span>
-                    <span className="min-w-0 flex-1 truncate text-xs font-semibold">{node.label}</span>
-                    <Badge variant={node.status === 'running' ? 'default' : 'outline'} className="text-[9px]">{nodeStatus(node)}</Badge>
-                  </div>
-                  <p className="mt-2 text-[10px] capitalize text-muted-foreground">{node.osFamily} · {node.role}</p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">{node.privateIp || 'Private IP pending'}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="min-w-0 space-y-3">
+        <WarRoomConsole
+          runId={runId}
+          nodes={run?.nodes || []}
+          status={run?.status || 'provisioning'}
+          paused={Boolean(lifecyclePaused)}
+          isOwner={detail.workspace.isOwner}
+          selectedResourceId={selectedResourceId}
+          selectionRevision={selectionRevision}
+          onNodeChange={setAiNode}
+          workspaceId={workspaceId}
+          viewerId={detail.viewerId}
+          capabilities={detail.workspace.capabilities}
+          resources={labs}
+          control={detail.control}
+          onRefresh={async () => { await loadDetail(workspaceId); }}
+        />
 
         <Card>
           <CardHeader className="pb-2">
@@ -434,7 +409,7 @@ export default function WarRoomWorkspace({
                         <button
                           key={resource.id}
                           type="button"
-                          onClick={() => setSelectedResourceId(resource.id)}
+                          onClick={() => { setSelectedResourceId(resource.id); setSelectionRevision((value) => value + 1); }}
                           className={`w-full rounded-lg border px-2.5 py-2 text-left transition ${selectedResourceId === resource.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}
                         >
                           <div className="flex items-center gap-1.5 text-[10px] font-medium">
@@ -474,45 +449,40 @@ export default function WarRoomWorkspace({
           </CardContent>
         </Card>
 
-        {selectedResource ? (
-          <ControlLeasePanel
-            workspaceId={workspaceId}
-            viewerId={detail.viewerId}
-            capabilities={detail.workspace.capabilities}
-            resources={[selectedResource]}
-            control={selectedControl}
-            onRefresh={async () => { await loadDetail(workspaceId); }}
-          />
-        ) : (
-          <Card><CardContent className="p-5 text-center text-sm text-muted-foreground">Select or contribute a Cyber Lab to expose its real View / Assist / Control state here.</CardContent></Card>
-        )}
+
       </div>
 
-      <aside className="space-y-3">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Objectives</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {operation.objectives.map((objective, index) => (
-              <div key={objective} className="flex items-start gap-2 rounded-md border px-2.5 py-2">
-                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[9px] tabular-nums">{index + 1}</span>
-                <span className="text-[11px] leading-4">{objective}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Evidence</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {operation.evidence.map((item) => <p key={item} className="text-[11px] text-muted-foreground">• {item}</p>)}
-            <div className="space-y-2 border-t pt-3">
-              {detail.workspace.isOwner ? (
-                <Button asChild size="sm" variant="outline" className="w-full"><Link href={`/labs?operation=${encodeURIComponent(operation.slug)}&mode=warroom&run=${encodeURIComponent(runId)}`}>Open Cyber Lab</Link></Button>
-              ) : null}
-              <Button asChild size="sm" variant="ghost" className="w-full"><Link href="/live">Advanced Live Workspace</Link></Button>
-            </div>
-          </CardContent>
-        </Card>
+      <aside className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start">
+        <details className="group overflow-hidden rounded-xl border bg-card" open>
+          <summary className="cursor-pointer p-4 text-sm font-semibold"><Bot className="mr-2 inline h-4 w-4 text-primary" />AI Instructor</summary>
+          <OperationAiInstructor embedded runId={runId} operationSlug={operation.slug} operationLabel={operation.codename} operationMode="warroom" objectives={operation.objectives} nodes={run?.nodes || []} selectedNode={aiNode} />
+        </details>
+        <details className="rounded-xl border bg-card">
+          <summary className="cursor-pointer p-4 text-sm font-semibold"><Crosshair className="mr-2 inline h-4 w-4 text-primary" />Mission briefing · {operation.objectives.length} objectives</summary>
+          <div className="space-y-3 px-4 pb-4">
+            <p className="text-xs leading-5 text-muted-foreground">{operation.summary}</p>
+            <ol className="space-y-2">
+              {operation.objectives.map((objective, index) => <li key={objective} className="flex gap-2 text-xs leading-5"><span className="font-mono text-primary">{String(index + 1).padStart(2, '0')}</span>{objective}</li>)}
+            </ol>
+          </div>
+        </details>
+        <details className="rounded-xl border bg-card">
+          <summary className="cursor-pointer p-4 text-sm font-semibold"><FileCheck2 className="mr-2 inline h-4 w-4 text-primary" />Evidence checklist</summary>
+          <ul className="space-y-2 px-4 pb-4">
+            {operation.evidence.map((item) => <li key={item} className="flex gap-2 text-xs text-muted-foreground"><FileCheck2 className="h-4 w-4 shrink-0 text-primary" />{item}</li>)}
+          </ul>
+        </details>
+        <details className="rounded-xl border bg-card">
+          <summary className="cursor-pointer p-4 text-sm font-semibold"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" />Environment &amp; control details</summary>
+          <div className="space-y-3 px-4 pb-4 text-xs leading-5 text-muted-foreground">
+            <p>This Operation shares its machines with Cyber Lab. Team stations attach people and contributed labs to the same mission.</p>
+            <p>Request control to operate a shared terminal. Authorized teammates can observe output. Switching tabs closes the view; use Release control to hand over your lease.</p>
+            <p>{detail.control.note}</p>
+            <p>Windows machine terminals and desktops use the host’s Operation access. Shared desktop transport is not connected yet.</p>
+            {detail.workspace.isOwner && <Button asChild size="sm" variant="outline" className="w-full"><Link href={`/labs?operation=${encodeURIComponent(operation.slug)}&mode=warroom&run=${encodeURIComponent(runId)}`}>Open Cyber Lab</Link></Button>}
+            <Button asChild size="sm" variant="ghost" className="w-full"><Link href="/live">Advanced Live Workspace</Link></Button>
+          </div>
+        </details>
       </aside>
     </div>
   );

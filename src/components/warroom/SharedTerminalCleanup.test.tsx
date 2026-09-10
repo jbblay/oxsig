@@ -1,0 +1,28 @@
+import * as React from 'react';
+import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { SharedWorkspaceTerminal } from '@/components/live-workspace/SharedWorkspaceTerminal';
+const connect = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/security/csrf-client', () => ({ getCsrfToken: async () => 'csrf-test' }));
+vi.mock('@/lib/labs/ssm-browser-channel', () => ({ SsmBrowserDataChannel: class { connect=connect; close(){} } }));
+vi.mock('@/lib/live-workspace/terminal-realtime-client', () => ({ LiveTerminalOutputPublisher: class { close(){} } }));
+vi.mock('@xterm/xterm', () => ({ Terminal: class { loadAddon(){} open(){} writeln(){} dispose(){} onData(){return {dispose(){}};} } }));
+vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit(){} } }));
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+it('terminates a session returned after its tab has unmounted without opening a channel', async () => {
+  let resolveSession!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => {resolveSession=resolve;});
+  const fetchMock=vi.fn((_url: string, options: RequestInit) => options.method === 'POST' ? pending : Promise.resolve(new Response('{}')));
+  vi.stubGlobal('fetch',fetchMock);
+  vi.stubGlobal('ResizeObserver',class {observe(){} disconnect(){}});
+  const view=render(<SharedWorkspaceTerminal workspaceId="workspace" bindingId="binding" labInstanceId="lab" machineLabel="Operator" leaseId="lease" leaseExpiresAt={new Date(Date.now()+60000).toISOString()} onAuthorizationChanged={async()=>{}} />);
+  await waitFor(()=>expect((screen.getByRole('button',{name:'Connect terminal'}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Connect terminal'}));
+  await waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(1));
+  view.unmount();
+  await act(async()=>resolveSession(new Response(JSON.stringify({sessionId:'session',bridgePath:'/bridge',tokenValue:'token',leaseId:'lease',bindingId:'binding',labInstanceId:'lab'}))));
+  await waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(fetchMock.mock.calls[1][1].method).toBe('DELETE');
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).sessionId).toBe('session');
+  expect(connect).not.toHaveBeenCalled();
+});
