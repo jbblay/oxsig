@@ -3,11 +3,42 @@
 
 main[data-oxsig-workspace] {
   max-width: none;
+  min-height: 0;
   overflow-x: hidden;
 }
 
 main[data-oxsig-workspace] > * {
   min-width: 0;
+}
+
+/* Collaboration behaves like an application surface rather than a long page:
+   the shell owns the viewport and the message history owns vertical scrolling. */
+main[data-oxsig-workspace="collab"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail {
+  flex: 0 0 auto;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
+  min-height: 0 !important;
+  height: 100%;
+  flex: 1 1 0%;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > aside,
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > section {
+  min-height: 0;
 }
 
 @media (max-width: 767px) {
