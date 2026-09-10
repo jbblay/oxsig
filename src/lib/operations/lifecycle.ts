@@ -98,30 +98,37 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
   }
 
   await ec2.send(new StopInstancesCommand({ InstanceIds: runningIds }));
-  await inTransaction(args.pool, async (client) => {
-    await client.query(
-      `UPDATE operation_runs
-          SET status='provisioning',
-              metadata=jsonb_set(metadata, '{lifecycleState}', '"paused"'::jsonb, true),
-              updated_at=NOW()
-        WHERE id=$1 AND owner_id=$2`,
-      [args.runId, args.ownerId]
-    );
-    await client.query(
-      `UPDATE operation_nodes
-          SET status='provisioning', updated_at=NOW()
-        WHERE run_id=$1 AND status NOT IN ('destroying','destroyed','failed')`,
-      [args.runId]
-    );
-    if (run.operator_lab_instance_id) {
+  try {
+    await inTransaction(args.pool, async (client) => {
       await client.query(
-        `UPDATE lab_instances
-            SET status='stopping', updated_at=NOW()
-          WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroying','destroyed','failed')`,
-        [run.operator_lab_instance_id, args.ownerId]
+        `UPDATE operation_runs
+            SET status='provisioning',
+                metadata=jsonb_set(metadata, '{lifecycleState}', '"paused"'::jsonb, true),
+                updated_at=NOW()
+          WHERE id=$1 AND owner_id=$2`,
+        [args.runId, args.ownerId]
       );
-    }
-  });
+      await client.query(
+        `UPDATE operation_nodes
+            SET status='provisioning', updated_at=NOW()
+          WHERE run_id=$1 AND status NOT IN ('destroying','destroyed','failed')`,
+        [args.runId]
+      );
+      if (run.operator_lab_instance_id) {
+        await client.query(
+          `UPDATE lab_instances
+              SET status='stopping', updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroying','destroyed','failed')`,
+          [run.operator_lab_instance_id, args.ownerId]
+        );
+      }
+    });
+  } catch (error) {
+    // The provider action happened first. Best-effort compensation keeps AWS and
+    // database truth aligned if the durable state transition cannot commit.
+    await ec2.send(new StartInstancesCommand({ InstanceIds: runningIds })).catch(() => undefined);
+    throw error;
+  }
 
   return { paused: true, alreadyPaused: false, stopping: runningIds.length };
 }
@@ -147,34 +154,39 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
   }
 
   await ec2.send(new StartInstancesCommand({ InstanceIds: stoppedIds }));
-  await inTransaction(args.pool, async (client) => {
-    await client.query(
-      `UPDATE operation_runs
-          SET status='provisioning',
-              metadata=jsonb_set(metadata, '{lifecycleState}', '"active"'::jsonb, true),
-              last_error=NULL,
-              updated_at=NOW()
-        WHERE id=$1 AND owner_id=$2`,
-      [args.runId, args.ownerId]
-    );
-    await client.query(
-      `UPDATE operation_nodes
-          SET status='provisioning',
-              metadata=metadata - 'bootstrapReadyAt' - 'readinessCheckedAt' - 'readinessReason',
-              last_error=NULL,
-              updated_at=NOW()
-        WHERE run_id=$1 AND status NOT IN ('destroying','destroyed','failed')`,
-      [args.runId]
-    );
-    if (run.operator_lab_instance_id) {
+  try {
+    await inTransaction(args.pool, async (client) => {
       await client.query(
-        `UPDATE lab_instances
-            SET status='provisioning', last_error=NULL, updated_at=NOW()
-          WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroying','destroyed','failed')`,
-        [run.operator_lab_instance_id, args.ownerId]
+        `UPDATE operation_runs
+            SET status='provisioning',
+                metadata=jsonb_set(metadata, '{lifecycleState}', '"active"'::jsonb, true),
+                last_error=NULL,
+                updated_at=NOW()
+          WHERE id=$1 AND owner_id=$2`,
+        [args.runId, args.ownerId]
       );
-    }
-  });
+      await client.query(
+        `UPDATE operation_nodes
+            SET status='provisioning',
+                metadata=metadata - 'bootstrapReadyAt' - 'readinessCheckedAt' - 'readinessReason',
+                last_error=NULL,
+                updated_at=NOW()
+          WHERE run_id=$1 AND status NOT IN ('destroying','destroyed','failed')`,
+        [args.runId]
+      );
+      if (run.operator_lab_instance_id) {
+        await client.query(
+          `UPDATE lab_instances
+              SET status='provisioning', last_error=NULL, updated_at=NOW()
+            WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroying','destroyed','failed')`,
+          [run.operator_lab_instance_id, args.ownerId]
+        );
+      }
+    });
+  } catch (error) {
+    await ec2.send(new StopInstancesCommand({ InstanceIds: stoppedIds })).catch(() => undefined);
+    throw error;
+  }
 
   return { resumed: true, starting: stoppedIds.length };
 }
