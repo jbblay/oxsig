@@ -6,18 +6,22 @@ import {
   ArrowUpRight,
   BookOpen,
   Boxes,
+  Circle,
   Copy,
+  Eraser,
   Grid3X3,
   LibraryBig,
   Magnet,
   MessageCircle,
   Mic,
+  Minus,
   Pencil,
   RadioTower,
   RotateCcw,
   Share2,
   ShieldCheck,
   Sparkles,
+  Square,
   SquareTerminal,
   Users,
 } from 'lucide-react';
@@ -89,7 +93,11 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
         <div className="oxsig-rail-title"><BookOpen className="h-4 w-4" /><span>Board controls</span></div>
         <div className="oxsig-rail-actions">
           <BoardAction shortcut="p" label="Pen" icon={Pencil} />
+          <BoardAction shortcut="e" label="Eraser" icon={Eraser} />
+          <BoardAction shortcut="l" label="Line" icon={Minus} />
           <BoardAction shortcut="a" label="Arrow" icon={ArrowUpRight} />
+          <BoardAction shortcut="r" label="Rectangle" icon={Square} />
+          <BoardAction shortcut="o" label="Ellipse" icon={Circle} />
           <BoardAction shortcut="g" label="Grid" icon={Grid3X3} />
           <BoardAction shortcut="s" label="Snap" icon={Magnet} />
           <BoardAction shortcut="0" label="Fit" icon={RotateCcw} />
