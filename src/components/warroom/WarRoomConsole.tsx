@@ -49,40 +49,51 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
 
   function selectTab(id: string) { setSurface('terminal'); setSelected(id); }
   return (
-    <section className={`${styles.console} min-w-0 overflow-hidden rounded-xl border border-primary/30 bg-card shadow-sm`} aria-label="Live machine console">
-      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-950 px-4 py-3 text-slate-100">
-        <Crosshair className="h-5 w-5 text-cyan-400" /><span className="font-mono text-xs font-semibold uppercase tracking-widest">Mission console</span>
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-400"><Network className="h-3.5 w-3.5" />{nodes.length} machines</span>
-        <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!active} aria-label="Close current machine view" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button>
+    <section className={`${styles.console} relative min-w-0 overflow-hidden rounded-xl border border-red-500/25 bg-slate-950 text-slate-100 shadow-sm`} aria-label="Live machine console">
+      <div className="relative z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-black/40 px-4 py-3">
+        <span className={styles.liveDot} aria-hidden="true" />
+        <Crosshair className="h-5 w-5 text-red-300" />
+        <span className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-white">Mission console</span>
+        <span className="font-mono text-[9px] uppercase tracking-widest text-red-300">live</span>
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] text-slate-500"><Network className="h-3.5 w-3.5 text-emerald-400" />{nodes.length} machines</span>
+        <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:bg-white/10 hover:text-white" disabled={!active} aria-label="Close current machine view" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button>
       </div>
-      <div role="tablist" aria-label="Machines" className="flex overflow-x-auto border-b bg-muted/20 p-1">
-        {tabs.map((tab) => <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={selected === tab.id} aria-controls="warroom-machine-panel" tabIndex={selected === tab.id || !active && tab === tabs[0] ? 0 : -1}
-          onClick={() => selectTab(tab.id)} onKeyDown={(event) => {
-            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-            event.preventDefault();
-            const index = tabs.indexOf(tab);
-            const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-            selectTab(tabs[next].id);
-            document.getElementById(`tab-${tabs[next].id}`)?.focus();
-          }}
-          className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${selected === tab.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}>
-          {tab.node?.osFamily.toLowerCase().includes('windows') || tab.resource?.accessMode === 'desktop' ? <Monitor className="h-4 w-4" /> : <Terminal className="h-4 w-4" />}{tab.label}
-        </button>)}
+      <div role="tablist" aria-label="Machines" className="relative z-10 flex overflow-x-auto border-b border-white/10 bg-black/30 p-1">
+        {tabs.map((tab) => {
+          const desktop = tab.node?.osFamily.toLowerCase().includes('windows') || tab.resource?.accessMode === 'desktop';
+          const isActive = selected === tab.id;
+          return <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" aria-selected={isActive} aria-controls="warroom-machine-panel" tabIndex={isActive || !active && tab === tabs[0] ? 0 : -1}
+            onClick={() => selectTab(tab.id)} onKeyDown={(event) => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const index = tabs.indexOf(tab);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+              selectTab(tabs[next].id);
+              document.getElementById(`tab-${tabs[next].id}`)?.focus();
+            }}
+            className={`flex shrink-0 items-center gap-2 rounded px-3 py-2.5 font-mono text-[10px] uppercase tracking-wider transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 ${isActive ? 'bg-red-500/15 text-white ring-1 ring-inset ring-red-400/30' : 'text-slate-500 hover:bg-white/5 hover:text-slate-200'}`}>
+            {desktop ? <Monitor className={`h-4 w-4 ${isActive ? 'text-sky-300' : ''}`} /> : <Terminal className={`h-4 w-4 ${isActive ? 'text-emerald-300' : ''}`} />}
+            <span className="max-w-44 truncate">{tab.label}</span>
+            <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-red-400' : 'bg-slate-700'}`} aria-hidden="true" />
+          </button>;
+        })}
       </div>
-      <div id="warroom-machine-panel" role="tabpanel" aria-labelledby={active ? `tab-${active.id}` : undefined} aria-label={!active ? 'Choose a machine' : undefined} className="min-h-[420px] min-w-0 p-3 sm:p-4">
-        {!active ? <div className="flex min-h-96 flex-col items-center justify-center gap-3 text-center"><Crosshair className="h-12 w-12 text-primary/50" /><p className="font-mono text-sm">Choose your station</p><p className="max-w-sm text-xs text-muted-foreground">Select a machine tab to open its available terminal or desktop.</p></div>
-          : !canOpen ? <div role="status" className="flex min-h-96 flex-col items-center justify-center gap-3"><Network className="h-10 w-10 text-primary" /><p className="text-sm">{paused ? 'Resume the environment to connect.' : `Machine unavailable · ${node?.status || status}`}</p></div>
+      <div id="warroom-machine-panel" role="tabpanel" aria-labelledby={active ? `tab-${active.id}` : undefined} aria-label={!active ? 'Choose a machine' : undefined} className="relative z-10 min-h-[420px] min-w-0 p-3 sm:p-4">
+        {!active ? <div className="flex min-h-96 flex-col items-center justify-center gap-3 text-center"><Crosshair className="h-12 w-12 text-red-400/40" /><p className="font-mono text-sm uppercase tracking-wider text-slate-200">Choose your station</p><p className="max-w-sm text-xs text-slate-500">Select a machine tab to open its available terminal or desktop.</p></div>
+          : !canOpen ? <div role="status" className="flex min-h-96 flex-col items-center justify-center gap-3"><Network className="h-10 w-10 text-red-300" /><p className="font-mono text-xs text-slate-300">{paused ? 'Resume the environment to connect.' : `Machine unavailable · ${node?.status || status}`}</p></div>
           : resource ? <ControlLeasePanel key={`${runId}:${resource.id}`} {...controlProps} compact resources={[resource]} control={{ ...controlProps.control, requests: controlProps.control.requests.filter((item) => item.bindingId === resource.id), leases: controlProps.control.leases.filter((item) => item.bindingId === resource.id) }} />
           : node && isOwner ? <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2"><span className="mr-auto font-mono text-xs text-muted-foreground">{node.privateIp || 'Private IP pending'}</span>
-              <Button size="sm" variant={surface === 'terminal' ? 'default' : 'outline'} aria-pressed={surface === 'terminal'} onClick={() => setSurface('terminal')}><Terminal className="mr-1 h-4 w-4" />Terminal</Button>
-              {node.osFamily.toLowerCase().includes('windows') && <Button size="sm" variant={surface === 'desktop' ? 'default' : 'outline'} aria-pressed={surface === 'desktop'} onClick={() => setSurface('desktop')}><Monitor className="mr-1 h-4 w-4" />Desktop</Button>}
+            <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-2"><span className="mr-auto font-mono text-[10px] text-slate-500">NODE // {node.privateIp || 'PRIVATE IP PENDING'}</span>
+              <Button size="sm" variant={surface === 'terminal' ? 'default' : 'outline'} aria-pressed={surface === 'terminal'} className={surface === 'terminal' ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'} onClick={() => setSurface('terminal')}><Terminal className="mr-1 h-4 w-4" />Terminal</Button>
+              {node.osFamily.toLowerCase().includes('windows') && <Button size="sm" variant={surface === 'desktop' ? 'default' : 'outline'} aria-pressed={surface === 'desktop'} className={surface === 'desktop' ? 'bg-sky-600 text-white hover:bg-sky-500' : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'} onClick={() => setSurface('desktop')}><Monitor className="mr-1 h-4 w-4" />Desktop</Button>}
             </div>
             {surface === 'desktop' ? <InteractiveSsmDesktop key={`${runId}:${node.id}:desktop`} labInstanceId={node.id} machineLabel={node.label} sessionEndpoint={`/api/operations/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(node.id)}/desktop/session`} />
               : <OperationNodeTerminal key={`${runId}:${node.id}:terminal`} runId={runId} nodeId={node.id} machineLabel={node.label} />}
-          </div> : <div className="flex min-h-96 items-center justify-center text-center text-sm text-muted-foreground">This machine is available to the Operation host. Select a contributed team terminal to collaborate.</div>}
+          </div> : <div className="flex min-h-96 items-center justify-center text-center text-sm text-slate-500">This machine is available to the Operation host. Select a contributed team terminal to collaborate.</div>}
       </div>
-      <div className="border-t px-4 py-2 font-mono text-[10px] text-muted-foreground">One active view · switching machines disconnects the previous view</div>
+      <div className="relative z-10 flex flex-wrap items-center gap-2 border-t border-white/10 bg-black/30 px-4 py-2 font-mono text-[9px] uppercase tracking-wider text-slate-600">
+        <span className="text-red-300">OPSEC</span><span>one active view</span><span>·</span><span>switching machines disconnects the previous view</span>
+      </div>
     </section>
   );
 }
