@@ -378,7 +378,10 @@ export default function InteractiveSsmDesktop({
         onBeforeInput={handleMobileBeforeInput}
         onInput={handleMobileInput}
         onKeyDown={(event) => {
-          if (["Backspace", "Enter", "Tab", "Escape"].includes(event.key)) {
+          // Printable text, Backspace and Enter are handled by beforeinput so
+          // Android/IME keyboards cannot send the same edit twice. Keep only
+          // non-text control keys here for physical/mobile accessory keyboards.
+          if (["Tab", "Escape"].includes(event.key)) {
             event.preventDefault();
             sendKeyStroke(event.key);
           }
