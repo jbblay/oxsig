@@ -158,11 +158,39 @@ function historyText(history: AiPractitionerHistoryItem[]) {
   return history.slice(-8).map((item) => `${item.role.toUpperCase()}: ${item.content}`).join('\n');
 }
 
-type PractitionerLabContext = {
+export type PractitionerOperationContext = {
+  codename: string;
+  mode: 'practice' | 'walkthrough' | 'challenge';
+  summary: string;
+  objectives: string[];
+  topology: string[];
+  nodeLabel: string;
+  nodeRole: string;
+  nodes: Array<{
+    label: string;
+    role: string;
+    osFamily: string;
+    privateIp?: string | null;
+  }>;
+};
+
+export type PractitionerLabContext = {
   name: string;
   platform: 'linux' | 'windows';
   shell: string;
+  operation?: PractitionerOperationContext;
 };
+
+function operationTeachingRules(operation?: PractitionerOperationContext) {
+  if (!operation) return '';
+  const modeRule = operation.mode === 'walkthrough'
+    ? 'WALKTHROUGH: teach explicitly and demonstrate small steps when the learner needs them, but still ask them to interpret important evidence.'
+    : operation.mode === 'challenge'
+      ? 'CHALLENGE: preserve productive struggle. Prefer a focused diagnostic question or a small hint before revealing a command. Let the learner lead whenever they show a viable idea.'
+      : 'PRACTICE: use guided discovery. Ask for the learner\'s reasoning when useful, give progressively stronger hints, and demonstrate only when a gap blocks progress.';
+
+  return `\nThis is an Operation learning session, not a static tutorial. The learner already chose what they want to practice. Teach only the next useful gap revealed by their request, reasoning, or real evidence. Do not dump a full walkthrough. Use one teaching move at a time: question, hint, concise explanation, or one proposed command.\n${modeRule}\nWhen the learner gives a reasonable next step, acknowledge the useful part and let them perform it. When they are mistaken, correct the specific misconception and then ask them to try again or propose the smallest useful action. Commands must apply only to the SELECTED OPERATION MACHINE. Never silently switch machines.\n`;
+}
 
 export async function planPractitionerStep(args: {
   prompt: string;
@@ -171,24 +199,29 @@ export async function planPractitionerStep(args: {
 }): Promise<AiPractitionerPlan> {
   const instructions = `You are Oxsig AI Practitioner, a practical technical teacher and assistant.
 
-Conversation comes first. Answer ordinary technical and general learning questions directly and clearly. A Cyber Lab is optional for conversation.
+Conversation comes first. Answer ordinary technical and general learning questions directly and clearly. A Cyber Lab or Operation machine is optional for conversation.
 
-When a running authenticated learner-owned Cyber Lab is supplied, you may also propose ONE command, but only when the learner explicitly asks to run, inspect, test, practice, verify, troubleshoot, or otherwise perform something in the lab, or when live evidence is genuinely necessary to answer the request. Never invent execution results.
+When a running authenticated learner-owned machine is supplied, you may propose ONE command, but only when the learner explicitly asks to run, inspect, test, practice, verify, troubleshoot, or otherwise perform something in the lab, or when live evidence is genuinely necessary to advance the exercise. Never invent execution results.
 
-If no running lab is supplied, command MUST be null. Explain that a running lab is needed only if the learner asks for real execution. Do not refuse ordinary questions just because there is no lab.
-
-Execution rules when a lab is available:
+If no running machine is supplied, command MUST be null. Explain that a running machine is needed only if the learner asks for real execution. Do not refuse ordinary questions just because there is no machine.
+${operationTeachingRules(args.lab?.operation)}
+Execution rules when a machine is available:
 - Explain before action. Oxsig, not you, executes the command and only after explicit user approval.
-- Keep every action scoped to the active Oxsig lab. Never direct attacks at public/external systems. For network-security examples, use localhost, loopback, or private lab addresses explicitly supplied by the learner.
+- Keep every action scoped to the active Oxsig lab/Operation. Never direct attacks at public/external systems. For network-security examples, use localhost, loopback, or the private Operation addresses supplied in context.
 - Prefer read-only inspection and discovery. If a legitimate learning step changes packages, services, users, permissions, files, or firewall state, mark risk as changes-system and explain why approval matters.
 - Do not propose destructive disk/boot operations, persistence mechanisms, credential theft/exfiltration, malware deployment, stealth/evasion, denial-of-service, or remote-shell payloads.
 - The command must be valid for the supplied shell and no longer than 1000 characters.
+- A question or hint is often better teaching than a command. If the learner can reasonably make the next inference, set command to null and ask them to reason or choose the next action.
 
 For a pure question, put the useful answer in explanation, set command to null, use read-only risk, and use approvalReason to say no execution is required.`;
 
+  const operationText = args.lab?.operation
+    ? `\nOPERATION\nCodename: ${args.lab.operation.codename}\nMode: ${args.lab.operation.mode}\nSummary: ${args.lab.operation.summary}\nObjectives: ${args.lab.operation.objectives.join(' | ')}\nTopology: ${args.lab.operation.topology.join(' -> ')}\nSelected machine: ${args.lab.operation.nodeLabel} (${args.lab.operation.nodeRole})\nMachines:\n${args.lab.operation.nodes.map((node) => `- ${node.label} | role=${node.role} | os=${node.osFamily}${node.privateIp ? ` | private_ip=${node.privateIp}` : ''}`).join('\n')}`
+    : '';
+
   const labText = args.lab
-    ? `RUNNING LAB AVAILABLE\nName: ${args.lab.name}\nPlatform: ${args.lab.platform}\nShell: ${args.lab.shell}`
-    : 'RUNNING LAB AVAILABLE\nNo. Conversation and teaching are still available; real command execution is not.';
+    ? `RUNNING MACHINE AVAILABLE\nName: ${args.lab.name}\nPlatform: ${args.lab.platform}\nShell: ${args.lab.shell}${operationText}`
+    : 'RUNNING MACHINE AVAILABLE\nNo. Conversation and teaching are still available; real command execution is not.';
 
   const input = `${labText}\n\nRECENT CONVERSATION\n${historyText(args.history) || '(none)'}\n\nLEARNER REQUEST\n${args.prompt}`;
 
@@ -222,9 +255,9 @@ export async function explainPractitionerEvidence(args: {
   labName: string;
   platform: 'linux' | 'windows';
 }): Promise<AiPractitionerAnalysis> {
-  const instructions = `You are Oxsig AI Practitioner explaining REAL command evidence returned from an authenticated learner-owned Cyber Lab.
+  const instructions = `You are Oxsig AI Practitioner explaining REAL command evidence returned from an authenticated learner-owned lab or Operation machine.
 
-Explain what the evidence means. Do not pretend a command succeeded when the exit code or stderr says otherwise. Separate direct observations from interpretation. Keep the explanation practical and educational. Recommend only the next learning step; do not silently execute anything. For security topics, keep recommendations inside the authorized lab context.`;
+Explain what the evidence means. Do not pretend a command succeeded when the exit code or stderr says otherwise. Separate direct observations from interpretation. Keep the explanation practical and educational. Do not immediately solve the rest of the exercise. Recommend one next learning step or one focused question that makes the learner interpret the evidence. For security topics, keep recommendations inside the authorized lab context.`;
 
   const input = `LAB: ${args.labName} (${args.platform})\nLEARNER GOAL: ${args.prompt}\nCOMMAND: ${args.command}\nEXIT CODE: ${args.exitCode}\nSTDOUT:\n${args.stdout.slice(0, 12000) || '(empty)'}\nSTDERR:\n${args.stderr.slice(0, 12000) || '(empty)'}`;
 
