@@ -39,6 +39,13 @@ class DesktopRequestError extends Error {
   }
 }
 
+const RETRYABLE_BOOTSTRAP_CODES = new Set([
+  "DESKTOP_BOOTSTRAP_PENDING",
+  "DESKTOP_SERVICE_NOT_READY",
+  "SSM_NOT_READY",
+  "OPERATION_NODE_BOOTSTRAP_PENDING",
+]);
+
 function bridgeWebSocketUrl(path: string) {
   const url = new URL(path, window.location.origin);
   url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -57,12 +64,15 @@ export default function InteractiveSsmDesktop({
   labInstanceId,
   machineLabel,
   focusMode = false,
+  sessionEndpoint,
 }: {
   labInstanceId: string;
   machineLabel: string;
   focusMode?: boolean;
+  sessionEndpoint?: string;
 }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const mobileInputRef = React.useRef<HTMLInputElement | null>(null);
   const channelRef = React.useRef<SsmBrowserPortChannel | null>(null);
   const rfbRef = React.useRef<RfbClient | null>(null);
   const sessionIdRef = React.useRef<string | null>(null);
@@ -82,6 +92,8 @@ export default function InteractiveSsmDesktop({
   const [desktopSize, setDesktopSize] = React.useState<string | null>(null);
   const [accessEvidenceState, setAccessEvidenceState] = React.useState<AccessEvidenceState>("pending");
 
+  const desktopSessionEndpoint = sessionEndpoint || `/api/labs/instances/${labInstanceId}/desktop/session`;
+
   const clearRetryTimer = React.useCallback(() => {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     retryTimerRef.current = null;
@@ -93,7 +105,7 @@ export default function InteractiveSsmDesktop({
     sessionIdRef.current = null;
     if (!sessionId || !csrf) return;
     try {
-      await fetch(`/api/labs/instances/${labInstanceId}/desktop/session`, {
+      await fetch(desktopSessionEndpoint, {
         method: "DELETE",
         headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
         body: JSON.stringify({ sessionId }),
@@ -102,7 +114,7 @@ export default function InteractiveSsmDesktop({
     } catch {
       // The managed transport also closes its remote session when the data channel disappears.
     }
-  }, [labInstanceId]);
+  }, [desktopSessionEndpoint]);
 
   const closeLocalChannel = React.useCallback(() => {
     rfbRef.current?.close();
@@ -154,7 +166,7 @@ export default function InteractiveSsmDesktop({
       if (generation !== generationRef.current || disposedRef.current) return;
       csrfRef.current = csrf;
 
-      const response = await fetch(`/api/labs/instances/${labInstanceId}/desktop/session`, {
+      const response = await fetch(desktopSessionEndpoint, {
         method: "POST",
         headers: { "x-csrf-token": csrf },
         cache: "no-store",
@@ -195,7 +207,7 @@ export default function InteractiveSsmDesktop({
           setDesktopSize(`${width}×${height}`);
           setState("connected");
           setError(null);
-          setStatusDetail("Secure browser desktop connected. No inbound desktop port is exposed to the learner.");
+          setStatusDetail("Secure browser desktop connected. On a phone, use Keyboard to enter text.");
           canvas.focus();
 
           const offer = session.accessEvidence;
@@ -255,11 +267,11 @@ export default function InteractiveSsmDesktop({
       const failure = connectError instanceof DesktopRequestError ? connectError : new DesktopRequestError(connectError instanceof Error ? connectError.message : "Browser desktop connection failed");
       await endServerSession(false);
 
-      if (failure.code === "DESKTOP_BOOTSTRAP_PENDING" && bootstrapRetriesRef.current < 24) {
+      if (failure.code && RETRYABLE_BOOTSTRAP_CODES.has(failure.code) && bootstrapRetriesRef.current < 24) {
         bootstrapRetriesRef.current += 1;
         setState("connecting");
         setError(null);
-        setStatusDetail(`Preparing the desktop environment on ${machineLabel}… (${bootstrapRetriesRef.current}/24)`);
+        setStatusDetail(`Preparing secure desktop access on ${machineLabel}… (${bootstrapRetriesRef.current}/24)`);
         retryTimerRef.current = setTimeout(() => void connectRef.current(true), 5000);
         return;
       }
@@ -268,9 +280,11 @@ export default function InteractiveSsmDesktop({
       setError(failure.message);
       setStatusDetail("Desktop connection attempt failed.");
     }
-  }, [clearRetryTimer, closeLocalChannel, endServerSession, labInstanceId, machineLabel, scheduleTransportRecovery]);
+  }, [clearRetryTimer, closeLocalChannel, desktopSessionEndpoint, endServerSession, labInstanceId, machineLabel, scheduleTransportRecovery]);
 
-  connectRef.current = connect;
+  React.useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = React.useCallback(async () => {
     generationRef.current += 1;
@@ -307,10 +321,70 @@ export default function InteractiveSsmDesktop({
     };
   };
 
+  const sendKeyStroke = React.useCallback((key: string) => {
+    const rfb = rfbRef.current;
+    if (!rfb || state !== "connected") return;
+    rfb.key(key, true);
+    rfb.key(key, false);
+  }, [state]);
+
+  const openMobileKeyboard = React.useCallback(() => {
+    if (state !== "connected") return;
+    const input = mobileInputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.focus({ preventScroll: true });
+  }, [state]);
+
+  const handleMobileBeforeInput = React.useCallback((event: React.FormEvent<HTMLInputElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    const inputType = nativeEvent.inputType || "";
+    if (inputType === "deleteContentBackward") {
+      event.preventDefault();
+      sendKeyStroke("Backspace");
+    } else if (inputType === "insertLineBreak" || inputType === "insertParagraph") {
+      event.preventDefault();
+      sendKeyStroke("Enter");
+    } else if (nativeEvent.data) {
+      event.preventDefault();
+      for (const character of Array.from(nativeEvent.data)) sendKeyStroke(character);
+    }
+    event.currentTarget.value = "";
+  }, [sendKeyStroke]);
+
+  const handleMobileInput = React.useCallback((event: React.FormEvent<HTMLInputElement>) => {
+    const value = event.currentTarget.value;
+    if (value) {
+      for (const character of Array.from(value)) sendKeyStroke(character);
+      event.currentTarget.value = "";
+    }
+  }, [sendKeyStroke]);
+
   const statusLabel = state === "connected" ? "Connected" : state === "connecting" ? "Connecting" : state === "error" ? "Error" : "Disconnected";
 
   return (
     <div className="space-y-3">
+      <input
+        ref={mobileInputRef}
+        type="text"
+        inputMode="text"
+        enterKeyHint="go"
+        autoComplete="off"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        aria-label={`Mobile keyboard input for ${machineLabel}`}
+        className="fixed bottom-0 left-0 h-px w-px opacity-0"
+        onBeforeInput={handleMobileBeforeInput}
+        onInput={handleMobileInput}
+        onKeyDown={(event) => {
+          if (["Backspace", "Enter", "Tab", "Escape"].includes(event.key)) {
+            event.preventDefault();
+            sendKeyStroke(event.key);
+          }
+        }}
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold">Browser desktop — {machineLabel}</span>
@@ -324,8 +398,9 @@ export default function InteractiveSsmDesktop({
           {accessEvidenceState === "error" && <Badge variant="outline" className="text-[9px]">Evidence retry on next session</Badge>}
         </div>
         <div className="flex flex-wrap gap-2">
+          {state === "connected" && <Button size="sm" variant="outline" onClick={openMobileKeyboard}><Keyboard className="mr-1.5 h-3.5 w-3.5" />Keyboard</Button>}
           {platform === "windows" && state === "connected" && <Button size="sm" variant="outline" onClick={() => rfbRef.current?.sendCtrlAltDelete()}><Keyboard className="mr-1.5 h-3.5 w-3.5" />Ctrl+Alt+Del</Button>}
-          {state !== "connected" && <Button size="sm" variant="outline" onClick={() => void connect(false)} disabled={state === "connecting"}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Reconnect</Button>}
+          {state !== "connected" && <Button size="sm" variant="outline" onClick={() => void connectRef.current(false)} disabled={state === "connecting"}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Reconnect</Button>}
           {(state === "connected" || state === "connecting") && <Button size="sm" variant="outline" onClick={() => void disconnect()}><Unplug className="mr-1.5 h-3.5 w-3.5" />Disconnect</Button>}
         </div>
       </div>
@@ -352,7 +427,7 @@ export default function InteractiveSsmDesktop({
         </div>
       </div>
 
-      <p className="text-[10px] leading-4 text-muted-foreground">Desktop pixels, keyboard and pointer events travel through OXSIG's authenticated private bridge. The guest desktop service is not exposed directly to the public internet. When prerequisite evidence is ready, OXSIG records the successful browser handshake as access-path evidence.</p>
+      <p className="text-[10px] leading-4 text-muted-foreground">Desktop pixels, keyboard and pointer events travel through OXSIG&apos;s authenticated private bridge. On touch devices, tap Keyboard after selecting a field in the remote desktop; typed characters are forwarded immediately and are not retained by the input proxy.</p>
     </div>
   );
 }
