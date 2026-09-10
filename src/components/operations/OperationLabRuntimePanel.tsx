@@ -4,10 +4,13 @@ import * as React from 'react';
 import { Activity, Loader2, Monitor, Network, RefreshCw, Server, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import InteractiveSsmDesktop from '@/components/labs/InteractiveSsmDesktop';
+import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
+import OperationAiInstructor from '@/components/operations/OperationAiInstructor';
 import OperationNodeTerminal from '@/components/operations/OperationNodeTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { getOperation } from '@/lib/operations/catalog';
 
 type RunNode = {
   id: string;
@@ -119,6 +122,7 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
   const accessAvailable = Boolean(selected && !paused && !['failed', 'destroying', 'destroyed'].includes(run?.status || '') && !['failed', 'destroying', 'destroyed'].includes(selected.status) && (selected.computeStatus === 'running' || selected.status === 'running'));
   const windows = Boolean(selected?.osFamily.toLowerCase().includes('windows'));
   const selectedReadiness = readinessLabel(selected?.readiness);
+  const operation = run ? getOperation(run.operationSlug) : null;
 
   React.useEffect(() => {
     setAccessMode(null);
@@ -141,6 +145,16 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
               {paused ? 'Environment paused' : run.status === 'running' ? 'Environment ready' : 'Environment initializing'}
             </Badge>
             {run.metadata?.domain && <Badge variant="secondary">{run.metadata.domain}</Badge>}
+            {run.operationSlug === 'black-domain' && (
+              <OperationAiInstructor
+                runId={run.id}
+                operationSlug={run.operationSlug}
+                operationMode={run.mode}
+                objectives={operation?.objectives || []}
+                nodes={run.nodes}
+                selectedNode={selected}
+              />
+            )}
             <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
           </div>
           <p className="text-xs text-muted-foreground">These are the same three machines provisioned by Operations and shown in Build. Select the machine you want to use, then choose one of its available access methods.</p>
@@ -207,7 +221,11 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
                     sessionEndpoint={`/api/operations/runs/${encodeURIComponent(run.id)}/nodes/${encodeURIComponent(selected.id)}/desktop/session`}
                   />
                 ) : accessMode === 'terminal' ? (
-                  <OperationNodeTerminal key={`${run.id}:${selected.id}:terminal`} runId={run.id} nodeId={selected.id} machineLabel={selected.label} />
+                  selected.labInstanceId ? (
+                    <InteractiveSsmTerminal key={`${run.id}:${selected.id}:terminal:ai`} labInstanceId={selected.labInstanceId} machineLabel={selected.label} />
+                  ) : (
+                    <OperationNodeTerminal key={`${run.id}:${selected.id}:terminal`} runId={run.id} nodeId={selected.id} machineLabel={selected.label} />
+                  )
                 ) : <p className="text-xs text-muted-foreground">Choose an access method to connect to this machine.</p>}
               </>
             )}
@@ -224,4 +242,3 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
     </div>
   );
 }
-
