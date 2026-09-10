@@ -8,6 +8,12 @@ import OperationNodeTerminal from '@/components/operations/OperationNodeTerminal
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  OPERATION_AI_TARGET_EVENT,
+  OPERATION_AI_TARGET_SELECT_EVENT,
+  type OperationAiTarget,
+  type OperationAiTargetSelect,
+} from '@/lib/operations/ai-terminal-events';
 
 type RunNode = {
   id: string;
@@ -124,6 +130,32 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
     setAccessMode(null);
   }, [selectedId]);
 
+  React.useEffect(() => {
+    if (!selected || !run || run.id !== runId) return;
+    const detail: OperationAiTarget = {
+      runId,
+      nodeId: selected.id,
+      nodeKey: selected.key,
+      label: selected.label,
+      role: selected.role,
+      osFamily: selected.osFamily,
+      privateIp: selected.privateIp,
+      status: selected.status,
+    };
+    window.dispatchEvent(new CustomEvent<OperationAiTarget>(OPERATION_AI_TARGET_EVENT, { detail }));
+  }, [run, runId, selected]);
+
+  React.useEffect(() => {
+    const handleSelect = (event: Event) => {
+      const detail = (event as CustomEvent<OperationAiTargetSelect>).detail;
+      if (!detail || detail.runId !== runId || !run?.nodes.some((node) => node.id === detail.nodeId)) return;
+      setAccessMode(null);
+      setSelectedId(detail.nodeId);
+    };
+    window.addEventListener(OPERATION_AI_TARGET_SELECT_EVENT, handleSelect);
+    return () => window.removeEventListener(OPERATION_AI_TARGET_SELECT_EVENT, handleSelect);
+  }, [run, runId]);
+
   if (loading && !run) {
     return <div className="flex min-h-56 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading the live Operation…</div>;
   }
@@ -143,7 +175,7 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
             {run.metadata?.domain && <Badge variant="secondary">{run.metadata.domain}</Badge>}
             <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
           </div>
-          <p className="text-xs text-muted-foreground">These are the same three machines provisioned by Operations and shown in Build. Select the machine you want to use, then choose one of its available access methods.</p>
+          <p className="text-xs text-muted-foreground">Select the machine you want to use. AI Practitioner follows the same selection, so approved commands can only run against the machine and live terminal you chose.</p>
 
           <div className="grid gap-2 md:grid-cols-3">
             {run.nodes.map((node) => {
@@ -207,7 +239,13 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
                     sessionEndpoint={`/api/operations/runs/${encodeURIComponent(run.id)}/nodes/${encodeURIComponent(selected.id)}/desktop/session`}
                   />
                 ) : accessMode === 'terminal' ? (
-                  <OperationNodeTerminal key={`${run.id}:${selected.id}:terminal`} runId={run.id} nodeId={selected.id} machineLabel={selected.label} />
+                  <OperationNodeTerminal
+                    key={`${run.id}:${selected.id}:terminal`}
+                    runId={run.id}
+                    nodeId={selected.id}
+                    machineLabel={selected.label}
+                    osFamily={selected.osFamily}
+                  />
                 ) : <p className="text-xs text-muted-foreground">Choose an access method to connect to this machine.</p>}
               </>
             )}
@@ -224,4 +262,3 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
     </div>
   );
 }
-
