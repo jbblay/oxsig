@@ -1,0 +1,119 @@
+/* Final readability baseline. Loaded after all workspace personality layers. */
+:root {
+  --muted-foreground: 215 18% 40%;
+}
+
+.dark {
+  --muted-foreground: 215 22% 72%;
+  --border: 217 25% 23%;
+  --input: 217 25% 24%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-kerning: normal;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+p,
+li,
+dd,
+figcaption {
+  text-wrap: pretty;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+dt,
+label,
+button {
+  text-wrap: balance;
+}
+
+/* OXSIG contains dense telemetry labels. Keep metadata compact, but never microscopic. */
+[class~="text-[8px]"],
+[class~="text-[9px]"],
+[class~="text-[10px]"] {
+  font-size: 0.6875rem !important;
+  line-height: 1rem !important;
+}
+
+[class~="text-[11px]"] {
+  font-size: 0.75rem !important;
+  line-height: 1.05rem !important;
+}
+
+/* Muted text must remain secondary without disappearing, especially in dark workspaces. */
+.dark [class~="text-muted-foreground/50"],
+.dark [class~="text-muted-foreground/60"] {
+  color: hsl(var(--muted-foreground) / 0.82) !important;
+}
+
+.dark [class~="text-muted-foreground/70"] {
+  color: hsl(var(--muted-foreground) / 0.9) !important;
+}
+
+.dark [class~="text-slate-500"] {
+  color: rgb(148 163 184) !important;
+}
+
+/* Forms stay legible on mobile and do not trigger browser zoom from undersized text. */
+input,
+textarea,
+select {
+  color: hsl(var(--foreground));
+  line-height: 1.45;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: hsl(var(--muted-foreground) / 0.88);
+  opacity: 1;
+}
+
+@media (max-width: 639px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Strong keyboard readability across custom dark surfaces. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Long technical identifiers should wrap instead of shrinking or clipping useful text. */
+code,
+pre,
+.font-mono {
+  font-variant-ligatures: none;
+}
+
+code:not(pre code) {
+  overflow-wrap: anywhere;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.28);
+  color: hsl(var(--foreground));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+}
