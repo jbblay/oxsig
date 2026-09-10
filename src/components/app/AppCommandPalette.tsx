@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BookOpen,
   Box,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { openAiForPath } from '@/lib/ai/client-routing';
 import {
   getWorkspaceRecents,
   recordWorkspaceActivity,
@@ -58,6 +59,7 @@ export default function AppCommandPalette({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const pathname = usePathname();
   const router = useRouter();
   const [query, setQuery] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -81,7 +83,7 @@ export default function AppCommandPalette({
   function openAi() {
     onOpenChange(false);
     recordWorkspaceActivity({ label: 'Opened AI Helper', detail: 'Global command', color: 'home', kind: 'action' });
-    window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'));
+    openAiForPath(pathname);
   }
 
   const recent = getWorkspaceRecents().find((item) => item.href !== '/home');
