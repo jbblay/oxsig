@@ -3,15 +3,17 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  CheckCircle2,
-  Loader2,
-  Monitor,
+  Activity,
   Bot,
+  CheckCircle2,
+  ChevronDown,
   Crosshair,
   FileCheck2,
-  ShieldCheck,
+  Loader2,
+  Monitor,
   RefreshCw,
   Server,
+  ShieldCheck,
   Terminal,
   UserPlus,
   UsersRound,
@@ -19,11 +21,13 @@ import {
 import { toast } from 'sonner';
 import { type LiveWorkspaceControlState } from '@/components/live-workspace/ControlLeasePanel';
 import OperationAiInstructor from '@/components/operations/OperationAiInstructor';
+import { OperationRunStrip } from '@/components/operations/OperationRunStrip';
 import { WarRoomConsole } from './WarRoomConsole';
+import styles from './warroom.module.css';
 import type { OperationAiNodeContext } from '@/lib/operations/ai-context';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import type { Operation } from '@/lib/operations/catalog';
 import { getCsrfToken } from '@/lib/security/csrf-client';
@@ -295,7 +299,7 @@ export default function WarRoomWorkspace({
   }
 
   if (loading) {
-    return <div className="flex min-h-72 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading live WarRoom…</div>;
+    return <div className="flex min-h-72 items-center justify-center rounded-xl border border-red-500/20 bg-slate-950 text-sm text-slate-400"><Loader2 className="mr-2 h-4 w-4 animate-spin text-red-400" />Establishing WarRoom link…</div>;
   }
 
   if (error) {
@@ -312,19 +316,19 @@ export default function WarRoomWorkspace({
 
   if (!workspaceId || !detail) {
     return (
-      <Card>
+      <Card className="border-red-500/20 bg-slate-950 text-slate-100">
         <CardContent className="flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center">
-          <UsersRound className="h-8 w-8 text-primary" />
+          <UsersRound className="h-8 w-8 text-red-400" />
           <div>
             <p className="font-semibold">Operation is running; the team workspace is not linked yet.</p>
-            <p className="mt-1 text-sm text-muted-foreground">The Operation remains intact. Link its existing Live Workspace collaboration layer to continue in WarRoom.</p>
+            <p className="mt-1 text-sm text-slate-400">The Operation remains intact. Link its existing Live Workspace collaboration layer to continue in WarRoom.</p>
           </div>
           {canCreateWorkspace ? (
             <Button onClick={() => void ensureWorkspace()} disabled={busy === 'workspace'}>
               {busy === 'workspace' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UsersRound className="mr-2 h-4 w-4" />}
               Link team workspace
             </Button>
-          ) : <Badge variant="outline">Waiting for the Operation host</Badge>}
+          ) : <Badge variant="outline" className="border-red-400/30 text-red-300">Waiting for the Operation host</Badge>}
         </CardContent>
       </Card>
     );
@@ -337,7 +341,7 @@ export default function WarRoomWorkspace({
   const lifecyclePaused = run?.metadata?.lifecycleState === 'paused';
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className={`${styles.warroomGrid} grid gap-3 xl:grid-cols-[minmax(0,1fr)_350px]`}>
       <div className="min-w-0 space-y-3">
         <WarRoomConsole
           runId={runId}
@@ -356,132 +360,195 @@ export default function WarRoomWorkspace({
           onRefresh={async () => { await loadDetail(workspaceId); }}
         />
 
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2 text-sm"><UsersRound className="h-4 w-4" />Team stations</CardTitle>
-              <Badge variant="outline">{detail.participants.length}/4 connected</Badge>
+        <section className={`${styles.stationDeck} overflow-hidden rounded-xl border border-red-500/20 bg-slate-950 text-slate-100`} aria-label="Team cyber stations">
+          <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-4 py-3">
+            <span className={styles.liveDot} aria-hidden="true" />
+            <div className="mr-auto">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-red-300">Live team grid</p>
+              <p className="mt-0.5 text-[10px] text-slate-500">Select a terminal or desktop station to route it into the mission console.</p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-2 md:grid-cols-2">
-              {participantSlots.map((participant, slot) => {
-                if (!participant) {
-                  return (
-                    <div key={`empty:${slot}`} className="min-h-36 rounded-xl border border-dashed p-3 text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <span className="grid h-8 w-8 place-items-center rounded-full border text-[10px] font-semibold">P{slot + 1}</span>
-                        <div><p className="text-xs font-medium text-foreground">Waiting for player</p><p className="text-[10px]">Invite a teammate to fill this station.</p></div>
-                      </div>
-                    </div>
-                  );
-                }
-                const participantLabs = labs.filter((resource) => resource.resourceOwnerId === participant.id);
-                const canManageRole = detail.workspace.capabilities.manageParticipants && participant.role !== 'owner';
-                return (
-                  <div key={participant.id} className="min-h-36 rounded-xl border p-3">
-                    <div className="flex items-start gap-2">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">{initials(participant.displayName)}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="truncate text-xs font-semibold">{participant.displayName}</p>
-                          {participant.id === detail.viewerId ? <Badge variant="secondary" className="text-[9px]">You</Badge> : null}
-                        </div>
-                        {canManageRole ? (
-                          <select
-                            className="mt-1 h-7 rounded-md border bg-background px-1.5 text-[10px]"
-                            value={participant.role}
-                            disabled={busy === `role:${participant.id}`}
-                            onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}
-                          >
-                            <option value="observer">Observer</option>
-                            <option value="learner">Player</option>
-                            {detail.workspace.isOwner ? <option value="instructor">Instructor</option> : null}
-                          </select>
-                        ) : <p className="mt-1 text-[10px] text-muted-foreground">{ROLE_LABELS[participant.role]}</p>}
-                      </div>
-                    </div>
+            <Badge variant="outline" className="border-white/15 bg-white/5 text-[9px] text-slate-300">{detail.participants.length}/4 connected</Badge>
+          </div>
 
-                    <div className="mt-3 space-y-1.5">
-                      {participantLabs.length === 0 ? (
-                        <div className="rounded-lg border border-dashed px-2.5 py-2 text-[10px] text-muted-foreground">No Cyber Lab contributed.</div>
-                      ) : participantLabs.map((resource) => (
-                        <button
-                          key={resource.id}
-                          type="button"
-                          onClick={() => { setSelectedResourceId(resource.id); setSelectionRevision((value) => value + 1); }}
-                          className={`w-full rounded-lg border px-2.5 py-2 text-left transition ${selectedResourceId === resource.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}
-                        >
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium">
-                            {resource.accessMode === 'desktop' ? <Monitor className="h-3.5 w-3.5" /> : <Terminal className="h-3.5 w-3.5" />}
-                            <span className="min-w-0 flex-1 truncate">{resource.label}</span>
-                          </div>
-                          <p className="mt-1 text-[9px] text-muted-foreground">{resourceStatus(detail, resource)}</p>
-                        </button>
-                      ))}
-                    </div>
+          <div className="grid gap-2 p-3 sm:grid-cols-2 2xl:grid-cols-4">
+            {participantSlots.map((participant, slot) => {
+              const participantLabs = participant ? labs.filter((resource) => resource.resourceOwnerId === participant.id) : [];
+              const primarySurface = participantLabs[0]?.accessMode === 'desktop' ? 'desktop' : participantLabs.length > 0 ? 'terminal' : null;
+              const canManageRole = Boolean(participant && detail.workspace.capabilities.manageParticipants && participant.role !== 'owner');
+              return (
+                <div key={participant?.id || `empty:${slot}`} className={`${styles.stationPanel} min-h-44 rounded-lg border border-white/10 bg-black/30 p-3`} data-surface={primarySurface || 'idle'}>
+                  <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+                    <span className="font-mono text-[11px] font-bold text-red-300">P{slot + 1}</span>
+                    <span className="h-3 w-px bg-white/15" />
+                    {primarySurface === 'desktop' ? <Monitor className="h-3.5 w-3.5 text-sky-300" /> : primarySurface === 'terminal' ? <Terminal className="h-3.5 w-3.5 text-emerald-300" /> : <Activity className="h-3.5 w-3.5 text-slate-600" />}
+                    <span className="font-mono text-[9px] uppercase tracking-wider text-slate-400">{primarySurface || 'unassigned'}</span>
+                    <span className={`ml-auto h-1.5 w-1.5 rounded-full ${participant ? 'bg-emerald-400' : 'bg-slate-700'}`} aria-hidden="true" />
                   </div>
-                );
-              })}
-            </div>
 
-            <div className="grid gap-2 border-t pt-3 lg:grid-cols-2">
-              {detail.workspace.capabilities.manageParticipants && detail.participants.length < 4 ? (
-                <div className="flex gap-2">
-                  <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" className="h-9" />
-                  <Button size="sm" variant="outline" onClick={() => void inviteParticipant()} disabled={busy === 'invite' || !inviteEmail.trim()}>
-                    {busy === 'invite' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}<span className="sr-only">Invite</span>
-                  </Button>
+                  {!participant ? (
+                    <div className="flex min-h-32 flex-col justify-between pt-3">
+                      <div>
+                        <p className="font-mono text-[10px] text-slate-500">operator@warroom:~$</p>
+                        <p className="mt-2 font-mono text-[10px] text-slate-400">awaiting teammate<span className={styles.cursor}>_</span></p>
+                      </div>
+                      <p className="text-[9px] uppercase tracking-wider text-slate-600">No operator assigned</p>
+                    </div>
+                  ) : (
+                    <div className="pt-3">
+                      <div className="flex items-start gap-2">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded border border-red-400/20 bg-red-500/10 font-mono text-[9px] font-bold text-red-200">{initials(participant.displayName)}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate text-[11px] font-semibold text-slate-100">{participant.displayName}</p>
+                            {participant.id === detail.viewerId ? <Badge variant="secondary" className="h-4 px-1 text-[8px]">You</Badge> : null}
+                          </div>
+                          {canManageRole ? (
+                            <select
+                              className="mt-1 h-6 rounded border border-white/10 bg-slate-950 px-1.5 font-mono text-[9px] text-slate-300"
+                              value={participant.role}
+                              disabled={busy === `role:${participant.id}`}
+                              onChange={(event) => void updateRole(participant.id, event.target.value as Exclude<Role, 'owner'>)}
+                            >
+                              <option value="observer">Observer</option>
+                              <option value="learner">Player</option>
+                              {detail.workspace.isOwner ? <option value="instructor">Instructor</option> : null}
+                            </select>
+                          ) : <p className="mt-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">{ROLE_LABELS[participant.role]}</p>}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-1.5">
+                        {participantLabs.length === 0 ? (
+                          <div className={`${styles.terminalPreview} rounded border border-dashed border-white/10 px-2.5 py-2 font-mono text-[9px] text-slate-500`}>
+                            $ lab --attach<br /><span className="text-slate-600">waiting for contributed runtime</span><span className={styles.cursor}>_</span>
+                          </div>
+                        ) : participantLabs.map((resource) => {
+                          const desktop = resource.accessMode === 'desktop';
+                          const selected = selectedResourceId === resource.id;
+                          return (
+                            <button
+                              key={resource.id}
+                              type="button"
+                              onClick={() => { setSelectedResourceId(resource.id); setSelectionRevision((value) => value + 1); }}
+                              className={`${styles.stationResource} w-full overflow-hidden rounded border px-2.5 py-2 text-left transition ${selected ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.05]'}`}
+                              aria-pressed={selected}
+                            >
+                              <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-slate-300">
+                                {desktop ? <Monitor className="h-3.5 w-3.5 text-sky-300" /> : <Terminal className="h-3.5 w-3.5 text-emerald-300" />}
+                                <span className="min-w-0 flex-1 truncate">{resource.label}</span>
+                                <span className={selected ? 'text-red-300' : 'text-slate-600'}>{selected ? 'ROUTED' : 'OPEN'}</span>
+                              </div>
+                              {desktop ? (
+                                <div className={`${styles.desktopPreview} mt-2`} aria-hidden="true">
+                                  <span /><span /><span />
+                                </div>
+                              ) : (
+                                <p className="mt-2 truncate font-mono text-[9px] text-slate-500">$ {resourceStatus(detail, resource).toLowerCase()}<span className={styles.cursor}>_</span></p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ) : <div className="flex items-center gap-2 text-xs text-muted-foreground"><CheckCircle2 className="h-4 w-4" />Team slots are managed by the host.</div>}
+              );
+            })}
+          </div>
 
-              {detail.workspace.capabilities.collaborate && availableLabs.length > 0 ? (
-                <div className="flex gap-2">
-                  <select className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs" value={contributionId} onChange={(event) => setContributionId(event.target.value)}>
-                    {availableLabs.map((resource) => <option key={resource.id} value={resource.id}>{resource.label}</option>)}
-                  </select>
-                  <Button size="sm" variant="outline" onClick={() => void contributeLab()} disabled={busy === 'contribute' || !contributionId}>
-                    {busy === 'contribute' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Server className="h-4 w-4" />} Contribute
-                  </Button>
-                </div>
-              ) : <div className="flex items-center gap-2 text-xs text-muted-foreground"><CheckCircle2 className="h-4 w-4" />No unattached Cyber Lab available.</div>}
-            </div>
-          </CardContent>
-        </Card>
+          <div className="grid gap-2 border-t border-white/10 bg-black/20 p-3 lg:grid-cols-2">
+            {detail.workspace.capabilities.manageParticipants && detail.participants.length < 4 ? (
+              <div className="flex gap-2">
+                <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@example.com" type="email" className="h-9 border-white/10 bg-black/30 text-slate-100 placeholder:text-slate-600" />
+                <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => void inviteParticipant()} disabled={busy === 'invite' || !inviteEmail.trim()}>
+                  {busy === 'invite' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}<span className="sr-only">Invite</span>
+                </Button>
+              </div>
+            ) : <div className="flex items-center gap-2 text-xs text-slate-500"><CheckCircle2 className="h-4 w-4 text-emerald-400" />Team slots are managed by the host.</div>}
 
-
+            {detail.workspace.capabilities.collaborate && availableLabs.length > 0 ? (
+              <div className="flex gap-2">
+                <select className="h-9 min-w-0 flex-1 rounded-md border border-white/10 bg-black/30 px-2 text-xs text-slate-200" value={contributionId} onChange={(event) => setContributionId(event.target.value)}>
+                  {availableLabs.map((resource) => <option key={resource.id} value={resource.id}>{resource.label}</option>)}
+                </select>
+                <Button size="sm" variant="outline" className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => void contributeLab()} disabled={busy === 'contribute' || !contributionId}>
+                  {busy === 'contribute' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Server className="h-4 w-4" />} Contribute
+                </Button>
+              </div>
+            ) : <div className="flex items-center gap-2 text-xs text-slate-500"><CheckCircle2 className="h-4 w-4 text-emerald-400" />No unattached Cyber Lab available.</div>}
+          </div>
+        </section>
       </div>
 
-      <aside className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start">
-        <details className="group overflow-hidden rounded-xl border bg-card" open>
-          <summary className="cursor-pointer p-4 text-sm font-semibold"><Bot className="mr-2 inline h-4 w-4 text-primary" />AI Instructor</summary>
+      <aside className={`${styles.missionRail} min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start`}>
+        <div className="overflow-hidden rounded-xl border border-red-500/25 bg-slate-950 text-slate-100">
+          <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+            <span className={styles.liveDot} aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-red-300">Mission intelligence</p>
+              <p className="truncate text-xs font-semibold text-white">{operation.codename}</p>
+            </div>
+            <span className="font-mono text-[8px] uppercase tracking-widest text-slate-600">live</span>
+          </div>
+
+          <details className="group border-b border-white/10" open>
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-semibold text-white">
+              <Crosshair className="h-4 w-4 text-red-300" />
+              <span className="flex-1">Mission briefing</span>
+              <span className="font-mono text-[9px] text-slate-500">{operation.objectives.length} OBJ</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-3 px-4 pb-4">
+              <p className="text-[11px] leading-5 text-slate-400">{operation.summary}</p>
+              <ol className="space-y-2">
+                {operation.objectives.map((objective, index) => <li key={objective} className="flex gap-2 border-l border-red-500/25 pl-2 text-[10px] leading-4 text-slate-300"><span className="font-mono text-red-300">{String(index + 1).padStart(2, '0')}</span>{objective}</li>)}
+              </ol>
+            </div>
+          </details>
+
+          <details className="group border-b border-white/10">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-semibold text-white">
+              <FileCheck2 className="h-4 w-4 text-emerald-300" />
+              <span className="flex-1">Evidence checklist</span>
+              <span className="font-mono text-[9px] text-slate-500">{operation.evidence.length} ITEMS</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <ul className="space-y-2 px-4 pb-4">
+              {operation.evidence.map((item) => <li key={item} className="flex gap-2 text-[10px] leading-4 text-slate-400"><FileCheck2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />{item}</li>)}
+            </ul>
+          </details>
+
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-semibold text-white">
+              <ShieldCheck className="h-4 w-4 text-amber-300" />
+              <span className="flex-1">Environment &amp; control</span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-3 px-4 pb-4 text-[10px] leading-4 text-slate-400">
+              <p>This Operation shares its machines with Cyber Lab. Team stations attach people and contributed labs to the same mission.</p>
+              <p>Request control to operate a shared terminal. Authorized teammates can observe output. Switching tabs closes the previous view; use Release control to hand over your lease.</p>
+              <p>{detail.control.note}</p>
+              <p>Windows machine terminals and desktops use the host’s Operation access. Shared desktop transport is not connected yet.</p>
+              {detail.workspace.isOwner && <Button asChild size="sm" variant="outline" className="w-full border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"><Link href={`/labs?operation=${encodeURIComponent(operation.slug)}&mode=warroom&run=${encodeURIComponent(runId)}`}>Open Cyber Lab</Link></Button>}
+              <Button asChild size="sm" variant="ghost" className="w-full text-slate-300 hover:bg-white/10 hover:text-white"><Link href="/live">Advanced Live Workspace</Link></Button>
+            </div>
+          </details>
+        </div>
+
+        <div className="rounded-xl border border-emerald-500/20 bg-slate-950/80 p-1 text-slate-100">
+          <div className="flex items-center gap-2 px-3 pt-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300">
+            <Activity className="h-3.5 w-3.5" /> Environment readiness
+          </div>
+          <OperationRunStrip runId={runId} compact />
+        </div>
+
+        <details className="group overflow-hidden rounded-xl border border-red-500/20 bg-slate-950 text-slate-100" open>
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-semibold text-white">
+            <Bot className="h-4 w-4 text-red-300" />
+            <span className="flex-1">AI mission instructor</span>
+            <ChevronDown className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-180" />
+          </summary>
           <OperationAiInstructor embedded runId={runId} operationSlug={operation.slug} operationLabel={operation.codename} operationMode="warroom" objectives={operation.objectives} nodes={run?.nodes || []} selectedNode={aiNode} />
-        </details>
-        <details className="rounded-xl border bg-card">
-          <summary className="cursor-pointer p-4 text-sm font-semibold"><Crosshair className="mr-2 inline h-4 w-4 text-primary" />Mission briefing · {operation.objectives.length} objectives</summary>
-          <div className="space-y-3 px-4 pb-4">
-            <p className="text-xs leading-5 text-muted-foreground">{operation.summary}</p>
-            <ol className="space-y-2">
-              {operation.objectives.map((objective, index) => <li key={objective} className="flex gap-2 text-xs leading-5"><span className="font-mono text-primary">{String(index + 1).padStart(2, '0')}</span>{objective}</li>)}
-            </ol>
-          </div>
-        </details>
-        <details className="rounded-xl border bg-card">
-          <summary className="cursor-pointer p-4 text-sm font-semibold"><FileCheck2 className="mr-2 inline h-4 w-4 text-primary" />Evidence checklist</summary>
-          <ul className="space-y-2 px-4 pb-4">
-            {operation.evidence.map((item) => <li key={item} className="flex gap-2 text-xs text-muted-foreground"><FileCheck2 className="h-4 w-4 shrink-0 text-primary" />{item}</li>)}
-          </ul>
-        </details>
-        <details className="rounded-xl border bg-card">
-          <summary className="cursor-pointer p-4 text-sm font-semibold"><ShieldCheck className="mr-2 inline h-4 w-4 text-primary" />Environment &amp; control details</summary>
-          <div className="space-y-3 px-4 pb-4 text-xs leading-5 text-muted-foreground">
-            <p>This Operation shares its machines with Cyber Lab. Team stations attach people and contributed labs to the same mission.</p>
-            <p>Request control to operate a shared terminal. Authorized teammates can observe output. Switching tabs closes the view; use Release control to hand over your lease.</p>
-            <p>{detail.control.note}</p>
-            <p>Windows machine terminals and desktops use the host’s Operation access. Shared desktop transport is not connected yet.</p>
-            {detail.workspace.isOwner && <Button asChild size="sm" variant="outline" className="w-full"><Link href={`/labs?operation=${encodeURIComponent(operation.slug)}&mode=warroom&run=${encodeURIComponent(runId)}`}>Open Cyber Lab</Link></Button>}
-            <Button asChild size="sm" variant="ghost" className="w-full"><Link href="/live">Advanced Live Workspace</Link></Button>
-          </div>
         </details>
       </aside>
     </div>
