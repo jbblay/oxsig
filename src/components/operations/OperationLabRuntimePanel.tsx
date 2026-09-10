@@ -5,6 +5,7 @@ import { Activity, Loader2, Monitor, Network, RefreshCw, Server, Terminal } from
 import { toast } from 'sonner';
 import InteractiveSsmDesktop from '@/components/labs/InteractiveSsmDesktop';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
+import OperationNodeTerminal from '@/components/operations/OperationNodeTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -28,13 +29,18 @@ type Run = {
   operationSlug: string;
   mode: string;
   status: string;
-  metadata?: { domain?: string; initialAccess?: { username?: string; available?: boolean } };
+  metadata?: {
+    domain?: string;
+    lifecycleState?: string;
+    initialAccess?: { username?: string; available?: boolean };
+  };
   nodes: RunNode[];
 };
 
 type AccessMode = 'terminal' | 'desktop';
 
-function learnerStatus(node: RunNode) {
+function learnerStatus(node: RunNode, paused: boolean) {
+  if (paused) return 'Paused';
   if (node.status === 'running') return 'Ready';
   if (node.status === 'failed') return 'Failed';
   if (node.status === 'destroying' || node.status === 'destroyed') return 'Stopping';
@@ -43,10 +49,23 @@ function learnerStatus(node: RunNode) {
   return 'Provisioning';
 }
 
+function readinessLabel(reason?: string) {
+  switch (reason) {
+    case 'ready': return 'Secure access ready';
+    case 'ssm-offline': return 'Secure session starting';
+    case 'marker-missing': return 'Guest setup running';
+    case 'probe-failed': return 'Secure access check retrying';
+    case 'bootstrapping': return 'Guest setup running';
+    case 'legacy': return 'Runtime ready';
+    case 'unavailable': return 'Access unavailable';
+    default: return reason ? 'Checking secure access' : null;
+  }
+}
+
 function roleHelp(node: RunNode) {
   if (node.role === 'operator') return 'Starting point — use this Ubuntu terminal to work against the domain.';
-  if (node.role === 'target') return 'Domain workstation — a Windows target joined to the Black Domain environment.';
-  return 'Domain infrastructure — Active Directory and DNS services for the exercise.';
+  if (node.role === 'target') return 'Domain workstation — open Terminal or Desktop when you want to inspect or sign in to this Windows target.';
+  return 'Domain controller — Active Directory, DNS and authentication services for the exercise.';
 }
 
 export function OperationLabRuntimePanel({ runId }: { runId: string }) {
@@ -79,13 +98,15 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
+  const paused = run?.metadata?.lifecycleState === 'paused';
   const selected = run?.nodes.find((node) => node.id === selectedId) || null;
-  const selectedReady = selected?.status === 'running';
-  const windows = selected?.osFamily.toLowerCase().includes('windows');
+  const selectedReady = Boolean(selected && !paused && selected.status === 'running');
+  const windows = Boolean(selected?.osFamily.toLowerCase().includes('windows'));
+  const selectedReadiness = readinessLabel(selected?.readiness);
 
   React.useEffect(() => {
-    if (!windows) setAccessMode('terminal');
-  }, [windows, selectedId]);
+    setAccessMode('terminal');
+  }, [selectedId]);
 
   if (loading && !run) {
     return <div className="flex min-h-56 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading the live Operation…</div>;
@@ -99,22 +120,24 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Network className="h-4 w-4 text-primary" />
             <span className="text-sm font-semibold">Black Domain — live machines</span>
-            <Badge variant={run.status === 'running' ? 'default' : 'outline'} className="capitalize">{run.status === 'running' ? 'Environment ready' : 'Environment initializing'}</Badge>
+            <Badge variant={run.status === 'running' && !paused ? 'default' : 'outline'}>
+              {paused ? 'Environment paused' : run.status === 'running' ? 'Environment ready' : 'Environment initializing'}
+            </Badge>
             {run.metadata?.domain && <Badge variant="secondary">{run.metadata.domain}</Badge>}
             <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
           </div>
-          <p className="text-xs text-muted-foreground">These are the same three machines provisioned by Operations. Select a machine below to see its real runtime state and access path.</p>
+          <p className="text-xs text-muted-foreground">These are the same three machines provisioned by Operations and shown in Build. Select the machine you want to use, then choose one of its available access methods.</p>
 
           <div className="grid gap-2 md:grid-cols-3">
             {run.nodes.map((node) => {
-              const ready = node.status === 'running';
+              const ready = node.status === 'running' && !paused;
               const active = node.id === selectedId;
               return (
                 <button key={node.id} type="button" onClick={() => setSelectedId(node.id)} className={`rounded-xl border p-3 text-left transition ${active ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}>
                   <div className="flex items-center gap-2">
                     {node.role === 'operator' ? <Terminal className="h-4 w-4" /> : <Server className="h-4 w-4" />}
                     <span className="min-w-0 flex-1 truncate text-xs font-semibold">{node.label}</span>
-                    <Badge variant={ready ? 'default' : 'outline'} className="text-[9px]">{learnerStatus(node)}</Badge>
+                    <Badge variant={ready ? 'default' : 'outline'} className="text-[9px]">{learnerStatus(node, Boolean(paused))}</Badge>
                   </div>
                   <p className="mt-2 text-[10px] capitalize text-muted-foreground">{node.osFamily} · {node.role}{node.privateIp ? ` · ${node.privateIp}` : ''}</p>
                   <p className="mt-1 text-[10px] text-muted-foreground">{roleHelp(node)}</p>
@@ -130,31 +153,48 @@ export function OperationLabRuntimePanel({ runId }: { runId: string }) {
           <CardContent className="space-y-3 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold">{selected.label}</span>
-              <Badge variant={selectedReady ? 'default' : 'outline'}>{learnerStatus(selected)}</Badge>
-              {selected.computeStatus && selected.computeStatus !== selected.status && <Badge variant="secondary">EC2 {selected.computeStatus}</Badge>}
-              {selected.readiness && <Badge variant="outline">{selected.readiness}</Badge>}
+              <Badge variant={selectedReady ? 'default' : 'outline'}>{learnerStatus(selected, Boolean(paused))}</Badge>
+              {selected.computeStatus && selected.computeStatus !== selected.status && !paused && <Badge variant="secondary">EC2 {selected.computeStatus}</Badge>}
+              {selectedReadiness && !paused && <Badge variant="outline">{selectedReadiness}</Badge>}
             </div>
 
-            {!selectedReady && (
+            {paused ? (
+              <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Operation paused.</p>
+                <p className="mt-1">Resume the Operation from the controls above. OXSIG will restart all three machines and verify secure access again before enabling Terminal or Desktop.</p>
+              </div>
+            ) : !selectedReady ? (
               <div className="flex items-start gap-2 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
                 <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
-                <div><p className="font-medium text-foreground">Machine started; environment is still initializing.</p><p className="mt-1">OXSIG is waiting for SSM and guest services. This page refreshes automatically; you do not need to keep reopening Terminal or Desktop.</p></div>
-              </div>
-            )}
-
-            {selectedReady && selected.labInstanceId && (
-              <>
-                <div className="flex gap-2">
-                  <Button size="sm" variant={accessMode === 'terminal' ? 'default' : 'outline'} onClick={() => setAccessMode('terminal')}><Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal</Button>
-                  {windows && <Button size="sm" variant={accessMode === 'desktop' ? 'default' : 'outline'} onClick={() => setAccessMode('desktop')}><Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop</Button>}
+                <div>
+                  <p className="font-medium text-foreground">Machine started; environment is still initializing.</p>
+                  <p className="mt-1">OXSIG is checking EC2, Systems Manager and the guest setup automatically. Access buttons appear as soon as this machine is actually usable.</p>
                 </div>
-                {accessMode === 'desktop' && windows
-                  ? <InteractiveSsmDesktop labInstanceId={selected.labInstanceId} machineLabel={selected.label} />
-                  : <InteractiveSsmTerminal labInstanceId={selected.labInstanceId} machineLabel={selected.label} />}
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="mb-2 text-xs font-medium">Open {selected.label}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant={accessMode === 'terminal' ? 'default' : 'outline'} onClick={() => setAccessMode('terminal')}><Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal</Button>
+                    {windows && <Button size="sm" variant={accessMode === 'desktop' ? 'default' : 'outline'} onClick={() => setAccessMode('desktop')}><Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop</Button>}
+                  </div>
+                </div>
+
+                {accessMode === 'desktop' && windows ? (
+                  <InteractiveSsmDesktop
+                    labInstanceId={selected.id}
+                    machineLabel={selected.label}
+                    sessionEndpoint={`/api/operations/runs/${encodeURIComponent(run.id)}/nodes/${encodeURIComponent(selected.id)}/desktop/session`}
+                  />
+                ) : selected.labInstanceId ? (
+                  <InteractiveSsmTerminal labInstanceId={selected.labInstanceId} machineLabel={selected.label} />
+                ) : (
+                  <OperationNodeTerminal runId={run.id} nodeId={selected.id} machineLabel={selected.label} />
+                )}
               </>
             )}
 
-            {selectedReady && !selected.labInstanceId && <p className="text-xs text-muted-foreground">This node is ready, but no learner access binding is available for it.</p>}
             {selected.lastError && <p className="text-xs text-destructive">{selected.lastError}</p>}
           </CardContent>
         </Card>
