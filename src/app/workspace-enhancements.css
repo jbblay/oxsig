@@ -171,21 +171,6 @@ main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div .rounded-lg:ha
   padding: 0;
 }
 
-@media (min-width: 768px) {
-  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > aside:first-child {
-    display: flex;
-    min-height: 0;
-    flex-direction: column;
-  }
-
-  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > aside:first-child > div:last-child {
-    min-height: 0;
-    max-height: none;
-    flex: 1 1 0%;
-    overflow-y: auto;
-  }
-}
-
 @media (max-width: 720px) {
   .oxsig-workspace-rail { gap: .2rem; padding-inline: .25rem; }
   .oxsig-rail-title { position: sticky; left: 0; z-index: 1; background: hsl(var(--card) / .96); }
