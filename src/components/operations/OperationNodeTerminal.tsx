@@ -29,6 +29,7 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
   const retryRef = React.useRef(0);
   const retryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposedRef = React.useRef(false);
+  const connectRef = React.useRef<(recovery?: boolean) => Promise<void>>(async () => undefined);
   const [terminalReady, setTerminalReady] = React.useState(false);
   const [state, setState] = React.useState<State>('connecting');
   const [detail, setDetail] = React.useState('Preparing secure terminal access.');
@@ -115,11 +116,11 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
           const nextAttempt = retryRef.current + 1;
           if (nextAttempt <= 3) {
             retryRef.current = nextAttempt;
-            const delay = [1000, 2500, 5000][nextAttempt - 1];
+            const delay = [1000, 2500, 5000][nextAttempt - 1] ?? 5000;
             setState('connecting');
             setError(null);
             setDetail(`Terminal connection interrupted. Recovering automatically (${nextAttempt}/3)…`);
-            retryTimerRef.current = setTimeout(() => void connect(true), delay);
+            retryTimerRef.current = setTimeout(() => void connectRef.current(true), delay);
           } else {
             setState('disconnected');
             setDetail(reason ? `Session closed: ${reason}` : 'Terminal session closed.');
@@ -138,7 +139,8 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
         setState('connecting');
         setError(null);
         setDetail(`${message} Retrying automatically (${nextAttempt}/3)…`);
-        retryTimerRef.current = setTimeout(() => void connect(true), [1500, 3000, 5000][nextAttempt - 1]);
+        const delay = [1500, 3000, 5000][nextAttempt - 1] ?? 5000;
+        retryTimerRef.current = setTimeout(() => void connectRef.current(true), delay);
       } else {
         setState('error');
         setError(message);
@@ -146,6 +148,10 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
       }
     }
   }, [clearRetry, closeChannel, endServerSession, endpoint, machineLabel]);
+
+  React.useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = React.useCallback(async () => {
     generationRef.current += 1;
@@ -205,8 +211,8 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
   React.useEffect(() => {
     if (!terminalReady) return;
     retryRef.current = 0;
-    void connect(false);
-  }, [connect, terminalReady]);
+    void connectRef.current(false);
+  }, [terminalReady]);
 
   const status = state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting' : state === 'error' ? 'Error' : 'Disconnected';
 
@@ -220,7 +226,7 @@ export default function OperationNodeTerminal({ runId, nodeId, machineLabel }: {
           </Badge>
         </div>
         <div className="flex gap-2">
-          {state !== 'connected' && <Button size="sm" variant="outline" disabled={state === 'connecting'} onClick={() => { retryRef.current = 0; void connect(false); }}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Reconnect</Button>}
+          {state !== 'connected' && <Button size="sm" variant="outline" disabled={state === 'connecting'} onClick={() => { retryRef.current = 0; void connectRef.current(false); }}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Reconnect</Button>}
           {(state === 'connected' || state === 'connecting') && <Button size="sm" variant="outline" onClick={() => void disconnect()}><Unplug className="mr-1.5 h-3.5 w-3.5" />Disconnect</Button>}
         </div>
       </div>
