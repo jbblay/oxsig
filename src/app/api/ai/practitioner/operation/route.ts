@@ -230,9 +230,11 @@ export async function POST(request: NextRequest) {
     try {
       if (parsed.data.action === 'plan') {
         const allNodes = await loadRunNodes(parsed.data.runId);
+        const learningMode: PractitionerOperationContext['mode'] =
+          node.mode === 'walkthrough' || node.mode === 'challenge' ? node.mode : 'practice';
         const operationContext: PractitionerOperationContext = {
           codename: operation.codename,
-          mode: node.mode,
+          mode: learningMode,
           summary: operation.summary,
           objectives: operation.objectives,
           topology: operation.topology,
