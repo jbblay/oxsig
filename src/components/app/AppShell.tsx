@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
+import OperationAiPractitionerDock from '@/components/operations/OperationAiPractitionerDock';
 import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
@@ -19,6 +20,16 @@ function workspaceKindFor(pathname: string): WorkspaceKind | null {
   if (pathname.startsWith('/live')) return 'live';
   if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'vault';
   return null;
+}
+
+function LabsAiDockRouter() {
+  const searchParams = useSearchParams();
+  const operationSlug = searchParams.get('operation');
+  const runId = searchParams.get('run');
+  if (operationSlug === 'black-domain' && runId) {
+    return <OperationAiPractitionerDock runId={runId} operationSlug={operationSlug} />;
+  }
+  return <AiPractitionerDock />;
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -102,7 +113,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
-      {immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />}
+      {immersiveWorkspace ? (
+        <React.Suspense fallback={null}>
+          <LabsAiDockRouter />
+        </React.Suspense>
+      ) : <AiHelperDock />}
     </div>
   );
 }
