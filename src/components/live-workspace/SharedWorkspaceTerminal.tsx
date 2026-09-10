@@ -66,6 +66,7 @@ export function SharedWorkspaceTerminal({
   leaseExpiresAt,
   onAuthorizationChanged,
 }: Props) {
+  const generationRef = React.useRef(0);
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
   const fitRef = React.useRef<FitAddon | null>(null);
@@ -126,6 +127,7 @@ export function SharedWorkspaceTerminal({
   }, [workspaceId]);
 
   const disconnect = React.useCallback(async (message = '[Shared terminal disconnected]') => {
+    generationRef.current += 1;
     intentionalCloseRef.current = true;
     flushInput();
     channelRef.current?.close();
@@ -139,11 +141,13 @@ export function SharedWorkspaceTerminal({
 
   const connect = React.useCallback(async () => {
     if (!terminalRef.current || !terminalReady || state === 'connecting' || state === 'connected') return;
+    const generation = ++generationRef.current;
     intentionalCloseRef.current = true;
     flushInput();
     channelRef.current?.close();
     channelRef.current = null;
     await endServerSession();
+    if (generation !== generationRef.current) return;
     intentionalCloseRef.current = false;
 
     setState('connecting');
@@ -152,6 +156,7 @@ export function SharedWorkspaceTerminal({
 
     try {
       const csrf = await getCsrfToken();
+      if (generation !== generationRef.current) return;
       csrfRef.current = csrf;
       const response = await fetch(`/api/live-workspaces/${workspaceId}/terminal/session`, {
         method: 'POST',
@@ -167,14 +172,26 @@ export function SharedWorkspaceTerminal({
       ) {
         throw new Error('Oxsig returned an incomplete or mismatched shared terminal session.');
       }
+      if (generation !== generationRef.current) {
+        // A tab was closed while the server was issuing this session.
+        await fetch(`/api/live-workspaces/${workspaceId}/terminal/session`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+          body: JSON.stringify({ bindingId: session.bindingId, labInstanceId: session.labInstanceId, leaseId: session.leaseId, sessionId: session.sessionId }),
+          keepalive: true,
+        }).catch(() => undefined);
+        return;
+      }
       sessionRef.current = session;
 
       const channel = new SsmBrowserDataChannel({
         onOutput: (data, payloadType) => {
+          if (generation !== generationRef.current) return;
           terminalRef.current?.write(data);
           publisherRef.current?.publish(data, payloadType);
         },
         onReady: (customerMessage) => {
+          if (generation !== generationRef.current) return;
           setState('connected');
           setDetail('Connected. Authorized workspace participants can observe output; only your active control lease can send input.');
           if (customerMessage) terminalRef.current?.writeln(`\r\n${customerMessage}`);
@@ -186,13 +203,14 @@ export function SharedWorkspaceTerminal({
           });
         },
         onError: (message) => {
+          if (generation !== generationRef.current) return;
           setState('error');
           setDetail(message);
           terminalRef.current?.writeln(`\r\n[Terminal error: ${message}]\r\n`);
           void endServerSession();
         },
         onClose: (reason) => {
-          if (intentionalCloseRef.current) return;
+          if (generation !== generationRef.current || intentionalCloseRef.current) return;
           setState('closed');
           setDetail(reason || 'The terminal connection closed. If your control lease is still active, you can reconnect.');
           terminalRef.current?.writeln(`\r\n[Terminal closed${reason ? `: ${reason}` : ''}]\r\n`);
@@ -207,6 +225,7 @@ export function SharedWorkspaceTerminal({
         tokenValue: session.tokenValue,
       });
     } catch (error) {
+      if (generation !== generationRef.current) return;
       const message = error instanceof Error ? error.message : 'Could not start the shared terminal.';
       setState('error');
       setDetail(message);
@@ -268,6 +287,8 @@ export function SharedWorkspaceTerminal({
     })();
 
     return () => {
+      generationRef.current += 1;
+      intentionalCloseRef.current = true;
       disposed = true;
       dataDisposable?.dispose();
       resizeObserver?.disconnect();
@@ -328,3 +349,4 @@ export function SharedWorkspaceTerminal({
     </div>
   );
 }
+

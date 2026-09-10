@@ -174,7 +174,15 @@ export default function InteractiveSsmDesktop({
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new DesktopRequestError(body.error || "Could not start the browser desktop", body.code);
       if (!body.sessionId || !body.bridgePath || !body.tokenValue) throw new Error("OXSIG did not return a complete desktop session");
-      if (generation !== generationRef.current || disposedRef.current) return;
+      if (generation !== generationRef.current || disposedRef.current) {
+        await fetch(desktopSessionEndpoint, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", "x-csrf-token": csrf },
+          body: JSON.stringify({ sessionId: body.sessionId }),
+          keepalive: true,
+        }).catch(() => undefined);
+        return;
+      }
 
       const session = body as DesktopSession;
       setPlatform(session.platform);
@@ -434,3 +442,4 @@ export default function InteractiveSsmDesktop({
     </div>
   );
 }
+

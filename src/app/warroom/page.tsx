@@ -22,7 +22,7 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      {params.run ? <OperationRunStrip runId={params.run} /> : null}
+      {params.run ? <OperationRunStrip runId={params.run} compact /> : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="mr-auto">
@@ -31,14 +31,13 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
             <h1 className="text-lg font-semibold tracking-tight">WarRoom</h1>
             <Badge className="h-5 text-[10px]">2–4 players</Badge>
           </div>
-          <p className="text-xs text-muted-foreground">One Operation, one runtime, one team view. People and machine control stay attached to the same mission.</p>
         </div>
         <Button asChild size="sm" variant="outline"><Link href="/operations">Operations</Link></Button>
         <Button asChild size="sm" variant="ghost"><Link href="/live"><UsersRound className="mr-2 h-4 w-4" />Live Workspace</Link></Button>
       </div>
 
       {params.run ? (
-        <WarRoomWorkspace operation={selected} runId={params.run} initialWorkspaceId={params.workspace} />
+        <WarRoomWorkspace key={params.run} operation={selected} runId={params.run} initialWorkspaceId={params.workspace} />
       ) : (
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Card className="overflow-hidden">

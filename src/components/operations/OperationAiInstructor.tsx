@@ -24,6 +24,7 @@ import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 type TeachingMode = 'learn' | 'guided' | 'challenge' | 'operator';
 
 type Props = {
+  embedded?: boolean;
   runId?: string | null;
   operationSlug: string;
   operationLabel: string;
@@ -83,6 +84,7 @@ function executeVisible(labInstanceId: string, command: string) {
 }
 
 export default function OperationAiInstructor({
+  embedded = false,
   runId,
   operationSlug,
   operationLabel,
@@ -141,7 +143,7 @@ export default function OperationAiInstructor({
     setBusy(id);
     try {
       const topology = nodes.length
-        ? nodes.map((node) => `${node.label}: ${node.osFamily}, ${node.role}${node.privateIp ? `, private IP ${node.privateIp}` : ''}`).join('; ')
+        ? nodes.map((node) => `${node.label}: ${node.osFamily}, ${node.role}, status ${node.status}${node.privateIp ? `, private IP ${node.privateIp}` : ''}`).join('; ')
         : 'No live topology is currently attached. Concept teaching is still available.';
       const learningContext = [
         'OXSIG OPERATION CONTEXT (authoritative training environment):',
@@ -228,9 +230,9 @@ export default function OperationAiInstructor({
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}><Bot className="mr-1.5 h-4 w-4" />AI Instructor</Button>
-      {open && (
-        <aside className="fixed inset-x-2 bottom-2 top-[74px] z-[60] flex flex-col overflow-hidden rounded-2xl border bg-background/97 shadow-2xl backdrop-blur-xl sm:left-auto sm:right-4 sm:w-[470px]">
+      {!embedded && <Button size="sm" onClick={() => setOpen(true)}><Bot className="mr-1.5 h-4 w-4" />AI Instructor</Button>}
+      {(embedded || open) && (
+        <aside className={embedded ? "flex max-h-[75dvh] min-h-96 min-w-0 flex-col overflow-hidden rounded-xl bg-card" : "fixed inset-x-2 bottom-2 top-[74px] z-[60] flex flex-col overflow-hidden rounded-2xl border bg-background/97 shadow-2xl backdrop-blur-xl sm:left-auto sm:right-4 sm:w-[470px]"}>
           <div className="border-b p-4">
             <div className="flex items-start gap-3">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary"><Bot className="h-5 w-5" /></div>
@@ -238,7 +240,7 @@ export default function OperationAiInstructor({
                 <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">Operation AI Instructor</h2><Badge variant="secondary">{operationLabel}</Badge></div>
                 <p className="mt-1 text-xs text-muted-foreground">{selectedNode ? `${selectedNode.label} · ${selectedNode.osFamily} · ${selectedNode.role}` : 'Concept learning available without a running machine'}{executableLabId ? terminalConnected ? ' · terminal connected' : ' · open terminal for execution' : ''}</p>
               </div>
-              <Button size="icon" variant="ghost" onClick={() => setOpen(false)} aria-label="Close AI Instructor"><X className="h-4 w-4" /></Button>
+              {!embedded && <Button size="icon" variant="ghost" onClick={() => setOpen(false)} aria-label="Close AI Instructor"><X className="h-4 w-4" /></Button>}
             </div>
             <div className="mt-3 flex flex-wrap gap-1" aria-label="AI teaching mode">
               {TEACHING_MODES.map((item) => (
@@ -249,7 +251,10 @@ export default function OperationAiInstructor({
             </div>
           </div>
           <div className="oxsig-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-            <div className="rounded-xl border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">Ask about the Operation before starting a machine, request an analogy or diagram, practice interactively, or switch to Challenge mode and drive the investigation yourself. Live commands still require your explicit approval.</div>
+            <details className="rounded-xl border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground"><summary className="cursor-pointer font-medium">How the Instructor helps</summary><p className="mt-2">Ask about the Operation before starting a machine, request an analogy or diagram, practice interactively, or switch to Challenge mode and drive the investigation yourself. Live commands still require your explicit approval.</p></details>
+            {embedded && turns.length === 0 && <div className="flex flex-wrap gap-2">
+              {['Summarize this mission', 'Explain the selected machine', 'Give me a hint for the first objective'].map((question) => <Button key={question} size="sm" variant="outline" className="h-auto whitespace-normal text-left text-xs" onClick={() => setPrompt(question)}>{question}</Button>)}
+            </div>}
             {turns.map((turn) => {
               const speechKey = `operation-ai:${turn.id}`;
               return (
@@ -299,3 +304,4 @@ export default function OperationAiInstructor({
     </>
   );
 }
+

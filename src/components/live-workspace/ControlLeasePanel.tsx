@@ -63,6 +63,7 @@ export type LiveWorkspaceControlState = {
 };
 
 type Props = {
+  compact?: boolean;
   workspaceId: string;
   viewerId: string;
   capabilities: Capabilities;
@@ -90,7 +91,7 @@ function surfaceLabel(surface: Surface) {
   return surface === 'terminal' ? 'Terminal' : 'Desktop';
 }
 
-export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resources, control, onRefresh }: Props) {
+export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resources, control, onRefresh, compact = false }: Props) {
   const [busy, setBusy] = React.useState<string | null>(null);
   const [now, setNow] = React.useState(() => Date.now());
   const [durationMinutes, setDurationMinutes] = React.useState(15);
@@ -130,7 +131,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4" /> Machine control</CardTitle>
-            <CardDescription>Only attached Cyber Labs participate in machine control. Terminal output can be observed by workspace participants; input always remains lease-gated.</CardDescription>
+            {!compact && <CardDescription>Only attached Cyber Labs participate in machine control. Terminal output can be observed by workspace participants; input always remains lease-gated.</CardDescription>}
           </div>
           <Badge variant="outline">Explicit control</Badge>
         </div>
@@ -139,7 +140,7 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
         {labs.length === 0 && <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">Attach a Cyber Lab to make terminal or desktop control available.</p>}
 
         {labs.map((resource) => {
-          const lease = control.leases.find((item) => item.bindingId === resource.id && item.surface === resource.accessMode);
+          const lease = control.leases.find((item) => item.bindingId === resource.id && item.surface === resource.accessMode && item.status === 'active' && new Date(item.expiresAt).getTime() > now);
           const ownPending = pending.find((item) => item.participantId === viewerId && item.bindingId === resource.id && item.surface === resource.accessMode);
           const eligible = resource.accessMode === 'terminal'
             ? capabilities.eligibleForTerminalControl
@@ -279,8 +280,9 @@ export function ControlLeasePanel({ workspaceId, viewerId, capabilities, resourc
           </div>
         )}
 
-        <p className="text-[11px] leading-5 text-muted-foreground">{control.note}</p>
+        {!compact && <p className="text-[11px] leading-5 text-muted-foreground">{control.note}</p>}
       </CardContent>
     </Card>
   );
 }
+
