@@ -17,6 +17,7 @@ import {
   Square,
   UserPlus,
   Users,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -137,7 +138,7 @@ export default function CollaborationWorkspace() {
   const [composerMode, setComposerMode] = React.useState<ComposerMode>('text');
   const [newSessionName, setNewSessionName] = React.useState('');
   const [showNewSession, setShowNewSession] = React.useState(false);
-  const [showSessionPanel, setShowSessionPanel] = React.useState(false);
+  const [showPeople, setShowPeople] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState('');
   const [inviting, setInviting] = React.useState(false);
   const [recording, setRecording] = React.useState(false);
@@ -201,9 +202,7 @@ export default function CollaborationWorkspace() {
       if (silent) console.warn('[oxsig] Collaboration reconciliation deferred:', error);
       else setConversationError(message);
     } finally {
-      if (requestId === conversationRequestRef.current && activeIdRef.current === id) {
-        setMessagesLoading(false);
-      }
+      if (requestId === conversationRequestRef.current && activeIdRef.current === id) setMessagesLoading(false);
     }
   }, []);
 
@@ -240,14 +239,13 @@ export default function CollaborationWorkspace() {
     setConversationError(null);
     setDraft('');
     setComposerMode('text');
-    setShowSessionPanel(false);
+    setShowPeople(false);
     setInviteEmail('');
 
     if (!activeId) {
       setMessagesLoading(false);
       return;
     }
-
     void loadConversation(activeId);
   }, [activeId, loadConversation]);
 
@@ -273,14 +271,22 @@ export default function CollaborationWorkspace() {
   }, []);
 
   const chooseSession = (id: string) => {
-    if (id === activeId) return;
     if (recording) {
       toast.error('Stop recording before switching sessions.');
       return;
     }
-    setShowSessionPanel(false);
+    setShowPeople(false);
     activeIdRef.current = id;
     setActiveId(id);
+  };
+
+  const showSessions = () => {
+    if (recording) {
+      toast.error('Stop recording before switching sessions.');
+      return;
+    }
+    activeIdRef.current = null;
+    setActiveId(null);
   };
 
   const createSession = async () => {
@@ -370,11 +376,7 @@ export default function CollaborationWorkspace() {
     if (!uploaded.ok) throw new Error('Attachment upload failed');
 
     const attachment = body.object as Attachment;
-    await sendMessage(
-      type === 'audio' ? 'Voice message' : file.name,
-      type,
-      { attachment }
-    );
+    await sendMessage(type === 'audio' ? 'Voice message' : file.name, type, { attachment });
   }, [activeId, sendMessage]);
 
   const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -483,21 +485,201 @@ export default function CollaborationWorkspace() {
   };
 
   if (loading) {
-    return <div className="flex min-h-[65vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    return <div className="flex min-h-0 flex-1 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end">
-        <Button onClick={() => setShowNewSession((value) => !value)}>
-          <Plus className="mr-2 h-4 w-4" />New session
-        </Button>
-      </div>
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col">
+      {!activeSession ? (
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-3 sm:px-4">
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-semibold">Sessions</h1>
+              <Badge variant="outline" className="text-[9px]">{sessions.length}</Badge>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void loadSessions()} aria-label="Refresh sessions">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+              <Button size="sm" className="h-8" onClick={() => setShowNewSession(true)}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />New session
+              </Button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+            {sessions.length === 0 ? (
+              <div className="flex min-h-[280px] flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center">
+                <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+                <p className="mt-3 text-sm font-medium">No collaboration sessions</p>
+                <Button className="mt-4" size="sm" onClick={() => setShowNewSession(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />New session</Button>
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {sessions.map((session) => (
+                  <button
+                    type="button"
+                    key={session.id}
+                    onClick={() => chooseSession(session.id)}
+                    className="rounded-xl border bg-background p-4 text-left transition hover:border-primary/35 hover:bg-muted/20"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-semibold">{session.name}</p>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{formatDay(session.lastMessageAt || session.updatedAt)}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{lastMessagePreview(session)}</p>
+                    <div className="mt-3 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <Users className="h-3 w-3" />{session.memberCount}
+                      {session.isOwner && <Badge variant="outline" className="h-4 px-1 text-[8px]">Owner</Badge>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      ) : (
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
+          <header className="flex flex-wrap items-center gap-2 border-b bg-background/70 px-3 py-2.5 sm:px-4">
+            <Button type="button" size="sm" variant="ghost" className="h-8" onClick={showSessions}>
+              <MessageCircle className="mr-1.5 h-3.5 w-3.5" />Sessions
+            </Button>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="truncate text-sm font-semibold">{activeSession.name}</h1>
+                <Badge variant="secondary" className="text-[9px]">{activeSession.memberCount}</Badge>
+              </div>
+              {activeSession.description && <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{activeSession.description}</p>}
+            </div>
+            <div className="hidden items-center gap-1.5 text-[10px] text-muted-foreground sm:flex">
+              <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {realtime.state === 'connected' ? `${realtime.onlineCount} online` : realtime.state === 'connecting' ? 'Connecting…' : 'Fallback'}
+            </div>
+            <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setShowPeople(true)}>
+              <Users className="mr-1.5 h-3.5 w-3.5" />People
+            </Button>
+            <Button type="button" size="sm" className="h-8" onClick={() => setShowNewSession(true)}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />New
+            </Button>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
+            {messagesLoading ? (
+              <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
+            ) : conversationError ? (
+              <div className="flex min-h-full flex-col items-center justify-center p-6 text-center">
+                <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+                <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
+                <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
+                <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground">No messages</div>
+            ) : (
+              <div className="mx-auto w-full max-w-4xl space-y-3">
+                {messages.map((message) => {
+                  const attachment = attachmentFrom(message.metadata);
+                  const attachmentUrl = attachment && activeId
+                    ? `/api/collaborations/${activeId}/attachments?key=${encodeURIComponent(attachment.key)}`
+                    : null;
+                  const practiceHref = typeof message.metadata.href === 'string' ? message.metadata.href : '/labs';
+                  return (
+                    <div key={message.id} className={`flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                      {!message.isOwnMessage && (
+                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
+                          {initials(message.senderName)}
+                        </div>
+                      )}
+                      <div className={`flex max-w-[88%] flex-col sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'}`}>
+                        <div className="mb-1 flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
+                          {!message.isOwnMessage && <span className="font-medium text-foreground">{message.senderName}</span>}
+                          {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
+                          <span>{formatTime(message.createdAt)}</span>
+                        </div>
+                        <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
+                          {message.type === 'practice' ? (
+                            <div className="min-w-[200px] space-y-2">
+                              <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
+                              {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
+                              <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><Link href={practiceHref}>Open Cyber Lab</Link></Button>
+                            </div>
+                          ) : message.type === 'audio' && attachment && attachmentUrl ? (
+                            <div className="min-w-[210px] space-y-2">
+                              <div className="flex items-center gap-2 font-medium"><Mic className="h-4 w-4" />Voice message</div>
+                              <audio controls preload="none" className="h-9 max-w-full" src={attachmentUrl} />
+                              <p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)}</p>
+                            </div>
+                          ) : message.type === 'resource' && attachment && attachmentUrl ? (
+                            <div className="min-w-[200px] space-y-2">
+                              <div className="flex items-start gap-2">
+                                <FileText className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div className="min-w-0"><p className="truncate font-medium">{attachment.filename}</p><p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)} · {attachment.mimeType}</p></div>
+                              </div>
+                              <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><a href={`${attachmentUrl}&download=1`}>Open</a></Button>
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          <div className="border-t bg-background/90 p-2.5 backdrop-blur sm:p-3">
+            <form onSubmit={(event) => void submitDraft(event)} className="mx-auto w-full max-w-4xl space-y-2">
+              {composerMode === 'explain' && (
+                <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
+                  <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain</span>
+                  <Button size="sm" type="button" variant="ghost" className="h-7" onClick={() => setComposerMode('text')}>Cancel</Button>
+                </div>
+              )}
+              <Textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void submitDraft();
+                  }
+                }}
+                placeholder={composerMode === 'explain' ? 'Explain…' : `Message ${activeSession.name}…`}
+                className="min-h-[64px] resize-none bg-background"
+                maxLength={5000}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1">
+                  <Button type="button" size="sm" variant={composerMode === 'explain' ? 'secondary' : 'ghost'} className="h-8" onClick={() => setComposerMode((mode) => mode === 'explain' ? 'text' : 'explain')}><Sparkles className="mr-1.5 h-3.5 w-3.5" />Explain</Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => fileInputRef.current?.click()} disabled={uploading}><Paperclip className="mr-1.5 h-3.5 w-3.5" />Attach</Button>
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void handleFile(event)} />
+                  <Button type="button" size="sm" variant={recording ? 'destructive' : 'ghost'} className="h-8" onClick={() => recording ? stopRecording() : void startRecording()} disabled={uploading}>
+                    {recording ? <Square className="mr-1.5 h-3.5 w-3.5" /> : <Mic className="mr-1.5 h-3.5 w-3.5" />}{recording ? `Stop ${recordSeconds}s` : 'Record'}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => void startPractice()} disabled={sending}><Box className="mr-1.5 h-3.5 w-3.5" />Practice</Button>
+                  <Button asChild type="button" size="sm" variant="ghost" className="h-8"><Link href="/collab/storyboards"><BookOpen className="mr-1.5 h-3.5 w-3.5" />Board</Link></Button>
+                </div>
+                <Button type="submit" size="sm" disabled={!draft.trim() || sending || uploading}>
+                  {sending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}Send
+                </Button>
+              </div>
+              {uploading && <p className="text-[10px] text-muted-foreground">Uploading…</p>}
+            </form>
+          </div>
+        </section>
+      )}
 
       {showNewSession && (
-        <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setShowNewSession(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="new-collaboration-title" className="w-full max-w-md rounded-xl border bg-card p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 id="new-collaboration-title" className="text-sm font-semibold">New session</h2>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowNewSession(false)} aria-label="Close"><X className="h-4 w-4" /></Button>
+            </div>
             <Input
+              autoFocus
               value={newSessionName}
               onChange={(event) => setNewSessionName(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void createSession(); }}
@@ -505,252 +687,33 @@ export default function CollaborationWorkspace() {
               aria-label="New collaboration session name"
               maxLength={80}
             />
-            <div className="flex gap-2">
-              <Button onClick={() => void createSession()} disabled={!newSessionName.trim()}>Create</Button>
+            <div className="mt-3 flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowNewSession(false)}>Cancel</Button>
+              <Button onClick={() => void createSession()} disabled={!newSessionName.trim()}>Create</Button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="grid min-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border bg-card md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)_280px]">
-        <aside className={activeSession ? 'hidden border-b bg-muted/15 md:block md:border-b-0 md:border-r' : 'border-b bg-muted/15 md:border-b-0 md:border-r'}>
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold">Sessions</p>
-              <Badge variant="outline" className="text-[9px]">{sessions.length}</Badge>
+      {showPeople && activeSession && (
+        <div className="fixed inset-0 z-50 bg-background/55 backdrop-blur-[2px]" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setShowPeople(false); }}>
+          <aside role="dialog" aria-modal="true" aria-label="People" className="absolute bottom-3 right-3 top-3 flex w-[min(26rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border bg-card shadow-xl sm:bottom-4 sm:right-4 sm:top-4">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="flex items-center gap-2"><p className="text-sm font-semibold">People</p><Badge variant="outline" className="text-[9px]">{members.length}</Badge></div>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowPeople(false)} aria-label="Close people"><X className="h-4 w-4" /></Button>
             </div>
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void loadSessions()} aria-label="Refresh sessions">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div className="max-h-44 space-y-1 overflow-auto p-2 md:max-h-[calc(100dvh-9rem)]">
-            {sessions.length === 0 ? (
-              <button
-                type="button"
-                className="w-full rounded-xl border border-dashed p-5 text-left text-sm text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                onClick={() => setShowNewSession(true)}
-              >
-                <Plus className="mr-2 inline h-4 w-4" />New session
-              </button>
-            ) : sessions.map((session) => {
-              const active = session.id === activeId;
-              return (
-                <button
-                  type="button"
-                  key={session.id}
-                  aria-pressed={active}
-                  onClick={() => chooseSession(session.id)}
-                  className={`w-full rounded-xl border px-3 py-3 text-left transition-all duration-200 ${active ? 'border-primary/30 bg-gradient-to-r from-blue-500/10 to-purple-500/10 shadow-sm' : 'border-transparent hover:bg-muted/60'}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="truncate text-sm font-semibold">{session.name}</p>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">{formatDay(session.lastMessageAt || session.updatedAt)}</span>
-                  </div>
-                  <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">{lastMessagePreview(session)}</p>
-                  <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                    <Users className="h-3 w-3" />{session.memberCount}
-                    {session.isOwner && <Badge variant="outline" className="h-4 px-1 text-[8px]">Owner</Badge>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <section className={activeSession ? 'flex min-w-0 flex-col bg-background/50' : 'hidden min-w-0 flex-col bg-background/50 md:flex'}>
-          {!activeSession ? (
-            <div className="flex min-h-[420px] flex-1 items-center justify-center p-6">
-              <Button onClick={() => setShowNewSession(true)}><Plus className="mr-2 h-4 w-4" />New session</Button>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background/80 px-3 py-3 backdrop-blur sm:px-4">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 px-2 md:hidden"
-                  onClick={() => { activeIdRef.current = null; setActiveId(null); }}
-                >
-                  Sessions
-                </Button>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="truncate font-semibold">{activeSession.name}</h2>
-                    <Badge variant="secondary" className="text-[9px]">{activeSession.memberCount}</Badge>
-                  </div>
-                  {activeSession.description && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{activeSession.description}</p>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="hidden items-center gap-2 text-[10px] text-muted-foreground sm:flex">
-                    <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                    {realtime.state === 'connected'
-                      ? `${realtime.onlineCount} online`
-                      : realtime.state === 'connecting'
-                        ? 'Connecting…'
-                        : 'Fallback'}
-                  </div>
-                  <Button type="button" size="sm" variant="outline" className="h-8 xl:hidden" onClick={() => setShowSessionPanel(true)}>
-                    <Users className="mr-1.5 h-3.5 w-3.5" />People
-                  </Button>
-                </div>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5">
-                {messagesLoading ? (
-                  <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
-                ) : conversationError ? (
-                  <div className="flex min-h-[360px] flex-col items-center justify-center p-6 text-center">
-                    <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
-                    <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
-                    <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
-                    <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="h-3.5 w-3.5" />Retry</Button>
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="flex min-h-[320px] items-center justify-center text-sm text-muted-foreground">No messages</div>
-                ) : (
-                  <div className="space-y-3">
-                    {messages.map((message) => {
-                      const attachment = attachmentFrom(message.metadata);
-                      const attachmentUrl = attachment && activeId
-                        ? `/api/collaborations/${activeId}/attachments?key=${encodeURIComponent(attachment.key)}`
-                        : null;
-                      const practiceHref = typeof message.metadata.href === 'string' ? message.metadata.href : '/labs';
-                      return (
-                        <div key={message.id} className={`flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-                          {!message.isOwnMessage && (
-                            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
-                              {initials(message.senderName)}
-                            </div>
-                          )}
-                          <div className={`max-w-[88%] sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'} flex flex-col`}>
-                            <div className="mb-1 flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
-                              {!message.isOwnMessage && <span className="font-medium text-foreground">{message.senderName}</span>}
-                              {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
-                              <span>{formatTime(message.createdAt)}</span>
-                            </div>
-                            <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
-                              {message.type === 'practice' ? (
-                                <div className="min-w-[220px] space-y-2">
-                                  <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
-                                  {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
-                                  <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8">
-                                    <Link href={practiceHref}>Open Cyber Lab</Link>
-                                  </Button>
-                                </div>
-                              ) : message.type === 'audio' && attachment && attachmentUrl ? (
-                                <div className="min-w-[230px] space-y-2">
-                                  <div className="flex items-center gap-2 font-medium"><Mic className="h-4 w-4" />Voice message</div>
-                                  <audio controls preload="none" className="h-9 max-w-full" src={attachmentUrl} />
-                                  <p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)}</p>
-                                </div>
-                              ) : message.type === 'resource' && attachment && attachmentUrl ? (
-                                <div className="min-w-[220px] space-y-2">
-                                  <div className="flex items-start gap-2">
-                                    <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-                                    <div className="min-w-0">
-                                      <p className="truncate font-medium">{attachment.filename}</p>
-                                      <p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)} · {attachment.mimeType}</p>
-                                    </div>
-                                  </div>
-                                  <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8">
-                                    <a href={`${attachmentUrl}&download=1`}>Open</a>
-                                  </Button>
-                                </div>
-                              ) : (
-                                <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t bg-background/90 p-3 backdrop-blur sm:p-4">
-                {composerMode === 'explain' && (
-                  <div className="mb-2 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
-                    <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain</span>
-                    <Button size="sm" variant="ghost" className="h-7" onClick={() => setComposerMode('text')}>Cancel</Button>
-                  </div>
-                )}
-                <form onSubmit={(event) => void submitDraft(event)} className="space-y-2">
-                  <Textarea
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault();
-                        void submitDraft();
-                      }
-                    }}
-                    placeholder={composerMode === 'explain' ? 'Explain…' : `Message ${activeSession.name}…`}
-                    className="min-h-[78px] resize-none bg-background"
-                    maxLength={5000}
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      <Button type="button" size="sm" variant={composerMode === 'explain' ? 'secondary' : 'ghost'} className="h-8" onClick={() => setComposerMode((mode) => mode === 'explain' ? 'text' : 'explain')}>
-                        <Sparkles className="mr-1.5 h-3.5 w-3.5" />Explain
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                        <Paperclip className="mr-1.5 h-3.5 w-3.5" />Attach
-                      </Button>
-                      <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void handleFile(event)} />
-                      <Button type="button" size="sm" variant={recording ? 'destructive' : 'ghost'} className="h-8" onClick={() => recording ? stopRecording() : void startRecording()} disabled={uploading}>
-                        {recording ? <Square className="mr-1.5 h-3.5 w-3.5" /> : <Mic className="mr-1.5 h-3.5 w-3.5" />}
-                        {recording ? `Stop ${recordSeconds}s` : 'Record'}
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => void startPractice()} disabled={sending}>
-                        <Box className="mr-1.5 h-3.5 w-3.5" />Practice
-                      </Button>
-                      <Button asChild type="button" size="sm" variant="ghost" className="h-8">
-                        <Link href="/collab/storyboards"><BookOpen className="mr-1.5 h-3.5 w-3.5" />Board</Link>
-                      </Button>
-                    </div>
-                    <Button type="submit" size="sm" disabled={!draft.trim() || sending || uploading}>
-                      {sending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
-                      Send
-                    </Button>
-                  </div>
-                  {uploading && <p className="text-[10px] text-muted-foreground">Uploading…</p>}
-                </form>
-              </div>
-            </>
-          )}
-        </section>
-
-        <aside className={activeSession ? `${showSessionPanel ? 'fixed' : 'hidden'} inset-x-3 bottom-3 top-20 z-40 overflow-auto rounded-xl border bg-card shadow-xl xl:static xl:inset-auto xl:z-auto xl:block xl:rounded-none xl:border-0 xl:border-l xl:bg-muted/10 xl:shadow-none` : 'hidden'}>
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold">People</p>
-              <Badge variant="outline" className="text-[9px]">{members.length}</Badge>
-            </div>
-            <Button type="button" size="sm" variant="ghost" className="h-8 xl:hidden" onClick={() => setShowSessionPanel(false)}>Close</Button>
-          </div>
-          {activeSession && (
-            <div className="space-y-4 p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-2">
                 {members.map((member) => (
                   <div key={member.id} className="flex items-center gap-2 rounded-xl border bg-background/70 p-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-semibold">
-                      {initials(member.displayName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium">{member.displayName}</p>
-                      <p className="truncate text-[10px] text-muted-foreground">{member.email || member.role}</p>
-                    </div>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-semibold">{initials(member.displayName)}</div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{member.displayName}</p><p className="truncate text-[10px] text-muted-foreground">{member.email || member.role}</p></div>
                     {member.isOwner && <Badge variant="secondary" className="text-[8px]">Owner</Badge>}
                   </div>
                 ))}
               </div>
-
               {canInvite && (
-                <div className="space-y-2 rounded-xl border bg-background/60 p-3">
+                <div className="mt-4 space-y-2 rounded-xl border bg-background/60 p-3">
                   <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="member@example.com" type="email" className="h-9" aria-label="Member email" />
                   <Button size="sm" className="w-full" variant="outline" onClick={() => void inviteMember()} disabled={!inviteEmail.trim() || inviting}>
                     {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Invite
@@ -758,9 +721,9 @@ export default function CollaborationWorkspace() {
                 </div>
               )}
             </div>
-          )}
-        </aside>
-      </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
