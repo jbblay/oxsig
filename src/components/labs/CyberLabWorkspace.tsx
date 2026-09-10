@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Activity, Boxes, ChevronDown, CloudCog, Crosshair, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
+import { Activity, Boxes, ChevronDown, CloudCog, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
 import AccessPathReadinessReview from '@/components/labs/AccessPathReadinessReview';
 import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
@@ -14,6 +14,7 @@ import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurabl
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
 import { OperationLabRuntimePanel } from '@/components/operations/OperationLabRuntimePanel';
 import OperationTopologyBuild from '@/components/operations/OperationTopologyBuild';
+import { OperationIcon } from '@/components/operations/OperationVisuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getOperation } from '@/lib/operations/catalog';
@@ -117,7 +118,7 @@ export default function CyberLabWorkspace({
     <>
       {operation && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.035] px-3 py-2.5">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Crosshair className="h-4 w-4" /></span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><OperationIcon icon={operation.icon} className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate text-xs font-semibold">{operation.codename}</p>
