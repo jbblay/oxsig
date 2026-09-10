@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { Link2, Loader2, Plus, RadioTower, RefreshCw, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
-import { ControlLeasePanel, type LiveWorkspaceControlState } from '@/components/live-workspace/ControlLeasePanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,7 +61,6 @@ type Detail = {
   participants: Participant[];
   resources: Resource[];
   attachableResources: AttachableResource[];
-  control: LiveWorkspaceControlState;
 };
 
 const RESOURCE_LABELS: Record<ResourceType, string> = {
@@ -357,15 +355,6 @@ export default function LiveWorkspacePage() {
                 </CardHeader>
               </Card>
 
-              <ControlLeasePanel
-                workspaceId={detail.workspace.id}
-                viewerId={detail.viewerId}
-                capabilities={detail.workspace.capabilities}
-                resources={detail.resources}
-                control={detail.control}
-                onRefresh={() => loadDetail(detail.workspace.id).then(() => undefined)}
-              />
-
               <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> Participants</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
@@ -390,7 +379,6 @@ export default function LiveWorkspacePage() {
                               {(detail.workspace.isOwner || participant.role === 'instructor') && <option value="instructor" disabled={!detail.workspace.isOwner}>Instructor</option>}
                             </select>
                           )}
-                          <span className="text-[10px] text-muted-foreground">{participant.capabilities.requestControl ? 'Control eligible' : 'Observe only'}</span>
                           {canRemove && (
                             <Button size="sm" variant="ghost" disabled={removing} onClick={() => void removeParticipant(participant.id)}>
                               {removing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : participant.id === detail.viewerId ? 'Leave' : 'Remove'}
@@ -406,7 +394,7 @@ export default function LiveWorkspacePage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Resources</CardTitle>
-                  <CardDescription>Owners can attach workspace resources. Learners and instructors can contribute their own running Cyber Lab.</CardDescription>
+                  <CardDescription>Attach or contribute resources that belong in this workspace.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {canAttachResources && (
