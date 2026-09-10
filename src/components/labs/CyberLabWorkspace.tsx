@@ -13,6 +13,7 @@ import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
 import { OperationLabRuntimePanel } from '@/components/operations/OperationLabRuntimePanel';
+import OperationTopologyBuild from '@/components/operations/OperationTopologyBuild';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getOperation } from '@/lib/operations/catalog';
@@ -53,6 +54,7 @@ export default function CyberLabWorkspace({
   const [guestServiceMounted, setGuestServiceMounted] = React.useState(false);
   const [accessPathMounted, setAccessPathMounted] = React.useState(false);
   const operation = operationSlug ? getOperation(operationSlug) : null;
+  const activeBlackDomain = Boolean(operationRunId && operationSlug === 'black-domain');
 
   React.useEffect(() => {
     const saved = window.localStorage.getItem(MODE_KEY) as WorkspaceMode | null;
@@ -149,7 +151,7 @@ export default function CyberLabWorkspace({
       </div>
 
       <div id="cyber-lab-runtime" role="tabpanel" aria-labelledby="cyber-lab-tab-runtime" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
-        {operationRunId && operationSlug === 'black-domain' ? (
+        {activeBlackDomain && operationRunId ? (
           <OperationLabRuntimePanel runId={operationRunId} />
         ) : (
           <LabTopologyDurableStateProvider>
@@ -160,7 +162,7 @@ export default function CyberLabWorkspace({
 
       {designerMounted && (
         <div id="cyber-lab-designer" role="tabpanel" aria-labelledby="cyber-lab-tab-designer" className={mode === 'designer' ? 'block' : 'hidden'} aria-hidden={mode !== 'designer'}>
-          <InfrastructureDesigner />
+          {activeBlackDomain && operationRunId ? <OperationTopologyBuild runId={operationRunId} /> : <InfrastructureDesigner />}
         </div>
       )}
 
