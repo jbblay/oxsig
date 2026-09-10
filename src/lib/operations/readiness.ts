@@ -26,16 +26,19 @@ export type OperationReadinessResult = {
 
 export function operationReadinessCommand(target: Pick<OperationReadinessTarget, 'nodeKey' | 'osFamily'>) {
   if (target.osFamily === 'windows') {
-    const path = target.nodeKey === 'dc'
-      ? 'C:\\ProgramData\\OXSIG\\domain-ready.txt'
-      : target.nodeKey === 'workstation'
-        ? 'C:\\ProgramData\\OXSIG\\workstation-ready.txt'
-        : null;
-    if (!path) throw new Error(`Unsupported Windows Operation readiness target: ${target.nodeKey}`);
-    return {
-      documentName: 'AWS-RunPowerShellScript',
-      command: `if ((Test-Path '${path}') -and ((Get-Content '${path}' -ErrorAction SilentlyContinue | Select-Object -First 1) -eq 'ready')) { Write-Output '${READY_SENTINEL}' } else { exit 2 }`,
-    };
+    if (target.nodeKey === 'dc') {
+      return {
+        documentName: 'AWS-RunPowerShellScript',
+        command: `$marker = (Test-Path 'C:\\ProgramData\\OXSIG\\domain-ready.txt') -and ((Get-Content 'C:\\ProgramData\\OXSIG\\domain-ready.txt' -ErrorAction SilentlyContinue | Select-Object -First 1) -eq 'ready'); $ntds = (Get-Service NTDS -ErrorAction SilentlyContinue).Status -eq 'Running'; $dns = (Get-Service DNS -ErrorAction SilentlyContinue).Status -eq 'Running'; $domain = $false; try { Import-Module ActiveDirectory -ErrorAction Stop; Get-ADDomain -Identity 'blackdomain.local' -ErrorAction Stop | Out-Null; $domain = $true } catch {}; if ($marker -and $ntds -and $dns -and $domain) { Write-Output '${READY_SENTINEL}' } else { exit 2 }`,
+      };
+    }
+    if (target.nodeKey === 'workstation') {
+      return {
+        documentName: 'AWS-RunPowerShellScript',
+        command: `$marker = (Test-Path 'C:\\ProgramData\\OXSIG\\workstation-ready.txt') -and ((Get-Content 'C:\\ProgramData\\OXSIG\\workstation-ready.txt' -ErrorAction SilentlyContinue | Select-Object -First 1) -eq 'ready'); $joined = $false; try { $joined = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).Domain -ieq 'blackdomain.local' } catch {}; $dc = $false; try { & nltest.exe /dsgetdc:blackdomain.local | Out-Null; $dc = $LASTEXITCODE -eq 0 } catch {}; if ($marker -and $joined -and $dc) { Write-Output '${READY_SENTINEL}' } else { exit 2 }`,
+      };
+    }
+    throw new Error(`Unsupported Windows Operation readiness target: ${target.nodeKey}`);
   }
 
   if (target.nodeKey !== 'operator') {
