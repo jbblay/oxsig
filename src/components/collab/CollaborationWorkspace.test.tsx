@@ -82,6 +82,8 @@ describe('CollaborationWorkspace session isolation', () => {
 
     render(<CollaborationWorkspace />);
 
+    await waitFor(() => expect(screen.getByRole('button', { name: /sessions/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /sessions/i }));
     await waitFor(() => expect(screen.getByRole('button', { name: /beta/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /beta/i }));
     await waitFor(() => expect(screen.getByText('Beta message')).toBeInTheDocument());
@@ -116,6 +118,8 @@ describe('CollaborationWorkspace session isolation', () => {
     fireEvent.change(alphaComposer, { target: { value: 'Draft for Alpha' } });
     expect(alphaComposer).toHaveValue('Draft for Alpha');
 
+    fireEvent.click(screen.getByRole('button', { name: /sessions/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /beta/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /beta/i }));
 
     await waitFor(() => expect(screen.getByPlaceholderText(/message beta/i)).toHaveValue(''));
@@ -158,4 +162,3 @@ describe('CollaborationWorkspace session isolation', () => {
     vi.unstubAllGlobals();
   });
 });
-
