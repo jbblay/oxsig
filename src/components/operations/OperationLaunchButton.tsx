@@ -34,9 +34,29 @@ export function OperationLaunchButton({ slug, mode, variant = 'default', classNa
       if (!response.ok) throw new Error(body?.error || 'Could not start Operation');
       const runId = body?.run?.runId as string | undefined;
       if (!runId) throw new Error('Operation runtime was created without a run id.');
+
+      let workspaceId: string | undefined;
+      if (mode === 'warroom') {
+        try {
+          const workspaceResponse = await fetch(`/api/warroom/runs/${encodeURIComponent(runId)}/workspace`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+          });
+          const workspaceBody = await workspaceResponse.json().catch(() => ({}));
+          if (workspaceResponse.ok && typeof workspaceBody?.workspaceId === 'string') {
+            workspaceId = workspaceBody.workspaceId;
+          } else {
+            toast.warning('Operation started. WarRoom will finish linking the team workspace when it opens.');
+          }
+        } catch {
+          toast.warning('Operation started. WarRoom will finish linking the team workspace when it opens.');
+        }
+      }
+
       toast.success('Operation topology is provisioning.');
       const destination = mode === 'warroom' ? '/warroom' : '/labs';
-      router.push(`${destination}?operation=${encodeURIComponent(slug)}&mode=${encodeURIComponent(mode)}&run=${encodeURIComponent(runId)}`);
+      const workspaceParam = workspaceId ? `&workspace=${encodeURIComponent(workspaceId)}` : '';
+      router.push(`${destination}?operation=${encodeURIComponent(slug)}&mode=${encodeURIComponent(mode)}&run=${encodeURIComponent(runId)}${workspaceParam}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not start Operation');
     } finally {
