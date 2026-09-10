@@ -25,7 +25,6 @@ function workspaceKindFor(pathname: string): WorkspaceKind | null {
 
 function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
   if (workspaceKind === 'labs') return 'immersive';
-  if (workspaceKind === 'boards') return 'wide';
   return 'standard';
 }
 
@@ -85,6 +84,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
   const workspaceMain = workspaceKind !== null;
   const standardCanvas = contentMode === 'standard';
+  const boundedWorkspace = workspaceKind === 'collab' || workspaceKind === 'boards';
 
   return (
     <div className={workspaceMain ? 'oxsig-app-background h-dvh overflow-hidden' : 'oxsig-app-background min-h-screen'}>
@@ -105,7 +105,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             data-oxsig-workspace={workspaceKind || undefined}
             data-oxsig-content-mode={contentMode}
             className={workspaceMain
-              ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${standardCanvas ? 'mx-auto max-w-7xl' : 'max-w-none'} ${workspaceKind === 'collab' ? 'overflow-hidden' : 'overflow-y-auto'}`
+              ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${standardCanvas ? 'mx-auto max-w-7xl' : 'max-w-none'} ${boundedWorkspace ? 'overflow-hidden' : 'overflow-y-auto'}`
               : 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
             {workspaceKind && <WorkspaceEnhancements kind={workspaceKind} />}
