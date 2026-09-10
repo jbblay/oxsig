@@ -12,11 +12,13 @@ import LabEvidenceTimeline from '@/components/labs/LabEvidenceTimeline';
 import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
+import OperationAiInstructor from '@/components/operations/OperationAiInstructor';
 import { OperationLabRuntimePanel } from '@/components/operations/OperationLabRuntimePanel';
 import OperationTopologyBuild from '@/components/operations/OperationTopologyBuild';
 import { OperationIcon } from '@/components/operations/OperationVisuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import type { OperationAiRuntimeContext } from '@/lib/operations/ai-context';
 import { getOperation } from '@/lib/operations/catalog';
 
 const MODE_KEY = 'oxsig:cyber-lab-workspace-mode:v1';
@@ -54,6 +56,7 @@ export default function CyberLabWorkspace({
   const [readinessMounted, setReadinessMounted] = React.useState(false);
   const [guestServiceMounted, setGuestServiceMounted] = React.useState(false);
   const [accessPathMounted, setAccessPathMounted] = React.useState(false);
+  const [operationAiContext, setOperationAiContext] = React.useState<OperationAiRuntimeContext | null>(null);
   const operation = operationSlug ? getOperation(operationSlug) : null;
   const activeBlackDomain = Boolean(operationRunId && operationSlug === 'black-domain');
 
@@ -68,6 +71,10 @@ export default function CyberLabWorkspace({
     if (saved === 'access-path') setAccessPathMounted(true);
     setMode(saved);
   }, []);
+
+  React.useEffect(() => {
+    setOperationAiContext(null);
+  }, [operationRunId, operationSlug]);
 
   const selectMode = (next: WorkspaceMode) => {
     if (next === 'designer') setDesignerMounted(true);
@@ -151,9 +158,27 @@ export default function CyberLabWorkspace({
         </details>
       </div>
 
+      {operation && operationSlug && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-3 py-2 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold">Adaptive learning workspace</p>
+            <p className="text-[10px] text-muted-foreground">Ask concepts before starting a machine, learn with voice and diagrams, or connect the same Instructor to live Operation evidence.</p>
+          </div>
+          <OperationAiInstructor
+            runId={operationAiContext?.runId || operationRunId || null}
+            operationSlug={operationSlug}
+            operationLabel={operation.codename}
+            operationMode={operationAiContext?.operationMode || operationMode || null}
+            objectives={operation.objectives}
+            nodes={operationAiContext?.nodes || []}
+            selectedNode={operationAiContext?.selectedNode || null}
+          />
+        </div>
+      )}
+
       <div id="cyber-lab-runtime" role="tabpanel" aria-labelledby="cyber-lab-tab-runtime" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
         {activeBlackDomain && operationRunId ? (
-          <OperationLabRuntimePanel runId={operationRunId} />
+          <OperationLabRuntimePanel runId={operationRunId} onAiContextChange={setOperationAiContext} />
         ) : (
           <LabTopologyDurableStateProvider>
             <LabRuntimePanel embedded />

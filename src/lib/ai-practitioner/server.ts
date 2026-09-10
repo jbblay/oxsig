@@ -1,6 +1,11 @@
 import 'server-only';
 
 import { z } from 'zod';
+import {
+  aiProviderConfigured,
+  aiProviderModel,
+  generateStructuredAi,
+} from '@/lib/ai/providers/server';
 import type {
   AiPractitionerAnalysis,
   AiPractitionerHistoryItem,
@@ -35,11 +40,11 @@ export const practitionerExecuteSchema = z.object({
 }).strict();
 
 export function aiPractitionerConfigured() {
-  return Boolean(process.env.OPENAI_API_KEY);
+  return aiProviderConfigured();
 }
 
 export function aiPractitionerModel() {
-  return process.env.OXSIG_AI_MODEL?.trim() || 'gpt-5.4-mini';
+  return aiProviderModel();
 }
 
 const destructivePatterns: Array<{ pattern: RegExp; reason: string }> = [
@@ -71,58 +76,19 @@ export function validatePractitionerCommand(command: string): { ok: true; risk: 
   return { ok: true, risk: classifyPractitionerCommand(value) };
 }
 
-function extractResponseText(payload: any): string {
-  if (typeof payload?.output_text === 'string' && payload.output_text.trim()) return payload.output_text.trim();
-  const chunks: string[] = [];
-  for (const item of payload?.output || []) {
-    for (const content of item?.content || []) {
-      if (typeof content?.text === 'string') chunks.push(content.text);
-    }
-  }
-  return chunks.join('\n').trim();
-}
-
 async function callStructured<T>(
   name: string,
   instructions: string,
   input: string,
   schema: Record<string, unknown>
 ): Promise<T> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('AI Practitioner is not configured. Set OPENAI_API_KEY on the Oxsig server.');
-
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: aiPractitionerModel(),
-      store: false,
-      instructions,
-      input,
-      max_output_tokens: 1400,
-      text: {
-        format: {
-          type: 'json_schema',
-          name,
-          strict: true,
-          schema,
-        },
-      },
-    }),
+  return generateStructuredAi<T>({
+    name,
+    instructions,
+    input,
+    schema,
+    maxOutputTokens: 1400,
   });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = payload?.error?.message || `AI provider request failed (${response.status})`;
-    throw new Error(String(message).slice(0, 500));
-  }
-
-  const text = extractResponseText(payload);
-  if (!text) throw new Error('AI provider returned no usable response');
-  return JSON.parse(text) as T;
 }
 
 const PLAN_SCHEMA = {
@@ -173,7 +139,11 @@ export async function planPractitionerStep(args: {
 
 Conversation comes first. Answer ordinary technical and general learning questions directly and clearly. A Cyber Lab is optional for conversation.
 
-When a running authenticated learner-owned Cyber Lab is supplied, you may also propose ONE command, but only when the learner explicitly asks to run, inspect, test, practice, verify, troubleshoot, or otherwise perform something in the lab, or when live evidence is genuinely necessary to answer the request. Never invent execution results.
+Teach dynamically instead of behaving like a static tutorial. For conceptual questions, explain the idea in plain language, use a useful analogy when it improves understanding, give a concrete example, and include a small text diagram when relationships or flow are easier to understand visually. Preserve line breaks in diagrams. Do not force all of these elements when they add no value.
+
+Respect any OXSIG TEACHING MODE supplied in the learner prompt. In learn mode, prioritize explanation and demonstration. In guided mode, ask for learner reasoning before giving away a useful next decision when appropriate. In challenge mode, withhold commands and direct answers until the learner attempts the step or asks for a hint. In operator mode, be concise and action-oriented while still explaining purpose and requiring Oxsig approval for execution.
+
+When a running authenticated learner-owned Cyber Lab is supplied, you may also propose ONE command, but only when the learner explicitly asks to run, inspect, test, practice, verify, troubleshoot, demonstrate, or otherwise perform something in the lab, or when live evidence is genuinely necessary to answer the request. Never invent execution results.
 
 If no running lab is supplied, command MUST be null. Explain that a running lab is needed only if the learner asks for real execution. Do not refuse ordinary questions just because there is no lab.
 
