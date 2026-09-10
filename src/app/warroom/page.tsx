@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { ShieldCheck, Swords, UsersRound } from 'lucide-react';
 import { OperationLaunchButton } from '@/components/operations/OperationLaunchButton';
-import { OperationRunStrip } from '@/components/operations/OperationRunStrip';
 import { OperationIcon, OperationTopologyPreview } from '@/components/operations/OperationVisuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,18 +21,19 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      {params.run ? <OperationRunStrip runId={params.run} compact /> : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="mr-auto">
-          <div className="flex items-center gap-2">
-            <Swords className="h-4 w-4 text-primary" />
-            <h1 className="text-lg font-semibold tracking-tight">WarRoom</h1>
-            <Badge className="h-5 text-[10px]">2–4 players</Badge>
-          </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2.5 text-slate-100">
+        <div className="mr-auto flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-50 motion-reduce:animate-none" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+          </span>
+          <Swords className="h-4 w-4 text-red-300" />
+          <h1 className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">WarRoom</h1>
+          <Badge variant="outline" className="h-5 border-white/15 bg-white/5 text-[9px] text-slate-300">2–4 operators</Badge>
         </div>
-        <Button asChild size="sm" variant="outline"><Link href="/operations">Operations</Link></Button>
-        <Button asChild size="sm" variant="ghost"><Link href="/live"><UsersRound className="mr-2 h-4 w-4" />Live Workspace</Link></Button>
+        <span className="hidden font-mono text-[9px] uppercase tracking-widest text-slate-600 sm:inline">secure collaboration channel</span>
+        <Button asChild size="sm" variant="outline" className="h-8 border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"><Link href="/operations">Operations</Link></Button>
+        <Button asChild size="sm" variant="ghost" className="h-8 text-slate-300 hover:bg-white/10 hover:text-white"><Link href="/live"><UsersRound className="mr-2 h-4 w-4" />Live Workspace</Link></Button>
       </div>
 
       {params.run ? (
