@@ -100,7 +100,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
       await client.query('BEGIN');
       const locked = await client.query(
-        `SELECT id,operation_slug,mode,status,expires_at
+        `SELECT id,operation_slug,mode,status,expires_at,operator_lab_instance_id
            FROM operation_runs
           WHERE id=$1 AND owner_id=$2
           FOR UPDATE`,
@@ -120,6 +120,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ error: 'This Operation is no longer available for team collaboration' }, { status: 409, headers: PRIVATE_HEADERS });
       }
 
+      const attachOperatorLab = async (workspaceId: string) => {
+        if (!run.operator_lab_instance_id) return;
+        const resource = await client.query(
+          `SELECT li.id,COALESCE(ld.name,ld.slug,'Cyber Lab') AS label
+             FROM lab_instances li
+             JOIN lab_definitions ld ON ld.id=li.definition_id
+            WHERE li.id=$1 AND li.owner_id=$2
+              AND li.status NOT IN ('destroying','destroyed','failed')
+            LIMIT 1`,
+          [run.operator_lab_instance_id, user.id]
+        );
+        if (!resource.rows[0]) return;
+        await client.query(
+          `INSERT INTO live_workspace_resources (
+             collaboration_id,resource_type,resource_id,resource_owner_id,attached_by,status,metadata
+           ) VALUES ($1,'lab-instance',$2,$3,$3,'attached',$4::jsonb)
+           ON CONFLICT (collaboration_id,resource_type,resource_id)
+           DO UPDATE SET status='attached',detached_at=NULL,attached_by=EXCLUDED.attached_by,
+                         resource_owner_id=EXCLUDED.resource_owner_id,metadata=EXCLUDED.metadata,updated_at=NOW()`,
+          [workspaceId, resource.rows[0].id, user.id, stringifyPostgresJson({ label: `${resource.rows[0].label} · Operation operator` })]
+        );
+      };
+
       const existing = await client.query(
         `SELECT c.id
            FROM collaborations c
@@ -133,6 +156,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         [user.id, id]
       );
       if (existing.rows[0]) {
+        await attachOperatorLab(existing.rows[0].id);
         await client.query('COMMIT');
         return NextResponse.json({ workspaceId: existing.rows[0].id, created: false }, { headers: PRIVATE_HEADERS });
       }
@@ -174,6 +198,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
          DO UPDATE SET role='owner',status='active',assigned_by=EXCLUDED.assigned_by,updated_at=NOW()`,
         [workspaceId, user.id]
       );
+      await attachOperatorLab(workspaceId);
 
       await client.query('COMMIT');
       return NextResponse.json({ workspaceId, created: true }, { status: 201, headers: PRIVATE_HEADERS });
