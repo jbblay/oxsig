@@ -7,7 +7,6 @@ import {
   BookOpen,
   Boxes,
   Circle,
-  Copy,
   Eraser,
   Grid3X3,
   LibraryBig,
@@ -17,15 +16,11 @@ import {
   Pencil,
   RadioTower,
   RotateCcw,
-  Sparkles,
   Square,
   SquareTerminal,
   Users,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { listVaultItems } from '@/lib/vault/api';
-import type { VaultItem } from '@/lib/vault/types';
 import TerminalActivityStrip from './TerminalActivityStrip';
 
 export type WorkspaceKind = 'labs' | 'collab' | 'boards' | 'live' | 'vault';
@@ -50,15 +45,11 @@ function BoardAction({ shortcut, label, icon: Icon }: { shortcut: string; label:
 
 export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind }) {
   const router = useRouter();
-  const [vaultItems, setVaultItems] = React.useState<VaultItem[]>([]);
   const [liveSummary, setLiveSummary] = React.useState<LiveSummary | null>(null);
   const [collabSummary, setCollabSummary] = React.useState<CollabSummary | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
-    if (kind === 'vault') {
-      void listVaultItems().then((items) => { if (!cancelled) setVaultItems(items); }).catch(() => undefined);
-    }
     if (kind === 'live') {
       void fetch('/api/live-workspaces', { cache: 'no-store' })
         .then(async (response) => response.ok ? response.json() : null)
@@ -103,45 +94,9 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
     );
   }
 
-  if (kind === 'vault') {
-    const pinned = vaultItems.filter((item) => item.pinned).length;
-    const runnable = vaultItems.find((item) => item.kind === 'command' || item.kind === 'script');
-    const launch = async () => {
-      if (!runnable) return;
-      try {
-        window.localStorage.setItem('oxsig:vault-handoff', JSON.stringify({
-          version: 1,
-          itemId: runnable.id,
-          kind: runnable.kind,
-          title: runnable.title,
-          summary: runnable.summary,
-          body: runnable.body,
-          language: runnable.language,
-          tags: runnable.tags,
-          destination: 'lab',
-          createdAt: Date.now(),
-        }));
-        if (navigator.clipboard) await navigator.clipboard.writeText(runnable.body);
-        toast.success('Latest runnable item copied and sent to Cyber Lab.');
-      } catch {
-        // Navigation remains useful if clipboard or storage is unavailable.
-      }
-      router.push(`/labs?vault=${encodeURIComponent(runnable.id)}`);
-    };
-    return (
-      <div className="oxsig-workspace-rail mb-2" data-workspace="vault">
-        <div className="oxsig-rail-title"><LibraryBig className="h-4 w-4" /><span>Knowledge ops</span></div>
-        <div className="oxsig-rail-badges">
-          <span><Boxes className="h-3 w-3" /> {vaultItems.length} items</span>
-          <span><Sparkles className="h-3 w-3" /> {pinned} pinned</span>
-        </div>
-        <div className="oxsig-rail-actions">
-          <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => void launch()} disabled={!runnable}><SquareTerminal className="h-3.5 w-3.5" /> Send runnable to Lab</Button>
-          {runnable && <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => { if (!navigator.clipboard) return; void navigator.clipboard.writeText(runnable.body).then(() => toast.success('Copied.')); }}><Copy className="h-3.5 w-3.5" /> Copy latest</Button>}
-        </div>
-      </div>
-    );
-  }
+  // Vault already owns its compact command bar and item handoff actions. A
+  // second rail duplicated both the UI and the initial /api/vault request.
+  if (kind === 'vault') return null;
 
   if (kind === 'live') {
     return (
