@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useClerk, useUser as useClerkUser } from '@clerk/nextjs';
-import { setStoryboardDraftScope } from '@/lib/storyboards/storage';
+import { setStoryboardDraftScope } from '@/lib/storyboards/storage-scope';
 
 export interface User {
   id: string;
