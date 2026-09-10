@@ -37,6 +37,22 @@ let cachedUntil = 0;
 let inFlight: Promise<LabsSnapshotResult> | null = null;
 let generation = 0;
 
+function isBrowserOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function isDocumentHidden(): boolean {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+function offlineResult(): LabsSnapshotResult {
+  return {
+    ok: false,
+    status: 0,
+    data: { error: 'Cyber Lab status refresh is paused while this device is offline.' },
+  };
+}
+
 async function requestLabsSnapshot(requestGeneration: number): Promise<LabsSnapshotResult> {
   const response = await fetch(LABS_ENDPOINT, {
     cache: 'no-store',
@@ -61,7 +77,12 @@ export function invalidateLabsSnapshot(): void {
 }
 
 export async function getLabsSnapshot(options: { force?: boolean } = {}): Promise<LabsSnapshotResult> {
-  if (!options.force && cachedResult && Date.now() < cachedUntil) return cachedResult;
+  if (!options.force && cachedResult) {
+    const cacheFresh = Date.now() < cachedUntil;
+    if (cacheFresh || isBrowserOffline() || isDocumentHidden()) return cachedResult;
+  }
+
+  if (!options.force && isBrowserOffline()) return offlineResult();
   if (inFlight) return inFlight;
 
   const requestGeneration = generation;
