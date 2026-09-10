@@ -146,12 +146,11 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
   if (kind === 'live') {
     return (
       <div className="oxsig-workspace-rail mb-2" data-workspace="live">
-        <div className="oxsig-rail-title"><RadioTower className="h-4 w-4" /><span>Live operations</span></div>
+        <div className="oxsig-rail-title"><RadioTower className="h-4 w-4" /><span>Live Workspace</span></div>
         <div className="oxsig-rail-badges">
           <span><RadioTower className="h-3 w-3" /> {liveSummary?.workspaces ?? '—'} workspaces</span>
-          <span><Users className="h-3 w-3" /> Role control</span>
-          <span><SquareTerminal className="h-3 w-3" /> Terminal lease</span>
-          <span><Boxes className="h-3 w-3" /> Attached resources</span>
+          <span><Users className="h-3 w-3" /> Participants</span>
+          <span><Boxes className="h-3 w-3" /> Resources</span>
         </div>
       </div>
     );
