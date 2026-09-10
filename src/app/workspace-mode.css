@@ -22,21 +22,39 @@ main[data-oxsig-workspace] > * {
   min-width: 0;
 }
 
-/* Collaboration is a viewport-bound application surface. The component owns
-   its own responsive content; the shell only supplies remaining height. */
-main[data-oxsig-workspace="collab"] {
+/* Collaboration and Boards are viewport-bound application surfaces. Their
+   components own their internal scrolling while the shell owns the viewport. */
+main[data-oxsig-workspace="collab"],
+main[data-oxsig-workspace="boards"] {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail {
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail,
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail {
   flex: 0 0 auto;
 }
 
-main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div,
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
   min-height: 0;
   flex: 1 1 0%;
+}
+
+/* Boards use the same centered content geometry as Collaboration/Resources,
+   while the drawing viewport remains scrollable and zoomable inside it. */
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail,
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 @media (max-width: 767px) {
