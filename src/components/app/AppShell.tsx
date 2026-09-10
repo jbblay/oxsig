@@ -12,6 +12,8 @@ import WorkspaceEnhancements, { type WorkspaceKind } from './WorkspaceEnhancemen
 
 const SIDEBAR_KEY = 'oxsig:app-sidebar:v1';
 
+type ContentMode = 'standard' | 'wide' | 'immersive';
+
 function workspaceKindFor(pathname: string): WorkspaceKind | null {
   if (pathname.startsWith('/labs')) return 'labs';
   if (pathname.startsWith('/collab/storyboards')) return 'boards';
@@ -21,11 +23,18 @@ function workspaceKindFor(pathname: string): WorkspaceKind | null {
   return null;
 }
 
+function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
+  if (workspaceKind === 'labs') return 'immersive';
+  if (workspaceKind === 'boards') return 'wide';
+  return 'standard';
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const bare = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up');
   const workspaceKind = workspaceKindFor(pathname);
-  const immersiveWorkspace = workspaceKind === 'labs';
+  const contentMode = contentModeFor(workspaceKind);
+  const immersiveWorkspace = contentMode === 'immersive';
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [immersiveExpanded, setImmersiveExpanded] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
@@ -75,6 +84,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
   const workspaceMain = workspaceKind !== null;
+  const standardCanvas = contentMode === 'standard';
 
   return (
     <div className={workspaceMain ? 'oxsig-app-background h-dvh overflow-hidden' : 'oxsig-app-background min-h-screen'}>
@@ -93,9 +103,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <AppHeader onOpenMobileNav={() => setMobileNavOpen(true)} />
           <main
             data-oxsig-workspace={workspaceKind || undefined}
+            data-oxsig-content-mode={contentMode}
             className={workspaceMain
-              ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${workspaceKind === 'collab' ? 'overflow-hidden' : 'overflow-y-auto'}`
-              : 'mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
+              ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${standardCanvas ? 'mx-auto max-w-7xl' : 'max-w-none'} ${workspaceKind === 'collab' ? 'overflow-hidden' : 'overflow-y-auto'}`
+              : 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
             {workspaceKind && <WorkspaceEnhancements kind={workspaceKind} />}
             {children}
