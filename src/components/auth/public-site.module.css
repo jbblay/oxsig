@@ -160,7 +160,7 @@
     gap: 10px;
   }
 
-  .actions :global(a:first-child) {
+  .actions > a:first-child {
     display: none;
   }
 
