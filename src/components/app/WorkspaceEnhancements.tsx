@@ -13,13 +13,10 @@ import {
   LibraryBig,
   Magnet,
   MessageCircle,
-  Mic,
   Minus,
   Pencil,
   RadioTower,
   RotateCcw,
-  Share2,
-  ShieldCheck,
   Sparkles,
   Square,
   SquareTerminal,
@@ -101,11 +98,6 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
           <BoardAction shortcut="g" label="Grid" icon={Grid3X3} />
           <BoardAction shortcut="s" label="Snap" icon={Magnet} />
           <BoardAction shortcut="0" label="Fit" icon={RotateCcw} />
-        </div>
-        <div className="oxsig-rail-badges">
-          <span><Mic className="h-3 w-3" /> Voice</span>
-          <span><Share2 className="h-3 w-3" /> Share</span>
-          <span><ShieldCheck className="h-3 w-3" /> Cloud save</span>
         </div>
       </div>
     );
