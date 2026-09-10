@@ -62,13 +62,16 @@ export async function probeOperationNodeReadiness(target: OperationReadinessTarg
     InstanceIds: [target.instanceId],
     DocumentName: probe.documentName,
     Parameters: { commands: [probe.command] },
-    TimeoutSeconds: 15,
+    TimeoutSeconds: 20,
   }));
   const commandId = sent.Command?.CommandId;
   if (!commandId) return { ready: false, reason: 'probe-failed' };
 
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  // SSM can report the node Online before a freshly submitted command has an
+  // invocation record. Give that hand-off enough time instead of surfacing a
+  // false probe failure during normal boot.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 750));
     try {
       const invocation = await ssm.send(new GetCommandInvocationCommand({
         CommandId: commandId,
