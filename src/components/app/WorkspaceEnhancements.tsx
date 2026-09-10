@@ -16,6 +16,7 @@ import {
   Mic,
   Minus,
   Pencil,
+  Plus,
   RadioTower,
   RotateCcw,
   Share2,
@@ -164,6 +165,13 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
     );
   }
 
+  const openNewSession = () => {
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .flex.justify-end > button'
+    );
+    trigger?.click();
+  };
+
   return (
     <div className="oxsig-workspace-rail mb-2" data-workspace="collab">
       <div className="oxsig-rail-title"><MessageCircle className="h-4 w-4" /><span>Team channel</span></div>
@@ -172,6 +180,7 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
         <span><Users className="h-3 w-3" /> {collabSummary?.members ?? '—'} memberships</span>
       </div>
       <div className="oxsig-rail-actions">
+        <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={openNewSession}><Plus className="h-3.5 w-3.5" /> New session</Button>
         <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => router.push('/collab/storyboards')}><BookOpen className="h-3.5 w-3.5" /> Board</Button>
         <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => router.push('/vault')}><LibraryBig className="h-3.5 w-3.5" /> Vault</Button>
         <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => router.push('/labs')}><SquareTerminal className="h-3.5 w-3.5" /> Lab</Button>
