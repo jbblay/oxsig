@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Activity, Boxes, ChevronDown, CloudCog, Crosshair, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
+import { Activity, Boxes, ChevronDown, CloudCog, FileCog, MonitorCheck, Route, ShieldCheck } from 'lucide-react';
 import AccessPathReadinessReview from '@/components/labs/AccessPathReadinessReview';
 import DeploymentEvidenceReview from '@/components/labs/DeploymentEvidenceReview';
 import DeploymentPlanner from '@/components/labs/DeploymentPlanner';
@@ -13,6 +13,8 @@ import LabRuntimePanel from '@/components/labs/LabRuntimePanel';
 import LabTopologyDurableStateProvider from '@/components/labs/LabTopologyDurableStateProvider';
 import RuntimeReadinessReview from '@/components/labs/RuntimeReadinessReview';
 import { OperationLabRuntimePanel } from '@/components/operations/OperationLabRuntimePanel';
+import OperationTopologyBuild from '@/components/operations/OperationTopologyBuild';
+import { OperationIcon } from '@/components/operations/OperationVisuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getOperation } from '@/lib/operations/catalog';
@@ -53,6 +55,7 @@ export default function CyberLabWorkspace({
   const [guestServiceMounted, setGuestServiceMounted] = React.useState(false);
   const [accessPathMounted, setAccessPathMounted] = React.useState(false);
   const operation = operationSlug ? getOperation(operationSlug) : null;
+  const activeBlackDomain = Boolean(operationRunId && operationSlug === 'black-domain');
 
   React.useEffect(() => {
     const saved = window.localStorage.getItem(MODE_KEY) as WorkspaceMode | null;
@@ -115,7 +118,7 @@ export default function CyberLabWorkspace({
     <>
       {operation && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.035] px-3 py-2.5">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Crosshair className="h-4 w-4" /></span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><OperationIcon icon={operation.icon} className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate text-xs font-semibold">{operation.codename}</p>
@@ -149,7 +152,7 @@ export default function CyberLabWorkspace({
       </div>
 
       <div id="cyber-lab-runtime" role="tabpanel" aria-labelledby="cyber-lab-tab-runtime" className={mode === 'runtime' ? 'block' : 'hidden'} aria-hidden={mode !== 'runtime'}>
-        {operationRunId && operationSlug === 'black-domain' ? (
+        {activeBlackDomain && operationRunId ? (
           <OperationLabRuntimePanel runId={operationRunId} />
         ) : (
           <LabTopologyDurableStateProvider>
@@ -160,7 +163,7 @@ export default function CyberLabWorkspace({
 
       {designerMounted && (
         <div id="cyber-lab-designer" role="tabpanel" aria-labelledby="cyber-lab-tab-designer" className={mode === 'designer' ? 'block' : 'hidden'} aria-hidden={mode !== 'designer'}>
-          <InfrastructureDesigner />
+          {activeBlackDomain && operationRunId ? <OperationTopologyBuild runId={operationRunId} /> : <InfrastructureDesigner />}
         </div>
       )}
 

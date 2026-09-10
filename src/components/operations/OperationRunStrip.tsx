@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Eye, Loader2, Network, Power, RefreshCw } from 'lucide-react';
+import { Eye, Loader2, Network, Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,7 @@ type Run = {
   expiresAt: string;
   metadata: {
     domain?: string;
+    lifecycleState?: string;
     initialAccess?: { username?: string; available?: boolean };
   };
   lastError: string | null;
@@ -36,18 +37,21 @@ type Run = {
 };
 
 type RevealedAccess = { username: string; password: string };
+type BusyAction = 'pause' | 'resume' | 'destroy' | null;
 
-function readinessLabel(node: RunNode) {
+function readinessLabel(node: RunNode, paused: boolean) {
+  if (paused) return 'paused';
   if (node.status === 'running') return 'ready';
   if (node.status === 'destroying' || node.status === 'destroyed' || node.status === 'failed') return node.status;
-  if (node.computeStatus === 'running') return 'bootstrapping';
+  if (node.computeStatus === 'running') return 'initializing';
+  if (node.computeStatus === 'pending') return 'starting';
   return node.computeStatus || node.status;
 }
 
 export function OperationRunStrip({ runId }: { runId: string }) {
   const [run, setRun] = React.useState<Run | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState<BusyAction>(null);
   const [revealingAccess, setRevealingAccess] = React.useState(false);
   const [revealedAccess, setRevealedAccess] = React.useState<RevealedAccess | null>(null);
 
@@ -68,12 +72,35 @@ export function OperationRunStrip({ runId }: { runId: string }) {
   React.useEffect(() => {
     setRevealedAccess(null);
     void refresh();
-    const timer = window.setInterval(() => void refresh(true), 10_000);
+    const timer = window.setInterval(() => void refresh(true), 5_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
+  const changeLifecycle = async (action: 'pause' | 'resume') => {
+    setBusy(action);
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/operations/runs/${encodeURIComponent(runId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ action }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || `Could not ${action} Operation`);
+      toast.success(action === 'pause' ? 'Pausing all Operation machines.' : 'Starting all Operation machines.');
+      setRevealedAccess(null);
+      if (body.run) setRun(body.run as Run);
+      else await refresh(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not ${action} Operation`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const destroy = async () => {
-    setBusy(true);
+    if (!window.confirm('End and permanently destroy this Operation? All three machines will be terminated.')) return;
+    setBusy('destroy');
     try {
       const csrf = await getCsrfToken();
       const response = await fetch(`/api/operations/runs/${encodeURIComponent(runId)}`, {
@@ -82,13 +109,13 @@ export function OperationRunStrip({ runId }: { runId: string }) {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'Could not end Operation');
-      toast.success('Operation shutdown started.');
+      toast.success('Destruction started for all Operation machines.');
       setRevealedAccess(null);
       await refresh(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not end Operation');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -119,19 +146,34 @@ export function OperationRunStrip({ runId }: { runId: string }) {
   if (!run) return null;
 
   const initialAccess = run.metadata?.initialAccess;
+  const paused = run.metadata?.lifecycleState === 'paused';
   const bootstrapping = run.nodes.some((node) => node.computeStatus === 'running' && node.status === 'provisioning');
+  const terminalState = ['destroying', 'destroyed', 'failed'].includes(run.status);
+
   return (
     <div className="mb-3 rounded-xl border bg-card/70 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Network className="h-4 w-4 text-primary" />
         <span className="text-xs font-semibold">Provisioned topology</span>
-        <Badge variant={run.status === 'running' ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{run.status}</Badge>
+        <Badge variant={run.status === 'running' && !paused ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">
+          {paused ? 'paused' : run.status}
+        </Badge>
         {run.metadata?.domain && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.domain}</Badge>}
-        <div className="ml-auto flex items-center gap-1">
-          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => void refresh()} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
-          {!['destroying','destroyed'].includes(run.status) && (
-            <Button size="sm" variant="outline" className="h-7" onClick={() => void destroy()} disabled={busy}>
-              {busy ? <Loader2 className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}End operation
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => void refresh()} disabled={loading || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
+          {!terminalState && paused && (
+            <Button size="sm" variant="outline" className="h-7" onClick={() => void changeLifecycle('resume')} disabled={Boolean(busy)}>
+              {busy === 'resume' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}Resume
+            </Button>
+          )}
+          {!terminalState && !paused && run.status === 'running' && (
+            <Button size="sm" variant="outline" className="h-7" onClick={() => void changeLifecycle('pause')} disabled={Boolean(busy)}>
+              {busy === 'pause' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Pause className="mr-1.5 h-3.5 w-3.5" />}Pause
+            </Button>
+          )}
+          {!['destroying', 'destroyed'].includes(run.status) && (
+            <Button size="sm" variant="outline" className="h-7" onClick={() => void destroy()} disabled={Boolean(busy)}>
+              {busy === 'destroy' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}End &amp; destroy
             </Button>
           )}
         </div>
@@ -142,17 +184,17 @@ export function OperationRunStrip({ runId }: { runId: string }) {
           <div key={node.id} className="rounded-lg border px-2.5 py-2">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-[11px] font-semibold">{node.label}</span>
-              <Badge variant={node.status === 'running' ? 'default' : 'outline'} className="h-4 px-1 text-[8px] capitalize">{readinessLabel(node)}</Badge>
+              <Badge variant={node.status === 'running' && !paused ? 'default' : 'outline'} className="h-4 px-1 text-[8px] capitalize">{readinessLabel(node, paused)}</Badge>
             </div>
             <p className="mt-1 text-[9px] text-muted-foreground">
               {node.osFamily} · {node.role}{node.privateIp ? ` · ${node.privateIp}` : ''}
-              {node.computeStatus && node.computeStatus !== node.status ? ` · EC2 ${node.computeStatus}` : ''}
+              {node.computeStatus && node.computeStatus !== node.status && !paused ? ` · EC2 ${node.computeStatus}` : ''}
             </p>
           </div>
         ))}
       </div>
 
-      {initialAccess?.username && initialAccess.available && (
+      {initialAccess?.username && initialAccess.available && !paused && !terminalState && (
         <details className="mt-2 rounded-lg border bg-muted/20 px-2.5 py-2" onToggle={(event) => {
           if (event.currentTarget.open && !revealedAccess && !revealingAccess) void revealAccess();
         }}>
@@ -171,13 +213,15 @@ export function OperationRunStrip({ runId }: { runId: string }) {
         </details>
       )}
       {run.lastError && <p className="mt-2 text-[10px] text-destructive">{run.lastError}</p>}
-      {run.status !== 'running' && !['failed','destroyed'].includes(run.status) && (
+      {paused ? (
+        <p className="mt-2 text-[10px] text-muted-foreground">Operation paused. All three EC2 machines are being kept as the same environment without being destroyed. Resume when you are ready to continue.</p>
+      ) : run.status !== 'running' && !['failed', 'destroyed'].includes(run.status) ? (
         <p className="mt-2 text-[10px] text-muted-foreground">
           {bootstrapping
-            ? 'EC2 is online. OXSIG is waiting for SSM and guest readiness markers while AD DS promotion, domain join, and operator tooling finish.'
+            ? 'EC2 is online. OXSIG is checking Systems Manager and guest readiness while AD DS promotion, domain join, and operator tooling finish.'
             : 'EC2 machines are launching. OXSIG will keep the Operation in provisioning until guest readiness is verified.'}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
