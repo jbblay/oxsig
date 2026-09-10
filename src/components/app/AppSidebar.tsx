@@ -19,10 +19,10 @@ import {
   Settings2,
   Sun,
   Swords,
-  X,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/use-auth';
 
@@ -105,7 +105,7 @@ function SidebarContent({
           </Button>
         )}
 
-        <nav className="space-y-4">
+        <nav className="space-y-4" aria-label="Primary navigation">
           {groups.map((group) => (
             <div key={group.label}>
               {!compact && <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>}
@@ -120,6 +120,7 @@ function SidebarContent({
                       onClick={onNavigate}
                       title={compact ? item.label : undefined}
                       aria-current={active ? 'page' : undefined}
+                      aria-label={compact ? item.label : undefined}
                       data-workspace-color={workspaceColor(item.href)}
                       className={cn(
                         'oxsig-nav-item group relative flex min-h-9 items-center text-[13px] font-medium transition-colors duration-150',
@@ -146,6 +147,7 @@ function SidebarContent({
           href="/account"
           onClick={onNavigate}
           title={compact ? 'Account' : undefined}
+          aria-label={compact ? 'Account' : undefined}
           className={cn('flex min-h-9 items-center rounded-md transition hover:bg-sidebar-accent/70', compact ? 'justify-center px-1' : 'gap-2 px-2')}
         >
           <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
@@ -204,20 +206,15 @@ export default function AppSidebar({
         <SidebarContent collapsed={collapsed} onToggle={onToggle} />
       </aside>
 
-      <div className={cn('fixed inset-0 z-50 md:hidden', mobileOpen ? 'pointer-events-auto' : 'pointer-events-none')} aria-hidden={!mobileOpen}>
-        <button
-          type="button"
-          className={cn('absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200', mobileOpen ? 'opacity-100' : 'opacity-0')}
-          onClick={onMobileClose}
-          aria-label="Close navigation"
-        />
-        <aside className={cn('absolute inset-y-0 left-0 w-[252px] max-w-[calc(100vw-20px)] border-r bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-200 ease-out', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
-          <Button size="icon" variant="ghost" className="absolute right-2 top-2.5 z-10 h-8 w-8" onClick={onMobileClose} aria-label="Close navigation">
-            <X className="h-4 w-4" />
-          </Button>
+      <Dialog open={mobileOpen} onOpenChange={(open) => { if (!open) onMobileClose(); }}>
+        <DialogContent
+          className="!left-0 !top-0 h-dvh w-[252px] max-w-[calc(100vw-20px)] !translate-x-0 !translate-y-0 gap-0 rounded-none border-y-0 border-l-0 bg-sidebar p-0 text-sidebar-foreground shadow-2xl md:hidden"
+          aria-describedby={undefined}
+        >
+          <DialogTitle className="sr-only">Navigation</DialogTitle>
           <SidebarContent collapsed={false} mobile onNavigate={onMobileClose} />
-        </aside>
-      </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
