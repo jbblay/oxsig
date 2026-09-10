@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button';
 import { recordWorkspaceActivity } from '@/lib/persistence/workspace-activity';
 
 const steps = [
-  { label: 'Build', command: 'topology validate --sample' },
-  { label: 'Run', command: 'lab start sample-linux' },
-  { label: 'Review', command: 'evidence inspect --latest' },
-  { label: 'Save', command: 'vault capture session-notes' },
+  { label: 'Choose', command: 'operation open black-domain' },
+  { label: 'Inspect', command: 'topology inspect --mission' },
+  { label: 'Operate', command: 'terminal preview --objective discovery' },
+  { label: 'Prove', command: 'evidence preview --latest' },
 ] as const;
 
 export default function GuestSampleFlow() {
@@ -19,14 +19,14 @@ export default function GuestSampleFlow() {
   const start = () => {
     setActive(true);
     setStep(0);
-    recordWorkspaceActivity({ label: 'Started guest sample flow', detail: 'No cloud resources created', href: '/home', color: 'labs', kind: 'action' });
+    recordWorkspaceActivity({ label: 'Started guest interface preview', detail: 'No cloud resources created', href: '/home', color: 'labs', kind: 'action' });
   };
 
   const next = () => {
     if (step >= steps.length - 1) {
       setActive(false);
       setStep(0);
-      recordWorkspaceActivity({ label: 'Completed guest sample flow', detail: 'Build → Run → Review → Save', href: '/home', color: 'labs', kind: 'action' });
+      recordWorkspaceActivity({ label: 'Completed guest interface preview', detail: 'Choose → Inspect → Operate → Prove', href: '/home', color: 'labs', kind: 'action' });
       return;
     }
     setStep((value) => value + 1);
@@ -38,11 +38,11 @@ export default function GuestSampleFlow() {
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyan-500/10 text-cyan-500"><Play className="h-4 w-4" /></span>
           <div className="min-w-0">
-            <p className="text-xs font-semibold">Sample workspace</p>
-            <p className="truncate text-[10px] text-muted-foreground">Try the OXSIG workflow without starting cloud resources.</p>
+            <p className="text-xs font-semibold">Interface preview</p>
+            <p className="truncate text-[10px] text-muted-foreground">Try the OXSIG workflow without pretending a cloud environment was created.</p>
           </div>
         </div>
-        <Button size="sm" variant="outline" className="h-8 text-xs sm:ml-auto" onClick={start}>Launch sample</Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs sm:ml-auto" onClick={start}>Open preview</Button>
       </div>
     );
   }
@@ -51,14 +51,14 @@ export default function GuestSampleFlow() {
     <div className="overflow-hidden rounded-lg border border-cyan-500/20 bg-card/55">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <Terminal className="h-3.5 w-3.5 text-cyan-500" />
-        <span className="text-xs font-semibold">Guest sample</span>
-        <span className="ml-auto text-[10px] text-muted-foreground">No AWS resources</span>
+        <span className="text-xs font-semibold">Guest interface preview</span>
+        <span className="ml-auto text-[10px] text-muted-foreground">No cloud resources</span>
       </div>
       <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_240px]">
         <div className="bg-slate-950 px-3 py-3 font-mono text-[11px] text-slate-200">
           <p><span className="text-cyan-400">oxsig&gt;</span> {steps[step].command}</p>
-          <p className="mt-2 text-emerald-400">✓ {steps[step].label} stage ready</p>
-          <p className="mt-1 text-slate-500">sample mode · local simulation</p>
+          <p className="mt-2 text-emerald-400">✓ {steps[step].label} stage previewed</p>
+          <p className="mt-1 text-slate-500">preview only · live commands require a provisioned environment</p>
         </div>
         <div className="p-2.5">
           <div className="grid grid-cols-4 gap-1">
