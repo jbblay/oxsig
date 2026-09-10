@@ -1,4 +1,12 @@
 export type OperationMode = 'practice' | 'walkthrough' | 'challenge' | 'warroom';
+export type OperationIconKey = 'directory' | 'shell' | 'pivot' | 'web' | 'forensics' | 'cloud';
+export type OperationTopologyKind = 'operator' | 'workstation' | 'server' | 'service' | 'evidence' | 'cloud';
+
+export type OperationTopologyNode = {
+  label: string;
+  kind: OperationTopologyKind;
+  platform?: string;
+};
 
 export type Operation = {
   slug: string;
@@ -13,6 +21,8 @@ export type Operation = {
   objectives: string[];
   evidence: string[];
   topology: string[];
+  topologyNodes: OperationTopologyNode[];
+  icon: OperationIconKey;
   tags: string[];
 };
 
@@ -30,6 +40,12 @@ export const operations: Operation[] = [
     objectives: ['Discover the domain controller', 'Enumerate users and services', 'Obtain an initial foothold', 'Escalate or move laterally', 'Submit domain compromise evidence'],
     evidence: ['Recon output', 'Compromised identity', 'Privilege proof', 'Final domain evidence'],
     topology: ['Operator terminal', 'Windows workstation', 'Domain controller'],
+    topologyNodes: [
+      { label: 'Operator terminal', kind: 'operator', platform: 'Ubuntu' },
+      { label: 'Windows workstation', kind: 'workstation', platform: 'Windows' },
+      { label: 'Domain controller', kind: 'server', platform: 'Windows Server' },
+    ],
+    icon: 'directory',
     tags: ['AD', 'Kerberos', 'SMB', 'Lateral movement'],
   },
   {
@@ -45,6 +61,11 @@ export const operations: Operation[] = [
     objectives: ['Establish the shell', 'Enumerate escalation paths', 'Exploit one valid path', 'Prove root access'],
     evidence: ['Enumeration output', 'Escalation path', 'Root identity proof'],
     topology: ['Kali operator', 'Linux target'],
+    topologyNodes: [
+      { label: 'Kali operator', kind: 'operator', platform: 'Kali Linux' },
+      { label: 'Linux target', kind: 'server', platform: 'Linux' },
+    ],
+    icon: 'shell',
     tags: ['Linux', 'SUID', 'sudo', 'systemd'],
   },
   {
@@ -60,6 +81,12 @@ export const operations: Operation[] = [
     objectives: ['Compromise the edge target', 'Discover the hidden subnet', 'Establish the pivot', 'Reach the internal target'],
     evidence: ['Foothold proof', 'Route discovery', 'Pivot configuration', 'Internal target proof'],
     topology: ['Kali operator', 'Edge target', 'Internal target'],
+    topologyNodes: [
+      { label: 'Kali operator', kind: 'operator', platform: 'Kali Linux' },
+      { label: 'Edge target', kind: 'server', platform: 'Linux' },
+      { label: 'Internal target', kind: 'server', platform: 'Linux' },
+    ],
+    icon: 'pivot',
     tags: ['Pivoting', 'Routing', 'Tunneling', 'Lateral movement'],
   },
   {
@@ -75,6 +102,12 @@ export const operations: Operation[] = [
     objectives: ['Map the attack surface', 'Identify a vulnerable input', 'Exploit the flaw', 'Capture reproducible evidence'],
     evidence: ['Request', 'Response', 'Exploit payload', 'Impact proof'],
     topology: ['Operator terminal', 'Web application', 'Internal service'],
+    topologyNodes: [
+      { label: 'Operator terminal', kind: 'operator' },
+      { label: 'Web application', kind: 'service', platform: 'HTTP' },
+      { label: 'Internal service', kind: 'server' },
+    ],
+    icon: 'web',
     tags: ['HTTP', 'SSRF', 'XXE', 'Injection'],
   },
   {
@@ -90,6 +123,11 @@ export const operations: Operation[] = [
     objectives: ['Verify evidence integrity', 'Triage the image', 'Recover relevant artifacts', 'Build the incident finding'],
     evidence: ['Hash verification', 'Recovered artifact', 'Metadata', 'Finding summary'],
     topology: ['Analyst workstation', 'Evidence image'],
+    topologyNodes: [
+      { label: 'Analyst workstation', kind: 'workstation' },
+      { label: 'Evidence image', kind: 'evidence', platform: 'Disk image' },
+    ],
+    icon: 'forensics',
     tags: ['dd', 'Hashing', 'Carving', 'Metadata'],
   },
   {
@@ -105,6 +143,12 @@ export const operations: Operation[] = [
     objectives: ['Enumerate exposed resources', 'Identify the trust failure', 'Demonstrate impact', 'Capture remediation evidence'],
     evidence: ['Resource inventory', 'Misconfiguration proof', 'Impact proof', 'Remediation note'],
     topology: ['Operator terminal', 'Cloud account', 'Workload'],
+    topologyNodes: [
+      { label: 'Operator terminal', kind: 'operator' },
+      { label: 'Cloud account', kind: 'cloud', platform: 'AWS' },
+      { label: 'Workload', kind: 'server' },
+    ],
+    icon: 'cloud',
     tags: ['AWS', 'IAM', 'Metadata', 'Cloud'],
   },
 ];
