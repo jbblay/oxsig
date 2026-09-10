@@ -15,7 +15,7 @@
 .oxsig-workspace-rail[data-workspace="vault"] { border-color: rgb(168 85 247 / .2); box-shadow: inset 2px 0 0 rgb(168 85 247 / .55); }
 .oxsig-workspace-rail[data-workspace="live"] { border-color: rgb(34 211 238 / .2); box-shadow: inset 2px 0 0 rgb(34 211 238 / .55); }
 .oxsig-workspace-rail[data-workspace="collab"] { border-color: rgb(59 130 246 / .2); box-shadow: inset 2px 0 0 rgb(59 130 246 / .55); }
-.oxsig-workspace-rail[data-workspace="boards"] { border-color: rgb(249 115 22 / .2); box-shadow: inset 2px 0 0 rgb(249 115 22 / .55); }
+.oxsig-workspace-rail[data-workspace="boards"] { border-color: rgb(236 72 153 / .22); box-shadow: inset 2px 0 0 rgb(236 72 153 / .62); }
 
 .oxsig-workspace-rail::-webkit-scrollbar { display: none; }
 
@@ -146,24 +146,47 @@ main[data-oxsig-workspace="live"] button[aria-pressed="true"] {
   background: rgb(34 211 238 / .06) !important;
 }
 
-@media (min-width: 768px) {
-  main[data-oxsig-workspace="vault"] > .oxsig-workspace-rail + div > .grid {
-    grid-template-columns: 310px minmax(0, 1fr) !important;
-  }
-
-  main[data-oxsig-workspace="live"] > .oxsig-workspace-rail + div > .grid {
-    grid-template-columns: 250px minmax(0, 1fr) !important;
-  }
-
-  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
-    grid-template-columns: 220px minmax(0, 1fr) !important;
-  }
+/* Board controls live in the workspace rail. The editor keeps contextual
+   options (color, stroke, zoom and history) instead of repeating tools. */
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Pen (P)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Eraser (E)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Line (L)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Arrow (A)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Rectangle (R)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Ellipse (O)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Toggle grid (G)"],
+main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div button[title="Snap shapes to grid (S)"] {
+  display: none;
 }
 
-@media (min-width: 1280px) {
-  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
-    grid-template-columns: 235px minmax(0, 1fr) 260px !important;
-  }
+/* Remove the redundant local Board workspace label; the OXSIG rail already
+   identifies the workspace and leaves the title field as the useful context. */
+main[data-oxsig-workspace="boards"] .rounded-xl:has(canvas[aria-label="Storyboard drawing canvas"]) > :first-child > :first-child > :first-child {
+  display: none;
+}
+
+main[data-oxsig-workspace="boards"] .rounded-xl:has(canvas[aria-label="Storyboard drawing canvas"]) > :nth-child(2) > :first-child {
+  gap: .35rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+/* The board is a bounded application viewport. Zooming changes the real canvas
+   size and scrolling stays inside this viewport instead of growing the page. */
+main[data-oxsig-workspace="boards"] .overflow-auto:has(> canvas[aria-label="Storyboard drawing canvas"]) {
+  height: clamp(22rem, 60dvh, 40rem);
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  touch-action: pan-x pan-y;
+}
+
+main[data-oxsig-workspace="boards"] canvas[aria-label="Storyboard drawing canvas"] {
+  max-width: none;
+  flex: 0 0 auto;
 }
 
 @media (max-width: 720px) {
@@ -171,6 +194,10 @@ main[data-oxsig-workspace="live"] button[aria-pressed="true"] {
   .oxsig-rail-title { position: sticky; left: 0; z-index: 1; background: hsl(var(--card) / .96); }
   .oxsig-rail-badges { margin-left: .15rem; }
   .oxsig-terminal-strip { padding-inline: .5rem; }
+
+  main[data-oxsig-workspace="boards"] .overflow-auto:has(> canvas[aria-label="Storyboard drawing canvas"]) {
+    height: clamp(19rem, 54dvh, 30rem);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

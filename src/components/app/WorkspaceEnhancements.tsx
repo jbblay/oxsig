@@ -6,18 +6,19 @@ import {
   ArrowUpRight,
   BookOpen,
   Boxes,
+  Circle,
   Copy,
+  Eraser,
   Grid3X3,
   LibraryBig,
   Magnet,
   MessageCircle,
-  Mic,
+  Minus,
   Pencil,
   RadioTower,
   RotateCcw,
-  Share2,
-  ShieldCheck,
   Sparkles,
+  Square,
   SquareTerminal,
   Users,
 } from 'lucide-react';
@@ -89,15 +90,14 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
         <div className="oxsig-rail-title"><BookOpen className="h-4 w-4" /><span>Board controls</span></div>
         <div className="oxsig-rail-actions">
           <BoardAction shortcut="p" label="Pen" icon={Pencil} />
+          <BoardAction shortcut="e" label="Eraser" icon={Eraser} />
+          <BoardAction shortcut="l" label="Line" icon={Minus} />
           <BoardAction shortcut="a" label="Arrow" icon={ArrowUpRight} />
+          <BoardAction shortcut="r" label="Rectangle" icon={Square} />
+          <BoardAction shortcut="o" label="Ellipse" icon={Circle} />
           <BoardAction shortcut="g" label="Grid" icon={Grid3X3} />
           <BoardAction shortcut="s" label="Snap" icon={Magnet} />
           <BoardAction shortcut="0" label="Fit" icon={RotateCcw} />
-        </div>
-        <div className="oxsig-rail-badges">
-          <span><Mic className="h-3 w-3" /> Voice</span>
-          <span><Share2 className="h-3 w-3" /> Share</span>
-          <span><ShieldCheck className="h-3 w-3" /> Cloud save</span>
         </div>
       </div>
     );
@@ -146,12 +146,11 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
   if (kind === 'live') {
     return (
       <div className="oxsig-workspace-rail mb-2" data-workspace="live">
-        <div className="oxsig-rail-title"><RadioTower className="h-4 w-4" /><span>Live operations</span></div>
+        <div className="oxsig-rail-title"><RadioTower className="h-4 w-4" /><span>Live Workspace</span></div>
         <div className="oxsig-rail-badges">
           <span><RadioTower className="h-3 w-3" /> {liveSummary?.workspaces ?? '—'} workspaces</span>
-          <span><Users className="h-3 w-3" /> Role control</span>
-          <span><SquareTerminal className="h-3 w-3" /> Terminal lease</span>
-          <span><Boxes className="h-3 w-3" /> Attached resources</span>
+          <span><Users className="h-3 w-3" /> Participants</span>
+          <span><Boxes className="h-3 w-3" /> Resources</span>
         </div>
       </div>
     );

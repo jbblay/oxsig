@@ -386,52 +386,53 @@ export default function VaultPage() {
     }
   }
 
+  const closeEditor = () => {
+    if (!canDiscardChanges()) return;
+    const next = blankEditor();
+    setCreating(false);
+    setActiveId(null);
+    setEditor(next);
+    setBaselineEditor(next);
+  };
+
   const editorVisible = creating || !!active;
   const activeKind = editor.kind;
   const ActiveKindIcon = KIND_ICONS[activeKind];
 
   return (
-    <div className="min-h-0">
-      <div className="grid min-h-[calc(100dvh-5rem)] gap-3 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <div className={editorVisible ? 'hidden space-y-4 lg:block' : 'space-y-4'}>
-          <Card>
-            <CardContent className="space-y-3 p-4">
-              <div className="flex flex-col gap-3 md:flex-row">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Vault" className="pl-9" aria-label="Search Vault" />
-                </div>
-                <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as 'all' | VaultKind)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="Filter Vault by type">
-                  <option value="all">All items</option>
-                  {VAULT_KINDS.map((kind) => <option key={kind} value={kind}>{VAULT_KIND_LABELS[kind]}</option>)}
-                </select>
-                <Button variant={pinnedOnly ? 'secondary' : 'outline'} onClick={() => setPinnedOnly((value) => !value)}>
-                  <Pin className="h-4 w-4" /> {pinnedOnly ? 'Pinned only' : 'Pinned'}
-                </Button>
-                <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
-              </div>
-            </CardContent>
-          </Card>
+    <div className="min-h-0 space-y-3">
+      <div className="flex flex-col gap-2 rounded-lg border bg-card/70 p-2 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Vault" className="pl-9" aria-label="Search Vault" />
+        </div>
+        <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as 'all' | VaultKind)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="Filter Vault by type">
+          <option value="all">All items</option>
+          {VAULT_KINDS.map((kind) => <option key={kind} value={kind}>{VAULT_KIND_LABELS[kind]}</option>)}
+        </select>
+        <Button size="sm" variant={pinnedOnly ? 'secondary' : 'outline'} onClick={() => setPinnedOnly((value) => !value)}>
+          <Pin className="h-4 w-4" /> {pinnedOnly ? 'Pinned only' : 'Pinned'}
+        </Button>
+        <Button size="sm" onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
+      </div>
 
+      <div className={editorVisible ? 'grid min-h-0 gap-3 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]' : 'min-h-0'}>
+        <div className={editorVisible ? 'hidden min-h-0 lg:block' : 'min-h-0'}>
           {loading ? (
-            <Card><CardContent className="flex items-center justify-center py-20 text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading Vault…</CardContent></Card>
+            <div className="flex min-h-64 items-center justify-center rounded-lg border text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading Vault…</div>
           ) : loadError ? (
-            <Card className="border-destructive/30">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <LibraryBig className="h-8 w-8 text-muted-foreground/50" />
-                <h2 className="mt-3 font-semibold">Could not load Vault</h2>
-                <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
-                <Button className="mt-4" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Retry</Button>
-              </CardContent>
-            </Card>
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-destructive/30 p-6 text-center">
+              <LibraryBig className="h-8 w-8 text-muted-foreground/50" />
+              <h2 className="mt-3 font-semibold">Could not load Vault</h2>
+              <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
+              <Button className="mt-4" size="sm" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Retry</Button>
+            </div>
           ) : filtered.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted"><Brain className="h-6 w-6" /></div>
-                <h2 className="font-semibold">{items.length === 0 ? 'No items' : 'No matches'}</h2>
-                {items.length === 0 && <Button className="mt-4" onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>}
-              </CardContent>
-            </Card>
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><Brain className="h-5 w-5" /></div>
+              <h2 className="text-sm font-semibold">{items.length === 0 ? 'No items yet' : 'No matches'}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{items.length === 0 ? 'Use New item when you are ready to add knowledge.' : 'Try a different search or filter.'}</p>
+            </div>
           ) : (
             <div className="space-y-2">
               {filtered.map((item) => {
@@ -439,21 +440,21 @@ export default function VaultPage() {
                 const snippet = firstUsefulLine(item);
                 const selected = activeId === item.id;
                 return (
-                  <button key={item.id} type="button" aria-pressed={selected} onClick={() => selectItem(item)} className={`group rounded-xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${selected ? 'border-primary/60 bg-primary/5 shadow-sm' : 'bg-card'}`}>
+                  <button key={item.id} type="button" aria-pressed={selected} onClick={() => selectItem(item)} className={`group w-full rounded-lg border p-3 text-left transition-colors ${selected ? 'border-primary/50 bg-primary/5' : 'bg-card hover:bg-muted/30'}`}>
                     <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground group-hover:bg-primary/10 group-hover:text-primary"><Icon className="h-4 w-4" /></div>
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground group-hover:bg-primary/10 group-hover:text-primary"><Icon className="h-4 w-4" /></div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-[10px] font-normal">{VAULT_KIND_LABELS[item.kind]}</Badge>
                           {item.pinned && <Pin className="h-3 w-3 text-primary" />}
                           <span className="ml-auto text-[10px] text-muted-foreground">{relativeDate(item.updatedAt)}</span>
                         </div>
-                        <h3 className="mt-2 truncate font-semibold">{item.title}</h3>
+                        <h3 className="mt-1.5 truncate text-sm font-semibold">{item.title}</h3>
                         {item.summary && <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.summary}</p>}
-                        {snippet && <div className="mt-3 truncate rounded-md bg-muted/60 px-2.5 py-2 font-mono text-[11px] text-muted-foreground">{snippet}</div>}
-                        {item.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-[9px] text-muted-foreground">#{tag}</span>)}</div>}
+                        {snippet && <div className="mt-2 truncate rounded-md bg-muted/60 px-2 py-1.5 font-mono text-[10px] text-muted-foreground">{snippet}</div>}
+                        {item.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-[9px] text-muted-foreground">#{tag}</span>)}</div>}
                       </div>
-                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
                     </div>
                   </button>
                 );
@@ -462,42 +463,22 @@ export default function VaultPage() {
           )}
         </div>
 
-        <div className={editorVisible ? 'lg:sticky lg:top-20 lg:self-start' : 'hidden lg:block lg:sticky lg:top-20 lg:self-start'}>
-          {editorVisible && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="mb-2 lg:hidden"
-              onClick={() => {
-                if (!canDiscardChanges()) return;
-                const next = blankEditor();
-                setCreating(false);
-                setActiveId(null);
-                setEditor(next);
-                setBaselineEditor(next);
-              }}
-            >
-              Back
-            </Button>
-          )}
-          {!editorVisible ? (
-            <Card className="overflow-hidden">
-              <CardContent className="flex min-h-[360px] items-center justify-center p-6">
-                <Button onClick={() => startCreate('command')}><Plus className="h-4 w-4" /> New item</Button>
-              </CardContent>
-            </Card>
-          ) : (
+        {editorVisible && (
+          <div className="min-w-0 lg:sticky lg:top-0 lg:self-start">
+            <Button type="button" size="sm" variant="ghost" className="mb-2 lg:hidden" onClick={closeEditor}>Back</Button>
             <Card className="overflow-hidden shadow-sm">
               <CardHeader className="border-b bg-muted/20">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-primary"><ActiveKindIcon className="h-5 w-5" /></div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><ActiveKindIcon className="h-5 w-5" /></div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2"><CardTitle className="truncate text-lg">{creating ? 'New item' : active?.title}</CardTitle>{dirty && <Badge variant="outline" className="text-[9px]">Unsaved</Badge>}</div>
                     </div>
                   </div>
-                  {!creating && active && <Button size="icon" variant="ghost" disabled={saving} onClick={() => void togglePin(active)} title={active.pinned ? 'Unpin' : 'Pin'} aria-label={active.pinned ? 'Unpin Vault item' : 'Pin Vault item'}>{active.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
+                  <div className="flex items-center gap-1">
+                    {!creating && active && <Button size="icon" variant="ghost" disabled={saving} onClick={() => void togglePin(active)} title={active.pinned ? 'Unpin' : 'Pin'} aria-label={active.pinned ? 'Unpin Vault item' : 'Pin Vault item'}>{active.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
+                    <Button size="sm" variant="ghost" onClick={closeEditor} disabled={saving}>Close</Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 p-4">
@@ -512,7 +493,7 @@ export default function VaultPage() {
 
                 <div className="flex flex-wrap gap-2 border-t pt-4">
                   {creating ? <Button onClick={() => void createItem()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button> : <Button onClick={() => void saveActive()} disabled={saving || !editor.title.trim() || !dirty}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button>}
-                  <Button variant="outline" onClick={cancelEditor} disabled={saving}>{dirty ? 'Discard' : 'Cancel'}</Button>
+                  <Button variant="outline" onClick={cancelEditor} disabled={saving}>{dirty ? 'Discard' : 'Reset'}</Button>
                 </div>
 
                 {!creating && active && (
@@ -532,8 +513,8 @@ export default function VaultPage() {
                 )}
               </CardContent>
             </Card>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

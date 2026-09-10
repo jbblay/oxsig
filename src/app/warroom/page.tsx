@@ -64,16 +64,7 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
                 <OperationTopologyPreview nodes={selected.topologyNodes} />
               </div>
 
-              <div className="rounded-xl border border-dashed p-4">
-                <div className="flex items-start gap-3">
-                  <UsersRound className="mt-0.5 h-5 w-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-semibold">Start the team Operation here</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">OXSIG provisions the same Black Domain topology used by Cyber Lab, then durably links a Live Workspace team layer. The host operator lab is attached automatically; teammates can contribute their own Cyber Labs without transferring ownership.</p>
-                  </div>
-                </div>
-                <OperationLaunchButton slug={selected.slug} mode="warroom" label="Start team Operation" className="mt-4" />
-              </div>
+              <OperationLaunchButton slug={selected.slug} mode="warroom" label="Start team Operation" />
             </CardContent>
           </Card>
 
