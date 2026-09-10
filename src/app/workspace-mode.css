@@ -1,10 +1,21 @@
-/* Workspace routes open directly into the tool. Page components own their
-   action-first structure; this file only supplies shared workspace geometry. */
+/* Workspace routes open directly into the tool. AppShell owns the shared
+   content canvas; page components own their action-first structure. */
 
 main[data-oxsig-workspace] {
-  max-width: none;
   min-height: 0;
   overflow-x: hidden;
+}
+
+main[data-oxsig-content-mode="standard"] {
+  width: 100%;
+  max-width: 80rem;
+  margin-inline: auto;
+}
+
+main[data-oxsig-content-mode="wide"],
+main[data-oxsig-content-mode="immersive"] {
+  width: 100%;
+  max-width: none;
 }
 
 main[data-oxsig-workspace] > * {
@@ -24,10 +35,28 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail {
 }
 
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1 1 0%;
   flex-direction: column;
+}
+
+/* The old page-level New session button remains as the behavior hook for the
+   compact workspace-rail action, but no longer consumes layout space. */
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .flex.justify-end {
+  display: none;
+}
+
+/* Session creation is a temporary overlay, so opening it does not push the
+   conversation surface down or move the composer out of view. */
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .flex.justify-end + .rounded-xl {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 45;
+  width: min(28rem, calc(100% - 1rem));
+  box-shadow: 0 18px 50px rgb(2 6 23 / 0.24);
 }
 
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid {
@@ -45,5 +74,11 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .grid > sect
   main[data-oxsig-workspace] {
     padding-left: 0.375rem;
     padding-right: 0.375rem;
+  }
+
+  main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > .flex.justify-end + .rounded-xl {
+    top: 0.375rem;
+    right: 0.375rem;
+    width: calc(100% - 0.75rem);
   }
 }
