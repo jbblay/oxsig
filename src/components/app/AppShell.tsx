@@ -77,9 +77,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const workspaceMain = workspaceKind !== null;
 
   return (
-    <div className="oxsig-app-background min-h-screen">
+    <div className={workspaceMain ? 'oxsig-app-background h-dvh overflow-hidden' : 'oxsig-app-background min-h-screen'}>
       <WorkspaceActivitySync />
-      <div className="flex min-h-screen w-full">
+      <div className={workspaceMain ? 'flex h-full min-h-0 w-full' : 'flex min-h-screen w-full'}>
         <AppSidebar
           collapsed={effectiveSidebarCollapsed}
           onToggle={() => {
@@ -89,12 +89,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           mobileOpen={mobileNavOpen}
           onMobileClose={() => setMobileNavOpen(false)}
         />
-        <div className="min-w-0 flex-1">
+        <div className={workspaceMain ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden' : 'min-w-0 flex-1'}>
           <AppHeader onOpenMobileNav={() => setMobileNavOpen(true)} />
           <main
             data-oxsig-workspace={workspaceKind || undefined}
             className={workspaceMain
-              ? 'w-full min-w-0 px-2 py-2 sm:px-3 sm:py-3'
+              ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${workspaceKind === 'collab' ? 'overflow-hidden' : 'overflow-y-auto'}`
               : 'mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
             {workspaceKind && <WorkspaceEnhancements kind={workspaceKind} />}
