@@ -12,7 +12,6 @@ import {
   FileCheck2,
   LibraryBig,
   MessageCircle,
-  PanelsTopLeft,
   RadioTower,
   ShieldCheck,
   Sparkles,
@@ -21,11 +20,12 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PublicSiteFooter, PublicSiteHeader } from './PublicSiteChrome';
 import styles from './landing.module.css';
 
 const journey = [
   { name: 'Choose', sub: 'Operation', icon: Crosshair, color: '#fb7185' },
-  { name: 'Run', sub: 'Cyber Lab', icon: Terminal, color: '#22d3ee' },
+  { name: 'Run', sub: 'Real environment', icon: Terminal, color: '#22d3ee' },
   { name: 'Coordinate', sub: 'WarRoom', icon: Swords, color: '#f87171' },
   { name: 'Prove', sub: 'Evidence', icon: FileCheck2, color: '#4ade80' },
   { name: 'Retain', sub: 'Vault', icon: LibraryBig, color: '#fbbf24' },
@@ -40,33 +40,33 @@ const capabilities = [
   },
   {
     title: 'Cyber Lab + AI',
-    note: 'Real terminal/desktop surfaces with lab-aware guidance.',
+    note: 'Real terminal/desktop surfaces with lab-aware guidance and supported authorized actions.',
     icon: Terminal,
     color: '#22d3ee',
   },
   {
     title: 'Live + Collaborate',
-    note: 'People, resources, roles, presence and authorized control.',
+    note: 'People, resources, roles, presence and shared technical work.',
     icon: RadioTower,
     color: '#4ade80',
   },
   {
     title: 'Boards + Vault + Resources',
-    note: 'Explain visually, preserve knowledge, manage what you own.',
+    note: 'Explain visually, preserve evidence and manage what you own.',
     icon: BookOpen,
     color: '#a78bfa',
   },
 ] as const;
 
 const surfaces = [
-  { label: 'Operations', icon: Crosshair, color: '#fb7185' },
-  { label: 'WarRoom', icon: Swords, color: '#f87171' },
-  { label: 'Cyber Lab', icon: Terminal, color: '#22d3ee' },
+  { label: 'Active Directory', icon: Crosshair, color: '#a78bfa' },
+  { label: 'Linux', icon: Terminal, color: '#4ade80' },
+  { label: 'Cybersecurity', icon: ShieldCheck, color: '#fb7185' },
+  { label: 'Cloud', icon: Boxes, color: '#60a5fa' },
+  { label: 'Operations', icon: Swords, color: '#f87171' },
   { label: 'Live', icon: RadioTower, color: '#4ade80' },
   { label: 'Collaborate', icon: MessageCircle, color: '#c084fc' },
-  { label: 'Boards', icon: BookOpen, color: '#fb923c' },
   { label: 'Vault', icon: LibraryBig, color: '#fbbf24' },
-  { label: 'Resources', icon: Boxes, color: '#60a5fa' },
 ] as const;
 
 function customColor(name: string, value: string): CSSProperties {
@@ -76,37 +76,28 @@ function customColor(name: string, value: string): CSSProperties {
 export default function ClerkEntry() {
   return (
     <main className={styles.page}>
-      <header className={styles.nav}>
-        <Link href="/" className={styles.brand} aria-label="Oxsig home">
-          <span className={styles.brandMark}><PanelsTopLeft className="h-4 w-4" aria-hidden="true" /></span>
-          <span>OXSIG</span>
-        </Link>
-        <div className="ml-auto flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm" className="text-slate-300 hover:bg-white/[0.06] hover:text-white"><Link href="/sign-in">Log in</Link></Button>
-          <Button asChild size="sm" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href="/sign-up">Sign up</Link></Button>
-        </div>
-      </header>
+      <PublicSiteHeader />
 
       <section className={styles.hero}>
         <div>
-          <div className={styles.eyebrow}><Sparkles className="h-3.5 w-3.5" /> Cyber operations workspace</div>
+          <div className={styles.eyebrow}><Sparkles className="h-3.5 w-3.5" /> Real technical environments</div>
           <h1 className={styles.heroTitle}>
-            Build. Operate. <span className={styles.heroTitleAccent}>Prove.</span>
+            Launch. Operate. <span className={styles.heroTitleAccent}>Prove.</span>
           </h1>
           <p className={styles.heroCopy}>
-            One workspace for cyber missions, real labs, team execution, visual reasoning and evidence-backed progress.
+            Learn infrastructure by operating it. Explore Active Directory, Linux, cloud and security missions, then work in real environments with AI or a team. Create an account when you want live infrastructure and persistence.
           </p>
           <div className={styles.actions}>
             <Button asChild size="lg" className="h-11 bg-cyan-400 px-5 text-slate-950 hover:bg-cyan-300">
-              <Link href="/sign-up">Enter OXSIG <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link href="/explore">Try OXSIG <ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="h-11 border-white/15 bg-white/[0.03] px-5 text-slate-100 hover:bg-white/[0.08] hover:text-white">
-              <Link href="/home?guest=1">Explore as guest</Link>
+              <Link href="/operations">Browse missions</Link>
             </Button>
           </div>
           <div className={styles.trust}>
             <span><Check className="h-3.5 w-3.5 text-emerald-400" /> Explore before signup</span>
-            <span><ShieldCheck className="h-3.5 w-3.5 text-cyan-300" /> Sign in when you need persistence</span>
+            <span><ShieldCheck className="h-3.5 w-3.5 text-cyan-300" /> Protected actions stay authenticated</span>
           </div>
         </div>
 
@@ -177,10 +168,10 @@ export default function ClerkEntry() {
       <section className={styles.story}>
         <div className={styles.storyHead}>
           <div>
-            <p className={styles.sectionEyebrow}>One system // distinct workspaces</p>
-            <h2 className={styles.storyTitle}>See the workflow before reading about it.</h2>
+            <p className={styles.sectionEyebrow}>Experience first // account when useful</p>
+            <h2 className={styles.storyTitle}>See what you can actually do before we ask you to stay.</h2>
           </div>
-          <p className={styles.storyHint}>Every surface has a job, a visual identity and a handoff to the next step.</p>
+          <p className={styles.storyHint}>Browse mission dossiers and product previews without an account. Identity becomes useful when you provision live resources, collaborate persistently or keep evidence.</p>
         </div>
 
         <div className={styles.capabilityGrid}>
@@ -196,7 +187,7 @@ export default function ClerkEntry() {
           })}
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="OXSIG workspaces">
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="OXSIG learning and platform surfaces">
           {surfaces.map((surface) => {
             const Icon = surface.icon;
             return (
@@ -210,14 +201,16 @@ export default function ClerkEntry() {
 
       <section className={styles.footerCta}>
         <div>
-          <strong>Choose a mission. Build the environment. Keep the proof.</strong>
-          <p>Guest mode for exploration; accounts unlock persistence and protected actions.</p>
+          <strong>Try the product before the account.</strong>
+          <p>Hear an operator briefing, inspect an Active Directory topology and preview the workflow. Sign up when you are ready to provision the real environment.</p>
         </div>
         <div className="flex gap-2 md:ml-auto">
-          <Button asChild variant="outline" size="sm" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white"><Link href="/home?guest=1">Explore</Link></Button>
+          <Button asChild variant="outline" size="sm" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white"><Link href="/explore">Explore</Link></Button>
           <Button asChild size="sm" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href="/sign-up">Create account</Link></Button>
         </div>
       </section>
+
+      <PublicSiteFooter />
     </main>
   );
 }
