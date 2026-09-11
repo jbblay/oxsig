@@ -41,6 +41,18 @@ type SurfaceConfig = {
   showFlow?: boolean;
 };
 
+const SURFACE_PATH: Record<GuestSurface, string> = {
+  academy: '/academy',
+  warroom: '/warroom',
+  labs: '/labs',
+  collaboration: '/collab',
+  live: '/live',
+  boards: '/collab/storyboards',
+  vault: '/vault',
+  resources: '/manage',
+  account: '/account',
+};
+
 const SURFACES: Record<GuestSurface, SurfaceConfig> = {
   academy: {
     title: 'Academy',
@@ -166,7 +178,7 @@ const SURFACES: Record<GuestSurface, SurfaceConfig> = {
 export default function GuestProductSurface({ surface }: { surface: GuestSurface }) {
   const config = SURFACES[surface];
   const Icon = config.icon;
-  const returnTo = surface === 'account' ? '/account' : `/${surface === 'collaboration' ? 'collab' : surface === 'resources' ? 'manage' : surface}`;
+  const returnTo = SURFACE_PATH[surface];
   const signInHref = authPathWithReturnTo('/sign-in', returnTo);
   const signUpHref = authPathWithReturnTo('/sign-up', returnTo);
 
