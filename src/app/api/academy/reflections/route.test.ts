@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getAcademyUnderstandingForReflection: vi.fn(),
   releaseAcademyReflectionClaim: vi.fn(),
   evaluateAcademyReflection: vi.fn(),
+  reconcileActiveCuratedPath: vi.fn(),
 }));
 
 vi.mock('server-only', () => ({}));
@@ -32,6 +33,9 @@ vi.mock('@/lib/academy/reflections', () => ({
   completeAcademyReflection: mocks.completeAcademyReflection,
   getAcademyUnderstandingForReflection: mocks.getAcademyUnderstandingForReflection,
   releaseAcademyReflectionClaim: mocks.releaseAcademyReflectionClaim,
+}));
+vi.mock('@/lib/learning/curated-progression', () => ({
+  reconcileActiveCuratedPath: mocks.reconcileActiveCuratedPath,
 }));
 
 import { POST } from './route';
@@ -119,6 +123,7 @@ describe('Academy learning reflections API', () => {
     });
     mocks.getAcademyUnderstandingForReflection.mockResolvedValue(understanding);
     mocks.releaseAcademyReflectionClaim.mockResolvedValue(undefined);
+    mocks.reconcileActiveCuratedPath.mockResolvedValue(null);
   });
 
   it('keeps authentication as the outer boundary', async () => {
@@ -152,6 +157,7 @@ describe('Academy learning reflections API', () => {
       prediction: 'I expect kernel details.',
     });
     expect(body.reflection.id).toBe(reflectionId);
+    expect(mocks.reconcileActiveCuratedPath).not.toHaveBeenCalled();
   });
 
   it('rejects reflection payloads that try to resubmit terminal output', async () => {
@@ -198,6 +204,7 @@ describe('Academy learning reflections API', () => {
       model: 'test-model',
       evaluation: reflectionEvaluation,
     }));
+    expect(mocks.reconcileActiveCuratedPath).toHaveBeenCalledWith(user.id);
     expect(body.understanding.score).toBe(44);
   });
 
@@ -218,6 +225,7 @@ describe('Academy learning reflections API', () => {
     expect(body.replayed).toBe(true);
     expect(body.understanding).toEqual(understanding);
     expect(mocks.getAcademyUnderstandingForReflection).toHaveBeenCalledWith(user.id, reflectionId);
+    expect(mocks.reconcileActiveCuratedPath).toHaveBeenCalledWith(user.id);
     expect(mocks.evaluateAcademyReflection).not.toHaveBeenCalled();
     expect(mocks.completeAcademyReflection).not.toHaveBeenCalled();
   });
@@ -238,6 +246,7 @@ describe('Academy learning reflections API', () => {
       reflectionId,
       evidenceId,
     });
+    expect(mocks.reconcileActiveCuratedPath).not.toHaveBeenCalled();
     expect(mocks.completeAcademyReflection).not.toHaveBeenCalled();
   });
 });
