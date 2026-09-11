@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/nextjs';
+import { normalizeSentryDsn } from './lib/observability/sentry-dsn';
 
-const dsn = String(process.env.NEXT_PUBLIC_SENTRY_DSN || '').trim();
+const dsn = normalizeSentryDsn(process.env.NEXT_PUBLIC_SENTRY_DSN);
 
 if (dsn) {
   Sentry.init({
