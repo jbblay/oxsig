@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   provisionOperationRun: vi.fn(),
 }));
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/operations/runtime', () => ({
   provisionOperationRun: mocks.provisionOperationRun,
   OperationRuntimeError: class OperationRuntimeError extends Error {
