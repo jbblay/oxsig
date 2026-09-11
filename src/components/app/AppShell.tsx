@@ -1,10 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
 import { useAuth } from '@/lib/auth/use-auth';
-import { isGuestPublicNavigationPath } from '@/lib/navigation/product-navigation';
 import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
@@ -32,10 +31,8 @@ function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const bare = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up') || pathname.startsWith('/explore');
-  const guestBlocked = !bare && !authLoading && !isAuthenticated && !isGuestPublicNavigationPath(pathname);
   const workspaceKind = workspaceKindFor(pathname);
   const contentMode = contentModeFor(workspaceKind);
   const immersiveWorkspace = contentMode === 'immersive';
@@ -64,16 +61,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     setMobileNavOpen(false);
     setImmersiveExpanded(false);
-    if (!bare && !guestBlocked && lastRecordedPathRef.current !== pathname) {
+    if (!bare && lastRecordedPathRef.current !== pathname) {
       lastRecordedPathRef.current = pathname;
       recordWorkspaceVisit(pathname);
     }
-  }, [bare, guestBlocked, pathname]);
-
-  React.useEffect(() => {
-    if (!guestBlocked) return;
-    router.replace('/home');
-  }, [guestBlocked, router]);
+  }, [bare, pathname]);
 
   React.useEffect(() => {
     if (!mobileNavOpen || typeof document === 'undefined') return;
@@ -90,17 +82,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [mobileNavOpen]);
 
   if (bare) return <>{children}</>;
-
-  if (guestBlocked) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-slate-950 px-6 text-center text-slate-300">
-        <div>
-          <p className="text-sm font-semibold text-slate-100">Returning to the guest dashboard…</p>
-          <p className="mt-1 text-xs text-slate-500">Guests can browse the dashboard, Operations catalogue and mission dossiers.</p>
-        </div>
-      </div>
-    );
-  }
 
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
   const workspaceMain = workspaceKind !== null;
