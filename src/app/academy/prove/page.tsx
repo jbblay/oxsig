@@ -15,6 +15,7 @@ type Capability = {
   title: string;
   outcome: string;
   evidenceRequirement: string;
+  practiceLabel: string;
   order: number;
   status: 'not_started' | 'in_progress' | 'demonstrated';
   evidence: {
@@ -26,8 +27,8 @@ type Capability = {
 };
 
 type PathState = {
-  path: { title: string; description: string };
-  enrollment: null | { recommendedCapabilityId: string | null };
+  path: { id: string; version: number; title: string; description: string };
+  enrollment: null | { status: string; recommendedCapabilityId: string | null };
   demonstratedCount: number;
   totalCapabilities: number;
   capabilities: Capability[];
@@ -44,8 +45,9 @@ type AssessmentResult = {
   nextStep: string | null;
 };
 
-export default function ProgramProcessProvePage() {
+export default function CuratedCapabilityProvePage() {
   const [state, setState] = React.useState<PathState | null>(null);
+  const [loaded, setLoaded] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [explanation, setExplanation] = React.useState('');
   const [busy, setBusy] = React.useState<'load' | 'assess' | null>('load');
@@ -54,14 +56,23 @@ export default function ProgramProcessProvePage() {
   const load = React.useCallback(async () => {
     setBusy('load');
     try {
-      const response = await fetch('/api/learning/program-process', { cache: 'no-store' });
+      const response = await fetch('/api/learning/paths', { cache: 'no-store' });
       if (!response.ok) throw new Error('OXSIG could not load your capability evidence');
-      const body = await response.json() as { state: PathState };
-      setState(body.state);
-      setSelectedId((current) => current || body.state.enrollment?.recommendedCapabilityId || body.state.capabilities.find((capability) => capability.status !== 'demonstrated')?.id || body.state.capabilities[0]?.id || null);
+      const body = await response.json() as { paths?: PathState[] };
+      const active = (body.paths || []).find((path) => path.enrollment?.status === 'active') || null;
+      setState(active);
+      setSelectedId((current) => {
+        if (!active) return null;
+        if (current && active.capabilities.some((capability) => capability.id === current)) return current;
+        return active.enrollment?.recommendedCapabilityId
+          || active.capabilities.find((capability) => capability.status !== 'demonstrated')?.id
+          || active.capabilities[0]?.id
+          || null;
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Capability evidence could not be loaded');
     } finally {
+      setLoaded(true);
       setBusy(null);
     }
   }, []);
@@ -69,12 +80,12 @@ export default function ProgramProcessProvePage() {
   React.useEffect(() => { void load(); }, [load]);
 
   async function assess() {
-    if (!selectedId || explanation.trim().length < 20) return;
+    if (!state || !selectedId || explanation.trim().length < 20) return;
     setBusy('assess');
     setResult(null);
     try {
       const token = await getCsrfToken();
-      const response = await fetch('/api/learning/program-process/assessment', {
+      const response = await fetch(`/api/learning/paths/${encodeURIComponent(state.path.id)}/assessment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
         body: JSON.stringify({ capabilityId: selectedId, explanation: explanation.trim() }),
@@ -96,20 +107,29 @@ export default function ProgramProcessProvePage() {
     }
   }
 
-  if (busy === 'load' && !state) {
+  if (!loaded && busy === 'load') {
     return <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading capability evidence…</div>;
   }
 
-  if (!state) return null;
-  const selected = state.capabilities.find((capability) => capability.id === selectedId) || state.capabilities[0];
-
-  if (!state.enrollment) {
+  if (!state) {
     return (
       <div className="mx-auto max-w-3xl py-8">
-        <Card><CardHeader><CardTitle>Start the learning journey first</CardTitle><CardDescription>Assessment evidence belongs to an enrolled capability journey. Starting a journey does not assume any progress.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/academy"><ArrowLeft className="h-4 w-4" /> Open Academy</Link></Button></CardContent></Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Start a learning journey first</CardTitle>
+            <CardDescription>Assessment evidence belongs to an active curated capability journey. Starting a journey does not assume any progress.</CardDescription>
+          </CardHeader>
+          <CardContent><Button asChild><Link href="/academy/paths"><ArrowLeft className="h-4 w-4" /> Choose learning path</Link></Button></CardContent>
+        </Card>
       </div>
     );
   }
+
+  const selected = state.capabilities.find((capability) => capability.id === selectedId) || state.capabilities[0];
+  const isActiveDirectory = state.path.id === 'active-directory-operations';
+  const practiceHref = isActiveDirectory && selected
+    ? `/operations?operation=black-domain&capability=${encodeURIComponent(selected.id)}`
+    : '/academy';
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 py-6">
@@ -119,7 +139,7 @@ export default function ProgramProcessProvePage() {
       </div>
 
       <section className="overflow-hidden rounded-3xl border bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.14),transparent_36%),linear-gradient(145deg,hsl(var(--background)),hsl(var(--muted)/0.24))] p-6 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Prove what you know</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{state.path.title} · Prove what you know</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Skip teaching only when the evidence says you can.</h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">This route is for learners who already understand a capability. OXSIG will not accept a text-only claim: you must first pass the real practical checkpoint, then explain the mechanism and connect it to what the lab actually showed.</p>
         <p className="mt-4 text-sm font-medium">{state.demonstratedCount}/{state.totalCapabilities} capabilities currently demonstrated</p>
@@ -154,15 +174,15 @@ export default function ProgramProcessProvePage() {
                 {!selected.evidence.practiceDemonstrated ? (
                   <div className="rounded-2xl border border-dashed p-5">
                     <p className="font-semibold">First prove it in the lab</p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">There is no passed practical evidence for this capability yet. Complete the real Academy checkpoint first; OXSIG will not substitute a written answer for hands-on evidence.</p>
-                    <div className="mt-4 flex flex-wrap gap-2"><Button asChild><Link href="/academy"><BrainCircuit className="h-4 w-4" /> Open capability in Academy</Link></Button><Button variant="outline" asChild><Link href="/labs"><TerminalSquare className="h-4 w-4" /> Open Cyber Lab</Link></Button></div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">There is no passed practical evidence for this capability yet. Complete the real checkpoint first; OXSIG will not substitute a written answer for hands-on evidence.</p>
+                    <div className="mt-4 flex flex-wrap gap-2"><Button asChild><Link href={practiceHref}><BrainCircuit className="h-4 w-4" /> Open capability practice</Link></Button><Button variant="outline" asChild><Link href="/labs"><TerminalSquare className="h-4 w-4" /> Open Cyber Lab</Link></Button></div>
                   </div>
                 ) : selected.status === 'demonstrated' ? (
                   <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5"><p className="flex items-center gap-2 font-semibold text-emerald-700"><CheckCircle2 className="h-5 w-5" /> This capability is already demonstrated</p><p className="mt-2 text-sm text-muted-foreground">You do not need to repeat the assessment unless you want to review the concept in Academy.</p></div>
                 ) : (
                   <div className="space-y-4">
                     <div><p className="text-sm font-semibold">Explain it from your own mental model</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Describe the mechanism, what the practical evidence showed, and why that evidence supports your explanation. Avoid simply repeating command output.</p></div>
-                    <Textarea value={explanation} onChange={(event) => setExplanation(event.target.value.slice(0, 5000))} className="min-h-[180px] resize-y" placeholder="For example: fork creates... The lab showed... This means..." disabled={busy === 'assess'} />
+                    <Textarea value={explanation} onChange={(event) => setExplanation(event.target.value.slice(0, 5000))} className="min-h-[180px] resize-y" placeholder="Explain the mechanism, the evidence you observed, and what that evidence proves." disabled={busy === 'assess'} />
                     <div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Passing threshold: 85%. A failed attempt does not advance progress.</p><Button onClick={() => void assess()} disabled={busy === 'assess' || explanation.trim().length < 20}>{busy === 'assess' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}{busy === 'assess' ? 'Evaluating…' : 'Evaluate my capability'}</Button></div>
                   </div>
                 )}
@@ -172,7 +192,7 @@ export default function ProgramProcessProvePage() {
             {result && (
               <Card className={result.result === 'demonstrated' ? 'border-emerald-500/30' : 'border-amber-500/30'}>
                 <CardHeader><div className="flex items-center justify-between gap-3"><CardTitle className="text-lg">Assessment result</CardTitle><Badge variant={result.result === 'demonstrated' ? 'default' : 'outline'}>{result.score}% · {result.result === 'demonstrated' ? 'Demonstrated' : 'Developing'}</Badge></div></CardHeader>
-                <CardContent className="space-y-4"><p className="text-sm leading-6">{result.feedback}</p><div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs font-semibold">Connection to real evidence</p><p className="mt-2 text-sm leading-6 text-muted-foreground">{result.evidenceConnection}</p></div>{result.misconceptions.length > 0 && <div><p className="text-xs font-semibold">Misconceptions to correct</p><div className="mt-2 space-y-2">{result.misconceptions.map((item) => <p key={item} className="rounded-xl border p-3 text-sm text-muted-foreground">{item}</p>)}</div></div>}{result.nextStep && <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Next step:</span> {result.nextStep}</p>}{result.result === 'demonstrated' && <Button asChild><Link href="/home">Return to roadmap <ArrowRight className="h-4 w-4" /></Link></Button>}</CardContent>
+                <CardContent className="space-y-4"><p className="text-sm leading-6">{result.feedback}</p><div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs font-semibold">Connection to real evidence</p><p className="mt-2 text-sm leading-6 text-muted-foreground">{result.evidenceConnection}</p></div>{result.misconceptions.length > 0 && <div><p className="text-xs font-semibold">Misconceptions to correct</p><div className="mt-2 space-y-2">{result.misconceptions.map((item) => <p key={item} className="rounded-xl border p-3 text-sm text-muted-foreground">{item}</p>)}</div></div>}{result.nextStep && <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Next step:</span> {result.nextStep}</p>}{result.result === 'demonstrated' && <Button asChild><Link href="/academy/paths">Return to capability map <ArrowRight className="h-4 w-4" /></Link></Button>}</CardContent>
               </Card>
             )}
           </main>

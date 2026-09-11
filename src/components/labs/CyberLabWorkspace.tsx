@@ -18,6 +18,7 @@ import OperationTopologyBuild from '@/components/operations/OperationTopologyBui
 import { OperationIcon } from '@/components/operations/OperationVisuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { getOperationLearningFocus } from '@/lib/learning/operation-focus';
 import type { OperationAiRuntimeContext } from '@/lib/operations/ai-context';
 import { getOperation } from '@/lib/operations/catalog';
 
@@ -44,10 +45,12 @@ export default function CyberLabWorkspace({
   operationSlug,
   operationMode,
   operationRunId,
+  learningCapabilityId,
 }: {
   operationSlug?: string;
   operationMode?: string;
   operationRunId?: string;
+  learningCapabilityId?: string;
 }) {
   const [mode, setMode] = React.useState<WorkspaceMode>('runtime');
   const [designerMounted, setDesignerMounted] = React.useState(false);
@@ -58,6 +61,8 @@ export default function CyberLabWorkspace({
   const [accessPathMounted, setAccessPathMounted] = React.useState(false);
   const [operationAiContext, setOperationAiContext] = React.useState<OperationAiRuntimeContext | null>(null);
   const operation = operationSlug ? getOperation(operationSlug) : null;
+  const learningFocus = getOperationLearningFocus(operationSlug, learningCapabilityId);
+  const focusedObjectives = learningFocus?.objectives || operation?.objectives || [];
   const activeBlackDomain = Boolean(operationRunId && operationSlug === 'black-domain');
 
   React.useEffect(() => {
@@ -74,7 +79,7 @@ export default function CyberLabWorkspace({
 
   React.useEffect(() => {
     setOperationAiContext(null);
-  }, [operationRunId, operationSlug]);
+  }, [operationRunId, operationSlug, learningCapabilityId]);
 
   const selectMode = (next: WorkspaceMode) => {
     if (next === 'designer') setDesignerMounted(true);
@@ -130,11 +135,12 @@ export default function CyberLabWorkspace({
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate text-xs font-semibold">{operation.codename}</p>
               {operationMode && <Badge variant="outline" className="h-5 text-[9px] capitalize">{operationMode}</Badge>}
+              {learningFocus && <Badge variant="secondary" className="h-5 text-[9px]">{learningFocus.capabilityTitle}</Badge>}
             </div>
-            <p className="truncate text-[10px] text-muted-foreground">{operation.topology.join(' → ')}</p>
+            <p className="truncate text-[10px] text-muted-foreground">{learningFocus ? `${learningFocus.pathTitle} · ${learningFocus.practiceLabel}` : operation.topology.join(' → ')}</p>
           </div>
           <div className="hidden max-w-sm flex-wrap gap-1.5 lg:flex">
-            {operation.objectives.slice(0, 3).map((objective, index) => (
+            {focusedObjectives.slice(0, 3).map((objective, index) => (
               <Badge key={objective} variant="secondary" className="h-5 text-[9px]">{index + 1}. {objective}</Badge>
             ))}
           </div>
@@ -161,15 +167,15 @@ export default function CyberLabWorkspace({
       {operation && operationSlug && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-3 py-2 shadow-sm">
           <div className="min-w-0">
-            <p className="text-xs font-semibold">Adaptive learning workspace</p>
-            <p className="text-[10px] text-muted-foreground">Ask concepts before starting a machine, learn with voice and diagrams, or connect the same Instructor to live Operation evidence.</p>
+            <p className="text-xs font-semibold">{learningFocus ? `Adaptive Instructor · ${learningFocus.capabilityTitle}` : 'Adaptive learning workspace'}</p>
+            <p className="text-[10px] text-muted-foreground">{learningFocus ? `Instructor guidance is constrained to this capability and its live Operation evidence target.` : 'Ask concepts before starting a machine, learn with voice and diagrams, or connect the same Instructor to live Operation evidence.'}</p>
           </div>
           <OperationAiInstructor
             runId={operationAiContext?.runId || operationRunId || null}
             operationSlug={operationSlug}
-            operationLabel={operation.codename}
+            operationLabel={learningFocus ? `${operation.codename} · ${learningFocus.capabilityTitle}` : operation.codename}
             operationMode={operationAiContext?.operationMode || operationMode || null}
-            objectives={operation.objectives}
+            objectives={focusedObjectives}
             nodes={operationAiContext?.nodes || []}
             selectedNode={operationAiContext?.selectedNode || null}
           />
