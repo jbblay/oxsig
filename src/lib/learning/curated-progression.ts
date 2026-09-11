@@ -18,6 +18,29 @@ export type ReconciledCuratedProgress = {
   completed: boolean;
 };
 
+async function alignAcademyResumePosition(
+  ownerId: string,
+  path: CuratedLearningPath,
+  capabilityId: string | null,
+) {
+  if (!capabilityId) return;
+  const nextIndex = path.capabilities.findIndex((capability) => capability.id === capabilityId);
+  if (nextIndex < 0) return;
+
+  await getPool().query(
+    `UPDATE academy_progress progress
+        SET active_lesson_index=$1, updated_at=NOW()
+       FROM academy_courses course
+      WHERE progress.course_id=course.id
+        AND progress.owner_id=course.owner_id
+        AND course.owner_id=$2
+        AND course.status='active'
+        AND course.source_prompt=$3
+        AND progress.active_lesson_index IS DISTINCT FROM $1`,
+    [nextIndex, ownerId, path.sourcePrompt],
+  );
+}
+
 export async function reconcileCuratedPathEnrollment(
   ownerId: string,
   path: CuratedLearningPath,
@@ -68,6 +91,7 @@ export async function reconcileCuratedPathEnrollment(
         WHERE id=$3 AND owner_id=$4 AND status='active'`,
       [progress.nextCapabilityId, options.touchActivity !== false, enrollment.id, ownerId],
     );
+    await alignAcademyResumePosition(ownerId, path, progress.nextCapabilityId);
   } else if (options.touchActivity !== false) {
     await pool.query(
       `UPDATE learning_path_enrollments
