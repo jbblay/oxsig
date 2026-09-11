@@ -85,16 +85,19 @@ export default function AcademyPathsPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {paths.map((state) => {
           const active = state.enrollment?.status === 'active';
+          const completed = state.enrollment?.status === 'completed';
           const isAd = state.path.id === 'active-directory-operations';
           const recommended = state.enrollment?.recommendedCapabilityId
             ? state.capabilities.find((capability) => capability.id === state.enrollment?.recommendedCapabilityId)
             : null;
 
           return (
-            <Card key={state.path.id} className={active ? 'border-primary/40 shadow-sm' : ''}>
+            <Card key={state.path.id} className={active ? 'border-primary/40 shadow-sm' : completed ? 'border-emerald-500/30 shadow-sm' : ''}>
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge variant={active ? 'default' : 'outline'}>{active ? 'Active journey' : `${state.totalCapabilities} capabilities`}</Badge>
+                  <Badge variant={active ? 'default' : 'outline'}>
+                    {active ? 'Active journey' : completed ? 'Completed journey' : `${state.totalCapabilities} capabilities`}
+                  </Badge>
                   {isAd ? <Badge variant="secondary" className="gap-1"><Network className="h-3 w-3" /> Black Domain runtime</Badge> : null}
                 </div>
                 <CardTitle>{state.path.title}</CardTitle>
@@ -128,18 +131,25 @@ export default function AcademyPathsPage() {
                     <p className="font-medium">Next: {recommended.title}</p>
                     <p className="mt-1 text-muted-foreground">{recommended.practiceLabel}</p>
                   </div>
+                ) : completed ? (
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-xs">
+                    <p className="font-medium">All capabilities demonstrated.</p>
+                    <p className="mt-1 text-muted-foreground">The evidence remains available in Proved skills even after the live environment is destroyed.</p>
+                  </div>
                 ) : null}
 
                 <div className="flex flex-wrap gap-2">
                   {active ? (
                     <Button asChild><Link href="/academy">Resume Academy <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+                  ) : completed ? (
+                    <Button asChild><Link href="/academy/transcript">View proved skills <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
                   ) : (
                     <Button type="button" onClick={() => void startPath(state.path.id)} disabled={busyPath !== null}>
                       {busyPath === state.path.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                       Start path
                     </Button>
                   )}
-                  {isAd ? (
+                  {isAd && !completed ? (
                     <Button variant="outline" asChild>
                       <Link href={`/operations?operation=black-domain${recommended ? `&capability=${encodeURIComponent(recommended.id)}` : ''}`}><ShieldCheck className="mr-2 h-4 w-4" /> Open Black Domain</Link>
                     </Button>
