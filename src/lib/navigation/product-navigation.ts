@@ -42,9 +42,14 @@ export const PRODUCT_NAVIGATION: readonly ProductNavigationItem[] = [
 ] as const;
 
 const PRODUCT_NAVIGATION_BY_ID = new Map(PRODUCT_NAVIGATION.map((item) => [item.id, item]));
+const PRODUCT_NAVIGATION_BY_HREF = new Map(PRODUCT_NAVIGATION.map((item) => [item.href, item]));
 
 export function getProductNavigationItem(id: ProductNavigationId) {
   return PRODUCT_NAVIGATION_BY_ID.get(id) ?? null;
+}
+
+export function getProductNavigationItemByHref(href: string) {
+  return PRODUCT_NAVIGATION_BY_HREF.get(href) ?? null;
 }
 
 export function resolveProductNavigationHref(
