@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PRODUCT_NAVIGATION,
   isGuestPublicNavigationPath,
+  isProtectedProductNavigationPath,
   resolveProductNavigationHref,
   resolveProductPathHref,
   type ProductNavigationItem,
@@ -71,12 +72,20 @@ describe('product navigation contract', () => {
     expect(resolveProductPathHref('/unknown-surface', true)).toBe('/unknown-surface');
   });
 
-  it('defines guest-public workspace paths from the same contract', () => {
+  it('defines public and protected request paths from the same contract', () => {
     expect(isGuestPublicNavigationPath('/home')).toBe(true);
     expect(isGuestPublicNavigationPath('/operations')).toBe(true);
     expect(isGuestPublicNavigationPath('/operations/anything')).toBe(true);
     expect(isGuestPublicNavigationPath('/academy')).toBe(false);
     expect(isGuestPublicNavigationPath('/warroom')).toBe(false);
     expect(isGuestPublicNavigationPath('/labs')).toBe(false);
+
+    expect(isProtectedProductNavigationPath('/academy')).toBe(true);
+    expect(isProtectedProductNavigationPath('/academy/paths')).toBe(true);
+    expect(isProtectedProductNavigationPath('/collab/storyboards/board-123')).toBe(true);
+    expect(isProtectedProductNavigationPath('/labs')).toBe(true);
+    expect(isProtectedProductNavigationPath('/operations')).toBe(false);
+    expect(isProtectedProductNavigationPath('/home')).toBe(false);
+    expect(isProtectedProductNavigationPath('/not-a-product-route')).toBe(false);
   });
 });
