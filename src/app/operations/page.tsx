@@ -15,7 +15,14 @@ import { OperationLaunchButton } from '@/components/operations/OperationLaunchBu
 import { OperationRunRecovery } from '@/components/operations/OperationRunRecovery';
 import { OperationIcon, OperationTopologyPreview, TopologyNodeIcon } from '@/components/operations/OperationVisuals';
 import { Button } from '@/components/ui/button';
-import { getOperation, operations, type Operation, type OperationTopologyNode } from '@/lib/operations/catalog';
+import {
+  getOperation,
+  operationHasAutomatedRuntime,
+  operationSupportsWarRoomRuntime,
+  operations,
+  type Operation,
+  type OperationTopologyNode,
+} from '@/lib/operations/catalog';
 import styles from './operations.module.css';
 
 type SearchParams = Promise<{ operation?: string }>;
@@ -37,10 +44,6 @@ const DOMAIN_COLOR: Record<string, string> = {
   Forensics: '#F59E0B',
   Cloud: '#3B82F6',
 };
-
-function runtimeReady(operation: Operation) {
-  return operation.slug === 'black-domain';
-}
 
 function systemLabel(node: OperationTopologyNode) {
   const platform = node.platform?.toLowerCase() || '';
@@ -105,7 +108,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: S
 
           <section className={styles.grid} aria-label="Operation domains">
             {operations.map((operation) => {
-              const ready = runtimeReady(operation);
+              const ready = operationHasAutomatedRuntime(operation);
               const theme = DOMAIN_THEME[operation.domain] || styles.web;
               return (
                 <article key={operation.slug} className={`${styles.tile} ${theme}`}>
@@ -162,9 +165,9 @@ export default async function OperationsPage({ searchParams }: { searchParams: S
 }
 
 function OperationBriefing({ operation }: { operation: Operation }) {
-  const ready = runtimeReady(operation);
+  const ready = operationHasAutomatedRuntime(operation);
   const theme = DOMAIN_THEME[operation.domain] || styles.web;
-  const teamRelevant = operation.modes.includes('warroom');
+  const teamRelevant = operationSupportsWarRoomRuntime(operation);
 
   return (
     <section className={`${styles.detail} ${theme}`} aria-label={`${operation.codename} briefing`}>

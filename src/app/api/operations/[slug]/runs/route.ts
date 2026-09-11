@@ -4,7 +4,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
-import { provisionOperationRun, OperationRuntimeError } from '@/lib/operations/runtime';
+import { provisionRegisteredOperationRun, OperationRuntimeError } from '@/lib/operations/runtime-registry';
 
 export const runtime = 'nodejs';
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (rateLimit) return rateLimit;
 
     try {
-      const run = await provisionOperationRun({ pool: getPool(), ownerId: user.id, slug, mode: parsed.data.mode });
+      const run = await provisionRegisteredOperationRun({ pool: getPool(), ownerId: user.id, slug, mode: parsed.data.mode });
       return NextResponse.json({ run }, { status: 201, headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
       return errorResponse(error);
