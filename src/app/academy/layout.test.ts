@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./layout.tsx', import.meta.url), 'utf8');
+const source = readFileSync(resolve(process.cwd(), 'src/app/academy/layout.tsx'), 'utf8');
 
 describe('Academy route wiring', () => {
   it('preloads authenticated durable state and provides it to Academy pages', () => {
