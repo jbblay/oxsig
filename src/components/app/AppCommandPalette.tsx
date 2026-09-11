@@ -88,41 +88,30 @@ export default function AppCommandPalette({
   }
 
   function openAi() {
-    if (!signedInForNavigation) {
-      navigate('/explore#ai');
-      return;
-    }
+    if (!signedInForNavigation) return;
     onOpenChange(false);
     recordWorkspaceActivity({ label: 'Opened AI Helper', detail: 'Global command', color: 'home', kind: 'action' });
     window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'));
   }
 
   const recent = getWorkspaceRecents().find((item) => item.href !== '/home');
-  const items: PaletteItem[] = [
+  const recentDestination = recent ? resolveProductPathHref(recent.href, signedInForNavigation) : null;
+
+  const authenticatedActions: PaletteItem[] = signedInForNavigation ? [
     {
       id: 'action-ai',
-      label: signedInForNavigation ? 'Ask AI in current context' : 'Preview AI Operator',
-      hint: signedInForNavigation ? 'Open AI Helper without leaving your workspace' : 'See the guest-safe AI experience',
+      label: 'Ask AI in current context',
+      hint: 'Open AI Helper without leaving your workspace',
       icon: Sparkles,
       color: 'home',
       type: 'action',
       run: openAi,
-      keywords: 'ask ai helper explain diagnose fix summarize preview operator',
-    },
-    {
-      id: 'action-operation',
-      label: 'Start an Operation',
-      hint: 'Choose a preconfigured scenario and mode',
-      icon: Crosshair,
-      color: 'labs',
-      type: 'action',
-      run: () => navigate('/operations', 'Opened Operations from command palette', 'labs'),
-      keywords: 'operation scenario active directory linux pentest forensics cloud challenge walkthrough',
+      keywords: 'ask ai helper explain diagnose fix summarize operator',
     },
     {
       id: 'action-warroom',
-      label: signedInForNavigation ? 'Open WarRoom' : 'Preview WarRoom',
-      hint: signedInForNavigation ? 'Start a 2–4 player team lab' : 'See the team-operation preview',
+      label: 'Open WarRoom',
+      hint: 'Start a 2–4 player team lab',
       icon: Swords,
       color: 'live',
       type: 'action',
@@ -131,45 +120,63 @@ export default function AppCommandPalette({
     },
     {
       id: 'action-lab',
-      label: signedInForNavigation ? 'Start or resume Cyber Lab' : 'Preview Cyber Lab',
-      hint: signedInForNavigation ? 'Jump directly into lab operations' : 'See the guest-safe live environment preview',
+      label: 'Start or resume Cyber Lab',
+      hint: 'Jump directly into lab operations',
       icon: Play,
       color: 'labs',
       type: 'action',
       run: () => navigate('/labs', 'Opened Cyber Lab from command palette', 'labs'),
-      keywords: 'start run resume terminal cyber lab preview',
+      keywords: 'start run resume terminal cyber lab',
     },
     {
       id: 'action-board',
-      label: signedInForNavigation ? 'Open Board workspace' : 'Preview Boards',
-      hint: signedInForNavigation ? 'Draw, record, share or secure a board' : 'See the platform collaboration model',
+      label: 'Open Board workspace',
+      hint: 'Draw, record, share or secure a board',
       icon: BookOpen,
       color: 'boards',
       type: 'action',
       run: () => navigate('/collab/storyboards', 'Opened Boards from command palette', 'boards'),
-      keywords: 'new board draw diagram explain storyboard preview',
+      keywords: 'new board draw diagram explain storyboard',
     },
     {
       id: 'action-vault',
-      label: signedInForNavigation ? 'Capture knowledge in Vault' : 'Preview evidence retention',
-      hint: signedInForNavigation ? 'Create or reuse commands, scripts and playbooks' : 'See how OXSIG retains proof and knowledge',
+      label: 'Capture knowledge in Vault',
+      hint: 'Create or reuse commands, scripts and playbooks',
       icon: LibraryBig,
       color: 'vault',
       type: 'action',
       run: () => navigate('/vault', 'Opened Vault from command palette', 'vault'),
-      keywords: 'save vault command script playbook knowledge proof preview',
+      keywords: 'save vault command script playbook knowledge proof',
     },
-    ...(recent ? [{
+  ] : [];
+
+  const visibleDestinations = destinations.filter((destination) => (
+    Boolean(resolveProductPathHref(destination.href, signedInForNavigation))
+  ));
+
+  const items: PaletteItem[] = [
+    {
+      id: 'action-operation',
+      label: signedInForNavigation ? 'Start an Operation' : 'Browse Operations',
+      hint: signedInForNavigation ? 'Choose a preconfigured scenario and mode' : 'Browse mission dossiers without an account',
+      icon: Crosshair,
+      color: 'labs',
+      type: 'action',
+      run: () => navigate('/operations', 'Opened Operations from command palette', 'labs'),
+      keywords: 'operation scenario mission active directory linux pentest forensics cloud challenge walkthrough',
+    },
+    ...authenticatedActions,
+    ...(recent && recentDestination ? [{
       id: 'action-recent',
       label: `Resume ${recent.label}`,
-      hint: signedInForNavigation ? 'Continue your most recent workspace' : 'Open the guest-safe equivalent of your recent workspace',
+      hint: signedInForNavigation ? 'Continue your most recent workspace' : 'Continue your most recent public browse page',
       icon: RotateCcw,
       color: recent.color,
       type: 'action' as const,
       run: () => navigate(recent.href, `Resumed ${recent.label}`, recent.color),
       keywords: 'recent resume continue last workspace',
     }] : []),
-    ...destinations.map((destination) => ({
+    ...visibleDestinations.map((destination) => ({
       id: `destination-${destination.href}`,
       label: destination.label,
       hint: destination.hint,
