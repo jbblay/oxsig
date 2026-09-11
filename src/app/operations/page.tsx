@@ -15,10 +15,11 @@ import { OperationLaunchButton } from '@/components/operations/OperationLaunchBu
 import { OperationRunRecovery } from '@/components/operations/OperationRunRecovery';
 import { OperationIcon, OperationTopologyPreview, TopologyNodeIcon } from '@/components/operations/OperationVisuals';
 import { Button } from '@/components/ui/button';
+import { getOperationLearningFocus, type OperationLearningFocus } from '@/lib/learning/operation-focus';
 import { getOperation, operations, type Operation, type OperationTopologyNode } from '@/lib/operations/catalog';
 import styles from './operations.module.css';
 
-type SearchParams = Promise<{ operation?: string }>;
+type SearchParams = Promise<{ operation?: string; capability?: string }>;
 
 const DOMAIN_THEME: Record<string, string> = {
   'Active Directory': styles.activeDirectory,
@@ -82,6 +83,7 @@ function StageRail({ detail = false }: { detail?: boolean }) {
 export default async function OperationsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const selected = params.operation ? getOperation(params.operation) : null;
+  const learningFocus = selected ? getOperationLearningFocus(selected.slug, params.capability) : null;
 
   return (
     <div className={`${styles.page} mx-auto max-w-7xl space-y-4`}>
@@ -155,24 +157,26 @@ export default async function OperationsPage({ searchParams }: { searchParams: S
           </div>
         </>
       ) : (
-        <OperationBriefing operation={selected} />
+        <OperationBriefing operation={selected} learningFocus={learningFocus} />
       )}
     </div>
   );
 }
 
-function OperationBriefing({ operation }: { operation: Operation }) {
+function OperationBriefing({ operation, learningFocus }: { operation: Operation; learningFocus: OperationLearningFocus | null }) {
   const ready = runtimeReady(operation);
   const theme = DOMAIN_THEME[operation.domain] || styles.web;
   const teamRelevant = operation.modes.includes('warroom');
+  const objectives = learningFocus?.objectives || operation.objectives;
+  const evidence = learningFocus?.evidence || operation.evidence;
 
   return (
     <section className={`${styles.detail} ${theme}`} aria-label={`${operation.codename} briefing`}>
       <div className={styles.detailRail}>
         <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-slate-400 hover:bg-white/[0.05] hover:text-white">
-          <Link href="/operations"><ArrowLeft className="mr-1.5 h-3.5 w-3.5" />All operations</Link>
+          <Link href={learningFocus ? '/academy/paths' : '/operations'}><ArrowLeft className="mr-1.5 h-3.5 w-3.5" />{learningFocus ? 'Learning paths' : 'All operations'}</Link>
         </Button>
-        <span className={styles.detailKicker}>{operation.domain} // Mission dossier</span>
+        <span className={styles.detailKicker}>{learningFocus ? `${learningFocus.pathTitle} // ${learningFocus.capabilityTitle}` : `${operation.domain} // Mission dossier`}</span>
         <span className={styles.detailState}>{ready ? 'Runtime ready' : 'Scenario ready · runtime planned'}</span>
       </div>
 
@@ -180,17 +184,18 @@ function OperationBriefing({ operation }: { operation: Operation }) {
         <div className={styles.hero}>
           <div className={styles.heroTop}>
             <div>
-              <p className={styles.heroEyebrow}>Operation intelligence</p>
+              <p className={styles.heroEyebrow}>{learningFocus ? 'Capability practice' : 'Operation intelligence'}</p>
               <h2 className={styles.heroTitle}>{operation.codename}</h2>
-              <p className={styles.heroName}>{operation.name}</p>
+              <p className={styles.heroName}>{learningFocus ? learningFocus.capabilityTitle : operation.name}</p>
               <div className={styles.metaRow}>
                 <span className={styles.metaBadge}>{operation.difficulty}</span>
                 <span className={styles.metaBadge}>{operation.estimatedMinutes} minutes</span>
                 <span className={styles.metaBadge}>{operation.players} operators</span>
+                {learningFocus ? <span className={styles.metaBadge}>Academy linked</span> : null}
                 {teamRelevant ? <span className={styles.metaBadge}>Team capable</span> : null}
               </div>
             </div>
-            <p className={styles.heroSummary}>{operation.summary}</p>
+            <p className={styles.heroSummary}>{learningFocus ? learningFocus.practiceLabel : operation.summary}</p>
           </div>
 
           <div className={styles.topology}>
@@ -207,15 +212,15 @@ function OperationBriefing({ operation }: { operation: Operation }) {
             <div className={styles.launchZone}>
               <div className={styles.launchStatus}>
                 <span><Activity className="mr-1 inline h-3 w-3" />Environment <strong>Ready</strong></span>
-                <span><Radio className="mr-1 inline h-3 w-3" />Mission package <strong>Loaded</strong></span>
+                <span><Radio className="mr-1 inline h-3 w-3" />{learningFocus ? 'Learning focus' : 'Mission package'} <strong>Loaded</strong></span>
               </div>
               <div className={styles.launchButtons}>
                 <span className={styles.launchPrimary}>
-                  <OperationLaunchButton slug={operation.slug} mode="practice" label="Start Operation" />
+                  <OperationLaunchButton slug={operation.slug} mode="practice" capabilityId={learningFocus?.capabilityId} label={learningFocus ? 'Start Capability Practice' : 'Start Operation'} />
                 </span>
                 {teamRelevant ? (
                   <span className={styles.launchSecondary}>
-                    <OperationLaunchButton slug={operation.slug} mode="warroom" variant="outline" label="Start Team Operation" />
+                    <OperationLaunchButton slug={operation.slug} mode="warroom" capabilityId={learningFocus?.capabilityId} variant="outline" label="Start Team Operation" />
                   </span>
                 ) : null}
               </div>
@@ -230,11 +235,11 @@ function OperationBriefing({ operation }: { operation: Operation }) {
         <aside className={styles.side} aria-label="Operation intelligence">
           <section className={styles.panel}>
             <div className={styles.panelTitle}>
-              <Crosshair />Objectives
-              <span className={styles.panelCount}>{operation.objectives.length}</span>
+              <Crosshair />{learningFocus ? 'Capability objective' : 'Objectives'}
+              <span className={styles.panelCount}>{objectives.length}</span>
             </div>
             <ol className={styles.list}>
-              {operation.objectives.map((objective, index) => (
+              {objectives.map((objective, index) => (
                 <li key={objective} className={styles.listItem}>
                   <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>
                   <span>{objective}</span>
@@ -245,11 +250,11 @@ function OperationBriefing({ operation }: { operation: Operation }) {
 
           <section className={styles.panel}>
             <div className={styles.panelTitle}>
-              <FileCheck2 />Evidence
-              <span className={styles.panelCount}>{operation.evidence.length}</span>
+              <FileCheck2 />{learningFocus ? 'Evidence target' : 'Evidence'}
+              <span className={styles.panelCount}>{evidence.length}</span>
             </div>
             <ul className={styles.list}>
-              {operation.evidence.map((item) => (
+              {evidence.map((item) => (
                 <li key={item} className={styles.listItem}>
                   <span className={styles.index}>+</span>
                   <span>{item}</span>
