@@ -1,10 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
 import { useAuth } from '@/lib/auth/use-auth';
-import { isGuestPublicNavigationPath } from '@/lib/navigation/product-navigation';
 import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
@@ -32,10 +31,8 @@ function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const bare = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up') || pathname.startsWith('/explore');
-  const guestBlocked = !bare && !authLoading && !isAuthenticated && !isGuestPublicNavigationPath(pathname);
   const workspaceKind = workspaceKindFor(pathname);
   const contentMode = contentModeFor(workspaceKind);
   const immersiveWorkspace = contentMode === 'immersive';
@@ -64,16 +61,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     setMobileNavOpen(false);
     setImmersiveExpanded(false);
-    if (!bare && !guestBlocked && lastRecordedPathRef.current !== pathname) {
+    if (!bare && lastRecordedPathRef.current !== pathname) {
       lastRecordedPathRef.current = pathname;
       recordWorkspaceVisit(pathname);
     }
-  }, [bare, guestBlocked, pathname]);
-
-  React.useEffect(() => {
-    if (!guestBlocked) return;
-    router.replace(`/explore?from=${encodeURIComponent(pathname)}`);
-  }, [guestBlocked, pathname, router]);
+  }, [bare, pathname]);
 
   React.useEffect(() => {
     if (!mobileNavOpen || typeof document === 'undefined') return;
@@ -91,21 +83,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (bare) return <>{children}</>;
 
-  if (guestBlocked) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-slate-950 px-6 text-center text-slate-300">
-        <div>
-          <p className="text-sm font-semibold text-slate-100">Opening the guest-safe preview…</p>
-          <p className="mt-1 text-xs text-slate-500">Protected workspaces unlock only when an account is actually needed.</p>
-        </div>
-      </div>
-    );
-  }
-
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
   const workspaceMain = workspaceKind !== null;
   const standardCanvas = contentMode === 'standard';
-  const boundedWorkspace = workspaceKind === 'collab' || workspaceKind === 'boards';
+  const boundedWorkspace = isAuthenticated && (workspaceKind === 'collab' || workspaceKind === 'boards');
 
   return (
     <div className={workspaceMain ? 'oxsig-app-background h-dvh overflow-hidden' : 'oxsig-app-background min-h-screen'}>
@@ -129,12 +110,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${standardCanvas ? 'mx-auto max-w-7xl' : 'max-w-none'} ${boundedWorkspace ? 'overflow-hidden' : 'overflow-y-auto'}`
               : 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
-            {workspaceKind && <WorkspaceEnhancements kind={workspaceKind} />}
+            {isAuthenticated && workspaceKind ? <WorkspaceEnhancements kind={workspaceKind} /> : null}
             {children}
           </main>
         </div>
       </div>
-      {immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />}
+      {isAuthenticated ? (immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />) : null}
     </div>
   );
 }

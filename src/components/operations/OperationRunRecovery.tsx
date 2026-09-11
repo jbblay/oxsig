@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useAuth } from '@/lib/auth/use-auth';
 import { getOperation } from '@/lib/operations/catalog';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
@@ -59,11 +60,19 @@ function expiryLabel(value: string | null) {
 }
 
 export function OperationRunRecovery({ compact = true, modeFilter }: Props) {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [runs, setRuns] = React.useState<RunSummary[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
+    if (!isAuthenticated) {
+      setRuns([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     try {
       const response = await fetch('/api/operations/runs', { cache: 'no-store' });
       const body = await response.json().catch(() => ({}));
@@ -74,9 +83,17 @@ export function OperationRunRecovery({ compact = true, modeFilter }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [compact]);
+  }, [compact, isAuthenticated]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      setRuns([]);
+      setLoading(false);
+      return;
+    }
+    void load();
+  }, [authLoading, isAuthenticated, load]);
 
   const endRun = async (runId: string) => {
     if (!window.confirm('End and permanently destroy this Operation? All of its machines will be terminated.')) return;
@@ -102,7 +119,7 @@ export function OperationRunRecovery({ compact = true, modeFilter }: Props) {
     (!modeFilter || run.mode === modeFilter)
     && (!compact || (ACTIVE.has(run.status) && !runExpired(run)))
   ));
-  if (!loading && filtered.length === 0) return null;
+  if (authLoading || (!loading && filtered.length === 0)) return null;
 
   return (
     <Card className={compact ? 'border-white/[0.08] bg-slate-950/70 text-slate-100 shadow-none' : 'bg-card/70'}>

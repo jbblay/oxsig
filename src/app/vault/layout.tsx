@@ -1,7 +1,14 @@
+import { auth } from '@clerk/nextjs/server';
 import type { ReactNode } from 'react';
 import { Archive, LibraryBig, Search, ShieldCheck } from 'lucide-react';
+import GuestProductSurface from '@/components/auth/GuestProductSurface';
 
-export default function VaultLayout({ children }: { children: ReactNode }) {
+export const dynamic = 'force-dynamic';
+
+export default async function VaultLayout({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = await auth();
+  if (!isAuthenticated) return <GuestProductSurface surface="vault" />;
+
   return (
     <div className="oxsig-surface oxsig-surface-vault mx-auto max-w-7xl space-y-4">
       <header className="oxsig-surface-head">

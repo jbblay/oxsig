@@ -95,7 +95,7 @@ export default function HomePage() {
         <h1 className="mr-auto text-lg font-semibold tracking-tight">Workspace</h1>
         {guestMode ? (
           <Button asChild size="sm" variant="outline" className="h-9 gap-2">
-            <Link href="/explore#ai"><Sparkles className="h-4 w-4 text-primary" /><span className="hidden sm:inline">Preview AI Operator</span></Link>
+            <Link href="/ai"><Sparkles className="h-4 w-4 text-primary" /><span className="hidden sm:inline">Preview AI Operator</span></Link>
           </Button>
         ) : (
           <Button size="sm" variant="outline" className="h-9 gap-2" onClick={() => window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'))}>
@@ -114,12 +114,12 @@ export default function HomePage() {
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyan-500/10 text-cyan-500"><UserRound className="h-4 w-4" /></span>
             <div className="min-w-0">
               <div className="flex items-center gap-2"><p className="text-xs font-semibold">Guest workspace</p><Badge variant="outline" className="h-5 px-1.5 text-[9px]">Explore</Badge></div>
-              <p className="truncate text-[11px] text-muted-foreground">Browse missions and product previews now. Create an account only when you want live resources, persistence or protected actions.</p>
+              <p className="truncate text-[11px] text-muted-foreground">Explore missions, labs, Academy, WarRoom, AI, collaboration, Boards, Vault and Resources. Sign in when you want live infrastructure, persistence or ownership.</p>
             </div>
           </div>
           <div className="flex shrink-0 gap-1.5 sm:ml-auto">
             <Button asChild size="sm" variant="ghost" className="h-8 px-2.5 text-xs"><Link href="/sign-in"><LogIn className="mr-1.5 h-3.5 w-3.5" />Log in</Link></Button>
-            <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-xs"><Link href="/explore">Guest preview</Link></Button>
+            <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-xs"><Link href="/operations">Missions</Link></Button>
             <Button asChild size="sm" className="h-8 px-2.5 text-xs"><Link href="/sign-up">Sign up</Link></Button>
           </div>
         </div>
