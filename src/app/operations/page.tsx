@@ -98,15 +98,9 @@ export default async function OperationsPage({ searchParams }: { searchParams: S
           <h1 className={styles.headerTitle}>Operations</h1>
           <p className={styles.headerText}>Choose the domain. Read the mission. Enter the environment.</p>
         </div>
-        {isAuthenticated ? (
-          <Button asChild size="sm" variant="outline" className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white">
-            <Link href="/warroom"><Swords className="mr-2 h-4 w-4" />Cyber Room</Link>
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" disabled aria-disabled="true" title="Sign in to open Cyber Room" className="border-white/10 bg-white/[0.03] text-slate-500">
-            <Swords className="mr-2 h-4 w-4" />Cyber Room
-          </Button>
-        )}
+        <Button asChild size="sm" variant="outline" className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white">
+          <Link href="/warroom"><Swords className="mr-2 h-4 w-4" />{isAuthenticated ? 'Cyber Room' : 'Preview Cyber Room'}</Link>
+        </Button>
       </div>
 
       <StageRail detail={Boolean(selected)} />
