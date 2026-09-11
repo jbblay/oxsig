@@ -4,7 +4,9 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   BookOpen,
+  Bot,
   Box,
+  ChevronDown,
   FileText,
   Loader2,
   MessageCircle,
@@ -12,6 +14,7 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Sparkles,
   Square,
@@ -26,6 +29,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { listServerStoryboards } from '@/lib/storyboards/api';
+import type { StoryboardServerSession } from '@/lib/storyboards/types';
 
 type Collaboration = {
   id: string;
@@ -51,6 +56,13 @@ type Attachment = {
   createdAt?: string;
 };
 
+type SharedBoard = {
+  id: string;
+  title: string;
+  href: string;
+  permission: 'viewer';
+};
+
 type CollaborationMessage = {
   id: string;
   collaborationId: string;
@@ -74,8 +86,6 @@ type Member = {
   role: string;
   isOwner: boolean;
 };
-
-type ComposerMode = 'text' | 'explain';
 
 function formatTime(value?: string | null) {
   if (!value) return '';
@@ -114,6 +124,14 @@ function attachmentFrom(metadata: Record<string, unknown>): Attachment | null {
   return candidate as Attachment;
 }
 
+function boardFrom(metadata: Record<string, unknown>): SharedBoard | null {
+  const value = metadata.board;
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<SharedBoard>;
+  if (!candidate.id || !candidate.title || !candidate.href || candidate.permission !== 'viewer') return null;
+  return candidate as SharedBoard;
+}
+
 function lastMessagePreview(session: Collaboration) {
   if (session.lastMessage) return session.lastMessage;
   if (session.lastMessageType === 'audio') return 'Voice message';
@@ -121,6 +139,15 @@ function lastMessagePreview(session: Collaboration) {
   if (session.lastMessageType === 'practice') return 'Practice';
   if (session.lastMessageType === 'explain') return 'Explanation';
   return session.description || 'No messages';
+}
+
+function aiContext(messages: CollaborationMessage[]) {
+  return messages
+    .slice(-6)
+    .filter((message) => message.text.trim())
+    .map((message) => `${message.senderName}: ${message.text.trim()}`)
+    .join('\n')
+    .slice(0, 2200);
 }
 
 export default function CollaborationWorkspace() {
@@ -135,14 +162,19 @@ export default function CollaborationWorkspace() {
   const [sending, setSending] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [draft, setDraft] = React.useState('');
-  const [composerMode, setComposerMode] = React.useState<ComposerMode>('text');
   const [newSessionName, setNewSessionName] = React.useState('');
   const [showNewSession, setShowNewSession] = React.useState(false);
   const [showPeople, setShowPeople] = React.useState(false);
+  const [selectedMemberId, setSelectedMemberId] = React.useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = React.useState('');
   const [inviting, setInviting] = React.useState(false);
   const [recording, setRecording] = React.useState(false);
   const [recordSeconds, setRecordSeconds] = React.useState(0);
+  const [showBoards, setShowBoards] = React.useState(false);
+  const [boards, setBoards] = React.useState<StoryboardServerSession[]>([]);
+  const [boardsLoading, setBoardsLoading] = React.useState(false);
+  const [boardQuery, setBoardQuery] = React.useState('');
+  const [sharingBoardId, setSharingBoardId] = React.useState<string | null>(null);
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
@@ -154,6 +186,10 @@ export default function CollaborationWorkspace() {
   const conversationRequestRef = React.useRef(0);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
+  const ownerBoards = React.useMemo(() => {
+    const query = boardQuery.trim().toLowerCase();
+    return boards.filter((board) => board.permission === 'owner' && (!query || board.title.toLowerCase().includes(query)));
+  }, [boards, boardQuery]);
 
   const loadSessions = React.useCallback(async (silent = false) => {
     try {
@@ -238,9 +274,11 @@ export default function CollaborationWorkspace() {
     setCanInvite(false);
     setConversationError(null);
     setDraft('');
-    setComposerMode('text');
     setShowPeople(false);
+    setSelectedMemberId(null);
     setInviteEmail('');
+    setShowBoards(false);
+    setBoardQuery('');
 
     if (!activeId) {
       setMessagesLoading(false);
@@ -342,11 +380,8 @@ export default function CollaborationWorkspace() {
     if (!text || !activeId || sending) return;
     setSending(true);
     try {
-      await sendMessage(text, composerMode === 'explain' ? 'explain' : 'text');
-      if (activeIdRef.current === activeId) {
-        setDraft('');
-        setComposerMode('text');
-      }
+      await sendMessage(text);
+      if (activeIdRef.current === activeId) setDraft('');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not send message');
     } finally {
@@ -354,10 +389,45 @@ export default function CollaborationWorkspace() {
     }
   };
 
+  const openAiHelper = React.useCallback((prompt?: string) => {
+    window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open', {
+      detail: prompt ? { prompt } : {},
+    }));
+  }, []);
+
+  const explainCurrent = () => {
+    const source = draft.trim() || [...messages].reverse().find((message) => message.text.trim())?.text.trim();
+    if (!source) {
+      toast.error('Write something or add a message first, then Explain can work on real context.');
+      return;
+    }
+    openAiHelper(`Explain this clearly for the people in the current collaboration. Focus on what it means, why it matters, and one practical example.\n\n${source}`);
+  };
+
+  const askCurrent = () => {
+    const context = aiContext(messages);
+    const prompt = draft.trim()
+      ? `Help me with this question in the context of the current collaboration:\n\n${draft.trim()}${context ? `\n\nRecent collaboration context:\n${context}` : ''}`
+      : context
+        ? `Help me reason about the current collaboration. Start from this recent context and ask me what I want to solve if the goal is ambiguous:\n\n${context}`
+        : undefined;
+    openAiHelper(prompt);
+  };
+
+  const startPractice = () => {
+    const context = aiContext(messages);
+    if (!context && !draft.trim()) {
+      toast.error('Add some technical context first so Practice has something real to test.');
+      return;
+    }
+    openAiHelper(`Run a short interactive practice test based on this collaboration. Ask exactly one question at a time. Wait for my answer, judge it, explain what I missed, then continue with the next question. Do not give the answer before I attempt it.\n\nPractice context:\n${draft.trim() || context}`);
+  };
+
   const uploadAttachment = React.useCallback(async (file: File, type: 'resource' | 'audio') => {
     if (!activeId) throw new Error('Choose a collaboration session first');
+    const targetId = activeId;
     const csrf = await getCsrfToken();
-    const presign = await fetch(`/api/collaborations/${activeId}/attachments`, {
+    const presign = await fetch(`/api/collaborations/${targetId}/attachments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
       body: JSON.stringify({
@@ -369,13 +439,35 @@ export default function CollaborationWorkspace() {
     const body = await presign.json().catch(() => ({}));
     if (!presign.ok) throw new Error(body.error || 'Could not prepare attachment upload');
 
-    const form = new FormData();
-    Object.entries(body.upload.fields as Record<string, string>).forEach(([key, value]) => form.append(key, value));
-    form.append('file', file);
-    const uploaded = await fetch(body.upload.url, { method: 'POST', body: form });
-    if (!uploaded.ok) throw new Error('Attachment upload failed');
+    const makeForm = () => {
+      const form = new FormData();
+      Object.entries(body.upload.fields as Record<string, string>).forEach(([key, value]) => form.append(key, value));
+      form.append('file', file);
+      return form;
+    };
+
+    try {
+      const uploaded = await fetch(body.upload.url, { method: 'POST', body: makeForm() });
+      if (!uploaded.ok) throw new Error(`Storage rejected the attachment (${uploaded.status})`);
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      try {
+        await fetch(body.upload.url, { method: 'POST', body: makeForm(), mode: 'no-cors' });
+      } catch {
+        throw new Error('Could not reach attachment storage. Check the storage endpoint and bucket CORS policy.');
+      }
+    }
 
     const attachment = body.object as Attachment;
+    const verify = await fetch(
+      `/api/collaborations/${targetId}/attachments?key=${encodeURIComponent(attachment.key)}&verify=1`,
+      { cache: 'no-store' }
+    );
+    if (!verify.ok) {
+      const verifyBody = await verify.json().catch(() => ({}));
+      throw new Error(verifyBody.error || 'Attachment upload could not be verified');
+    }
+
     await sendMessage(type === 'audio' ? 'Voice message' : file.name, type, { attachment });
   }, [activeId, sendMessage]);
 
@@ -445,18 +537,57 @@ export default function CollaborationWorkspace() {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 
-  const startPractice = async () => {
-    if (!activeId || sending) return;
-    setSending(true);
+  const openBoardPicker = async () => {
+    if (!activeId || boardsLoading) return;
+    setShowBoards(true);
+    setBoardsLoading(true);
     try {
-      await sendMessage('Practice session ready', 'practice', {
-        href: '/labs',
-        label: 'Open Cyber Lab',
-      });
+      const next = await listServerStoryboards();
+      setBoards(next);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not add practice session');
+      toast.error(error instanceof Error ? error.message : 'Could not load Boards');
     } finally {
-      setSending(false);
+      setBoardsLoading(false);
+    }
+  };
+
+  const shareBoard = async (board: StoryboardServerSession) => {
+    if (!activeId || sharingBoardId) return;
+    if (board.permission !== 'owner') {
+      toast.error('Only a Board you own can be granted to everyone in this collaboration.');
+      return;
+    }
+    setSharingBoardId(board.id);
+    try {
+      const csrf = await getCsrfToken();
+      const recipients = [...new Set(members.map((member) => member.email?.trim().toLowerCase()).filter((email): email is string => Boolean(email)))];
+      const grantResults = await Promise.all(recipients.map(async (email) => {
+        const response = await fetch(`/api/storyboards/${board.id}/shares`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+          body: JSON.stringify({ email, permission: 'viewer' }),
+        });
+        if (response.ok || response.status === 409) return null;
+        const body = await response.json().catch(() => ({}));
+        return body.error || `Could not grant Board access to ${email}`;
+      }));
+      const failure = grantResults.find((result): result is string => Boolean(result));
+      if (failure) throw new Error(failure);
+
+      const shared: SharedBoard = {
+        id: board.id,
+        title: board.title,
+        href: `/collab/storyboards?session=${encodeURIComponent(board.id)}`,
+        permission: 'viewer',
+      };
+      await sendMessage(`Shared Board: ${board.title}`, 'text', { board: shared });
+      setShowBoards(false);
+      setBoardQuery('');
+      toast.success('Board shared with the collaboration.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not share Board');
+    } finally {
+      setSharingBoardId(null);
     }
   };
 
@@ -550,10 +681,10 @@ export default function CollaborationWorkspace() {
               </div>
               {activeSession.description && <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{activeSession.description}</p>}
             </div>
-            <div className="hidden items-center gap-1.5 text-[10px] text-muted-foreground sm:flex">
+            <button type="button" onClick={() => setShowPeople(true)} className="hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground transition hover:bg-muted sm:flex">
               <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
               {realtime.state === 'connected' ? `${realtime.onlineCount} online` : realtime.state === 'connecting' ? 'Connecting…' : 'Fallback'}
-            </div>
+            </button>
             <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setShowPeople(true)}>
               <Users className="mr-1.5 h-3.5 w-3.5" />People
             </Button>
@@ -573,11 +704,16 @@ export default function CollaborationWorkspace() {
                 <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground">No messages</div>
+              <div className="flex min-h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                <MessageCircle className="mb-2 h-8 w-8 opacity-40" />
+                <p className="font-medium text-foreground">Start the conversation</p>
+                <p className="mt-1 max-w-sm text-xs">Ask, explain, test an idea, attach evidence, or send a Board without leaving the session.</p>
+              </div>
             ) : (
               <div className="mx-auto w-full max-w-4xl space-y-3">
                 {messages.map((message) => {
                   const attachment = attachmentFrom(message.metadata);
+                  const sharedBoard = boardFrom(message.metadata);
                   const attachmentUrl = attachment && activeId
                     ? `/api/collaborations/${activeId}/attachments?key=${encodeURIComponent(attachment.key)}`
                     : null;
@@ -585,8 +721,9 @@ export default function CollaborationWorkspace() {
                   return (
                     <div key={message.id} className={`flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                       {!message.isOwnMessage && (
-                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
+                        <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
                           {initials(message.senderName)}
+                          {realtime.onlineIds.includes(message.senderId) && <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />}
                         </div>
                       )}
                       <div className={`flex max-w-[88%] flex-col sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'}`}>
@@ -596,7 +733,15 @@ export default function CollaborationWorkspace() {
                           <span>{formatTime(message.createdAt)}</span>
                         </div>
                         <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
-                          {message.type === 'practice' ? (
+                          {sharedBoard ? (
+                            <div className="min-w-[220px] space-y-2.5">
+                              <div className="flex items-start gap-2">
+                                <BookOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide opacity-70">Shared Board</p><p className="truncate font-semibold">{sharedBoard.title}</p></div>
+                              </div>
+                              <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8 w-full"><Link href={sharedBoard.href}>Open Board</Link></Button>
+                            </div>
+                          ) : message.type === 'practice' ? (
                             <div className="min-w-[200px] space-y-2">
                               <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
                               {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
@@ -631,12 +776,6 @@ export default function CollaborationWorkspace() {
 
           <div className="border-t bg-background/90 p-2.5 backdrop-blur sm:p-3">
             <form onSubmit={(event) => void submitDraft(event)} className="mx-auto w-full max-w-4xl space-y-2">
-              {composerMode === 'explain' && (
-                <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
-                  <span className="flex items-center gap-2 font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" />Explain</span>
-                  <Button size="sm" type="button" variant="ghost" className="h-7" onClick={() => setComposerMode('text')}>Cancel</Button>
-                </div>
-              )}
               <Textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -646,26 +785,27 @@ export default function CollaborationWorkspace() {
                     void submitDraft();
                   }
                 }}
-                placeholder={composerMode === 'explain' ? 'Explain…' : `Message ${activeSession.name}…`}
+                placeholder={`Message ${activeSession.name}…`}
                 className="min-h-[64px] resize-none bg-background"
                 maxLength={5000}
               />
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1">
-                  <Button type="button" size="sm" variant={composerMode === 'explain' ? 'secondary' : 'ghost'} className="h-8" onClick={() => setComposerMode((mode) => mode === 'explain' ? 'text' : 'explain')}><Sparkles className="mr-1.5 h-3.5 w-3.5" />Explain</Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={explainCurrent}><Sparkles className="mr-1.5 h-3.5 w-3.5" />Explain</Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={askCurrent}><Bot className="mr-1.5 h-3.5 w-3.5" />Ask</Button>
                   <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => fileInputRef.current?.click()} disabled={uploading}><Paperclip className="mr-1.5 h-3.5 w-3.5" />Attach</Button>
                   <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void handleFile(event)} />
                   <Button type="button" size="sm" variant={recording ? 'destructive' : 'ghost'} className="h-8" onClick={() => recording ? stopRecording() : void startRecording()} disabled={uploading}>
                     {recording ? <Square className="mr-1.5 h-3.5 w-3.5" /> : <Mic className="mr-1.5 h-3.5 w-3.5" />}{recording ? `Stop ${recordSeconds}s` : 'Record'}
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => void startPractice()} disabled={sending}><Box className="mr-1.5 h-3.5 w-3.5" />Practice</Button>
-                  <Button asChild type="button" size="sm" variant="ghost" className="h-8"><Link href="/collab/storyboards"><BookOpen className="mr-1.5 h-3.5 w-3.5" />Board</Link></Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={startPractice}><Box className="mr-1.5 h-3.5 w-3.5" />Practice</Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => void openBoardPicker()}><BookOpen className="mr-1.5 h-3.5 w-3.5" />Board</Button>
                 </div>
                 <Button type="submit" size="sm" disabled={!draft.trim() || sending || uploading}>
                   {sending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}Send
                 </Button>
               </div>
-              {uploading && <p className="text-[10px] text-muted-foreground">Uploading…</p>}
+              {uploading && <p className="text-[10px] text-muted-foreground">Uploading and verifying attachment…</p>}
             </form>
           </div>
         </section>
@@ -695,25 +835,72 @@ export default function CollaborationWorkspace() {
         </div>
       )}
 
+      {showBoards && activeSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setShowBoards(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="share-board-title" className="flex max-h-[75vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-card shadow-xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div><h2 id="share-board-title" className="text-sm font-semibold">Send a Board</h2><p className="mt-0.5 text-[10px] text-muted-foreground">Choose one Board you own. Collaboration members receive viewer access before the card is sent.</p></div>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowBoards(false)} aria-label="Close Board picker"><X className="h-4 w-4" /></Button>
+            </div>
+            <div className="border-b p-3">
+              <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={boardQuery} onChange={(event) => setBoardQuery(event.target.value)} placeholder="Find a Board…" className="h-9 pl-9" /></div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {boardsLoading ? (
+                <div className="flex min-h-40 items-center justify-center text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading Boards…</div>
+              ) : ownerBoards.length === 0 ? (
+                <div className="flex min-h-40 flex-col items-center justify-center text-center"><BookOpen className="h-7 w-7 text-muted-foreground/40" /><p className="mt-2 text-sm font-medium">No matching owned Boards</p><p className="mt-1 text-xs text-muted-foreground">Create or save a Board first, then send it from here.</p></div>
+              ) : (
+                <div className="space-y-2">
+                  {ownerBoards.map((board) => (
+                    <button key={board.id} type="button" onClick={() => void shareBoard(board)} disabled={Boolean(sharingBoardId)} className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-muted/20 disabled:opacity-60">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><BookOpen className="h-4 w-4" /></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{board.title}</span><span className="block text-[10px] text-muted-foreground">Updated {formatDay(board.updatedAt)} · {board.status}</span></span>
+                      {sharingBoardId === board.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-muted-foreground" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPeople && activeSession && (
         <div className="fixed inset-0 z-50 bg-background/55 backdrop-blur-[2px]" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setShowPeople(false); }}>
           <aside role="dialog" aria-modal="true" aria-label="People" className="absolute bottom-3 right-3 top-3 flex w-[min(26rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border bg-card shadow-xl sm:bottom-4 sm:right-4 sm:top-4">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="flex items-center gap-2"><p className="text-sm font-semibold">People</p><Badge variant="outline" className="text-[9px]">{members.length}</Badge></div>
+              <div className="flex items-center gap-2"><p className="text-sm font-semibold">People</p><Badge variant="outline" className="text-[9px]">{members.length}</Badge>{realtime.state === 'connected' && <Badge variant="secondary" className="text-[9px]">{realtime.onlineCount} online</Badge>}</div>
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowPeople(false)} aria-label="Close people"><X className="h-4 w-4" /></Button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-2">
-                {members.map((member) => (
-                  <div key={member.id} className="flex items-center gap-2 rounded-xl border bg-background/70 p-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-semibold">{initials(member.displayName)}</div>
-                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{member.displayName}</p><p className="truncate text-[10px] text-muted-foreground">{member.email || member.role}</p></div>
-                    {member.isOwner && <Badge variant="secondary" className="text-[8px]">Owner</Badge>}
-                  </div>
-                ))}
+                {members.map((member) => {
+                  const online = realtime.onlineIds.includes(member.id);
+                  const expanded = selectedMemberId === member.id;
+                  return (
+                    <button key={member.id} type="button" onClick={() => setSelectedMemberId(expanded ? null : member.id)} className="w-full rounded-xl border bg-background/70 p-2.5 text-left transition hover:border-primary/30">
+                      <div className="flex items-center gap-2.5">
+                        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/15 to-purple-500/15 text-[10px] font-semibold">
+                          {initials(member.displayName)}
+                          <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background ${online ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`} />
+                        </div>
+                        <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{member.displayName}</p><p className="truncate text-[10px] text-muted-foreground">{online ? 'Online now' : 'Offline'} · {member.role}</p></div>
+                        {member.isOwner && <Badge variant="secondary" className="text-[8px]">Owner</Badge>}
+                        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition ${expanded ? 'rotate-180' : ''}`} />
+                      </div>
+                      {expanded && (
+                        <div className="mt-2 border-t pt-2 text-[10px] text-muted-foreground">
+                          <div className="grid grid-cols-[4rem_1fr] gap-x-2 gap-y-1"><span>Profile</span><span className="truncate text-foreground">{member.displayName}</span><span>Email</span><span className="truncate text-foreground">{member.email || 'Not available'}</span><span>Status</span><span className={online ? 'text-emerald-600' : ''}>{online ? 'Online in this session' : 'Not currently present'}</span></div>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               {canInvite && (
                 <div className="mt-4 space-y-2 rounded-xl border bg-background/60 p-3">
+                  <div><p className="text-xs font-medium">Invite someone</p><p className="mt-0.5 text-[10px] text-muted-foreground">Existing users join immediately; new emails receive an invitation.</p></div>
                   <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="member@example.com" type="email" className="h-9" aria-label="Member email" />
                   <Button size="sm" className="w-full" variant="outline" onClick={() => void inviteMember()} disabled={!inviteEmail.trim() || inviting}>
                     {inviting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserPlus className="mr-1.5 h-3.5 w-3.5" />}Invite

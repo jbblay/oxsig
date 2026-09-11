@@ -98,7 +98,7 @@ export function useCollaborationRealtime(
   callbacks: RealtimeCallbacks
 ) {
   const [state, setState] = React.useState<CollaborationRealtimeState>('disabled');
-  const [onlineCount, setOnlineCount] = React.useState(0);
+  const [onlineIds, setOnlineIds] = React.useState<string[]>([]);
   const callbacksRef = React.useRef(callbacks);
 
   React.useEffect(() => {
@@ -108,7 +108,7 @@ export function useCollaborationRealtime(
   React.useEffect(() => {
     if (!collaborationId) {
       setState('disabled');
-      setOnlineCount(0);
+      setOnlineIds([]);
       return;
     }
 
@@ -137,9 +137,14 @@ export function useCollaborationRealtime(
           if (!channel) return;
           try {
             const members = await channel.presence.get();
-            if (!disposed) setOnlineCount(members.length);
+            const ids = [...new Set(
+              members
+                .map((member) => member.clientId)
+                .filter((clientId): clientId is string => Boolean(clientId))
+            )];
+            if (!disposed) setOnlineIds(ids);
           } catch {
-            if (!disposed) setOnlineCount(0);
+            if (!disposed) setOnlineIds([]);
           }
         };
 
@@ -167,7 +172,7 @@ export function useCollaborationRealtime(
       } catch {
         if (!disposed) {
           setState('disabled');
-          setOnlineCount(0);
+          setOnlineIds([]);
         }
         client?.close();
       }
@@ -187,5 +192,5 @@ export function useCollaborationRealtime(
     };
   }, [collaborationId]);
 
-  return { state, onlineCount };
+  return { state, onlineCount: onlineIds.length, onlineIds };
 }

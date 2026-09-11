@@ -16,6 +16,10 @@ type ChatLine = {
   content: string;
 };
 
+type AiHelperOpenDetail = {
+  prompt?: string;
+};
+
 const MAX_PROMPT_LENGTH = 4000;
 
 function uid() {
@@ -72,7 +76,12 @@ export default function AiHelperDock() {
   }, []);
 
   React.useEffect(() => {
-    const openHelper = () => setOpen(true);
+    const openHelper = (event: Event) => {
+      const custom = event as CustomEvent<AiHelperOpenDetail>;
+      const contextualPrompt = custom.detail?.prompt?.trim();
+      if (contextualPrompt) setPrompt(contextualPrompt.slice(0, MAX_PROMPT_LENGTH));
+      setOpen(true);
+    };
     window.addEventListener('oxsig:ai-helper:open', openHelper);
     return () => window.removeEventListener('oxsig:ai-helper:open', openHelper);
   }, []);
