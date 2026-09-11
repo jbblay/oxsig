@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
 }));
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/db/pool', () => ({
   getPool: () => ({ query: mocks.query, connect: mocks.connect }),
 }));
