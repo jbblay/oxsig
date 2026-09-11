@@ -53,13 +53,13 @@ describe('product navigation contract', () => {
     expect(resolveProductNavigationHref(disabled, false)).toBeNull();
   });
 
-  it('keeps guest-browseable persisted links intact after sign-out', () => {
+  it('keeps public URLs intact and normalizes protected recents to stable guest preview roots', () => {
     expect(resolveProductPathHref('/operations?operation=black-domain', false)).toBe('/operations?operation=black-domain');
     expect(resolveProductPathHref('/operations?operation=ghost-shell#briefing', false)).toBe('/operations?operation=ghost-shell#briefing');
     expect(resolveProductPathHref('/home', false)).toBe('/home');
-    expect(resolveProductPathHref('/labs?tab=runtime', false)).toBe('/labs?tab=runtime');
-    expect(resolveProductPathHref('/collab/storyboards/board-123', false)).toBe('/collab/storyboards/board-123');
-    expect(resolveProductPathHref('/academy/paths', false)).toBe('/academy/paths');
+    expect(resolveProductPathHref('/labs?tab=runtime', false)).toBe('/labs');
+    expect(resolveProductPathHref('/collab/storyboards/board-123', false)).toBe('/collab/storyboards');
+    expect(resolveProductPathHref('/academy/paths', false)).toBe('/academy');
     expect(resolveProductPathHref('/labs?tab=runtime', true)).toBe('/labs?tab=runtime');
   });
 
