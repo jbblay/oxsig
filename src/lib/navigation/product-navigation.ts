@@ -106,6 +106,11 @@ export function isGuestPublicNavigationPath(pathname: string) {
   return Boolean(item && item.status === 'active' && item.access === 'public');
 }
 
+export function isProtectedProductNavigationPath(pathname: string) {
+  const item = matchingNavigationItem(pathname);
+  return Boolean(item && item.status === 'active' && item.access === 'authenticated');
+}
+
 export function productNavigationLabelForPath(pathname: string) {
   return matchingNavigationItem(pathname)?.label ?? null;
 }
