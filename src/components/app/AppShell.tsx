@@ -86,7 +86,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
   const workspaceMain = workspaceKind !== null;
   const standardCanvas = contentMode === 'standard';
-  const boundedWorkspace = workspaceKind === 'collab' || workspaceKind === 'boards';
+  const boundedWorkspace = isAuthenticated && (workspaceKind === 'collab' || workspaceKind === 'boards');
 
   return (
     <div className={workspaceMain ? 'oxsig-app-background h-dvh overflow-hidden' : 'oxsig-app-background min-h-screen'}>
