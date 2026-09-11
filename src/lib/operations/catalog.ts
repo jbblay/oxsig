@@ -1,6 +1,13 @@
 export type OperationMode = 'practice' | 'walkthrough' | 'challenge' | 'warroom';
 export type OperationIconKey = 'directory' | 'shell' | 'pivot' | 'web' | 'forensics' | 'cloud';
 export type OperationTopologyKind = 'operator' | 'workstation' | 'server' | 'service' | 'evidence' | 'cloud';
+export type OperationRuntimeDriver = 'black-domain-v1';
+
+export type OperationRuntime = {
+  driver: OperationRuntimeDriver;
+  automated: true;
+  warroom: boolean;
+};
 
 export type OperationTopologyNode = {
   label: string;
@@ -24,6 +31,7 @@ export type Operation = {
   topologyNodes: OperationTopologyNode[];
   icon: OperationIconKey;
   tags: string[];
+  runtime?: OperationRuntime;
 };
 
 export const operations: Operation[] = [
@@ -47,6 +55,7 @@ export const operations: Operation[] = [
     ],
     icon: 'directory',
     tags: ['AD', 'Kerberos', 'SMB', 'Lateral movement'],
+    runtime: { driver: 'black-domain-v1', automated: true, warroom: true },
   },
   {
     slug: 'ghost-shell',
@@ -155,4 +164,14 @@ export const operations: Operation[] = [
 
 export function getOperation(slug: string) {
   return operations.find((operation) => operation.slug === slug) ?? null;
+}
+
+export function operationHasAutomatedRuntime(operation: Operation) {
+  return operation.runtime?.automated === true;
+}
+
+export function operationSupportsWarRoomRuntime(operation: Operation) {
+  return operationHasAutomatedRuntime(operation)
+    && operation.runtime?.warroom === true
+    && operation.modes.includes('warroom');
 }
