@@ -16,6 +16,7 @@ import {
 
 function pageTitle(pathname: string) {
   if (pathname.startsWith('/storage')) return 'Vault';
+  if (pathname.startsWith('/ai')) return 'AI Operator';
   return productNavigationLabelForPath(pathname) ?? 'OXSIG';
 }
 
@@ -28,8 +29,6 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   const pathname = usePathname();
   const { user, isAuthenticated } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
-  // AI Practitioner is mounted inside Cyber Lab. Operations and WarRoom use the
-  // global AI Helper, which already receives those workspace contexts.
   const practitionerSurface = pathname.startsWith('/labs');
   const accountHref = resolveProductNavigationHref('account', isAuthenticated) ?? '/sign-up';
 
@@ -86,12 +85,16 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               >
                 <Sparkles className="h-3.5 w-3.5" />
               </Button>
-            ) : null}
+            ) : (
+              <Button asChild size="icon" variant="ghost" className="h-8 w-8">
+                <Link href="/ai" aria-label="Preview AI Operator" title="Preview AI Operator"><Sparkles className="h-3.5 w-3.5" /></Link>
+              </Button>
+            )}
             <Link
               href={accountHref}
               className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
-              aria-label={isAuthenticated ? 'Open account' : 'Create account'}
-              title={isAuthenticated ? (user?.displayName || user?.email || 'Account') : 'Create account'}
+              aria-label={isAuthenticated ? 'Open account' : 'Preview account benefits'}
+              title={isAuthenticated ? (user?.displayName || user?.email || 'Account') : 'Preview account benefits'}
             >
               <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-primary/10 text-[10px] font-bold text-primary">
                 {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(user?.displayName || user?.email)}
