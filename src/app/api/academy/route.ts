@@ -21,6 +21,7 @@ import {
   getTerminalEvidenceForAnalysis,
   storeExecutionEvidenceAnalysis,
 } from '@/lib/execution-evidence/server';
+import { reconcileActiveCuratedPath } from '@/lib/learning/curated-progression';
 
 export const runtime = 'nodejs';
 
@@ -175,6 +176,7 @@ export async function POST(request: NextRequest) {
         exitCode,
         evaluation: persistedEvaluation,
       });
+      await reconcileActiveCuratedPath(user.id);
       await captureProductEvent({
         distinctId: user.clerkUserId || user.id,
         event: 'academy_checkpoint_evaluated',
