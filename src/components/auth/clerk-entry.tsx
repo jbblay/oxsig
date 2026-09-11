@@ -85,18 +85,18 @@ export default function ClerkEntry() {
             Launch. Operate. <span className={styles.heroTitleAccent}>Prove.</span>
           </h1>
           <p className={styles.heroCopy}>
-            Learn infrastructure by operating it. Explore Active Directory, Linux, cloud and security missions, then work in real environments with AI or a team. Create an account when you want live infrastructure and persistence.
+            Learn infrastructure by operating it. Browse Active Directory, Linux, cloud and security missions without an account, then sign in when you want live environments, AI, team workspaces and persistence.
           </p>
           <div className={styles.actions}>
             <Button asChild size="lg" className="h-11 bg-cyan-400 px-5 text-slate-950 hover:bg-cyan-300">
-              <Link href="/explore">Try OXSIG <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link href="/home">Open guest dashboard <ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="h-11 border-white/15 bg-white/[0.03] px-5 text-slate-100 hover:bg-white/[0.08] hover:text-white">
               <Link href="/operations">Browse missions</Link>
             </Button>
           </div>
           <div className={styles.trust}>
-            <span><Check className="h-3.5 w-3.5 text-emerald-400" /> Explore before signup</span>
+            <span><Check className="h-3.5 w-3.5 text-emerald-400" /> Browse before signup</span>
             <span><ShieldCheck className="h-3.5 w-3.5 text-cyan-300" /> Protected actions stay authenticated</span>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function ClerkEntry() {
             <p className={styles.sectionEyebrow}>Experience first // account when useful</p>
             <h2 className={styles.storyTitle}>See what you can actually do before we ask you to stay.</h2>
           </div>
-          <p className={styles.storyHint}>Browse mission dossiers and product previews without an account. Identity becomes useful when you provision live resources, collaborate persistently or keep evidence.</p>
+          <p className={styles.storyHint}>Browse the dashboard and mission dossiers without an account. Identity becomes useful when you provision live resources, collaborate persistently or keep evidence.</p>
         </div>
 
         <div className={styles.capabilityGrid}>
@@ -201,11 +201,11 @@ export default function ClerkEntry() {
 
       <section className={styles.footerCta}>
         <div>
-          <strong>Try the product before the account.</strong>
-          <p>Hear an operator briefing, inspect an Active Directory topology and preview the workflow. Sign up when you are ready to provision the real environment.</p>
+          <strong>Browse first. Sign in when the work becomes live.</strong>
+          <p>Use the guest dashboard and mission dossiers freely. Authentication begins at provisioning, persistence and protected workspaces.</p>
         </div>
         <div className="flex gap-2 md:ml-auto">
-          <Button asChild variant="outline" size="sm" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white"><Link href="/explore">Explore</Link></Button>
+          <Button asChild variant="outline" size="sm" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white"><Link href="/home">Dashboard</Link></Button>
           <Button asChild size="sm" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href="/sign-up">Create account</Link></Button>
         </div>
       </section>
