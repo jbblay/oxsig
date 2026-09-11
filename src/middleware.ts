@@ -3,7 +3,15 @@ import { NextResponse } from 'next/server';
 import { applySecurityHeaders } from '@/lib/security/headers';
 
 export default clerkMiddleware(
-  async () => applySecurityHeaders(NextResponse.next(), undefined, false),
+  async (_auth, request) => {
+    const legacyBoardInvite = request.nextUrl.pathname.match(/^\/collab\/storyboards\/invite\/([^/]+)$/);
+    if (legacyBoardInvite) {
+      const destination = request.nextUrl.clone();
+      destination.pathname = `/board-invite/${legacyBoardInvite[1]}`;
+      return applySecurityHeaders(NextResponse.redirect(destination), undefined, false);
+    }
+    return applySecurityHeaders(NextResponse.next(), undefined, false);
+  },
   (request) => ({
     authorizedParties: [new URL(request.url).origin],
     contentSecurityPolicy: {

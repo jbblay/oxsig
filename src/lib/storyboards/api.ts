@@ -81,6 +81,35 @@ async function cleanupStoryboardAudio(object: StoryboardAudioObject): Promise<vo
   }
 }
 
+function storyboardSaveForm(
+  draft: StoryboardDraft,
+  uploadedAudio: StoryboardAudioObject | null
+): FormData {
+  const form = new FormData();
+  form.set('metadata', JSON.stringify({
+    title: draft.title,
+    description: null,
+    status: draft.audio ? 'ready' : 'draft',
+    durationMs: Math.round(draft.durationMs),
+    events: draft.events,
+  }));
+  if (uploadedAudio) form.set('audioStorage', JSON.stringify(uploadedAudio));
+  return form;
+}
+
+async function sendStoryboardSave(args: {
+  draft: StoryboardDraft;
+  uploadedAudio: StoryboardAudioObject | null;
+  token: string;
+  existingId?: string;
+}): Promise<Response> {
+  return fetch(args.existingId ? `/api/storyboards/${args.existingId}` : '/api/storyboards', {
+    method: args.existingId ? 'PATCH' : 'POST',
+    headers: { 'x-csrf-token': args.token },
+    body: storyboardSaveForm(args.draft, args.uploadedAudio),
+  });
+}
+
 export async function listServerStoryboards(): Promise<StoryboardServerSession[]> {
   const response = await fetch('/api/storyboards', { cache: 'no-store' });
   if (!response.ok) throw new Error(await readError(response));
@@ -113,22 +142,26 @@ export async function saveServerStoryboard(
   }
 
   try {
-    const form = new FormData();
-    form.set('metadata', JSON.stringify({
-      title: draft.title,
-      description: null,
-      status: draft.audio ? 'ready' : 'draft',
-      durationMs: Math.round(draft.durationMs),
-      events: draft.events,
-    }));
-    if (uploadedAudio) form.set('audioStorage', JSON.stringify(uploadedAudio));
-
     const token = await getCsrfToken();
-    const response = await fetch(existingId ? `/api/storyboards/${existingId}` : '/api/storyboards', {
-      method: existingId ? 'PATCH' : 'POST',
-      headers: { 'x-csrf-token': token },
-      body: form,
+    let response = await sendStoryboardSave({
+      draft,
+      uploadedAudio,
+      token,
+      existingId,
     });
+
+    // A recovery draft can outlive an owner Board that was deleted elsewhere.
+    // Only explicit owner drafts may recreate on a stale 404; shared drafts must
+    // fail closed so revoked access never silently becomes a private fork.
+    const canRecreate = draft.serverPermission === 'owner';
+    if (existingId && response.status === 404 && canRecreate) {
+      response = await sendStoryboardSave({
+        draft,
+        uploadedAudio,
+        token,
+      });
+    }
+
     if (!response.ok) {
       if (uploadedAudio) await cleanupStoryboardAudio(uploadedAudio);
       throw new Error(await readError(response));
@@ -138,8 +171,6 @@ export async function saveServerStoryboard(
     if (draft.audio) serverAudioBlobs.add(draft.audio);
     return body.session;
   } catch (error) {
-    // Only clean up here for failures that occurred before a successful API response.
-    // The non-OK response path above already performs the cleanup.
     throw error;
   }
 }

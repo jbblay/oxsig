@@ -25,22 +25,41 @@ export async function DELETE(
       if (!canManageStoryboard(access.permission)) {
         return NextResponse.json({ error: 'Only the owner can revoke access' }, { status: 403 });
       }
-      const result = await getPool().query(
+
+      const shareResult = await getPool().query(
         `UPDATE storyboard_shares SET revoked_at = NOW(), updated_at = NOW()
          WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
          RETURNING id`,
         [id, userId]
       );
-      if (!result.rowCount) return NextResponse.json({ error: 'Active share not found' }, { status: 404 });
+
+      let revokedKind: 'share' | 'invitation' | null = shareResult.rowCount ? 'share' : null;
+      if (!revokedKind) {
+        const invitationResult = await getPool().query(
+          `UPDATE storyboard_invitations
+              SET status='revoked', updated_at=NOW()
+            WHERE session_id=$1 AND id=$2 AND status='pending'
+            RETURNING id`,
+          [id, userId]
+        );
+        if (invitationResult.rowCount) revokedKind = 'invitation';
+      }
+
+      if (!revokedKind) {
+        return NextResponse.json({ error: 'Active share or invitation not found' }, { status: 404 });
+      }
+
       await logAudit({
         userId: user.id,
         action: AUDIT_ACTIONS.STORYBOARD_REVOKE,
         resourceType: 'storyboard',
         resourceId: id,
         ...getRequestMetadata(req),
-        metadata: { targetUserId: userId },
+        metadata: revokedKind === 'share'
+          ? { targetUserId: userId }
+          : { invitationId: userId },
       });
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, revokedKind });
     } catch (error) {
       console.error('Failed to revoke storyboard access:', error);
       return NextResponse.json({ error: 'Failed to revoke storyboard access' }, { status: 500 });
