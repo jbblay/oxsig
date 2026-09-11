@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   PRODUCT_NAVIGATION,
+  isGuestBrowseableNavigationPath,
   isGuestPublicNavigationPath,
   isProtectedProductNavigationPath,
   resolveProductNavigationHref,
@@ -17,24 +18,24 @@ function routeFileFor(href: string) {
 }
 
 describe('product navigation contract', () => {
-  it('keeps every active authenticated destination backed by a real page', () => {
+  it('keeps every active destination backed by a real page', () => {
     for (const item of PRODUCT_NAVIGATION) {
       if (item.status !== 'active') continue;
       expect(existsSync(routeFileFor(item.href)), `${item.label} -> ${item.href}`).toBe(true);
     }
   });
 
-  it('allows guests to browse only public product destinations', () => {
+  it('lets guests navigate public and preview surfaces while keeping auth-only surfaces closed', () => {
     for (const item of PRODUCT_NAVIGATION) {
       if (item.status !== 'active') continue;
 
       expect(resolveProductNavigationHref(item, true), `${item.label} signed in`).toBe(item.href);
 
       const guestTarget = resolveProductNavigationHref(item, false);
-      if (item.access === 'public') {
-        expect(guestTarget, `${item.label} guest`).toBe(item.href);
-      } else {
+      if (item.access === 'authenticated') {
         expect(guestTarget, `${item.label} guest`).toBeNull();
+      } else {
+        expect(guestTarget, `${item.label} guest`).toBe(item.href);
       }
     }
   });
@@ -44,7 +45,7 @@ describe('product navigation contract', () => {
       id: 'academy',
       href: '/academy',
       label: 'Academy',
-      access: 'authenticated',
+      access: 'guest-preview',
       status: 'disabled',
     };
 
@@ -52,12 +53,13 @@ describe('product navigation contract', () => {
     expect(resolveProductNavigationHref(disabled, false)).toBeNull();
   });
 
-  it('keeps mission browsing public while blocking persisted protected links after sign-out', () => {
+  it('keeps guest-browseable persisted links intact after sign-out', () => {
     expect(resolveProductPathHref('/operations?operation=black-domain', false)).toBe('/operations?operation=black-domain');
     expect(resolveProductPathHref('/operations?operation=ghost-shell#briefing', false)).toBe('/operations?operation=ghost-shell#briefing');
     expect(resolveProductPathHref('/home', false)).toBe('/home');
-    expect(resolveProductPathHref('/labs?tab=runtime', false)).toBeNull();
-    expect(resolveProductPathHref('/collab/storyboards/board-123', false)).toBeNull();
+    expect(resolveProductPathHref('/labs?tab=runtime', false)).toBe('/labs?tab=runtime');
+    expect(resolveProductPathHref('/collab/storyboards/board-123', false)).toBe('/collab/storyboards/board-123');
+    expect(resolveProductPathHref('/academy/paths', false)).toBe('/academy/paths');
     expect(resolveProductPathHref('/labs?tab=runtime', true)).toBe('/labs?tab=runtime');
   });
 
@@ -67,25 +69,26 @@ describe('product navigation contract', () => {
     expect(resolveProductPathHref('/explore?operation=black-domain#live-environments', true)).toBe('/home');
   });
 
-  it('rejects unknown guest routes instead of inventing a preview destination', () => {
+  it('rejects unknown guest routes instead of inventing a destination', () => {
     expect(resolveProductPathHref('/unknown-surface', false)).toBeNull();
     expect(resolveProductPathHref('/unknown-surface', true)).toBe('/unknown-surface');
   });
 
-  it('defines public and protected request paths from the same contract', () => {
+  it('distinguishes public, guest-preview and authenticated-only paths', () => {
     expect(isGuestPublicNavigationPath('/home')).toBe(true);
     expect(isGuestPublicNavigationPath('/operations')).toBe(true);
-    expect(isGuestPublicNavigationPath('/operations/anything')).toBe(true);
     expect(isGuestPublicNavigationPath('/academy')).toBe(false);
-    expect(isGuestPublicNavigationPath('/warroom')).toBe(false);
-    expect(isGuestPublicNavigationPath('/labs')).toBe(false);
 
-    expect(isProtectedProductNavigationPath('/academy')).toBe(true);
-    expect(isProtectedProductNavigationPath('/academy/paths')).toBe(true);
-    expect(isProtectedProductNavigationPath('/collab/storyboards/board-123')).toBe(true);
-    expect(isProtectedProductNavigationPath('/labs')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/home')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/operations/anything')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/academy')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/academy/paths')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/collab/storyboards/board-123')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/labs')).toBe(true);
+    expect(isGuestBrowseableNavigationPath('/not-a-product-route')).toBe(false);
+
+    expect(isProtectedProductNavigationPath('/academy')).toBe(false);
+    expect(isProtectedProductNavigationPath('/labs')).toBe(false);
     expect(isProtectedProductNavigationPath('/operations')).toBe(false);
-    expect(isProtectedProductNavigationPath('/home')).toBe(false);
-    expect(isProtectedProductNavigationPath('/not-a-product-route')).toBe(false);
   });
 });
