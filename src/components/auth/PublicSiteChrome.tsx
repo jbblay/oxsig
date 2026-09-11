@@ -101,12 +101,9 @@ export function PublicSiteFooter({ authReturnTo = '/home' }: { authReturnTo?: st
           <div key={group.title} className={styles.footerGroup}>
             <h2>{group.title}</h2>
             {group.links.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
+            {group.title === 'Company' ? <Link href={signInHref}>Sign in</Link> : null}
           </div>
         ))}
-        <div className={styles.footerGroup}>
-          <h2>Account</h2>
-          <Link href={signInHref}>Sign in</Link>
-        </div>
       </div>
       <div className={styles.footerBottom}>
         <span>© {new Date().getFullYear()} OXSIG</span>
