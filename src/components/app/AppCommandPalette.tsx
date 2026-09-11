@@ -7,6 +7,7 @@ import {
   Box,
   Command,
   Crosshair,
+  GraduationCap,
   Home,
   LibraryBig,
   MessageCircle,
@@ -21,6 +22,8 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/lib/auth/use-auth';
+import { resolveProductPathHref } from '@/lib/navigation/product-navigation';
 import {
   getWorkspaceRecents,
   recordWorkspaceActivity,
@@ -29,6 +32,7 @@ import {
 
 const destinations = [
   { href: '/home', label: 'Dashboard', hint: 'Open workspace dashboard', icon: Home, color: 'home' },
+  { href: '/academy', label: 'Academy', hint: 'Learning paths and capability evidence', icon: GraduationCap, color: 'home' },
   { href: '/operations', label: 'Operations', hint: 'Preconfigured technical scenarios', icon: Crosshair, color: 'labs' },
   { href: '/warroom', label: 'WarRoom', hint: '2–4 player team lab', icon: Swords, color: 'live' },
   { href: '/labs', label: 'Cyber Lab', hint: 'Build, run and review', icon: Box, color: 'labs' },
@@ -59,8 +63,10 @@ export default function AppCommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [query, setQuery] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const signedInForNavigation = !authLoading && isAuthenticated;
 
   React.useEffect(() => {
     if (!open) {
@@ -71,14 +77,21 @@ export default function AppCommandPalette({
   }, [open]);
 
   function navigate(href: string, label?: string, color: WorkspaceColor = 'home') {
+    const destination = resolveProductPathHref(href, signedInForNavigation);
+    if (!destination) return;
+
     onOpenChange(false);
     if (label) {
-      recordWorkspaceActivity({ label, detail: 'Command palette', href, color, kind: 'action' });
+      recordWorkspaceActivity({ label, detail: 'Command palette', href: destination, color, kind: 'action' });
     }
-    router.push(href);
+    router.push(destination);
   }
 
   function openAi() {
+    if (!signedInForNavigation) {
+      navigate('/explore#ai');
+      return;
+    }
     onOpenChange(false);
     recordWorkspaceActivity({ label: 'Opened AI Helper', detail: 'Global command', color: 'home', kind: 'action' });
     window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'));
@@ -88,13 +101,13 @@ export default function AppCommandPalette({
   const items: PaletteItem[] = [
     {
       id: 'action-ai',
-      label: 'Ask AI in current context',
-      hint: 'Open AI Helper without leaving your workspace',
+      label: signedInForNavigation ? 'Ask AI in current context' : 'Preview AI Operator',
+      hint: signedInForNavigation ? 'Open AI Helper without leaving your workspace' : 'See the guest-safe AI experience',
       icon: Sparkles,
       color: 'home',
       type: 'action',
       run: openAi,
-      keywords: 'ask ai helper explain diagnose fix summarize',
+      keywords: 'ask ai helper explain diagnose fix summarize preview operator',
     },
     {
       id: 'action-operation',
@@ -108,8 +121,8 @@ export default function AppCommandPalette({
     },
     {
       id: 'action-warroom',
-      label: 'Open WarRoom',
-      hint: 'Start a 2–4 player team lab',
+      label: signedInForNavigation ? 'Open WarRoom' : 'Preview WarRoom',
+      hint: signedInForNavigation ? 'Start a 2–4 player team lab' : 'See the team-operation preview',
       icon: Swords,
       color: 'live',
       type: 'action',
@@ -118,38 +131,38 @@ export default function AppCommandPalette({
     },
     {
       id: 'action-lab',
-      label: 'Start or resume Cyber Lab',
-      hint: 'Jump directly into lab operations',
+      label: signedInForNavigation ? 'Start or resume Cyber Lab' : 'Preview Cyber Lab',
+      hint: signedInForNavigation ? 'Jump directly into lab operations' : 'See the guest-safe live environment preview',
       icon: Play,
       color: 'labs',
       type: 'action',
       run: () => navigate('/labs', 'Opened Cyber Lab from command palette', 'labs'),
-      keywords: 'start run resume terminal cyber lab',
+      keywords: 'start run resume terminal cyber lab preview',
     },
     {
       id: 'action-board',
-      label: 'Open Board workspace',
-      hint: 'Draw, record, share or secure a board',
+      label: signedInForNavigation ? 'Open Board workspace' : 'Preview Boards',
+      hint: signedInForNavigation ? 'Draw, record, share or secure a board' : 'See the platform collaboration model',
       icon: BookOpen,
       color: 'boards',
       type: 'action',
       run: () => navigate('/collab/storyboards', 'Opened Boards from command palette', 'boards'),
-      keywords: 'new board draw diagram explain storyboard',
+      keywords: 'new board draw diagram explain storyboard preview',
     },
     {
       id: 'action-vault',
-      label: 'Capture knowledge in Vault',
-      hint: 'Create or reuse commands, scripts and playbooks',
+      label: signedInForNavigation ? 'Capture knowledge in Vault' : 'Preview evidence retention',
+      hint: signedInForNavigation ? 'Create or reuse commands, scripts and playbooks' : 'See how OXSIG retains proof and knowledge',
       icon: LibraryBig,
       color: 'vault',
       type: 'action',
       run: () => navigate('/vault', 'Opened Vault from command palette', 'vault'),
-      keywords: 'save vault command script playbook knowledge',
+      keywords: 'save vault command script playbook knowledge proof preview',
     },
     ...(recent ? [{
       id: 'action-recent',
       label: `Resume ${recent.label}`,
-      hint: 'Continue your most recent workspace',
+      hint: signedInForNavigation ? 'Continue your most recent workspace' : 'Open the guest-safe equivalent of your recent workspace',
       icon: RotateCcw,
       color: recent.color,
       type: 'action' as const,

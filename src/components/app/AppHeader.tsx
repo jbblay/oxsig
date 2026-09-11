@@ -9,19 +9,14 @@ import AppCommandPalette from './AppCommandPalette';
 import WorkspaceWalkthrough from './WorkspaceWalkthrough';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
+import {
+  productNavigationLabelForPath,
+  resolveProductNavigationHref,
+} from '@/lib/navigation/product-navigation';
 
 function pageTitle(pathname: string) {
-  if (pathname === '/home') return 'Dashboard';
-  if (pathname === '/collab') return 'Collaboration';
-  if (pathname.startsWith('/collab/storyboards')) return 'Boards';
-  if (pathname.startsWith('/live')) return 'Live Workspace';
-  if (pathname.startsWith('/operations')) return 'Operations';
-  if (pathname.startsWith('/warroom')) return 'WarRoom';
-  if (pathname.startsWith('/vault') || pathname.startsWith('/storage')) return 'Vault';
-  if (pathname.startsWith('/labs')) return 'Cyber Lab';
-  if (pathname.startsWith('/manage')) return 'Resources';
-  if (pathname.startsWith('/account')) return 'Account';
-  return 'OXSIG';
+  if (pathname.startsWith('/storage')) return 'Vault';
+  return productNavigationLabelForPath(pathname) ?? 'OXSIG';
 }
 
 function initials(value?: string | null) {
@@ -36,6 +31,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
   // AI Practitioner is mounted inside Cyber Lab. Operations and WarRoom use the
   // global AI Helper, which already receives those workspace contexts.
   const practitionerSurface = pathname.startsWith('/labs');
+  const accountHref = resolveProductNavigationHref('account', isAuthenticated) ?? '/sign-up';
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -96,7 +92,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               </Button>
             )}
             <Link
-              href={isAuthenticated ? '/account' : '/sign-up'}
+              href={accountHref}
               className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
               aria-label={isAuthenticated ? 'Open account' : 'Create account'}
               title={isAuthenticated ? (user?.displayName || user?.email || 'Account') : 'Create account'}
