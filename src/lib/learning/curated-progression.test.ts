@@ -24,13 +24,14 @@ const path: CuratedLearningPath = {
 describe('curated path enrollment reconciliation', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('moves the durable active pointer to the first capability not yet demonstrated', async () => {
+  it('moves the durable active pointer and Academy resume position to the first unproved capability', async () => {
     const query = vi.fn()
       .mockResolvedValueOnce({ rows: [{ id: 'enrollment-1', active_capability_id: 'one' }] })
       .mockResolvedValueOnce({ rows: [
         { capability_id: 'one', source_type: 'academy-practice', result: 'demonstrated' },
         { capability_id: 'one', source_type: 'academy-reflection', result: 'demonstrated' },
       ] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
     mocks.getPool.mockReturnValue({ query });
 
@@ -42,6 +43,11 @@ describe('curated path enrollment reconciliation', () => {
       3,
       expect.stringContaining('SET active_capability_id=$1'),
       ['two', true, 'enrollment-1', 'owner-1'],
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining('SET active_lesson_index=$1'),
+      [1, 'owner-1', 'test:path@1'],
     );
   });
 
