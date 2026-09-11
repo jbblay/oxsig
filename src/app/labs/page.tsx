@@ -3,7 +3,7 @@ import CyberLabWorkspace from '@/components/labs/CyberLabWorkspace';
 import { OperationRunRecovery } from '@/components/operations/OperationRunRecovery';
 import { OperationRunStrip } from '@/components/operations/OperationRunStrip';
 
-type SearchParams = Promise<{ operation?: string; mode?: string; run?: string }>;
+type SearchParams = Promise<{ operation?: string; mode?: string; run?: string; capability?: string }>;
 
 export default async function CyberLabPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
@@ -11,7 +11,12 @@ export default async function CyberLabPage({ searchParams }: { searchParams: Sea
     <>
       {params.run ? <OperationRunStrip runId={params.run} /> : <OperationRunRecovery compact />}
       {!params.run && <LabAccessReadinessBanner />}
-      <CyberLabWorkspace operationSlug={params.operation} operationMode={params.mode} operationRunId={params.run} />
+      <CyberLabWorkspace
+        operationSlug={params.operation}
+        operationMode={params.mode}
+        operationRunId={params.run}
+        learningCapabilityId={params.capability}
+      />
     </>
   );
 }
