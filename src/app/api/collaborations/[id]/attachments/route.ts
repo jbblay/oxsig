@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
@@ -152,6 +152,15 @@ export async function GET(
       const rawKey = url.searchParams.get('key');
       if (!rawKey) return NextResponse.json({ error: 'Missing attachment key' }, { status: 400 });
       const key = assertCollaborationObjectKey(id, rawKey);
+
+      if (url.searchParams.get('verify') === '1') {
+        await getStorageClient().send(new HeadObjectCommand({
+          Bucket: getStorageBucket(),
+          Key: key,
+        }));
+        return NextResponse.json({ ready: true }, { headers: { 'Cache-Control': 'no-store' } });
+      }
+
       const filename = sanitizeStorageFilename(displayFilename(key));
       const asDownload = url.searchParams.get('download') === '1';
       const disposition = `${asDownload ? 'attachment' : 'inline'}; filename="${filename}"`;
