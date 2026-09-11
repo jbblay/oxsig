@@ -45,14 +45,20 @@ describe('Operation runtime registry', () => {
   });
 
   it('rejects catalog missions that do not have an automated runtime', () => {
-    expect(() => getOperationRuntimeDriver('ghost-shell')).toThrow(
-      expect.objectContaining({ code: 'OPERATION_RUNTIME_NOT_AUTOMATED', status: 409 }),
-    );
+    try {
+      getOperationRuntimeDriver('ghost-shell');
+      throw new Error('expected runtime lookup to fail');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'OPERATION_RUNTIME_NOT_AUTOMATED', status: 409 });
+    }
   });
 
   it('rejects unknown Operations before driver dispatch', () => {
-    expect(() => getOperationRuntimeDriver('does-not-exist')).toThrow(
-      expect.objectContaining({ code: 'OPERATION_NOT_FOUND', status: 404 }),
-    );
+    try {
+      getOperationRuntimeDriver('does-not-exist');
+      throw new Error('expected runtime lookup to fail');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'OPERATION_NOT_FOUND', status: 404 });
+    }
   });
 });
