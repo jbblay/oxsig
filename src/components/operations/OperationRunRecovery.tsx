@@ -17,6 +17,7 @@ type RunSummary = {
   status: string;
   lifecycleState?: 'active' | 'paused';
   operatorLabInstanceId: string | null;
+  learningCapabilityId?: string | null;
   expiresAt: string | null;
   lastError: string | null;
   createdAt: string;
@@ -37,6 +38,7 @@ function resumeHref(run: RunSummary) {
     mode: run.mode,
     run: run.id,
   });
+  if (run.learningCapabilityId) query.set('capability', run.learningCapabilityId);
   return `${destination}?${query.toString()}`;
 }
 

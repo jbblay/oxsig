@@ -50,7 +50,12 @@ export function operationReadinessCommand(target: Pick<OperationReadinessTarget,
   }
   return {
     documentName: 'AWS-RunShellScript',
-    command: `test -s /opt/oxsig/operation.env && test -s /opt/oxsig/README && command -v nmap >/dev/null && command -v smbclient >/dev/null && command -v ldapsearch >/dev/null && command -v python3 >/dev/null && printf '%s\\n' '${READY_SENTINEL}'`,
+    // Session Manager uses ssm-user by default. The operator VM is a disposable,
+    // single-owner machine, so make its per-run scope/credential file readable by
+    // the learner before declaring the node ready. Ubuntu Noble's python3-impacket
+    // package ships GetUserSPNs.py under /usr/share/doc instead of guaranteeing the
+    // impacket-GetUserSPNs wrapper, so install a stable local compatibility command.
+    command: `test -s /opt/oxsig/operation.env && chmod 0644 /opt/oxsig/operation.env && test -r /opt/oxsig/operation.env && test -s /opt/oxsig/README && command -v nmap >/dev/null && command -v smbclient >/dev/null && command -v ldapsearch >/dev/null && command -v dig >/dev/null && command -v kinit >/dev/null && command -v python3 >/dev/null && test -r /usr/share/doc/python3-impacket/examples/GetUserSPNs.py && (command -v impacket-GetUserSPNs >/dev/null || (printf '%s\\n' '#!/bin/sh' 'exec python3 /usr/share/doc/python3-impacket/examples/GetUserSPNs.py "$@"' > /usr/local/bin/impacket-GetUserSPNs && chmod 0755 /usr/local/bin/impacket-GetUserSPNs)) && command -v impacket-GetUserSPNs >/dev/null && printf '%s\\n' '${READY_SENTINEL}'`,
   };
 }
 

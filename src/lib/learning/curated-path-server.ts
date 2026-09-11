@@ -3,6 +3,7 @@ import 'server-only';
 import { createAcademyCourse } from '@/lib/academy/persistence';
 import { getPool, transaction } from '@/lib/db/pool';
 import { recordLearningActivity } from '@/lib/learning/activity';
+import { reconcileCuratedPathEnrollment } from '@/lib/learning/curated-progression';
 import type { CuratedLearningPath } from '@/lib/learning/curated-paths';
 
 type EvidenceRow = {
@@ -29,6 +30,10 @@ export async function loadCuratedPathState(ownerId: string, path: CuratedLearnin
   let evidenceRows: EvidenceRow[] = [];
 
   try {
+    // Reconcile old/stale enrollment pointers from the evidence ledger before
+    // returning state. This is idempotent and does not manufacture activity.
+    await reconcileCuratedPathEnrollment(ownerId, path, { touchActivity: false });
+
     const enrollmentResult = await pool.query(
       `SELECT id, status, active_capability_id, enrolled_at, last_activity_at, completed_at
          FROM learning_path_enrollments

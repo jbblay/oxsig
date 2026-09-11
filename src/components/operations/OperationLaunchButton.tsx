@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { authPathWithReturnTo } from '@/lib/auth-return';
 import { useAuth } from '@/lib/auth/use-auth';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import type { OperationMode } from '@/lib/operations/catalog';
@@ -32,6 +33,11 @@ export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'def
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [busy, setBusy] = React.useState(false);
   const [gateOpen, setGateOpen] = React.useState(false);
+  const returnTo = React.useMemo(() => {
+    const query = new URLSearchParams({ operation: slug });
+    if (capabilityId) query.set('capability', capabilityId);
+    return `/operations?${query.toString()}`;
+  }, [capabilityId, slug]);
 
   const launch = async () => {
     if (busy || authLoading) return;
@@ -111,10 +117,10 @@ export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'def
           <div className="flex items-center gap-2 text-[11px] text-slate-500"><LockKeyhole className="h-3.5 w-3.5" /> Browsing and mission briefings remain available without an account.</div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button asChild variant="outline" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white">
-              <Link href="/sign-in">Log in</Link>
+              <Link href={authPathWithReturnTo('/sign-in', returnTo)}>Log in</Link>
             </Button>
             <Button asChild className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
-              <Link href="/sign-up">Create account <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link href={authPathWithReturnTo('/sign-up', returnTo)}>Create account <ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
           </DialogFooter>
         </DialogContent>

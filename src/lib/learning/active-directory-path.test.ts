@@ -45,6 +45,18 @@ describe('Active Directory curated path', () => {
     expect(commands).toContain('impacket-GetUserSPNs');
   });
 
+  it('uses the issued low-privilege identity for LDAP instead of assuming anonymous AD search', () => {
+    const course = buildActiveDirectoryAcademyCourse();
+    const ldapLessons = course.lessons.filter((lesson) => lesson.practice?.command.includes('ldapsearch'));
+
+    expect(ldapLessons.length).toBeGreaterThanOrEqual(2);
+    for (const lesson of ldapLessons) {
+      expect(lesson.practice?.command).toContain("-D 'labuser@blackdomain.local'");
+      expect(lesson.practice?.command).toContain('-w \"$INITIAL_PASSWORD\"');
+      expect(lesson.practice?.instruction.toLowerCase()).not.toContain('anonymously');
+    }
+  });
+
   it('requires evidence language that distinguishes enumeration from compromise', () => {
     for (const capability of ACTIVE_DIRECTORY_CAPABILITIES) {
       expect(capability.evidence.length).toBeGreaterThan(50);

@@ -23,12 +23,20 @@ describe('Operation readiness commands', () => {
     expect(probe.command).not.toContain('domain-ready.txt');
   });
 
-  it('requires the operator scope files and core tooling', async () => {
+  it('requires the operator scope files, learner readability, and every curated AD tool', async () => {
     const { operationReadinessCommand } = await import('./readiness');
     const probe = operationReadinessCommand({ nodeKey: 'operator', osFamily: 'ubuntu' });
     expect(probe.documentName).toBe('AWS-RunShellScript');
     expect(probe.command).toContain('/opt/oxsig/operation.env');
+    expect(probe.command).toContain('chmod 0644 /opt/oxsig/operation.env');
+    expect(probe.command).toContain('test -r /opt/oxsig/operation.env');
     expect(probe.command).toContain('/opt/oxsig/README');
+    for (const command of ['nmap', 'smbclient', 'ldapsearch', 'dig', 'kinit', 'python3']) {
+      expect(probe.command).toContain(`command -v ${command}`);
+    }
+    expect(probe.command).toContain('/usr/share/doc/python3-impacket/examples/GetUserSPNs.py');
+    expect(probe.command).toContain('/usr/local/bin/impacket-GetUserSPNs');
+    expect(probe.command).toContain('command -v impacket-GetUserSPNs');
   });
 
   it('rejects unsupported node families instead of manufacturing readiness', async () => {
