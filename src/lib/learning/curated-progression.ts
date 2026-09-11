@@ -21,23 +21,24 @@ export type ReconciledCuratedProgress = {
 export async function reconcileCuratedPathEnrollment(
   ownerId: string,
   path: CuratedLearningPath,
+  options: { touchActivity?: boolean } = {},
 ): Promise<ReconciledCuratedProgress | null> {
   const pool = getPool();
   const enrollmentResult = await pool.query(
-    `SELECT id
+    `SELECT id,active_capability_id
        FROM learning_path_enrollments
       WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'
       LIMIT 1`,
     [ownerId, path.id, path.version],
   );
-  const enrollmentId = enrollmentResult.rows[0]?.id as string | undefined;
-  if (!enrollmentId) return null;
+  const enrollment = enrollmentResult.rows[0] as { id: string; active_capability_id: string | null } | undefined;
+  if (!enrollment) return null;
 
   const evidenceResult = await pool.query(
     `SELECT capability_id,source_type,result
        FROM learning_capability_evidence
       WHERE enrollment_id=$1 AND owner_id=$2`,
-    [enrollmentId, ownerId],
+    [enrollment.id, ownerId],
   );
   const evidence: CuratedProgressEvidence[] = evidenceResult.rows.map((row) => ({
     capabilityId: String(row.capability_id),
@@ -56,15 +57,23 @@ export async function reconcileCuratedPathEnrollment(
               completed_at=COALESCE(completed_at,NOW()),
               last_activity_at=NOW(), updated_at=NOW()
         WHERE id=$1 AND owner_id=$2 AND status='active'`,
-      [enrollmentId, ownerId],
+      [enrollment.id, ownerId],
     );
-  } else {
+  } else if (enrollment.active_capability_id !== progress.nextCapabilityId) {
     await pool.query(
       `UPDATE learning_path_enrollments
           SET active_capability_id=$1, completed_at=NULL,
-              last_activity_at=NOW(), updated_at=NOW()
-        WHERE id=$2 AND owner_id=$3 AND status='active'`,
-      [progress.nextCapabilityId, enrollmentId, ownerId],
+              last_activity_at=CASE WHEN $2::boolean THEN NOW() ELSE last_activity_at END,
+              updated_at=NOW()
+        WHERE id=$3 AND owner_id=$4 AND status='active'`,
+      [progress.nextCapabilityId, options.touchActivity !== false, enrollment.id, ownerId],
+    );
+  } else if (options.touchActivity !== false) {
+    await pool.query(
+      `UPDATE learning_path_enrollments
+          SET last_activity_at=NOW(), updated_at=NOW()
+        WHERE id=$1 AND owner_id=$2 AND status='active'`,
+      [enrollment.id, ownerId],
     );
   }
 
