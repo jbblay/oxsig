@@ -27,6 +27,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 import type { LearnerProgressSummary } from '@/lib/learning/progress-contract';
+import {
+  getProductNavigationItemByHref,
+  resolveProductNavigationHref,
+} from '@/lib/navigation/product-navigation';
 
 const actions = [
   { href: '/operations', label: 'Operations', hint: 'Preconfigured scenarios', icon: Crosshair, color: 'labs' },
@@ -46,13 +50,9 @@ const workflow = [
   { href: '/vault', label: 'Save', color: 'vault', icon: LibraryBig },
 ] as const;
 
-function guestDestination(href: string) {
-  if (href === '/operations') return href;
-  if (href === '/warroom' || href === '/live' || href === '/collab') return '/explore#collaboration';
-  if (href === '/labs') return '/explore#live-environments';
-  if (href === '/vault') return '/explore#proof';
-  if (href === '/collab/storyboards' || href === '/manage') return '/explore#platform';
-  return '/explore';
+function navigationTarget(href: string, isAuthenticated: boolean) {
+  const item = getProductNavigationItemByHref(href);
+  return item ? resolveProductNavigationHref(item, isAuthenticated) : null;
 }
 
 export default function HomePage() {
@@ -87,6 +87,7 @@ export default function HomePage() {
   const activeLab = progress?.labs.activeLab;
   const labRunning = activeLab?.status === 'running';
   const guestMode = !authLoading && !isAuthenticated;
+  const signedInForNavigation = !authLoading && isAuthenticated;
 
   return (
     <div className="oxsig-console mx-auto max-w-6xl space-y-4">
@@ -158,15 +159,29 @@ export default function HomePage() {
         <div className="oxsig-action-grid">
           {actions.map((item) => {
             const Icon = item.icon;
-            const href = guestMode ? guestDestination(item.href) : item.href;
-            return (
-              <Link key={item.href} href={href} data-workspace-color={item.color} className="oxsig-action-button group">
+            const href = navigationTarget(item.href, signedInForNavigation);
+            const content = (
+              <>
                 <span className="oxsig-workspace-icon h-9 w-9 rounded-md"><Icon className="h-4 w-4" /></span>
                 <span className="min-w-0 flex-1 text-left">
                   <span className="block truncate text-sm font-medium">{item.label}</span>
                   <span className="block truncate text-[11px] text-muted-foreground">{guestMode && item.href !== '/operations' ? `Preview · ${item.hint}` : item.hint}</span>
                 </span>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+              </>
+            );
+
+            if (!href) {
+              return (
+                <button key={item.href} type="button" disabled aria-disabled="true" data-workspace-color={item.color} className="oxsig-action-button cursor-not-allowed opacity-45">
+                  {content}
+                </button>
+              );
+            }
+
+            return (
+              <Link key={item.href} href={href} data-workspace-color={item.color} className="oxsig-action-button group">
+                {content}
               </Link>
             );
           })}
@@ -179,12 +194,26 @@ export default function HomePage() {
           <div className="grid flex-1 grid-cols-2 gap-1.5 sm:grid-cols-4">
             {workflow.map((item, index) => {
               const Icon = item.icon;
-              const href = guestMode ? guestDestination(item.href) : item.href;
-              return (
-                <Link key={item.label} href={href} data-workspace-color={item.color} className="oxsig-flow-button group">
+              const href = navigationTarget(item.href, signedInForNavigation);
+              const content = (
+                <>
                   <span className="text-[10px] tabular-nums text-muted-foreground">0{index + 1}</span>
                   <span className="oxsig-workspace-icon h-7 w-7 rounded-md"><Icon className="h-3.5 w-3.5" /></span>
                   <span className="text-xs font-medium">{item.label}</span>
+                </>
+              );
+
+              if (!href) {
+                return (
+                  <button key={item.label} type="button" disabled aria-disabled="true" data-workspace-color={item.color} className="oxsig-flow-button cursor-not-allowed opacity-45">
+                    {content}
+                  </button>
+                );
+              }
+
+              return (
+                <Link key={item.label} href={href} data-workspace-color={item.color} className="oxsig-flow-button group">
+                  {content}
                 </Link>
               );
             })}
