@@ -35,8 +35,12 @@
   max-width: 90rem;
   margin-inline: auto;
 }
+
+/* Opening a terminal or desktop should not create a second giant workspace.
+   Keep the workbench at the same stable height and let the active session
+   replace only the center canvas while machine context remains available. */
 .oxsig-lab-runtime[data-session-open="true"] {
-  --lab-canvas-height: clamp(18rem, 34dvh, 24rem);
+  --lab-canvas-height: clamp(22rem, 58dvh, 40rem);
 }
 .oxsig-lab-grid {
   display: grid;
@@ -185,6 +189,75 @@
   }
   .oxsig-lab-inspector { width: 17.5rem; }
   .oxsig-lab-inspector:has(button[aria-label="Expand inspector"]) { width: 3.25rem; }
+
+  /* Stable Cyber Lab workbench: the session occupies the existing center
+     workspace instead of pushing Machines and Inspector below it. */
+  .oxsig-lab-runtime[data-session-open="true"] {
+    --lab-inspector-width: 17.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .oxsig-lab-runtime[data-session-open="true"]:has(.oxsig-lab-inspector button[aria-label="Expand inspector"]) {
+    --lab-inspector-width: 3.25rem;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > * {
+    margin-top: 0 !important;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > .oxsig-lab-panel-switcher {
+    order: 20;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > div:has(.oxsig-lab-grid) {
+    display: block !important;
+    order: 30;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > .oxsig-lab-session:not(.fixed) {
+    order: 40;
+    z-index: 20;
+    height: var(--lab-canvas-height);
+    max-height: var(--lab-canvas-height);
+    margin-top: calc(-1 * var(--lab-canvas-height) - 0.75rem) !important;
+    margin-left: calc(3.65rem + 0.75rem);
+    margin-right: calc(var(--lab-inspector-width) + 0.75rem);
+    overflow-y: auto;
+    box-shadow: none;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] .oxsig-lab-canvas {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] .oxsig-lab-machines,
+  .oxsig-lab-runtime[data-session-open="true"] .oxsig-lab-inspector {
+    position: relative;
+    z-index: 30;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > button.w-full {
+    display: none;
+  }
+
+  /* If the user explicitly asks for focus mode, keep the existing full-screen
+     behavior. Focus is optional; the default workbench preserves context. */
+  .oxsig-lab-runtime[data-session-open="true"]:has(> .oxsig-lab-session.fixed) > div:has(.oxsig-lab-grid) {
+    display: none !important;
+  }
+
+  /* A collapsed inspector should still announce where machine controls live. */
+  .oxsig-lab-runtime[data-session-open="true"] .oxsig-lab-inspector:has(button[aria-label="Expand inspector"])::after {
+    content: "Inspector";
+    position: absolute;
+    inset: 3.5rem 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 0.75rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    writing-mode: vertical-rl;
+    pointer-events: none;
+  }
 }
 
 @media (max-width: 1199px) {
@@ -206,10 +279,45 @@
     grid-template-columns: repeat(auto-fit, 2.75rem);
     min-height: 8rem;
   }
+
+  /* Compact layouts keep one primary surface at a time, with the panel switcher
+     pinned above it so machine controls are always one tap away. */
+  .oxsig-lab-runtime[data-session-open="true"] {
+    --lab-canvas-height: clamp(20rem, 56dvh, 34rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > * {
+    margin-top: 0 !important;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > .oxsig-lab-panel-switcher {
+    order: 20;
+    position: sticky;
+    top: 0.5rem;
+    z-index: 50;
+    box-shadow: 0 8px 24px rgb(2 6 23 / 0.12);
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > .oxsig-lab-session:not(.fixed) {
+    order: 30;
+    max-height: var(--lab-canvas-height);
+    overflow-y: auto;
+  }
+  .oxsig-lab-runtime[data-session-open="true"] > div:has(.oxsig-lab-grid) {
+    order: 40;
+  }
+  .oxsig-lab-runtime[data-session-open="true"][data-compact-panel="topology"] > div:has(.oxsig-lab-grid) {
+    display: none !important;
+  }
+  .oxsig-lab-runtime[data-session-open="true"][data-compact-panel="machines"] > .oxsig-lab-session:not(.fixed),
+  .oxsig-lab-runtime[data-session-open="true"][data-compact-panel="inspector"] > .oxsig-lab-session:not(.fixed) {
+    display: none;
+  }
 }
 
 @media (max-width: 639px) {
   .oxsig-lab-runtime { --lab-canvas-height: clamp(19rem, 52dvh, 29rem); }
+  .oxsig-lab-runtime[data-session-open="true"] { --lab-canvas-height: clamp(19rem, 52dvh, 29rem); }
   .oxsig-lab-minimap { display: none; }
   .oxsig-lab-toolbar button, .oxsig-lab-machines button, .oxsig-lab-inspector button { min-height: 2.75rem; }
   .oxsig-lab-canvas .react-flow__controls-button { width: 2.75rem; height: 2.75rem; }
