@@ -90,7 +90,8 @@ export function resolveProductPathHref(href: string, isAuthenticated: boolean) {
   }
 
   const item = matchingNavigationItem(pathname);
-  if (!item || item.status !== 'active') return isAuthenticated ? href : '/explore';
+  if (item?.status === 'disabled') return null;
+  if (!item) return isAuthenticated ? href : '/explore';
   if (isAuthenticated || item.access === 'public') return href;
   return item.guestHref ?? '/explore';
 }
