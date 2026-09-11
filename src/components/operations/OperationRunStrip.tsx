@@ -1,12 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { Eye, Loader2, Network, Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { Eye, Loader2, Network, Pause, Play, RefreshCw, Trash2, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RuntimeProgress } from '@/components/warroom/RuntimeProgress';
+import { operationLifecycleVoiceCue } from '@/lib/operations/lifecycle-voice';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
 type RunNode = {
   id: string;
@@ -55,6 +57,10 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   const [busy, setBusy] = React.useState<BusyAction>(null);
   const [revealingAccess, setRevealingAccess] = React.useState(false);
   const [revealedAccess, setRevealedAccess] = React.useState<RevealedAccess | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = React.useState(false);
+  const lastVoiceStageRef = React.useRef<string | null>(null);
+  const voiceErrorStageRef = React.useRef<string | null>(null);
+  const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
 
   const refresh = React.useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -72,10 +78,38 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
 
   React.useEffect(() => {
     setRevealedAccess(null);
+    setVoiceEnabled(false);
+    lastVoiceStageRef.current = null;
+    voiceErrorStageRef.current = null;
+    stopVoice();
     void refresh();
     const timer = window.setInterval(() => void refresh(true), 5_000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, stopVoice]);
+
+  const voiceCue = React.useMemo(() => run ? operationLifecycleVoiceCue(run) : null, [run]);
+
+  React.useEffect(() => {
+    if (!voiceEnabled || !voiceCue || lastVoiceStageRef.current === voiceCue.stage) return;
+    lastVoiceStageRef.current = voiceCue.stage;
+    void playVoice(voiceCue.text, voiceCue.stage).catch((error) => {
+      if (voiceErrorStageRef.current === voiceCue.stage) return;
+      voiceErrorStageRef.current = voiceCue.stage;
+      toast.error(error instanceof Error ? error.message : 'Mission voice playback failed');
+    });
+  }, [playVoice, voiceCue, voiceEnabled]);
+
+  const toggleVoice = () => {
+    if (voiceEnabled) {
+      setVoiceEnabled(false);
+      lastVoiceStageRef.current = null;
+      stopVoice();
+      return;
+    }
+    voiceErrorStageRef.current = null;
+    lastVoiceStageRef.current = null;
+    setVoiceEnabled(true);
+  };
 
   const changeLifecycle = async (action: 'pause' | 'resume') => {
     setBusy(action);
@@ -161,6 +195,20 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
         </Badge>
         {run.metadata?.domain && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.domain}</Badge>}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          {voiceCue && (
+            <Button
+              size="sm"
+              variant={voiceEnabled ? 'outline' : 'ghost'}
+              className="h-7 px-2 text-[10px]"
+              aria-label={voiceEnabled ? 'Disable mission lifecycle voice' : 'Enable mission lifecycle voice'}
+              aria-pressed={voiceEnabled}
+              title={voiceCue.label}
+              onClick={toggleVoice}
+            >
+              {speakingKey ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : voiceEnabled ? <Volume2 className="mr-1.5 h-3.5 w-3.5" /> : <VolumeX className="mr-1.5 h-3.5 w-3.5" />}
+              {voiceEnabled ? 'Mission voice on' : 'Mission voice'}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" className="h-7 px-2" aria-label="Refresh environment status" onClick={() => void refresh()} disabled={loading || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
           {!terminalState && paused && (
             <Button size="sm" variant="outline" className="h-7" onClick={() => void changeLifecycle('resume')} disabled={Boolean(busy)}>
@@ -179,6 +227,12 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
           )}
         </div>
       </div>
+
+      {voiceEnabled && voiceCue && (
+        <p className="mt-2 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-violet-500 dark:text-violet-300">
+          <Volume2 className="h-3 w-3" /> Mission voice // {voiceCue.label}
+        </p>
+      )}
 
       {compact ? <RuntimeProgress nodes={run.nodes} paused={paused} status={run.status} /> : <div className="mt-3 grid gap-2 sm:grid-cols-3">
         {run.nodes.map((node) => (
@@ -226,4 +280,3 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
     </div>
   );
 }
-
