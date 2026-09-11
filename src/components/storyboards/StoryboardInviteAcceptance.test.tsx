@@ -1,11 +1,12 @@
+import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@clerk/nextjs', () => ({
-  SignedIn: ({ children }: { children: React.ReactNode }) => children,
+  SignedIn: ({ children }: { children: ReactNode }) => children,
   SignedOut: () => null,
-  SignInButton: ({ children }: { children: React.ReactNode }) => children,
-  SignUpButton: ({ children }: { children: React.ReactNode }) => children,
+  SignInButton: ({ children }: { children: ReactNode }) => children,
+  SignUpButton: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/lib/security/csrf-client', () => ({ getCsrfToken: vi.fn() }));
