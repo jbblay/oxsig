@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { SignedIn, SignedOut } from '@clerk/nextjs';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -29,6 +30,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { authPathWithReturnTo } from '@/lib/auth-return';
 import { operations } from '@/lib/operations/catalog';
 import { PublicSiteFooter, PublicSiteHeader } from './PublicSiteChrome';
 import styles from './guest-explore.module.css';
@@ -118,10 +120,32 @@ export default function GuestExploreExperience() {
   const mission = operations.find((operation) => operation.slug === 'black-domain') ?? operations[0];
   const [voiceState, setVoiceState] = React.useState<'idle' | 'playing' | 'unavailable'>('idle');
   const [previewStep, setPreviewStep] = React.useState(0);
+  const guestReturnTo = `/explore?operation=${encodeURIComponent(mission.slug)}&preview=${previewStep}#live-environments`;
+  const signUpHref = authPathWithReturnTo('/sign-up', guestReturnTo);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('operation') !== mission.slug) return;
+    const requestedStep = Number(params.get('preview'));
+    if (Number.isInteger(requestedStep) && requestedStep >= 0 && requestedStep < previewCommands.length) {
+      setPreviewStep(requestedStep);
+    }
+  }, [mission.slug]);
 
   React.useEffect(() => () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
   }, []);
+
+  function persistPreviewStep(nextStep: number) {
+    setPreviewStep(nextStep);
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('operation', mission.slug);
+    url.searchParams.set('preview', String(nextStep));
+    url.hash = 'live-environments';
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }
 
   function toggleBriefing() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
@@ -146,12 +170,12 @@ export default function GuestExploreExperience() {
   }
 
   function advancePreview() {
-    setPreviewStep((current) => current >= previewCommands.length - 1 ? 0 : current + 1);
+    persistPreviewStep(previewStep >= previewCommands.length - 1 ? 0 : previewStep + 1);
   }
 
   return (
     <main className={styles.page}>
-      <PublicSiteHeader />
+      <PublicSiteHeader authReturnTo={guestReturnTo} />
 
       <section className={styles.hero} id="start">
         <div className={styles.heroCopy}>
@@ -326,9 +350,16 @@ export default function GuestExploreExperience() {
                 <Button asChild variant="outline" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white">
                   <Link href={`/operations?operation=${mission.slug}`}>Read full dossier</Link>
                 </Button>
-                <Button asChild className="bg-violet-400 text-slate-950 hover:bg-violet-300">
-                  <Link href="/sign-up">Create account to provision <ArrowRight className="ml-2 h-4 w-4" /></Link>
-                </Button>
+                <SignedOut>
+                  <Button asChild className="bg-violet-400 text-slate-950 hover:bg-violet-300">
+                    <Link href={signUpHref}>Create account to provision <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                  </Button>
+                </SignedOut>
+                <SignedIn>
+                  <Button asChild className="bg-violet-400 text-slate-950 hover:bg-violet-300">
+                    <Link href={`/operations?operation=${mission.slug}`}>Continue to live operation <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                  </Button>
+                </SignedIn>
               </div>
             </div>
           </div>
@@ -396,7 +427,12 @@ export default function GuestExploreExperience() {
               <li><Check /> Join persistent team operations</li>
               <li><Check /> Use supported AI actions with authorization</li>
             </ul>
-            <Button asChild className="mt-auto bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href="/sign-up">Create free account <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+            <SignedOut>
+              <Button asChild className="mt-auto bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href={signUpHref}>Create free account <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+            </SignedOut>
+            <SignedIn>
+              <Button asChild className="mt-auto bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href={`/operations?operation=${mission.slug}`}>Open live mission <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+            </SignedIn>
           </article>
         </div>
       </section>
@@ -415,12 +451,17 @@ export default function GuestExploreExperience() {
         </div>
         <div>
           <Button asChild variant="outline" size="lg" className="border-white/15 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08] hover:text-white"><Link href="/operations">Browse missions</Link></Button>
-          <Button asChild size="lg" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href="/sign-up">Create account <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+          <SignedOut>
+            <Button asChild size="lg" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href={signUpHref}>Create account <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+          </SignedOut>
+          <SignedIn>
+            <Button asChild size="lg" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"><Link href={`/operations?operation=${mission.slug}`}>Continue Black Domain <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+          </SignedIn>
         </div>
       </section>
 
       <div id="resources" />
-      <PublicSiteFooter />
+      <PublicSiteFooter authReturnTo={guestReturnTo} />
     </main>
   );
 }
