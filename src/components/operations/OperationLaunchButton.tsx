@@ -21,12 +21,13 @@ import type { OperationMode } from '@/lib/operations/catalog';
 type Props = {
   slug: string;
   mode: OperationMode;
+  capabilityId?: string;
   variant?: 'default' | 'outline';
   className?: string;
   label?: string;
 };
 
-export function OperationLaunchButton({ slug, mode, variant = 'default', className, label }: Props) {
+export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'default', className, label }: Props) {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [busy, setBusy] = React.useState(false);
@@ -72,8 +73,10 @@ export function OperationLaunchButton({ slug, mode, variant = 'default', classNa
 
       toast.success('Operation topology is provisioning.');
       const destination = mode === 'warroom' ? '/warroom' : '/labs';
-      const workspaceParam = workspaceId ? `&workspace=${encodeURIComponent(workspaceId)}` : '';
-      router.push(`${destination}?operation=${encodeURIComponent(slug)}&mode=${encodeURIComponent(mode)}&run=${encodeURIComponent(runId)}${workspaceParam}`);
+      const query = new URLSearchParams({ operation: slug, mode, run: runId });
+      if (workspaceId) query.set('workspace', workspaceId);
+      if (capabilityId) query.set('capability', capabilityId);
+      router.push(`${destination}?${query.toString()}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not start Operation');
     } finally {
