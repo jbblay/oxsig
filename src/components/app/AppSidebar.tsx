@@ -93,7 +93,7 @@ function SidebarContent({
   return (
     <div className="oxsig-navigation flex h-full min-h-0 w-full flex-col">
       <div className={cn('flex h-14 items-center border-b border-sidebar-border/70', compact ? 'justify-center px-2' : 'justify-between px-3')}>
-        <Link href={isAuthenticated ? '/home' : '/explore'} onClick={onNavigate} className={cn('flex min-w-0 items-center gap-2.5', compact && 'justify-center')}>
+        <Link href="/home" onClick={onNavigate} className={cn('flex min-w-0 items-center gap-2.5', compact && 'justify-center')}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/10">
             <Network className="h-4 w-4" />
           </div>
