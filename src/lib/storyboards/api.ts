@@ -150,10 +150,10 @@ export async function saveServerStoryboard(
       existingId,
     });
 
-    // Recovery drafts can outlive a server board that was deleted or otherwise
-    // removed. Owners (and legacy local drafts without an explicit permission)
-    // should be able to save again instead of being trapped on a stale PATCH URL.
-    const canRecreate = !draft.serverPermission || draft.serverPermission === 'owner';
+    // A recovery draft can outlive an owner Board that was deleted elsewhere.
+    // Only explicit owner drafts may recreate on a stale 404; shared drafts must
+    // fail closed so revoked access never silently becomes a private fork.
+    const canRecreate = draft.serverPermission === 'owner';
     if (existingId && response.status === 404 && canRecreate) {
       response = await sendStoryboardSave({
         draft,
