@@ -1,7 +1,14 @@
+import { auth } from '@clerk/nextjs/server';
 import { MessageCircle, Radio, UsersRound } from 'lucide-react';
+import GuestProductSurface from '@/components/auth/GuestProductSurface';
 import CollaborationWorkspace from '@/components/collab/CollaborationWorkspace';
 
-export default function CollaborationPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function CollaborationPage() {
+  const { isAuthenticated } = await auth();
+  if (!isAuthenticated) return <GuestProductSurface surface="collaboration" />;
+
   return (
     <div className="oxsig-surface oxsig-surface-collab mx-auto max-w-7xl space-y-4">
       <header className="oxsig-surface-head">
