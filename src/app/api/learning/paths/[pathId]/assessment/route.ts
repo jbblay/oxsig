@@ -5,6 +5,7 @@ import { getPool } from '@/lib/db/pool';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { recordLearningActivity } from '@/lib/learning/activity';
 import { evaluateCuratedCapabilityAssessment } from '@/lib/learning/curated-assessment';
+import { reconcileCuratedPathEnrollment } from '@/lib/learning/curated-progression';
 import { getCuratedLearningPath } from '@/lib/learning/curated-paths';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -130,12 +131,7 @@ export async function POST(request: NextRequest, { params }: Context) {
         ]
       );
 
-      await pool.query(
-        `UPDATE learning_path_enrollments
-            SET active_capability_id=$1, last_activity_at=NOW(), updated_at=NOW()
-          WHERE id=$2 AND owner_id=$3`,
-        [capability.id, enrollmentId, user.id]
-      );
+      await reconcileCuratedPathEnrollment(user.id, path);
       await recordLearningActivity(user.id, 'academy');
 
       return NextResponse.json(
