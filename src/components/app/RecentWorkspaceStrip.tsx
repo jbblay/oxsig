@@ -3,6 +3,8 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Home, LibraryBig, MessageCircle, RadioTower, Settings2, Terminal } from 'lucide-react';
+import { useAuth } from '@/lib/auth/use-auth';
+import { resolveProductPathHref } from '@/lib/navigation/product-navigation';
 import {
   getWorkspaceRecents,
   subscribeWorkspaceActivity,
@@ -29,6 +31,7 @@ function relativeTime(value: number) {
 }
 
 export default function RecentWorkspaceStrip() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [items, setItems] = React.useState<WorkspaceRecent[]>([]);
   const refresh = React.useCallback(() => {
     setItems(getWorkspaceRecents().filter((item) => item.href !== '/home').slice(0, 4));
@@ -40,6 +43,7 @@ export default function RecentWorkspaceStrip() {
   }, [refresh]);
 
   if (items.length === 0) return null;
+  const signedInForNavigation = !authLoading && isAuthenticated;
 
   return (
     <section className="rounded-lg border bg-card/55 p-2.5" aria-labelledby="recent-work-title">
@@ -50,14 +54,29 @@ export default function RecentWorkspaceStrip() {
       <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => {
           const Icon = icons[item.color];
-          return (
-            <Link key={item.href} href={item.href} data-workspace-color={item.color} className="group flex min-w-0 items-center gap-2 rounded-md border border-transparent px-2 py-2 transition hover:border-border hover:bg-muted/35">
+          const href = resolveProductPathHref(item.href, signedInForNavigation);
+          const content = (
+            <>
               <span className="oxsig-workspace-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md"><Icon className="h-3.5 w-3.5" /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-medium">{item.label}</span>
                 <span className="block text-[10px] text-muted-foreground">{relativeTime(item.at)} ago</span>
               </span>
               <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </>
+          );
+
+          if (!href) {
+            return (
+              <button key={item.href} type="button" disabled aria-disabled="true" data-workspace-color={item.color} className="flex min-w-0 cursor-not-allowed items-center gap-2 rounded-md border border-transparent px-2 py-2 opacity-45">
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <Link key={item.href} href={href} data-workspace-color={item.color} className="group flex min-w-0 items-center gap-2 rounded-md border border-transparent px-2 py-2 transition hover:border-border hover:bg-muted/35">
+              {content}
             </Link>
           );
         })}
