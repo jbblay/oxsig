@@ -2,12 +2,7 @@ import 'server-only';
 
 import { getPool } from '@/lib/db/pool';
 import { detachOwnerResourceFromLiveWorkspaces } from '@/lib/live-workspace/resource-lifecycle';
-import {
-  PROGRAM_PROCESS_CAPABILITIES,
-  PROGRAM_PROCESS_PATH_ID,
-  PROGRAM_PROCESS_PATH_VERSION,
-  PROGRAM_PROCESS_SOURCE_PROMPT,
-} from '@/lib/learning/program-process-path';
+import { getCuratedLearningPathBySourcePrompt } from '@/lib/learning/curated-paths';
 import type { AcademyCourse } from './types';
 
 export type OwnedAcademyCourse = {
@@ -69,6 +64,28 @@ export async function getOwnedAcademyCourse(ownerId: string, courseId: string): 
   return result.rows[0] ? mapOwnedCourse(result.rows[0]) : null;
 }
 
+async function abandonActiveCuratedPaths(client: any, ownerId: string, exceptPath?: { id: string; version: number }) {
+  if (exceptPath) {
+    await client.query(
+      `UPDATE learning_path_enrollments
+          SET status='abandoned', active_capability_id=NULL,
+              completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
+        WHERE owner_id=$1 AND status='active'
+          AND NOT (path_id=$2 AND path_version=$3)`,
+      [ownerId, exceptPath.id, exceptPath.version]
+    );
+    return;
+  }
+
+  await client.query(
+    `UPDATE learning_path_enrollments
+        SET status='abandoned', active_capability_id=NULL,
+            completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
+      WHERE owner_id=$1 AND status='active'`,
+    [ownerId]
+  );
+}
+
 export async function activateAcademyCourse(ownerId: string, courseId: string): Promise<boolean> {
   const pool = getPool();
   const client = await pool.connect();
@@ -112,7 +129,12 @@ export async function activateAcademyCourse(ownerId: string, courseId: string): 
       );
     }
 
-    if (target.rows[0].source_prompt === PROGRAM_PROCESS_SOURCE_PROMPT) {
+    const curatedPath = getCuratedLearningPathBySourcePrompt(String(target.rows[0].source_prompt || ''));
+    if (curatedPath) {
+      const firstCapabilityId = curatedPath.capabilities[0]?.id;
+      if (!firstCapabilityId) throw new Error(`Curated learning path ${curatedPath.id} has no capabilities.`);
+
+      await abandonActiveCuratedPaths(client, ownerId, { id: curatedPath.id, version: curatedPath.version });
       await client.query(
         `INSERT INTO learning_path_enrollments (
            owner_id, path_id, path_version, status, active_capability_id,
@@ -125,21 +147,10 @@ export async function activateAcademyCourse(ownerId: string, courseId: string): 
            completed_at=NULL,
            last_activity_at=NOW(),
            updated_at=NOW()`,
-        [
-          ownerId,
-          PROGRAM_PROCESS_PATH_ID,
-          PROGRAM_PROCESS_PATH_VERSION,
-          PROGRAM_PROCESS_CAPABILITIES[0].id,
-        ]
+        [ownerId, curatedPath.id, curatedPath.version, firstCapabilityId]
       );
     } else {
-      await client.query(
-        `UPDATE learning_path_enrollments
-            SET status='abandoned', active_capability_id=NULL,
-                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
-          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'`,
-        [ownerId, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
-      );
+      await abandonActiveCuratedPaths(client, ownerId);
     }
 
     await client.query('COMMIT');
@@ -182,13 +193,7 @@ export async function archiveAcademyCourse(ownerId: string, courseId: string): P
           WHERE id = $1 AND owner_id = $2`,
         [courseId, ownerId]
       );
-      await client.query(
-        `UPDATE learning_path_enrollments
-            SET status='abandoned', active_capability_id=NULL,
-                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
-          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'`,
-        [ownerId, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
-      );
+      await abandonActiveCuratedPaths(client, ownerId);
     }
 
     await client.query('COMMIT');
@@ -226,13 +231,7 @@ export async function deleteAcademyCourse(ownerId: string, courseId: string): Pr
     );
 
     if (target.rows[0].status === 'active') {
-      await client.query(
-        `UPDATE learning_path_enrollments
-            SET status='abandoned', active_capability_id=NULL,
-                completed_at=NULL, last_activity_at=NOW(), updated_at=NOW()
-          WHERE owner_id=$1 AND path_id=$2 AND path_version=$3 AND status='active'`,
-        [ownerId, PROGRAM_PROCESS_PATH_ID, PROGRAM_PROCESS_PATH_VERSION]
-      );
+      await abandonActiveCuratedPaths(client, ownerId);
     }
 
     await client.query('COMMIT');
