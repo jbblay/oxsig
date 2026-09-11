@@ -134,7 +134,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
-      {immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />}
+      {isAuthenticated ? (immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />) : null}
     </div>
   );
 }
