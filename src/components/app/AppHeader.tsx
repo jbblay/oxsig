@@ -86,11 +86,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
               >
                 <Sparkles className="h-3.5 w-3.5" />
               </Button>
-            ) : (
-              <Button asChild size="icon" variant="ghost" className="h-8 w-8">
-                <Link href="/explore#ai" aria-label="Preview AI Operator" title="Preview AI Operator"><Sparkles className="h-3.5 w-3.5" /></Link>
-              </Button>
-            )}
+            ) : null}
             <Link
               href={accountHref}
               className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
