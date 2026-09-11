@@ -39,6 +39,7 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'operation_runs',
   'oxisg_schema_migrations',
   'rate_limit_buckets',
+  'storyboard_invitations',
   'storyboard_sessions',
   'storyboard_shares',
   'terminal_bridge_ticket_uses',
