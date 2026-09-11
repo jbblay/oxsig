@@ -27,6 +27,10 @@ import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth/use-auth';
+import {
+  getProductNavigationItemByHref,
+  resolveProductNavigationHref,
+} from '@/lib/navigation/product-navigation';
 
 const groups = [
   {
@@ -69,16 +73,6 @@ function workspaceColor(href: string) {
   return href.slice(1);
 }
 
-function guestHref(href: string) {
-  if (href === '/home' || href === '/operations') return href;
-  if (href === '/academy') return '/explore';
-  if (href === '/collab' || href === '/live' || href === '/warroom') return '/explore#collaboration';
-  if (href === '/labs') return '/explore#live-environments';
-  if (href === '/vault') return '/explore#proof';
-  if (href === '/collab/storyboards' || href === '/manage') return '/explore#platform';
-  return '/explore';
-}
-
 function SidebarContent({
   collapsed,
   mobile,
@@ -94,6 +88,7 @@ function SidebarContent({
   const { theme, setTheme } = useTheme();
   const { user, logout, isAuthenticated } = useAuth();
   const compact = collapsed && !mobile;
+  const accountHref = resolveProductNavigationHref('account', isAuthenticated) ?? '/sign-up';
 
   return (
     <div className="oxsig-navigation flex h-full min-h-0 w-full flex-col">
@@ -126,7 +121,40 @@ function SidebarContent({
                 {group.items.map((item) => {
                   const active = isItemActive(pathname, item.href);
                   const Icon = item.icon;
-                  const destination = isAuthenticated ? item.href : guestHref(item.href);
+                  const contract = getProductNavigationItemByHref(item.href);
+                  const destination = contract ? resolveProductNavigationHref(contract, isAuthenticated) : null;
+                  const className = cn(
+                    'oxsig-nav-item group relative flex min-h-9 items-center text-[13px] font-medium transition-colors duration-150',
+                    compact ? 'justify-center px-1' : 'gap-2 px-2',
+                    active ? 'bg-primary/[0.07] text-foreground' : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground',
+                    !destination && 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground',
+                  );
+                  const content = (
+                    <>
+                      {active && !compact && <span className="absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-primary" />}
+                      <span className="oxsig-workspace-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      {!compact && <span className="truncate">{item.label}</span>}
+                    </>
+                  );
+
+                  if (!destination) {
+                    return (
+                      <button
+                        key={item.href}
+                        type="button"
+                        disabled
+                        aria-disabled="true"
+                        title={compact ? `${item.label} unavailable` : undefined}
+                        data-workspace-color={workspaceColor(item.href)}
+                        className={className}
+                      >
+                        {content}
+                      </button>
+                    );
+                  }
+
                   return (
                     <Link
                       key={item.href}
@@ -135,17 +163,9 @@ function SidebarContent({
                       title={compact ? item.label : undefined}
                       aria-current={active ? 'page' : undefined}
                       data-workspace-color={workspaceColor(item.href)}
-                      className={cn(
-                        'oxsig-nav-item group relative flex min-h-9 items-center text-[13px] font-medium transition-colors duration-150',
-                        compact ? 'justify-center px-1' : 'gap-2 px-2',
-                        active ? 'bg-primary/[0.07] text-foreground' : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
-                      )}
+                      className={className}
                     >
-                      {active && !compact && <span className="absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-primary" />}
-                      <span className="oxsig-workspace-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md">
-                        <Icon className="h-3.5 w-3.5" />
-                      </span>
-                      {!compact && <span className="truncate">{item.label}</span>}
+                      {content}
                     </Link>
                   );
                 })}
@@ -157,7 +177,7 @@ function SidebarContent({
 
       <div className="border-t border-sidebar-border/70 p-2">
         <Link
-          href={isAuthenticated ? '/account' : '/sign-up'}
+          href={accountHref}
           onClick={onNavigate}
           title={compact ? (isAuthenticated ? 'Account' : 'Create account') : undefined}
           className={cn('flex min-h-9 items-center rounded-md transition hover:bg-sidebar-accent/70', compact ? 'justify-center px-1' : 'gap-2 px-2')}
