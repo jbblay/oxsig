@@ -5,19 +5,17 @@ import { OperationIcon, OperationTopologyPreview } from '@/components/operations
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import WarRoomWorkspace from '@/components/warroom/WarRoomWorkspace';
-import { getOperation, operations } from '@/lib/operations/catalog';
+import { getOperation, operationSupportsWarRoomRuntime, operations } from '@/lib/operations/catalog';
 import styles from './cyber-room.module.css';
 
 type SearchParams = Promise<{ operation?: string; run?: string; workspace?: string }>;
 
-const warRoomReadyOperations = operations.filter(
-  (operation) => operation.slug === 'black-domain' && operation.modes.includes('warroom'),
-);
+const warRoomReadyOperations = operations.filter(operationSupportsWarRoomRuntime);
 
 export default async function WarRoomPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const requested = getOperation(params.operation || '');
-  const selected = requested?.slug === 'black-domain' ? requested : warRoomReadyOperations[0];
+  const selected = requested && operationSupportsWarRoomRuntime(requested) ? requested : warRoomReadyOperations[0];
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
