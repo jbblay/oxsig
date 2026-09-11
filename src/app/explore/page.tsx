@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import GuestExploreExperience from '@/components/auth/GuestExploreExperience';
+import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
-  title: 'Explore OXSIG — Real technical environments',
-  description: 'Explore OXSIG missions, technical environments, AI-assisted operations, team collaboration and evidence workflows before creating an account.',
+  title: 'OXSIG Guest Dashboard',
+  description: 'Browse the OXSIG dashboard and mission catalogue without an account.',
 };
 
 export default function ExplorePage() {
-  return <GuestExploreExperience />;
+  redirect('/home');
 }
