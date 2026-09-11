@@ -1,7 +1,8 @@
 import * as Sentry from '@sentry/nextjs';
+import { normalizeSentryDsn } from './lib/observability/sentry-dsn';
 
 function sentryDsn() {
-  return String(process.env.SENTRY_DSN || '').trim();
+  return normalizeSentryDsn(process.env.SENTRY_DSN);
 }
 
 function environmentName() {
