@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -23,7 +23,7 @@ describe('product navigation contract', () => {
     }
   });
 
-  it('gives every active destination deterministic signed-in and signed-out behavior', () => {
+  it('allows guests to browse only public product destinations', () => {
     for (const item of PRODUCT_NAVIGATION) {
       if (item.status !== 'active') continue;
 
@@ -33,23 +33,8 @@ describe('product navigation contract', () => {
       if (item.access === 'public') {
         expect(guestTarget, `${item.label} guest`).toBe(item.href);
       } else {
-        expect(guestTarget, `${item.label} guest target`).toBeTruthy();
-        expect(guestTarget, `${item.label} must not expose protected route`).not.toBe(item.href);
+        expect(guestTarget, `${item.label} guest`).toBeNull();
       }
-    }
-  });
-
-  it('keeps guest preview anchors real instead of silently linking to nowhere', () => {
-    const guestExperience = readFileSync(
-      join(process.cwd(), 'src', 'components', 'auth', 'GuestExploreExperience.tsx'),
-      'utf8',
-    );
-
-    for (const item of PRODUCT_NAVIGATION) {
-      const guestHref = item.guestHref;
-      if (!guestHref?.startsWith('/explore#')) continue;
-      const anchor = guestHref.slice('/explore#'.length);
-      expect(guestExperience, `${item.label} preview anchor #${anchor}`).toContain(`id="${anchor}"`);
     }
   });
 
@@ -60,24 +45,38 @@ describe('product navigation contract', () => {
       label: 'Academy',
       access: 'authenticated',
       status: 'disabled',
-      guestHref: '/explore#learn',
     };
 
     expect(resolveProductNavigationHref(disabled, true)).toBeNull();
     expect(resolveProductNavigationHref(disabled, false)).toBeNull();
   });
 
-  it('routes persisted protected links through guest-safe destinations after sign-out', () => {
-    expect(resolveProductPathHref('/labs?tab=runtime', false)).toBe('/explore#live-environments');
-    expect(resolveProductPathHref('/collab/storyboards/board-123', false)).toBe('/explore#platform');
+  it('keeps mission browsing public while blocking persisted protected links after sign-out', () => {
     expect(resolveProductPathHref('/operations?operation=black-domain', false)).toBe('/operations?operation=black-domain');
+    expect(resolveProductPathHref('/operations?operation=ghost-shell#briefing', false)).toBe('/operations?operation=ghost-shell#briefing');
+    expect(resolveProductPathHref('/home', false)).toBe('/home');
+    expect(resolveProductPathHref('/labs?tab=runtime', false)).toBeNull();
+    expect(resolveProductPathHref('/collab/storyboards/board-123', false)).toBeNull();
     expect(resolveProductPathHref('/labs?tab=runtime', true)).toBe('/labs?tab=runtime');
+  });
+
+  it('routes legacy explore links to the guest dashboard', () => {
+    expect(resolveProductPathHref('/explore', false)).toBe('/home');
+    expect(resolveProductPathHref('/explore#ai', false)).toBe('/home');
+    expect(resolveProductPathHref('/explore?operation=black-domain#live-environments', true)).toBe('/home');
+  });
+
+  it('rejects unknown guest routes instead of inventing a preview destination', () => {
+    expect(resolveProductPathHref('/unknown-surface', false)).toBeNull();
+    expect(resolveProductPathHref('/unknown-surface', true)).toBe('/unknown-surface');
   });
 
   it('defines guest-public workspace paths from the same contract', () => {
     expect(isGuestPublicNavigationPath('/home')).toBe(true);
     expect(isGuestPublicNavigationPath('/operations')).toBe(true);
+    expect(isGuestPublicNavigationPath('/operations/anything')).toBe(true);
     expect(isGuestPublicNavigationPath('/academy')).toBe(false);
     expect(isGuestPublicNavigationPath('/warroom')).toBe(false);
+    expect(isGuestPublicNavigationPath('/labs')).toBe(false);
   });
 });
