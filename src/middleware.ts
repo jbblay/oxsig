@@ -1,9 +1,22 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+import { isProtectedProductNavigationPath } from '@/lib/navigation/product-navigation';
 import { applySecurityHeaders } from '@/lib/security/headers';
 
 export default clerkMiddleware(
-  async () => applySecurityHeaders(NextResponse.next(), undefined, false),
+  async (auth, request) => {
+    if (isProtectedProductNavigationPath(request.nextUrl.pathname)) {
+      const { userId } = await auth();
+      if (!userId) {
+        const destination = request.nextUrl.clone();
+        destination.pathname = '/home';
+        destination.search = '';
+        return applySecurityHeaders(NextResponse.redirect(destination), undefined, false);
+      }
+    }
+
+    return applySecurityHeaders(NextResponse.next(), undefined, false);
+  },
   (request) => ({
     authorizedParties: [new URL(request.url).origin],
     contentSecurityPolicy: {
