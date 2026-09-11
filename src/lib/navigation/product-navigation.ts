@@ -89,7 +89,8 @@ export function resolveProductPathHref(href: string, isAuthenticated: boolean) {
   const item = matchingNavigationItem(pathname);
   if (item?.status === 'disabled') return null;
   if (!item) return isAuthenticated ? href : null;
-  if (isAuthenticated || item.access === 'public' || item.access === 'guest-preview') return href;
+  if (isAuthenticated || item.access === 'public') return href;
+  if (item.access === 'guest-preview') return item.href;
   return null;
 }
 
