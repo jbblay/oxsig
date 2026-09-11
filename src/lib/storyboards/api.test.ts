@@ -70,6 +70,20 @@ describe('saveServerStoryboard', () => {
     expect(fetchMock.mock.calls[0][1]?.method).toBe('PATCH');
   });
 
+  it('fails closed when a stale linked draft has no explicit ownership permission', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ error: 'Storyboard not found' }, 404)
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      saveServerStoryboard(draft({ serverId: 'unknown-board' }), 'unknown-board')
+    ).rejects.toThrow('Storyboard not found');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('PATCH');
+  });
+
   it('creates a new durable board directly for a local-only draft', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({ session: { id: 'created-board', permission: 'owner' } }, 201)
