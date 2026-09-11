@@ -95,7 +95,7 @@ export default function HomePage() {
         <h1 className="mr-auto text-lg font-semibold tracking-tight">Workspace</h1>
         {guestMode ? (
           <Button asChild size="sm" variant="outline" className="h-9 gap-2">
-            <Link href="/operations"><Sparkles className="h-4 w-4 text-primary" /><span className="hidden sm:inline">Browse missions</span></Link>
+            <Link href="/ai"><Sparkles className="h-4 w-4 text-primary" /><span className="hidden sm:inline">Preview AI Operator</span></Link>
           </Button>
         ) : (
           <Button size="sm" variant="outline" className="h-9 gap-2" onClick={() => window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'))}>
@@ -113,8 +113,8 @@ export default function HomePage() {
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyan-500/10 text-cyan-500"><UserRound className="h-4 w-4" /></span>
             <div className="min-w-0">
-              <div className="flex items-center gap-2"><p className="text-xs font-semibold">Guest workspace</p><Badge variant="outline" className="h-5 px-1.5 text-[9px]">Browse</Badge></div>
-              <p className="truncate text-[11px] text-muted-foreground">Browse the dashboard, Operations catalogue and mission dossiers. Sign in for live resources, persistence and protected workspaces.</p>
+              <div className="flex items-center gap-2"><p className="text-xs font-semibold">Guest workspace</p><Badge variant="outline" className="h-5 px-1.5 text-[9px]">Explore</Badge></div>
+              <p className="truncate text-[11px] text-muted-foreground">Explore missions, labs, Academy, WarRoom, AI, collaboration, Boards, Vault and Resources. Sign in when you want live infrastructure, persistence or ownership.</p>
             </div>
           </div>
           <div className="flex shrink-0 gap-1.5 sm:ml-auto">
@@ -165,7 +165,7 @@ export default function HomePage() {
                 <span className="oxsig-workspace-icon h-9 w-9 rounded-md"><Icon className="h-4 w-4" /></span>
                 <span className="min-w-0 flex-1 text-left">
                   <span className="block truncate text-sm font-medium">{item.label}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{guestMode && !href ? `Sign in required · ${item.hint}` : item.hint}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{guestMode && item.href !== '/operations' ? `Preview · ${item.hint}` : item.hint}</span>
                 </span>
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
               </>
