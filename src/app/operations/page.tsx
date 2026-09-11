@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import Link from 'next/link';
 import {
   Activity,
@@ -84,7 +85,7 @@ function StageRail({ detail = false }: { detail?: boolean }) {
 }
 
 export default async function OperationsPage({ searchParams }: { searchParams: SearchParams }) {
-  const params = await searchParams;
+  const [{ isAuthenticated }, params] = await Promise.all([auth(), searchParams]);
   const selected = params.operation ? getOperation(params.operation) : null;
   const learningFocus = selected ? getOperationLearningFocus(selected.slug, params.capability) : null;
 
@@ -97,9 +98,15 @@ export default async function OperationsPage({ searchParams }: { searchParams: S
           <h1 className={styles.headerTitle}>Operations</h1>
           <p className={styles.headerText}>Choose the domain. Read the mission. Enter the environment.</p>
         </div>
-        <Button asChild size="sm" variant="outline" className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white">
-          <Link href="/warroom"><Swords className="mr-2 h-4 w-4" />Cyber Room</Link>
-        </Button>
+        {isAuthenticated ? (
+          <Button asChild size="sm" variant="outline" className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white">
+            <Link href="/warroom"><Swords className="mr-2 h-4 w-4" />Cyber Room</Link>
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled aria-disabled="true" title="Sign in to open Cyber Room" className="border-white/10 bg-white/[0.03] text-slate-500">
+            <Swords className="mr-2 h-4 w-4" />Cyber Room
+          </Button>
+        )}
       </div>
 
       <StageRail detail={Boolean(selected)} />
@@ -160,24 +167,26 @@ export default async function OperationsPage({ searchParams }: { searchParams: S
           </div>
         </>
       ) : (
-        <OperationBriefing operation={selected} learningFocus={learningFocus} />
+        <OperationBriefing operation={selected} learningFocus={learningFocus} isAuthenticated={isAuthenticated} />
       )}
     </div>
   );
 }
 
-function OperationBriefing({ operation, learningFocus }: { operation: Operation; learningFocus: OperationLearningFocus | null }) {
+function OperationBriefing({ operation, learningFocus, isAuthenticated }: { operation: Operation; learningFocus: OperationLearningFocus | null; isAuthenticated: boolean }) {
   const ready = operationHasAutomatedRuntime(operation);
   const theme = DOMAIN_THEME[operation.domain] || styles.web;
   const teamRelevant = operationSupportsWarRoomRuntime(operation);
   const objectives = learningFocus?.objectives || operation.objectives;
   const evidence = learningFocus?.evidence || operation.evidence;
+  const backHref = learningFocus && isAuthenticated ? '/academy/paths' : '/operations';
+  const backLabel = learningFocus && isAuthenticated ? 'Learning paths' : 'All operations';
 
   return (
     <section className={`${styles.detail} ${theme}`} aria-label={`${operation.codename} briefing`}>
       <div className={styles.detailRail}>
         <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-slate-400 hover:bg-white/[0.05] hover:text-white">
-          <Link href={learningFocus ? '/academy/paths' : '/operations'}><ArrowLeft className="mr-1.5 h-3.5 w-3.5" />{learningFocus ? 'Learning paths' : 'All operations'}</Link>
+          <Link href={backHref}><ArrowLeft className="mr-1.5 h-3.5 w-3.5" />{backLabel}</Link>
         </Button>
         <span className={styles.detailKicker}>{learningFocus ? `${learningFocus.pathTitle} // ${learningFocus.capabilityTitle}` : `${operation.domain} // Mission dossier`}</span>
         <span className={styles.detailState}>{ready ? 'Runtime ready' : 'Scenario ready · runtime planned'}</span>
