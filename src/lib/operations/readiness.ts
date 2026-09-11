@@ -50,7 +50,10 @@ export function operationReadinessCommand(target: Pick<OperationReadinessTarget,
   }
   return {
     documentName: 'AWS-RunShellScript',
-    command: `test -s /opt/oxsig/operation.env && test -s /opt/oxsig/README && command -v nmap >/dev/null && command -v smbclient >/dev/null && command -v ldapsearch >/dev/null && command -v python3 >/dev/null && printf '%s\\n' '${READY_SENTINEL}'`,
+    // Session Manager uses ssm-user by default. The operator VM is a disposable,
+    // single-owner machine, so make its per-run scope/credential file readable by
+    // the learner before declaring the node ready.
+    command: `test -s /opt/oxsig/operation.env && chmod 0644 /opt/oxsig/operation.env && test -r /opt/oxsig/operation.env && test -s /opt/oxsig/README && command -v nmap >/dev/null && command -v smbclient >/dev/null && command -v ldapsearch >/dev/null && command -v python3 >/dev/null && printf '%s\\n' '${READY_SENTINEL}'`,
   };
 }
 
