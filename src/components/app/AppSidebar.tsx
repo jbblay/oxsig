@@ -7,6 +7,7 @@ import {
   BookOpen,
   Box,
   Crosshair,
+  GraduationCap,
   Home,
   LibraryBig,
   LogIn,
@@ -41,6 +42,7 @@ const groups = [
   {
     label: 'Practice',
     items: [
+      { href: '/academy', label: 'Academy', icon: GraduationCap },
       { href: '/operations', label: 'Operations', icon: Crosshair },
       { href: '/warroom', label: 'WarRoom', icon: Swords },
       { href: '/labs', label: 'Cyber Lab', icon: Box },
@@ -69,6 +71,7 @@ function workspaceColor(href: string) {
 
 function guestHref(href: string) {
   if (href === '/home' || href === '/operations') return href;
+  if (href === '/academy') return '/explore';
   if (href === '/collab' || href === '/live' || href === '/warroom') return '/explore#collaboration';
   if (href === '/labs') return '/explore#live-environments';
   if (href === '/vault') return '/explore#proof';
