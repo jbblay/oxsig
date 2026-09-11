@@ -12,6 +12,7 @@ import {
   getAcademyUnderstandingForReflection,
   releaseAcademyReflectionClaim,
 } from '@/lib/academy/reflections';
+import { reconcileActiveCuratedPath } from '@/lib/learning/curated-progression';
 
 export const runtime = 'nodejs';
 
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
           user.id,
           claimResult.existing.id
         );
+        await reconcileActiveCuratedPath(user.id);
         return NextResponse.json(
           { reflection: claimResult.existing, understanding, replayed: true },
           { headers: { 'Cache-Control': 'no-store' } }
@@ -116,6 +118,7 @@ export async function POST(request: NextRequest) {
         throw error;
       }
 
+      await reconcileActiveCuratedPath(user.id);
       return NextResponse.json(
         { ...completed, replayed: false },
         { headers: { 'Cache-Control': 'no-store' } }
