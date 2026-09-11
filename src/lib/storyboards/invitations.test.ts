@@ -14,7 +14,7 @@ vi.mock('@/lib/email/resend', () => ({
   sendTransactionalEmail: vi.fn(),
 }));
 
-import { acceptStoryboardInvitation, StoryboardInvitationError } from './invitations';
+import { acceptStoryboardInvitation } from './invitations';
 
 describe('acceptStoryboardInvitation', () => {
   beforeEach(() => {
@@ -39,7 +39,7 @@ describe('acceptStoryboardInvitation', () => {
       token: 'test-token',
       userId: '33333333-3333-4333-8333-333333333333',
       userEmail: 'other@example.com',
-    })).rejects.toMatchObject<Partial<StoryboardInvitationError>>({ status: 403 });
+    })).rejects.toMatchObject({ status: 403 });
 
     expect(mocks.connect).not.toHaveBeenCalled();
   });
