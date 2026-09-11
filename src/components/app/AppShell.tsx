@@ -72,8 +72,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!guestBlocked) return;
-    router.replace(`/explore?from=${encodeURIComponent(pathname)}`);
-  }, [guestBlocked, pathname, router]);
+    router.replace('/home');
+  }, [guestBlocked, router]);
 
   React.useEffect(() => {
     if (!mobileNavOpen || typeof document === 'undefined') return;
@@ -95,8 +95,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-950 px-6 text-center text-slate-300">
         <div>
-          <p className="text-sm font-semibold text-slate-100">Opening the guest-safe preview…</p>
-          <p className="mt-1 text-xs text-slate-500">Protected workspaces unlock only when an account is actually needed.</p>
+          <p className="text-sm font-semibold text-slate-100">Returning to the guest dashboard…</p>
+          <p className="mt-1 text-xs text-slate-500">Guests can browse the dashboard, Operations catalogue and mission dossiers.</p>
         </div>
       </div>
     );
