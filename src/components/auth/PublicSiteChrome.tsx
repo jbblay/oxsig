@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, Network, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { authPathWithReturnTo } from '@/lib/auth-return';
 import styles from './public-site.module.css';
 
 const navItems = [
@@ -47,12 +48,13 @@ const footerGroups = [
       ['About OXSIG', '/explore#company'],
       ['Security model', '/explore#trust'],
       ['Responsible use', '/explore#trust'],
-      ['Sign in', '/sign-in'],
     ],
   },
 ] as const;
 
-export function PublicSiteHeader() {
+export function PublicSiteHeader({ authReturnTo = '/home' }: { authReturnTo?: string }) {
+  const signInHref = authPathWithReturnTo('/sign-in', authReturnTo);
+
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
@@ -69,7 +71,7 @@ export function PublicSiteHeader() {
 
         <div className={styles.actions}>
           <Button asChild variant="ghost" size="sm" className="text-slate-300 hover:bg-white/[0.06] hover:text-white">
-            <Link href="/sign-in">Log in</Link>
+            <Link href={signInHref}>Log in</Link>
           </Button>
           <Button asChild size="sm" className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
             <Link href="/explore">Try OXSIG <ArrowRight className="ml-1.5 h-3.5 w-3.5" /></Link>
@@ -80,7 +82,9 @@ export function PublicSiteHeader() {
   );
 }
 
-export function PublicSiteFooter() {
+export function PublicSiteFooter({ authReturnTo = '/home' }: { authReturnTo?: string }) {
+  const signInHref = authPathWithReturnTo('/sign-in', authReturnTo);
+
   return (
     <footer className={styles.footer}>
       <div className={styles.footerGrid}>
@@ -99,6 +103,10 @@ export function PublicSiteFooter() {
             {group.links.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
           </div>
         ))}
+        <div className={styles.footerGroup}>
+          <h2>Account</h2>
+          <Link href={signInHref}>Sign in</Link>
+        </div>
       </div>
       <div className={styles.footerBottom}>
         <span>© {new Date().getFullYear()} OXSIG</span>
