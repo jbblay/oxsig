@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/use-auth';
 import { getOperation } from '@/lib/operations/catalog';
+import { finishReusableEnvironmentReset } from '@/lib/operations/reset-client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type RunSummary = {
@@ -96,7 +97,7 @@ export function OperationRunRecovery({ compact = true, modeFilter }: Props) {
   }, [authLoading, isAuthenticated, load]);
 
   const endRun = async (runId: string) => {
-    if (!window.confirm('End and permanently destroy this Operation? All of its machines will be terminated.')) return;
+    if (!window.confirm('End this Operation? Disposable machines are destroyed; reusable machines are restored to their clean baseline.')) return;
     setBusy(runId);
     try {
       const csrf = await getCsrfToken();
@@ -106,7 +107,17 @@ export function OperationRunRecovery({ compact = true, modeFilter }: Props) {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'Could not end Operation');
-      toast.success('Destruction started for the Operation machines.');
+      if (body?.reusableEnvironment && body?.reset) {
+        toast.info('Operation ended. Restoring the reusable environment to its clean baseline.');
+        await finishReusableEnvironmentReset({
+          runId,
+          csrfToken: csrf,
+          initial: body.reset,
+        });
+        toast.success('Environment reset verified and returned to standby.');
+      } else {
+        toast.success('Destruction started for the Operation machines.');
+      }
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not end Operation');
@@ -160,7 +171,7 @@ export function OperationRunRecovery({ compact = true, modeFilter }: Props) {
                 {endable && (
                   <Button size="sm" variant="ghost" className={compact ? 'h-8 text-slate-500 hover:bg-red-500/10 hover:text-red-300' : 'h-8'} onClick={() => void endRun(run.id)} disabled={busy === run.id}>
                     {busy === run.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    {!compact ? <span className="ml-1.5">End &amp; destroy</span> : null}
+                    {!compact ? <span className="ml-1.5">End operation</span> : null}
                   </Button>
                 )}
               </div>
