@@ -515,6 +515,15 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
     setDockTab("desktop");
   };
 
+  const showLiveMachineInspector = () => {
+    if (!liveNode) return;
+    setSelectedNodeId(liveNode.id);
+    setInspectorOpen(true);
+    setTopologyOpen(true);
+    setCompactPanel("inspector");
+    setDockFocus(false);
+  };
+
   const removeSelectedNode = () => {
     if (!selectedNode) return;
     if (selectedIsLive) {
@@ -563,10 +572,11 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               {([...(liveAccessMode === "desktop" ? [["desktop", "Desktop", Monitor] as const] : []), ["terminal", "Terminal", Terminal] as const, ["events", "Events", Activity] as const, ["network", "Network", Network] as const, ["diagnostics", "Diagnostics", RefreshCw] as const]).map(([tab, label, Icon]) => <Button key={tab} size="sm" variant={dockTab === tab ? "secondary" : "ghost"} className="h-10 shrink-0" aria-pressed={dockTab === tab} onClick={() => { setDockTab(tab as DockTab); setDockCollapsed(false); }}><Icon className="mr-1.5 h-3.5 w-3.5" />{label}</Button>)}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{liveNodeLabel}</span><Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge><Badge variant="outline" className="h-5 capitalize">{liveAccessMode}</Badge>{instance.expiresAt && <Badge variant={liveExpired ? "destructive" : liveExpiringSoon ? "secondary" : "outline"} className="h-5">{relativeExpiry(instance.expiresAt)}</Badge>}
+              <span className="font-medium text-foreground" aria-label={`Session machine: ${liveNodeLabel}`}>Session · {liveNodeLabel}</span><Badge variant="outline" className="h-5 capitalize">{instance.status}</Badge><Badge variant="outline" className="h-5 capitalize">{liveAccessMode}</Badge>{instance.expiresAt && <Badge variant={liveExpired ? "destructive" : liveExpiringSoon ? "secondary" : "outline"} className="h-5">{relativeExpiry(instance.expiresAt)}</Badge>}
+              <Button size="sm" variant="outline" className="h-10" onClick={showLiveMachineInspector} disabled={!liveNode} aria-label={`Show Inspector actions for ${liveNodeLabel}`}><Info className="mr-1.5 h-3.5 w-3.5" />Machine actions</Button>
               {(terminalId || desktopId) && <Button size="icon" variant={dockFocus ? "secondary" : "ghost"} className="h-10 w-10" onClick={() => { setDockCollapsed(false); setDockFocus((focus) => !focus); }} aria-label={dockFocus ? "Exit focus mode" : "Focus lab session"}>{dockFocus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
               <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => { if (dockFocus) setDockFocus(false); setDockCollapsed((value) => !value); }} aria-label={dockCollapsed ? "Expand lab dock" : "Collapse lab dock"}>{dockCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
-              <Button size="icon" variant="ghost" className="h-10 w-10" onClick={() => { setTerminalId(null); setDesktopId(null); setDockOpen(false); setDockFocus(false); }} aria-label="Close lab dock"><X className="h-4 w-4" /></Button>
+              <Button size="sm" variant="ghost" className="h-10" onClick={() => { setTerminalId(null); setDesktopId(null); setDockOpen(false); setDockFocus(false); }} aria-label={`Close session views for ${liveNodeLabel}. Machine keeps running.`} title="Close session views only; machine keeps running"><X className="mr-1.5 h-4 w-4" />Close views</Button>
             </div>
           </div>
 
