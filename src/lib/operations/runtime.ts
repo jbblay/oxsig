@@ -8,6 +8,7 @@ import {
   DescribeSubnetsCommand,
   EC2Client,
   RunInstancesCommand,
+  StopInstancesCommand,
   TerminateInstancesCommand,
   type _InstanceType,
 } from '@aws-sdk/client-ec2';
@@ -806,7 +807,7 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
 
 export async function destroyOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
   const run = await args.pool.query(
-    `SELECT id,status,operator_lab_instance_id FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
+    `SELECT id,status,operator_lab_instance_id,environment_id FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
     [args.runId, args.ownerId]
   );
   if (!run.rows[0]) throw new OperationRuntimeError('Operation run not found.', 404, 'OPERATION_RUN_NOT_FOUND');
@@ -818,6 +819,44 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
   if (run.rows[0].operator_lab_instance_id) {
     await args.pool.query(`UPDATE lab_instances SET status='destroying',updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroyed','failed')`, [run.rows[0].operator_lab_instance_id, args.ownerId]);
   }
+
+  const environmentId = run.rows[0].environment_id as string | null;
+  if (environmentId) {
+    if (externalIds.length) await ec2.send(new StopInstancesCommand({ InstanceIds: externalIds }));
+    const client = await args.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE operation_environments
+            SET status='maintenance',assigned_run_id=NULL,
+                metadata=metadata || $1::jsonb,updated_at=NOW()
+          WHERE id=$2 AND assigned_run_id=$3`,
+        [stringifyPostgresJson({ resetRequired: true, stoppedAfterRunId: args.runId }), environmentId, args.runId],
+      );
+      await client.query(`UPDATE operation_runs SET status='destroyed',updated_at=NOW() WHERE id=$1 AND owner_id=$2`, [args.runId, args.ownerId]);
+      await client.query(`UPDATE operation_nodes SET status='destroyed',updated_at=NOW() WHERE run_id=$1`, [args.runId]);
+      if (run.rows[0].operator_lab_instance_id) {
+        await client.query(
+          `UPDATE lab_instances SET status='destroyed',stopped_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2`,
+          [run.rows[0].operator_lab_instance_id, args.ownerId],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    return {
+      destroyed: true,
+      alreadyDestroyed: false,
+      stopping: externalIds.length,
+      reusableEnvironment: true,
+      resetRequired: true,
+    };
+  }
+
   if (externalIds.length) await ec2.send(new TerminateInstancesCommand({ InstanceIds: externalIds }));
   return { destroyed: true, alreadyDestroyed: false, terminating: externalIds.length };
 }
