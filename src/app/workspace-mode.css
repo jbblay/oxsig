@@ -71,6 +71,33 @@ main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > section {
   min-width: 0;
 }
 
+/* On very narrow screens, keep Collaboration's action footer to one row. The
+   action group scrolls horizontally while Send stays visible, which avoids the
+   composer growing into the mobile keyboard/visual viewport. */
+@media (max-width: 480px) {
+  main[data-oxsig-workspace="collab"] .oxsig-surface-content form > div:first-of-type {
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+  }
+
+  main[data-oxsig-workspace="collab"] .oxsig-surface-content form > div:first-of-type > div:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  main[data-oxsig-workspace="collab"] .oxsig-surface-content form > div:first-of-type > div:first-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  main[data-oxsig-workspace="collab"] .oxsig-surface-content form > div:first-of-type > button[type="submit"] {
+    flex: 0 0 auto;
+  }
+}
+
 /* Boards are intentionally wide spatial workspaces. The shell supplies the
    viewport and the drawing surface owns zoom/pan/scroll behavior. */
 main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail,
