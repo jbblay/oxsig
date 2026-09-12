@@ -1,6 +1,8 @@
 .oxsig-workspace-rail {
   display: flex;
   min-height: 2.5rem;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: .5rem;
   overflow-x: auto;
@@ -195,11 +197,20 @@ main[data-oxsig-workspace="boards"] canvas[aria-label="Storyboard drawing canvas
 
 @media (max-width: 720px) {
   .oxsig-workspace-rail {
+    justify-content: flex-start;
     gap: .2rem;
     padding: .25rem .25rem .35rem;
+    scroll-padding-inline: .25rem;
   }
-  .oxsig-rail-title { position: sticky; left: 0; z-index: 1; background: hsl(var(--card) / .96); }
-  .oxsig-rail-badges { margin-left: .15rem; }
+
+  .oxsig-rail-title {
+    position: static;
+    left: auto;
+    z-index: auto;
+    background: transparent;
+  }
+
+  .oxsig-rail-badges { margin-left: 0; }
   .oxsig-terminal-strip { padding-inline: .5rem; }
 
   main[data-oxsig-workspace="boards"] .overflow-auto:has(> canvas[aria-label="Storyboard drawing canvas"]) {
