@@ -6,6 +6,7 @@ import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { revokeControlForBinding, revokeControlForParticipant } from '@/lib/live-workspace/control';
 import { assignLiveWorkspaceRole, LiveWorkspaceError } from '@/lib/live-workspace/server';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 
 export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
@@ -75,6 +76,11 @@ export async function PATCH(
           client.release();
         }
       }
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'members.changed',
+        data: { memberId: userId, action: 'live-workspace.role-changed', role: parsed.data.role },
+      });
       return NextResponse.json({ participant: { userId, ...assigned }, detachedResources }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       if (error instanceof LiveWorkspaceError) {
@@ -185,6 +191,11 @@ export async function DELETE(
         [id, userId]
       );
       await client.query('COMMIT');
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'members.changed',
+        data: { memberId: userId, action: user.id === userId ? 'left' : 'removed' },
+      });
       return NextResponse.json({ removed: true, left: user.id === userId, detachedResources: detached.rowCount || 0 });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);

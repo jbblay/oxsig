@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listLiveWorkspaceParticipants: vi.fn(),
   listOwnerAttachableResources: vi.fn(),
   listControlState: vi.fn(),
+  publishCollaborationEvent: vi.fn(),
   getPool: vi.fn(),
 }));
 
@@ -23,6 +24,7 @@ vi.mock('@/lib/live-workspace/server', () => ({
   listLiveWorkspaceParticipants: mocks.listLiveWorkspaceParticipants,
   listOwnerAttachableResources: mocks.listOwnerAttachableResources,
 }));
+vi.mock('@/lib/realtime/ably', () => ({ publishCollaborationEvent: mocks.publishCollaborationEvent }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
 
 import { DELETE, PATCH } from './route';
@@ -75,6 +77,7 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.deleteCollaborationObjects.mockResolvedValue(0);
+    mocks.publishCollaborationEvent.mockResolvedValue({ configured: true, published: true });
     poolQuery.mockResolvedValue({ rows: [{ id: workspaceId }], rowCount: 1 });
     clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT c.id') && sql.includes('FOR UPDATE')) return { rows: [owned], rowCount: 1 };
@@ -100,6 +103,11 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
     expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'revoked'"), [workspaceId, user.id]);
     expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'ended'"), [workspaceId]);
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'session.changed',
+      data: { action: 'live-workspace.ended' },
+    });
   });
 
   it('allows the owner to rename workspace metadata', async () => {
@@ -110,6 +118,11 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
       expect.stringContaining('UPDATE collaborations'),
       [workspaceId, user.id, 'Renamed workspace', false, null, 'active']
     );
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'session.changed',
+      data: { action: 'live-workspace.updated' },
+    });
   });
 
   it('cleans attachment objects before permanently deleting an owned workspace', async () => {
@@ -119,6 +132,11 @@ describe('/api/live-workspaces/[id] lifecycle', () => {
     expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining("collaboration_type = 'live-workspace'"), [workspaceId, user.id]);
     expect(mocks.deleteCollaborationObjects).toHaveBeenCalledWith(workspaceId);
     expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM collaborations'), [workspaceId, user.id]);
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'session.changed',
+      data: { action: 'live-workspace.deleted' },
+    });
     expect(await response.json()).toEqual({ deleted: true });
   });
 

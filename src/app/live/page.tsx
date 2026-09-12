@@ -8,6 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
+import {
+  getLiveWorkspaceFreshness,
+  liveWorkspaceFallbackInterval,
+  shouldReconcileLiveWorkspaceOnVisibility,
+} from '@/lib/live-workspace/freshness';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Role = 'owner' | 'instructor' | 'learner' | 'observer';
@@ -89,9 +95,17 @@ export default function LiveWorkspacePage() {
   const selectedIdRef = React.useRef<string | null>(null);
   selectedIdRef.current = selectedId;
   const [detail, setDetail] = React.useState<Detail | null>(null);
+  const detailRef = React.useRef<Detail | null>(null);
+  detailRef.current = detail;
+  const detailRequestRef = React.useRef(0);
+  const hiddenAtRef = React.useRef<number | null>(null);
+  const previousRealtimeStateRef = React.useRef<'disabled' | 'connecting' | 'connected' | 'disconnected'>('disabled');
   const [loading, setLoading] = React.useState(true);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState<string | null>(null);
+  const [syncError, setSyncError] = React.useState<string | null>(null);
+  const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = React.useState<number | null>(null);
+  const [freshnessNow, setFreshnessNow] = React.useState(0);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [showCreate, setShowCreate] = React.useState(false);
   const [name, setName] = React.useState('');
@@ -106,18 +120,67 @@ export default function LiveWorkspacePage() {
     const body = await response.json() as { workspaces: WorkspaceListItem[] };
     setWorkspaces(body.workspaces);
     if (body.workspaces.length === 0) setShowCreate(true);
-    setSelectedId((current) => current && body.workspaces.some((item) => item.id === current)
-      ? current
-      : body.workspaces[0]?.id || null);
+    setSelectedId((current) => {
+      const nextId = current && body.workspaces.some((item) => item.id === current)
+        ? current
+        : body.workspaces[0]?.id || null;
+      selectedIdRef.current = nextId;
+      return nextId;
+    });
   }, []);
 
   const loadDetail = React.useCallback(async (id: string) => {
+    const requestId = ++detailRequestRef.current;
     const response = await fetch(`/api/live-workspaces/${id}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(await apiError(response, 'Could not load Live Workspace'));
     const next = await response.json() as Detail;
-    if (selectedIdRef.current === id) setDetail(next);
+    if (selectedIdRef.current === id && requestId === detailRequestRef.current) {
+      const syncedAt = Date.now();
+      detailRef.current = next;
+      setDetail(next);
+      setDetailError(null);
+      setSyncError(null);
+      setLastSuccessfulSyncAt(syncedAt);
+      setFreshnessNow(syncedAt);
+    }
     return next;
   }, []);
+
+  const reconcileWorkspace = React.useCallback(async (id: string, options: { refreshList?: boolean } = {}) => {
+    let detailFailure: unknown = null;
+    try {
+      await loadDetail(id);
+    } catch (error) {
+      detailFailure = error;
+    }
+
+    if (options.refreshList || detailFailure) {
+      try {
+        await loadList();
+      } catch (error) {
+        console.warn('[oxsig] Live Workspace list reconciliation deferred:', error);
+      }
+    }
+
+    if (!detailFailure || selectedIdRef.current !== id) return;
+    const message = detailFailure instanceof Error ? detailFailure.message : 'Could not refresh Live Workspace';
+    if (detailRef.current) setSyncError(message);
+    else setDetailError(message);
+    setFreshnessNow(Date.now());
+  }, [loadDetail, loadList]);
+
+  const realtimeCallbacks = React.useMemo(() => ({
+    onMembersChanged: () => {
+      const id = selectedIdRef.current;
+      if (id) void reconcileWorkspace(id, { refreshList: true });
+    },
+    onSessionChanged: () => {
+      const id = selectedIdRef.current;
+      if (id) void reconcileWorkspace(id);
+    },
+  }), [reconcileWorkspace]);
+
+  const realtime = useCollaborationRealtime(selectedId, realtimeCallbacks);
 
   React.useEffect(() => {
     void loadList()
@@ -126,14 +189,21 @@ export default function LiveWorkspacePage() {
   }, [loadList]);
 
   React.useEffect(() => {
+    detailRequestRef.current += 1;
     if (!selectedId) {
+      detailRef.current = null;
       setDetail(null);
       setDetailError(null);
+      setSyncError(null);
+      setLastSuccessfulSyncAt(null);
       setDetailLoading(false);
       return;
     }
+    detailRef.current = null;
     setDetail(null);
     setDetailError(null);
+    setSyncError(null);
+    setLastSuccessfulSyncAt(null);
     setDetailLoading(true);
     const requestedId = selectedId;
     void loadDetail(requestedId)
@@ -144,6 +214,50 @@ export default function LiveWorkspacePage() {
         if (selectedIdRef.current === requestedId) setDetailLoading(false);
       });
   }, [loadDetail, selectedId]);
+
+  React.useEffect(() => {
+    const previous = previousRealtimeStateRef.current;
+    previousRealtimeStateRef.current = realtime.state;
+    setFreshnessNow(Date.now());
+    if (!selectedId) return;
+    if (realtime.state === 'connected' && previous !== 'connected') {
+      void reconcileWorkspace(selectedId, { refreshList: true });
+    }
+  }, [realtime.state, reconcileWorkspace, selectedId]);
+
+  React.useEffect(() => {
+    if (!selectedId) return;
+    const intervalMs = liveWorkspaceFallbackInterval(realtime.state);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      setFreshnessNow(Date.now());
+      void reconcileWorkspace(selectedId);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [realtime.state, reconcileWorkspace, selectedId]);
+
+  React.useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+      const now = Date.now();
+      setFreshnessNow(now);
+      const id = selectedIdRef.current;
+      if (id && shouldReconcileLiveWorkspaceOnVisibility({
+        realtimeState: realtime.state,
+        hiddenAt: hiddenAtRef.current,
+        lastSuccessfulSyncAt,
+        now,
+      })) {
+        void reconcileWorkspace(id, { refreshList: true });
+      }
+      hiddenAtRef.current = null;
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [lastSuccessfulSyncAt, realtime.state, reconcileWorkspace]);
 
   React.useEffect(() => {
     if (!detail) {
@@ -237,7 +351,9 @@ export default function LiveWorkspacePage() {
       });
       if (!response.ok) throw new Error(await apiError(response, leaving ? 'Could not leave workspace' : 'Could not remove participant'));
       if (leaving) {
+        detailRef.current = null;
         setDetail(null);
+        selectedIdRef.current = null;
         setSelectedId(null);
         await loadList();
         toast.success('Left workspace.');
@@ -296,6 +412,22 @@ export default function LiveWorkspacePage() {
 
   const canAttachResources = Boolean(detail && (detail.workspace.capabilities.manageResources || detail.workspace.capabilities.collaborate));
   const availableResources = detail?.attachableResources.filter((resource) => resource.type === resourceType && !resource.attached) || [];
+  const freshness = getLiveWorkspaceFreshness({
+    realtimeState: realtime.state,
+    lastSuccessfulSyncAt,
+    now: freshnessNow || Date.now(),
+    refreshFailed: Boolean(syncError),
+  });
+  const freshnessLabel = freshness === 'current'
+    ? 'Current'
+    : freshness === 'reconnecting'
+      ? 'Reconnecting'
+      : freshness === 'stale'
+        ? 'Stale'
+        : 'Refresh failed';
+  const freshnessTitle = lastSuccessfulSyncAt
+    ? `Last successful sync ${new Date(lastSuccessfulSyncAt).toLocaleTimeString()}`
+    : 'Waiting for the first successful sync';
 
   return (
     <div className="w-full space-y-2">
@@ -350,7 +482,15 @@ export default function LiveWorkspacePage() {
                       <Button type="button" size="sm" variant="ghost" className="h-8 px-2 md:hidden" onClick={() => setSelectedId(null)}>Workspaces</Button>
                       <div className="min-w-0"><CardTitle className="truncate">{detail.workspace.name}</CardTitle>{detail.workspace.description && <CardDescription className="truncate">{detail.workspace.description}</CardDescription>}</div>
                     </div>
-                    <Badge>{ROLE_LABELS[detail.workspace.role]}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]" title={syncError || freshnessTitle}>{freshnessLabel}</Badge>
+                      {(freshness === 'stale' || freshness === 'refresh-error') && selectedId && (
+                        <Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label="Refresh Live Workspace" title="Refresh Live Workspace" onClick={() => void reconcileWorkspace(selectedId, { refreshList: true })}>
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Badge>{ROLE_LABELS[detail.workspace.role]}</Badge>
+                    </div>
                   </div>
                 </CardHeader>
               </Card>
