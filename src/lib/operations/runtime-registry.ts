@@ -11,6 +11,7 @@ import {
   OperationRuntimeError,
   provisionOperationRun as provisionBlackDomainRun,
 } from '@/lib/operations/runtime';
+import { provisionPreparedBlackDomainRun } from '@/lib/operations/prepared-runtime';
 
 export { OperationRuntimeError } from '@/lib/operations/runtime';
 
@@ -23,8 +24,12 @@ export type OperationProvisionArgs = {
 
 type OperationProvisioner = (args: OperationProvisionArgs) => ReturnType<typeof provisionBlackDomainRun>;
 
+const blackDomainProvisioner: OperationProvisioner = process.env.LAB_AWS_BLACK_DOMAIN_PREPARED === 'true'
+  ? provisionPreparedBlackDomainRun
+  : provisionBlackDomainRun;
+
 const runtimeDrivers: Record<OperationRuntimeDriver, OperationProvisioner> = {
-  'black-domain-v1': provisionBlackDomainRun,
+  'black-domain-v1': blackDomainProvisioner,
 };
 
 export function getOperationRuntimeDriver(slug: string) {

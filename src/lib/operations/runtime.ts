@@ -17,6 +17,7 @@ import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
 import { probeOperationNodeReadiness, operationReadinessError, type OperationReadinessResult } from '@/lib/operations/readiness';
+import { advancePreparedEnvironmentReset, beginPreparedEnvironmentReset } from '@/lib/operations/environment-reset';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
@@ -806,11 +807,18 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
 
 export async function destroyOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
   const run = await args.pool.query(
-    `SELECT id,status,operator_lab_instance_id FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
+    `SELECT id,status,operator_lab_instance_id,environment_id FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
     [args.runId, args.ownerId]
   );
   if (!run.rows[0]) throw new OperationRuntimeError('Operation run not found.', 404, 'OPERATION_RUN_NOT_FOUND');
-  if (run.rows[0].status === 'destroyed') return { destroyed: true, alreadyDestroyed: true };
+  if (run.rows[0].status === 'destroyed') {
+    const environmentId = run.rows[0].environment_id as string | null;
+    if (environmentId) {
+      const reset = await advancePreparedEnvironmentReset({ pool: args.pool, environmentId });
+      return { destroyed: true, alreadyDestroyed: true, reusableEnvironment: true, reset };
+    }
+    return { destroyed: true, alreadyDestroyed: true };
+  }
   const nodes = await args.pool.query(`SELECT runtime_external_id FROM operation_nodes WHERE run_id=$1 AND runtime_external_id IS NOT NULL`, [args.runId]);
   const externalIds = [...new Set(nodes.rows.map((row) => row.runtime_external_id as string).filter(Boolean))];
   await args.pool.query(`UPDATE operation_runs SET status='destroying',updated_at=NOW() WHERE id=$1 AND owner_id=$2`, [args.runId, args.ownerId]);
@@ -818,6 +826,43 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
   if (run.rows[0].operator_lab_instance_id) {
     await args.pool.query(`UPDATE lab_instances SET status='destroying',updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND status NOT IN ('destroyed','failed')`, [run.rows[0].operator_lab_instance_id, args.ownerId]);
   }
+
+  const environmentId = run.rows[0].environment_id as string | null;
+  if (environmentId) {
+    const client = await args.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE operation_environments
+            SET status='resetting',assigned_run_id=NULL,
+                metadata=metadata || $1::jsonb,updated_at=NOW()
+          WHERE id=$2 AND assigned_run_id=$3`,
+        [stringifyPostgresJson({ resetRequired: true, resetAfterRunId: args.runId }), environmentId, args.runId],
+      );
+      await client.query(`UPDATE operation_runs SET status='destroyed',updated_at=NOW() WHERE id=$1 AND owner_id=$2`, [args.runId, args.ownerId]);
+      await client.query(`UPDATE operation_nodes SET status='destroyed',updated_at=NOW() WHERE run_id=$1`, [args.runId]);
+      if (run.rows[0].operator_lab_instance_id) {
+        await client.query(
+          `UPDATE lab_instances SET status='destroyed',stopped_at=NOW(),updated_at=NOW() WHERE id=$1 AND owner_id=$2`,
+          [run.rows[0].operator_lab_instance_id, args.ownerId],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const reset = await beginPreparedEnvironmentReset({ pool: args.pool, environmentId, runId: args.runId });
+    return {
+      destroyed: true,
+      alreadyDestroyed: false,
+      reusableEnvironment: true,
+      reset,
+    };
+  }
+
   if (externalIds.length) await ec2.send(new TerminateInstancesCommand({ InstanceIds: externalIds }));
   return { destroyed: true, alreadyDestroyed: false, terminating: externalIds.length };
 }
