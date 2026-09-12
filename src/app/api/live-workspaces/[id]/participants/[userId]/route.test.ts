@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(),
   getPool: vi.fn(), assignLiveWorkspaceRole: vi.fn(), revokeControlForParticipant: vi.fn(),
-  revokeControlForBinding: vi.fn(),
+  revokeControlForBinding: vi.fn(), publishCollaborationEvent: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
@@ -21,6 +21,7 @@ vi.mock('@/lib/live-workspace/server', () => ({
     constructor(message: string, readonly status = 409, readonly code = 'LIVE_WORKSPACE_CONFLICT') { super(message); }
   },
 }));
+vi.mock('@/lib/realtime/ably', () => ({ publishCollaborationEvent: mocks.publishCollaborationEvent }));
 
 import { DELETE, PATCH } from './route';
 
@@ -57,6 +58,7 @@ describe('Live Workspace participant role API', () => {
     });
     mocks.revokeControlForParticipant.mockResolvedValue(undefined);
     mocks.revokeControlForBinding.mockResolvedValue(undefined);
+    mocks.publishCollaborationEvent.mockResolvedValue({ configured: true, published: true });
     clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: ownerId }], rowCount: 1 };
       if (sql.includes('FROM collaboration_members')) return { rows: [{ exists: 1 }], rowCount: 1 };
@@ -69,6 +71,7 @@ describe('Live Workspace participant role API', () => {
     const response = await PATCH(request({ role: 'owner' }), { params: Promise.resolve({ id: workspaceId, userId: targetId }) });
     expect(response.status).toBe(400);
     expect(mocks.assignLiveWorkspaceRole).not.toHaveBeenCalled();
+    expect(mocks.publishCollaborationEvent).not.toHaveBeenCalled();
   });
 
   it('delegates authorization to the server role policy with the authenticated actor', async () => {
@@ -78,6 +81,11 @@ describe('Live Workspace participant role API', () => {
       pool, collaborationId: workspaceId, actorId: user.id, targetUserId: targetId, role: 'learner',
     });
     expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'members.changed',
+      data: { memberId: targetId, action: 'live-workspace.role-changed', role: 'learner' },
+    });
   });
 
   it('revokes control and detaches contributions when a participant becomes observer', async () => {
@@ -115,6 +123,11 @@ describe('Live Workspace participant role API', () => {
     }));
     expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("SET status = 'removed'"), [workspaceId, targetId]);
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'members.changed',
+      data: { memberId: targetId, action: 'removed' },
+    });
   });
 
   it('detaches participant-owned resources and revokes binding control before removal commits', async () => {
@@ -146,5 +159,6 @@ describe('Live Workspace participant role API', () => {
     expect(response.status).toBe(409);
     expect(mocks.revokeControlForParticipant).not.toHaveBeenCalled();
     expect(mocks.revokeControlForBinding).not.toHaveBeenCalled();
+    expect(mocks.publishCollaborationEvent).not.toHaveBeenCalled();
   });
 });
