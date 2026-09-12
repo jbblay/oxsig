@@ -1,6 +1,128 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import { deleteDB, openDB, type DBSchema } from 'idb';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { StoryboardDraft } from './types';
+
+const fakeIdb = vi.hoisted(() => {
+  type StoreState = {
+    keyPath: string | string[];
+    records: Map<string, unknown>;
+    indexes: Set<string>;
+  };
+  type DatabaseState = {
+    version: number;
+    stores: Map<string, StoreState>;
+  };
+
+  const databases = new Map<string, DatabaseState>();
+  const encodeKey = (key: unknown) => JSON.stringify(key);
+
+  const recordKey = (store: StoreState, value: Record<string, unknown>) => {
+    const key = Array.isArray(store.keyPath)
+      ? store.keyPath.map((field) => value[field])
+      : value[store.keyPath];
+    return encodeKey(key);
+  };
+
+  const getDatabase = (name: string) => {
+    let database = databases.get(name);
+    if (!database) {
+      database = { version: 0, stores: new Map() };
+      databases.set(name, database);
+    }
+    return database;
+  };
+
+  const makeConnection = (database: DatabaseState) => ({
+    objectStoreNames: {
+      contains(storeName: string) {
+        return database.stores.has(storeName);
+      },
+    },
+    createObjectStore(storeName: string, options: { keyPath: string | string[] }) {
+      const store: StoreState = {
+        keyPath: options.keyPath,
+        records: new Map(),
+        indexes: new Set(),
+      };
+      database.stores.set(storeName, store);
+      return {
+        createIndex(indexName: string) {
+          store.indexes.add(indexName);
+        },
+      };
+    },
+    async put(storeName: string, value: Record<string, unknown>) {
+      const store = database.stores.get(storeName);
+      if (!store) throw new Error(`Unknown fake IndexedDB store: ${storeName}`);
+      store.records.set(recordKey(store, value), value);
+    },
+    async get(storeName: string, key: unknown) {
+      const store = database.stores.get(storeName);
+      if (!store) return undefined;
+      return store.records.get(encodeKey(key));
+    },
+    async getAllFromIndex(storeName: string, indexName: string, value: unknown) {
+      const store = database.stores.get(storeName);
+      if (!store) return [];
+      if (!store.indexes.has(indexName)) throw new Error(`Unknown fake IndexedDB index: ${indexName}`);
+      const records = Array.from(store.records.values()) as Array<Record<string, unknown>>;
+      if (indexName === 'by-namespace') {
+        return records.filter((record) => record.namespace === value);
+      }
+      if (indexName === 'by-updated') {
+        return records.filter((record) => record.updatedAt === value);
+      }
+      return [];
+    },
+    async delete(storeName: string, key: unknown) {
+      database.stores.get(storeName)?.records.delete(encodeKey(key));
+    },
+    close() {},
+  });
+
+  return {
+    async openDB(
+      name: string,
+      version: number,
+      options?: {
+        upgrade?: (db: ReturnType<typeof makeConnection>, oldVersion: number, newVersion: number) => void;
+      }
+    ) {
+      const database = getDatabase(name);
+      const connection = makeConnection(database);
+      if (version > database.version) {
+        const oldVersion = database.version;
+        options?.upgrade?.(connection, oldVersion, version);
+        database.version = version;
+      }
+      return connection;
+    },
+    reset() {
+      databases.clear();
+    },
+    seed(
+      databaseName: string,
+      version: number,
+      storeName: string,
+      keyPath: string | string[],
+      value: Record<string, unknown>
+    ) {
+      const database = getDatabase(databaseName);
+      database.version = version;
+      let store = database.stores.get(storeName);
+      if (!store) {
+        store = { keyPath, records: new Map(), indexes: new Set(['by-updated']) };
+        database.stores.set(storeName, store);
+      }
+      store.records.set(recordKey(store, value), value);
+    },
+    read(databaseName: string, storeName: string, key: unknown) {
+      return databases.get(databaseName)?.stores.get(storeName)?.records.get(encodeKey(key));
+    },
+  };
+});
+
+vi.mock('idb', () => ({ openDB: fakeIdb.openDB }));
+
 import {
   GUEST_STORYBOARD_DRAFT_NAMESPACE,
   deleteStoryboardDraft,
@@ -11,16 +133,6 @@ import {
 } from './storage';
 
 const DB_NAME = 'oxsig-storyboards';
-
-interface LegacyStoryboardDB extends DBSchema {
-  drafts: {
-    key: string;
-    value: StoryboardDraft;
-    indexes: {
-      'by-updated': number;
-    };
-  };
-}
 
 function makeDraft(
   id: string,
@@ -46,16 +158,9 @@ const legacyDraft = makeDraft('legacy-unscoped', 'Legacy unscoped draft', {
   audioMimeType: 'audio/webm',
 });
 
-beforeAll(async () => {
-  await deleteDB(DB_NAME);
-  const legacyDb = await openDB<LegacyStoryboardDB>(DB_NAME, 1, {
-    upgrade(db) {
-      const store = db.createObjectStore('drafts', { keyPath: 'id' });
-      store.createIndex('by-updated', 'updatedAt');
-    },
-  });
-  await legacyDb.put('drafts', legacyDraft);
-  legacyDb.close();
+beforeAll(() => {
+  fakeIdb.reset();
+  fakeIdb.seed(DB_NAME, 1, 'drafts', 'id', legacyDraft as unknown as Record<string, unknown>);
 });
 
 describe('Board recovery draft account isolation', () => {
@@ -67,9 +172,11 @@ describe('Board recovery draft account isolation', () => {
     expect(await listStoryboardDrafts(accountB)).toEqual([]);
     expect(await listStoryboardDrafts(GUEST_STORYBOARD_DRAFT_NAMESPACE)).toEqual([]);
 
-    const upgradedDb = await openDB<LegacyStoryboardDB>(DB_NAME, 2);
-    const preservedLegacyDraft = await upgradedDb.get('drafts', legacyDraft.id);
-    upgradedDb.close();
+    const preservedLegacyDraft = fakeIdb.read(
+      DB_NAME,
+      'drafts',
+      legacyDraft.id
+    ) as StoryboardDraft | undefined;
 
     expect(preservedLegacyDraft?.title).toBe(legacyDraft.title);
     expect(preservedLegacyDraft?.audio).toBeInstanceOf(Blob);
