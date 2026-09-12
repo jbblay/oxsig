@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -7,12 +8,18 @@ import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
 import {
+  AiRequestCancelledError,
+  AiRequestTimeoutError,
+} from '@/lib/ai/providers/server';
+import {
   aiPractitionerConfigured,
   aiPractitionerModel,
+  aiPractitionerPlanSchema,
   explainPractitionerEvidence,
   planPractitionerStep,
   practitionerRequestSchema,
 } from '@/lib/ai-practitioner/server';
+import type { AiPractitionerPlan } from '@/lib/ai-practitioner/types';
 import {
   ExecutionEvidenceConflictError,
   getTerminalEvidenceForAnalysis,
@@ -27,6 +34,7 @@ type TimelineEntry = {
   id: string;
   prompt: string;
   plan: Record<string, unknown>;
+  requestId?: string;
   labInstanceId?: string;
   execution?: Record<string, unknown>;
   analysis?: Record<string, unknown>;
@@ -36,6 +44,13 @@ type TimelineLine = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+};
+
+type PersistedPlan = {
+  prompt: string;
+  plan: AiPractitionerPlan;
+  model: string | null;
+  labInstanceId: string | null;
 };
 
 function metadata(row: Record<string, any>) {
@@ -68,6 +83,39 @@ function isRestorableEntry(entry: TimelineEntry) {
   return !command || Boolean(entry.execution);
 }
 
+async function findPersistedPlan(ownerId: string, requestId: string): Promise<PersistedPlan | null> {
+  const result = await getPool().query(
+    `SELECT lab_instance_id, prompt, model, metadata
+       FROM ai_practitioner_events
+      WHERE owner_id = $1
+        AND event_type = 'plan'
+        AND metadata->>'requestId' = $2
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [ownerId, requestId]
+  );
+  const row = result.rows[0];
+  if (!row?.prompt) return null;
+  const parsedPlan = aiPractitionerPlanSchema.safeParse(metadata(row).plan);
+  if (!parsedPlan.success) return null;
+  return {
+    prompt: String(row.prompt),
+    plan: parsedPlan.data,
+    model: row.model ? String(row.model) : null,
+    labInstanceId: row.lab_instance_id ? String(row.lab_instance_id) : null,
+  };
+}
+
+function persistedPlanResponse(persisted: PersistedPlan, requestId: string, fallbackModel: string | null) {
+  return NextResponse.json({
+    plan: persisted.plan,
+    model: persisted.model || fallbackModel,
+    lab: persisted.labInstanceId ? { id: persisted.labInstanceId } : null,
+    requestId,
+    replayed: true,
+  }, { headers: { 'Cache-Control': 'no-store' } });
+}
+
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
     const rateLimit = await checkRateLimit(req, { maxRequests: 60, windowMs: 60_000 }, user.id);
@@ -88,16 +136,20 @@ export async function GET(request: NextRequest) {
 
     const entries: TimelineEntry[] = [];
     const history: TimelineLine[] = [];
+    const completedRequestIds = new Set<string>();
 
     for (const row of result.rows) {
       const eventMetadata = metadata(row);
       if (row.event_type === 'plan') {
         const plan = eventMetadata.plan;
         if (!plan || typeof plan !== 'object' || !row.prompt) continue;
+        const requestId = typeof eventMetadata.requestId === 'string' ? eventMetadata.requestId : undefined;
+        if (requestId) completedRequestIds.add(requestId);
         const entry: TimelineEntry = {
           id: String(row.id),
           prompt: String(row.prompt),
           plan: plan as Record<string, unknown>,
+          ...(requestId ? { requestId } : {}),
           ...(row.lab_instance_id ? { labInstanceId: String(row.lab_instance_id) } : {}),
         };
         entries.push(entry);
@@ -144,7 +196,11 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { entries: entries.filter(isRestorableEntry), history },
+      {
+        entries: entries.filter(isRestorableEntry),
+        history,
+        completedRequestIds: Array.from(completedRequestIds),
+      },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   });
@@ -199,6 +255,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid AI Practitioner request', details: parsed.error.flatten() }, { status: 400 });
     }
 
+    const requestId = parsed.data.action === 'plan'
+      ? parsed.data.requestId || randomUUID()
+      : null;
+
+    if (requestId && parsed.data.action === 'plan') {
+      const persisted = await findPersistedPlan(user.id, requestId);
+      if (persisted) {
+        if (persisted.prompt !== parsed.data.prompt) {
+          return NextResponse.json({
+            error: 'This AI request identifier is already bound to another prompt',
+            code: 'AI_REQUEST_ID_CONFLICT',
+          }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
+        }
+        return persistedPlanResponse(persisted, requestId, persisted.model);
+      }
+    }
+
     if (!aiPractitionerConfigured()) {
       return NextResponse.json({
         error: 'AI Practitioner is not configured on this Oxsig server',
@@ -230,25 +303,42 @@ export async function POST(request: NextRequest) {
           prompt: parsed.data.prompt,
           history: parsed.data.history,
           lab: lab ? { name: lab.name, platform: lab.platform, shell: lab.shell } : null,
+          signal: req.signal,
         });
+        if (req.signal.aborted) throw new AiRequestCancelledError();
 
-        await getPool().query(
+        const insert = await getPool().query(
           `INSERT INTO ai_practitioner_events (
              owner_id, lab_instance_id, event_type, prompt, command, model, metadata
-           ) VALUES ($1,$2,'plan',$3,$4,$5,$6::jsonb)`,
+           ) VALUES ($1,$2,'plan',$3,$4,$5,$6::jsonb)
+           ON CONFLICT DO NOTHING
+           RETURNING id`,
           [
             user.id,
             instance?.id ?? null,
             sanitizePostgresText(parsed.data.prompt),
             plan.command ? sanitizePostgresText(plan.command) : null,
             sanitizePostgresText(model),
-            stringifyPostgresJson({ plan }),
+            stringifyPostgresJson({ plan, requestId }),
           ]
         );
+
+        if (insert.rows.length === 0) {
+          const persisted = await findPersistedPlan(user.id, requestId!);
+          if (!persisted) throw new Error('AI plan could not be persisted safely');
+          if (persisted.prompt !== parsed.data.prompt) {
+            return NextResponse.json({
+              error: 'This AI request identifier is already bound to another prompt',
+              code: 'AI_REQUEST_ID_CONFLICT',
+            }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
+          }
+          return persistedPlanResponse(persisted, requestId!, model);
+        }
 
         return NextResponse.json({
           plan,
           model,
+          requestId,
           lab: instance && lab
             ? { id: instance.id, name: lab.name, platform: lab.platform, shell: lab.shell }
             : null,
@@ -294,7 +384,9 @@ export async function POST(request: NextRequest) {
         exitCode: evidence.exitCode ?? -1,
         labName: lab.name,
         platform: lab.platform,
+        signal: req.signal,
       });
+      if (req.signal.aborted) throw new AiRequestCancelledError();
 
       const analyzedEvidence = await storeExecutionEvidenceAnalysis({
         ownerId: user.id,
@@ -340,6 +432,18 @@ export async function POST(request: NextRequest) {
           { error: error.message, code: error.code },
           { status: 409, headers: { 'Cache-Control': 'no-store' } }
         );
+      }
+      if (error instanceof AiRequestTimeoutError) {
+        return NextResponse.json({
+          error: 'AI request timed out. Your prompt is safe to retry.',
+          code: error.code,
+        }, { status: 504, headers: { 'Cache-Control': 'no-store' } });
+      }
+      if (error instanceof AiRequestCancelledError) {
+        return NextResponse.json({
+          error: 'AI request was cancelled.',
+          code: error.code,
+        }, { status: 499, headers: { 'Cache-Control': 'no-store' } });
       }
       console.error('AI Practitioner request failed:', error);
       return NextResponse.json({

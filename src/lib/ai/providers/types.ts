@@ -4,6 +4,7 @@ export type StructuredAiRequest = {
   input: string;
   schema: Record<string, unknown>;
   maxOutputTokens?: number;
+  signal?: AbortSignal;
 };
 
 export type StructuredAiProvider = {

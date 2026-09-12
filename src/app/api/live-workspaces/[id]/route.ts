@@ -11,6 +11,7 @@ import {
   listLiveWorkspaceParticipants,
   listOwnerAttachableResources,
 } from '@/lib/live-workspace/server';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 
 export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
@@ -177,6 +178,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ]
       );
       await client.query('COMMIT');
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'session.changed',
+        data: { action: patch.action === 'end' ? 'live-workspace.ended' : 'live-workspace.updated' },
+      });
       const row = updated.rows[0];
       return NextResponse.json({
         workspace: {
@@ -249,6 +255,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Live Workspace changed before deletion; try again' }, { status: 409 });
     }
 
+    await publishCollaborationEvent({
+      collaborationId: id,
+      name: 'session.changed',
+      data: { action: 'live-workspace.deleted' },
+    });
     return NextResponse.json({ deleted: true, ...(attachmentCleanupDeferred ? { attachmentCleanupDeferred: true } : {}) });
   });
 }

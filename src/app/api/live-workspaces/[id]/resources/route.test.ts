@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getLiveWorkspaceAccess: vi.fn(),
   assertOwnerResource: vi.fn(),
   revokeControlForBinding: vi.fn(),
+  publishCollaborationEvent: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
@@ -23,6 +24,7 @@ vi.mock('@/lib/live-workspace/server', () => ({
     constructor(message: string, readonly status = 409, readonly code = 'LIVE_WORKSPACE_CONFLICT') { super(message); }
   },
 }));
+vi.mock('@/lib/realtime/ably', () => ({ publishCollaborationEvent: mocks.publishCollaborationEvent }));
 
 import { DELETE, POST } from './route';
 
@@ -77,6 +79,7 @@ describe('Live Workspace resource binding API', () => {
     mocks.getLiveWorkspaceAccess.mockResolvedValue(access());
     mocks.assertOwnerResource.mockResolvedValue({ id: labId, label: 'Ubuntu Lab' });
     mocks.revokeControlForBinding.mockResolvedValue(undefined);
+    mocks.publishCollaborationEvent.mockResolvedValue({ configured: true, published: true });
     query.mockResolvedValue({ rows: [{
       id: bindingId,
       resource_type: 'lab-instance', resource_id: labId, resource_owner_id: ownerId,
@@ -106,6 +109,11 @@ describe('Live Workspace resource binding API', () => {
     expect(response.status).toBe(201);
     expect(mocks.assertOwnerResource).toHaveBeenCalledWith(expect.anything(), participantId, 'lab-instance', labId);
     expect(body.resource).toMatchObject({ resourceId: labId, resourceOwnerId: participantId, ownershipTransferred: false });
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'session.changed',
+      data: { action: 'live-workspace.resource-attached', bindingId },
+    });
   });
 
   it('does not let a participant without resource-management rights contribute non-lab resources', async () => {
@@ -118,6 +126,7 @@ describe('Live Workspace resource binding API', () => {
     const response = await POST(request({ resourceType: 'storyboard', resourceId: boardId }), { params: Promise.resolve({ id: workspaceId }) });
     expect(response.status).toBe(403);
     expect(mocks.assertOwnerResource).not.toHaveBeenCalled();
+    expect(mocks.publishCollaborationEvent).not.toHaveBeenCalled();
   });
 
   it('validates exact workspace-owner resource ownership before binding owner resources', async () => {
@@ -160,6 +169,7 @@ describe('Live Workspace resource binding API', () => {
     const response = await POST(request({ resourceType: 'shell-session', resourceId: labId }), { params: Promise.resolve({ id: workspaceId }) });
     expect(response.status).toBe(400);
     expect(mocks.getLiveWorkspaceAccess).not.toHaveBeenCalled();
+    expect(mocks.publishCollaborationEvent).not.toHaveBeenCalled();
   });
 
   it('revokes active leases and cancels pending requests when a binding detaches', async () => {
@@ -174,5 +184,10 @@ describe('Live Workspace resource binding API', () => {
     });
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(release).toHaveBeenCalled();
+    expect(mocks.publishCollaborationEvent).toHaveBeenCalledWith({
+      collaborationId: workspaceId,
+      name: 'session.changed',
+      data: { action: 'live-workspace.resource-detached', bindingId },
+    });
   });
 });

@@ -11,6 +11,7 @@ import {
   getLiveWorkspaceAccess,
   LiveWorkspaceError,
 } from '@/lib/live-workspace/server';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 
 export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
@@ -54,6 +55,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         [id, parsed.data.resourceType, resource.id, resourceOwnerId, user.id, stringifyPostgresJson({ label: resource.label })]
       );
       const row = result.rows[0];
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'session.changed',
+        data: { action: 'live-workspace.resource-attached', bindingId: row.id },
+      });
       return NextResponse.json({
         resource: {
           id: row.id,
@@ -126,6 +132,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       } finally {
         client.release();
       }
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'session.changed',
+        data: { action: 'live-workspace.resource-detached', bindingId: parsed.data.bindingId },
+      });
       return NextResponse.json({ detached: true, bindingId: parsed.data.bindingId }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       if (error instanceof LiveWorkspaceError) {

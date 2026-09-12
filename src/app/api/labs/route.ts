@@ -6,7 +6,7 @@ import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { LAB_CATALOG } from '@/lib/labs/catalog';
-import { createLabVm, describeLabVmStates, destroyLabVm, labCapabilities } from '@/lib/labs/aws-runtime';
+import { getConfiguredLabCapabilities, labStatusFreshness } from '@/lib/labs/read-model';
 import type { LabDefinition, LearnerLabDefinition, LearnerLabRuntimeCapabilities } from '@/lib/labs/types';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 import { captureProductEvent } from '@/lib/analytics/posthog';
@@ -44,7 +44,9 @@ function mapLearnerDefinition(lab: LabDefinition): LearnerLabDefinition {
   };
 }
 
-function mapLearnerCapabilities(capabilities: Awaited<ReturnType<typeof labCapabilities>>): LearnerLabRuntimeCapabilities {
+function mapLearnerCapabilities(
+  capabilities: ReturnType<typeof getConfiguredLabCapabilities>
+): LearnerLabRuntimeCapabilities {
   return {
     configured: capabilities.configured,
     supportsTerminal: capabilities.supportsTerminal,
@@ -52,6 +54,7 @@ function mapLearnerCapabilities(capabilities: Awaited<ReturnType<typeof labCapab
 }
 
 function mapInstance(row: Record<string, any>) {
+  const freshness = labStatusFreshness(row);
   return {
     id: row.id,
     slug: row.slug,
@@ -60,74 +63,20 @@ function mapInstance(row: Record<string, any>) {
     createdAt: row.created_at,
     startedAt: row.started_at,
     expiresAt: row.expires_at,
+    observedAt: freshness.observedAt,
+    stale: freshness.stale,
+    reconciliationWarning: freshness.reconciliationWarning,
     metadata: {
       accessMode: row.metadata?.accessMode === 'desktop' ? 'desktop' : 'terminal',
     },
   };
 }
 
-async function syncAwsInstances(rows: Record<string, any>[]) {
-  const pool = getPool();
-  const now = Date.now();
-
-  for (const row of rows) {
-    if (
-      row.runtime_provider === 'aws-ec2' &&
-      row.runtime_external_id &&
-      row.expires_at &&
-      new Date(row.expires_at).getTime() <= now &&
-      !['destroying', 'destroyed', 'failed'].includes(row.status)
-    ) {
-      try {
-        await destroyLabVm(row.runtime_external_id);
-        row.status = 'destroying';
-        await pool.query(
-          `UPDATE lab_instances SET status='destroying', updated_at=NOW() WHERE id=$1`,
-          [row.id]
-        );
-      } catch {
-        // The scheduled cleanup endpoint will retry expired instances independently.
-      }
-    }
-  }
-
-  const externalIds = rows
-    .filter((row) => row.runtime_provider === 'aws-ec2' && row.runtime_external_id)
-    .map((row) => row.runtime_external_id as string);
-
-  if (externalIds.length === 0) return rows;
-
-  const states = await describeLabVmStates(externalIds);
-  for (const row of rows) {
-    if (!row.runtime_external_id) continue;
-    const status = states.get(row.runtime_external_id);
-    if (!status || status === row.status) continue;
-
-    row.status = status;
-    if (status === 'destroyed') row.last_error = null;
-
-    const isDestroyed = status === 'destroyed';
-    const isRunning = status === 'running';
-    const isStopped = status === 'stopped';
-
-    await pool.query(
-      `UPDATE lab_instances
-       SET status=$1::varchar(32),
-           last_error=CASE WHEN $2::boolean THEN NULL ELSE last_error END,
-           started_at=CASE WHEN $3::boolean AND started_at IS NULL THEN NOW() ELSE started_at END,
-           stopped_at=CASE WHEN $4::boolean THEN NOW() ELSE stopped_at END,
-           updated_at=NOW()
-       WHERE id=$5`,
-      [status, isDestroyed, isRunning, isStopped, row.id]
-    );
-  }
-
-  return rows;
-}
-
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (_req, user) => {
-    const capabilities = await labCapabilities();
+    // Ordinary Lab reads deliberately use deployment configuration only. Provider
+    // reachability and runtime state are reconciled through the explicit refresh path.
+    const capabilities = getConfiguredLabCapabilities();
     const instances = await getPool().query(
       `SELECT instance.*, definition.slug, definition.name
        FROM lab_instances instance
@@ -138,23 +87,17 @@ export async function GET(request: NextRequest) {
       [user.id]
     );
 
-    let rows = instances.rows;
-    let reconciliationWarning: string | null = null;
-    if (capabilities.configured) {
-      try {
-        rows = await syncAwsInstances(rows);
-      } catch (error) {
-        console.error('Cyber Lab AWS reconciliation failed', error);
-        reconciliationWarning = 'Lab status could not be refreshed. Try again in a moment or open Diagnostics for technical details.';
-      }
-    }
+    const mappedInstances = instances.rows.map(mapInstance);
+    const persistedWarning = mappedInstances.find((instance) => instance.reconciliationWarning)?.reconciliationWarning || null;
+    const staleWarning = mappedInstances.some((instance) => instance.stale)
+      ? 'Lab status is based on the last provider observation and should be refreshed before treating it as current.'
+      : null;
 
-    const visibleRows = rows.filter((row) => row.status !== 'destroyed');
     return NextResponse.json({
       catalog: LAB_CATALOG.map(mapLearnerDefinition),
       capabilities: mapLearnerCapabilities(capabilities),
-      instances: visibleRows.map(mapInstance),
-      reconciliationWarning,
+      instances: mappedInstances,
+      reconciliationWarning: persistedWarning || staleWarning,
     });
   });
 }
@@ -208,6 +151,12 @@ export async function POST(request: NextRequest) {
       ? { ...lab, recommendedInstanceType: lab.desktopInstanceType! }
       : lab;
 
+    // Keep the AWS SDK/control-plane adapter out of the ordinary GET module path.
+    // It is loaded only when an authoritative launch is actually requested.
+    const { createLabVm, destroyLabVm, labCapabilities } = await import('@/lib/labs/aws-runtime');
+
+    // Launch stays authoritative: unlike GET, creation still verifies the real
+    // subnet/security-group deployment boundary before allocating compute.
     const capabilities = await labCapabilities();
     if (!capabilities.configured) {
       return NextResponse.json({ error: 'Lab service is unavailable on this deployment' }, { status: 503 });

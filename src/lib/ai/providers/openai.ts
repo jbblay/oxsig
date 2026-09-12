@@ -42,6 +42,7 @@ async function generateStructured<T>(request: StructuredAiRequest): Promise<T> {
         },
       },
     }),
+    signal: request.signal,
   });
 
   const payload = await response.json().catch(() => ({}));

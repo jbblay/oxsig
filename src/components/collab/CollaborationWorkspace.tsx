@@ -27,6 +27,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/lib/auth/use-auth';
+import {
+  readCollaborationDraft,
+  writeCollaborationDraft,
+} from '@/lib/collab/draft-storage';
+import {
+  collaborationScrollBehavior,
+  isNearConversationBottom,
+  newMessageDisposition,
+} from '@/lib/collab/reading-state';
 import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import { listServerStoryboards } from '@/lib/storyboards/api';
@@ -151,6 +161,7 @@ function aiContext(messages: CollaborationMessage[]) {
 }
 
 export default function CollaborationWorkspace() {
+  const { sessionIdentityId } = useAuth();
   const [sessions, setSessions] = React.useState<Collaboration[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<CollaborationMessage[]>([]);
@@ -162,6 +173,7 @@ export default function CollaborationWorkspace() {
   const [sending, setSending] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [draft, setDraft] = React.useState('');
+  const [hasNewMessages, setHasNewMessages] = React.useState(false);
   const [newSessionName, setNewSessionName] = React.useState('');
   const [showNewSession, setShowNewSession] = React.useState(false);
   const [showPeople, setShowPeople] = React.useState(false);
@@ -183,13 +195,33 @@ export default function CollaborationWorkspace() {
   const chunksRef = React.useRef<Blob[]>([]);
   const recordTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const activeIdRef = React.useRef<string | null>(null);
+  const sessionIdentityRef = React.useRef<string | null>(sessionIdentityId);
   const conversationRequestRef = React.useRef(0);
+  const nearBottomRef = React.useRef(true);
+  const lastMessageIdRef = React.useRef<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
   const ownerBoards = React.useMemo(() => {
     const query = boardQuery.trim().toLowerCase();
     return boards.filter((board) => board.permission === 'owner' && (!query || board.title.toLowerCase().includes(query)));
   }, [boards, boardQuery]);
+
+  const scrollToLatest = React.useCallback(() => {
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    messagesEndRef.current?.scrollIntoView({
+      behavior: collaborationScrollBehavior(prefersReducedMotion),
+      block: 'nearest',
+    });
+    nearBottomRef.current = true;
+    setHasNewMessages(false);
+  }, []);
+
+  const handleMessagesScroll = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const nearBottom = isNearConversationBottom(event.currentTarget);
+    nearBottomRef.current = nearBottom;
+    if (nearBottom) setHasNewMessages(false);
+  }, []);
 
   const loadSessions = React.useCallback(async (silent = false) => {
     try {
@@ -267,13 +299,20 @@ export default function CollaborationWorkspace() {
   }, [loadSessions]);
 
   React.useEffect(() => {
+    sessionIdentityRef.current = sessionIdentityId;
+    setDraft(readCollaborationDraft(sessionIdentityId, activeId));
+  }, [activeId, sessionIdentityId]);
+
+  React.useEffect(() => {
     activeIdRef.current = activeId;
     conversationRequestRef.current += 1;
     setMessages([]);
     setMembers([]);
     setCanInvite(false);
     setConversationError(null);
-    setDraft('');
+    setHasNewMessages(false);
+    nearBottomRef.current = true;
+    lastMessageIdRef.current = null;
     setShowPeople(false);
     setSelectedMemberId(null);
     setInviteEmail('');
@@ -298,8 +337,20 @@ export default function CollaborationWorkspace() {
   }, [activeId, loadConversation, loadSessions, realtime.state]);
 
   React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [messages.length, activeId]);
+    if (!activeId) return;
+    const newestMessage = messages.at(-1) || null;
+    if (newestMessage && newestMessage.collaborationId !== activeId) return;
+
+    const disposition = newMessageDisposition(
+      lastMessageIdRef.current,
+      newestMessage?.id || null,
+      nearBottomRef.current
+    );
+    lastMessageIdRef.current = newestMessage?.id || null;
+
+    if (disposition === 'follow') scrollToLatest();
+    else if (disposition === 'announce') setHasNewMessages(true);
+  }, [activeId, messages, scrollToLatest]);
 
   React.useEffect(() => () => {
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
@@ -377,11 +428,14 @@ export default function CollaborationWorkspace() {
   const submitDraft = async (event?: React.FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || !activeId || sending) return;
+    const targetId = activeId;
+    const targetIdentity = sessionIdentityId;
+    if (!text || !targetId || sending) return;
     setSending(true);
     try {
       await sendMessage(text);
-      if (activeIdRef.current === activeId) setDraft('');
+      writeCollaborationDraft(targetIdentity, targetId, '');
+      if (activeIdRef.current === targetId && sessionIdentityRef.current === targetIdentity) setDraft('');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not send message');
     } finally {
@@ -693,83 +747,103 @@ export default function CollaborationWorkspace() {
             </Button>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-            {messagesLoading ? (
-              <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
-            ) : conversationError ? (
-              <div className="flex min-h-full flex-col items-center justify-center p-6 text-center">
-                <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
-                <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
-                <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
-                <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
-              </div>
-            ) : messages.length === 0 ? (
-              <div className="flex min-h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
-                <MessageCircle className="mb-2 h-8 w-8 opacity-40" />
-                <p className="font-medium text-foreground">Start the conversation</p>
-                <p className="mt-1 max-w-sm text-xs">Ask, explain, test an idea, attach evidence, or send a Board without leaving the session.</p>
-              </div>
-            ) : (
-              <div className="mx-auto w-full max-w-4xl space-y-3">
-                {messages.map((message) => {
-                  const attachment = attachmentFrom(message.metadata);
-                  const sharedBoard = boardFrom(message.metadata);
-                  const attachmentUrl = attachment && activeId
-                    ? `/api/collaborations/${activeId}/attachments?key=${encodeURIComponent(attachment.key)}`
-                    : null;
-                  const practiceHref = typeof message.metadata.href === 'string' ? message.metadata.href : '/labs';
-                  return (
-                    <div key={message.id} className={`flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-                      {!message.isOwnMessage && (
-                        <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
-                          {initials(message.senderName)}
-                          {realtime.onlineIds.includes(message.senderId) && <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />}
-                        </div>
-                      )}
-                      <div className={`flex max-w-[88%] flex-col sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'}`}>
-                        <div className="mb-1 flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
-                          {!message.isOwnMessage && <span className="font-medium text-foreground">{message.senderName}</span>}
-                          {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
-                          <span>{formatTime(message.createdAt)}</span>
-                        </div>
-                        <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
-                          {sharedBoard ? (
-                            <div className="min-w-[220px] space-y-2.5">
-                              <div className="flex items-start gap-2">
-                                <BookOpen className="mt-0.5 h-4 w-4 shrink-0" />
-                                <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide opacity-70">Shared Board</p><p className="truncate font-semibold">{sharedBoard.title}</p></div>
+          <div className="relative min-h-0 flex-1">
+            <div
+              className="h-full min-h-0 overflow-y-auto px-3 py-4 sm:px-5"
+              role="region"
+              aria-label="Conversation messages"
+              onScroll={handleMessagesScroll}
+            >
+              {messagesLoading ? (
+                <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
+              ) : conversationError ? (
+                <div className="flex min-h-full flex-col items-center justify-center p-6 text-center">
+                  <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
+                  <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
+                  <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex min-h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                  <MessageCircle className="mb-2 h-8 w-8 opacity-40" />
+                  <p className="font-medium text-foreground">Start the conversation</p>
+                  <p className="mt-1 max-w-sm text-xs">Ask, explain, test an idea, attach evidence, or send a Board without leaving the session.</p>
+                </div>
+              ) : (
+                <div className="mx-auto w-full max-w-4xl space-y-3">
+                  {messages.map((message) => {
+                    const attachment = attachmentFrom(message.metadata);
+                    const sharedBoard = boardFrom(message.metadata);
+                    const attachmentUrl = attachment && activeId
+                      ? `/api/collaborations/${activeId}/attachments?key=${encodeURIComponent(attachment.key)}`
+                      : null;
+                    const practiceHref = typeof message.metadata.href === 'string' ? message.metadata.href : '/labs';
+                    return (
+                      <div key={message.id} className={`flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                        {!message.isOwnMessage && (
+                          <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
+                            {initials(message.senderName)}
+                            {realtime.onlineIds.includes(message.senderId) && <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />}
+                          </div>
+                        )}
+                        <div className={`flex max-w-[88%] flex-col sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'}`}>
+                          <div className="mb-1 flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
+                            {!message.isOwnMessage && <span className="font-medium text-foreground">{message.senderName}</span>}
+                            {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
+                            <span>{formatTime(message.createdAt)}</span>
+                          </div>
+                          <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
+                            {sharedBoard ? (
+                              <div className="min-w-[220px] space-y-2.5">
+                                <div className="flex items-start gap-2">
+                                  <BookOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                                  <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide opacity-70">Shared Board</p><p className="truncate font-semibold">{sharedBoard.title}</p></div>
+                                </div>
+                                <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8 w-full"><Link href={sharedBoard.href}>Open Board</Link></Button>
                               </div>
-                              <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8 w-full"><Link href={sharedBoard.href}>Open Board</Link></Button>
-                            </div>
-                          ) : message.type === 'practice' ? (
-                            <div className="min-w-[200px] space-y-2">
-                              <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
-                              {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
-                              <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><Link href={practiceHref}>Open Cyber Lab</Link></Button>
-                            </div>
-                          ) : message.type === 'audio' && attachment && attachmentUrl ? (
-                            <div className="min-w-[210px] space-y-2">
-                              <div className="flex items-center gap-2 font-medium"><Mic className="h-4 w-4" />Voice message</div>
-                              <audio controls preload="none" className="h-9 max-w-full" src={attachmentUrl} />
-                              <p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)}</p>
-                            </div>
-                          ) : message.type === 'resource' && attachment && attachmentUrl ? (
-                            <div className="min-w-[200px] space-y-2">
-                              <div className="flex items-start gap-2">
-                                <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-                                <div className="min-w-0"><p className="truncate font-medium">{attachment.filename}</p><p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)} · {attachment.mimeType}</p></div>
+                            ) : message.type === 'practice' ? (
+                              <div className="min-w-[200px] space-y-2">
+                                <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
+                                {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
+                                <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><Link href={practiceHref}>Open Cyber Lab</Link></Button>
                               </div>
-                              <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><a href={`${attachmentUrl}&download=1`}>Open</a></Button>
-                            </div>
-                          ) : (
-                            <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
-                          )}
+                            ) : message.type === 'audio' && attachment && attachmentUrl ? (
+                              <div className="min-w-[210px] space-y-2">
+                                <div className="flex items-center gap-2 font-medium"><Mic className="h-4 w-4" />Voice message</div>
+                                <audio controls preload="none" className="h-9 max-w-full" src={attachmentUrl} />
+                                <p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)}</p>
+                              </div>
+                            ) : message.type === 'resource' && attachment && attachmentUrl ? (
+                              <div className="min-w-[200px] space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <FileText className="mt-0.5 h-4 w-4 shrink-0" />
+                                  <div className="min-w-0"><p className="truncate font-medium">{attachment.filename}</p><p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)} · {attachment.mimeType}</p></div>
+                                </div>
+                                <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><a href={`${attachmentUrl}&download=1`}>Open</a></Button>
+                              </div>
+                            ) : (
+                              <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-                <div ref={messagesEndRef} />
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </div>
+            {hasNewMessages && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="pointer-events-auto h-8 rounded-full border shadow-md"
+                  onClick={scrollToLatest}
+                >
+                  <ChevronDown className="mr-1.5 h-3.5 w-3.5" />New messages
+                </Button>
               </div>
             )}
           </div>
@@ -778,7 +852,11 @@ export default function CollaborationWorkspace() {
             <form onSubmit={(event) => void submitDraft(event)} className="mx-auto w-full max-w-4xl space-y-2">
               <Textarea
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) => {
+                  const nextDraft = event.target.value;
+                  setDraft(nextDraft);
+                  writeCollaborationDraft(sessionIdentityId, activeId, nextDraft);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();

@@ -1,17 +1,48 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getLabsSnapshot, invalidateLabsSnapshot } from './client';
+
+const mocks = vi.hoisted(() => ({
+  getCsrfToken: vi.fn(),
+}));
+
+vi.mock('@/lib/security/csrf-client', () => ({
+  getCsrfToken: mocks.getCsrfToken,
+}));
+
+import { getLabsSnapshot, invalidateLabsSnapshot, reconcileLabsStatus } from './client';
 
 function labsResponse(id: string, status = 200) {
   return new Response(JSON.stringify({
     catalog: [],
     capabilities: { provider: 'unconfigured', configured: false, supportsContainers: false, supportsVMs: false, supportsTerminal: false, supportsReset: false },
-    instances: [{ id, slug: 'ubuntu', name: 'Ubuntu', status: 'running', createdAt: '2026-09-05T00:00:00.000Z', expiresAt: '2026-09-05T01:00:00.000Z' }],
+    instances: [{
+      id,
+      slug: 'ubuntu',
+      name: 'Ubuntu',
+      status: 'running',
+      createdAt: '2026-09-05T00:00:00.000Z',
+      expiresAt: '2026-09-05T01:00:00.000Z',
+      observedAt: '2026-09-05T00:00:05.000Z',
+      stale: false,
+      reconciliationWarning: null,
+    }],
+  }), { status, headers: { 'content-type': 'application/json' } });
+}
+
+function reconciliationResponse(status = 200) {
+  return new Response(JSON.stringify({
+    ok: true,
+    checkedAt: '2026-09-12T08:00:00.000Z',
+    reconciled: 1,
+    failed: 0,
+    skipped: false,
   }), { status, headers: { 'content-type': 'application/json' } });
 }
 
 describe('labs client cache', () => {
   beforeEach(() => {
     invalidateLabsSnapshot();
+    mocks.getCsrfToken.mockClear();
+    mocks.getCsrfToken.mockResolvedValue('csrf-token');
   });
 
   afterEach(() => {
@@ -82,15 +113,53 @@ describe('labs client cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('force bypasses a cached snapshot', async () => {
+  it('force performs an explicit reconciliation before returning the persisted snapshot', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(labsResponse('lab-1'))
+      .mockResolvedValueOnce(reconciliationResponse())
       .mockResolvedValueOnce(labsResponse('lab-2'));
 
     await getLabsSnapshot();
     const forced = await getLabsSnapshot({ force: true });
 
     expect(forced.data.instances?.[0]?.id).toBe('lab-2');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/labs/reconcile');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'x-csrf-token': 'csrf-token' },
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/labs');
+  });
+
+  it('coalesces concurrent explicit reconciliation requests', async () => {
+    let resolveReconciliation!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => { resolveReconciliation = resolve; });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(pending);
+
+    const first = reconcileLabsStatus();
+    const second = reconcileLabsStatus();
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(mocks.getCsrfToken).toHaveBeenCalledTimes(1);
+    });
+
+    resolveReconciliation(reconciliationResponse());
+    await expect(first).resolves.toMatchObject({ ok: true, status: 200 });
+    await expect(second).resolves.toMatchObject({ ok: true, status: 200 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('still returns the persisted snapshot when explicit reconciliation cannot be reached', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(labsResponse('lab-persisted'));
+
+    const result = await getLabsSnapshot({ force: true });
+
+    expect(result).toMatchObject({ ok: true, data: { instances: [{ id: 'lab-persisted' }] } });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
