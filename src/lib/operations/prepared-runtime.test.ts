@@ -49,7 +49,7 @@ describe('prepared Black Domain runtime', () => {
 
     const { provisionPreparedBlackDomainRun } = await import('./prepared-runtime');
     await expect(provisionPreparedBlackDomainRun({
-      pool: { connect: vi.fn() } as any,
+      pool: { query: vi.fn().mockResolvedValue({ rows: [] }), connect: vi.fn() } as any,
       ownerId: 'owner-1',
       slug: 'black-domain',
       mode: 'practice',
