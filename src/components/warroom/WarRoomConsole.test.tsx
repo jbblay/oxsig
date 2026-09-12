@@ -24,44 +24,60 @@ const props = {
 };
 afterEach(() => { cleanup(); closed.mockClear(); });
 describe('WarRoom machine navigation', () => {
-  it('unmounts the previous transport on switch and closes the active view', () => {
+  it('keeps visited transports mounted while switching machines and Windows surfaces', () => {
     render(<WarRoomConsole {...props} />);
     fireEvent.click(screen.getByRole('tab',{name:'Operator'}));
     expect(screen.getByText('Terminal session: Operator')).toBeTruthy();
+
     fireEvent.click(screen.getByRole('tab',{name:'Windows'}));
-    expect(closed).toHaveBeenCalledWith('Operator');
-    expect(screen.queryByText('Terminal session: Operator')).toBeNull();
+    expect(closed).not.toHaveBeenCalled();
+    expect(screen.getByText('Terminal session: Windows')).toBeTruthy();
+
     fireEvent.click(screen.getByRole('button',{name:'Desktop'}));
-    expect(closed).toHaveBeenCalledWith('Windows');
+    expect(closed).not.toHaveBeenCalled();
     expect(screen.getByText('Desktop session: Windows')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button',{name:'Close current machine view'}));
-    expect(screen.queryByText('Desktop session: Windows')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button',{name:'Terminal'}));
+    fireEvent.click(screen.getByRole('tab',{name:'Operator'}));
+    expect(closed).not.toHaveBeenCalled();
+    expect(screen.getByText('Terminal session: Operator')).toBeTruthy();
   });
-  it('does not reopen a closed view during polling', () => {
+
+  it('preserves the selected machine and mounted transport during polling refreshes', () => {
     const view=render(<WarRoomConsole {...props} />);
     fireEvent.click(screen.getByRole('tab',{name:'Windows'}));
-    fireEvent.click(screen.getByRole('button',{name:'Close current machine view'}));
+    expect(screen.getByText('Terminal session: Windows')).toBeTruthy();
+
     view.rerender(<WarRoomConsole {...props} nodes={nodes.map(node=>({...node}))} />);
-    expect(screen.queryByText('Terminal session: Windows')).toBeNull();
+
+    expect(screen.getByRole('tab',{name:'Windows'}).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Terminal session: Windows')).toBeTruthy();
+    expect(closed).not.toHaveBeenCalled();
   });
+
   it('keeps owner-only transport unavailable to teammates', () => {
     render(<WarRoomConsole {...props} isOwner={false} />);
     fireEvent.click(screen.getByRole('tab',{name:'Windows'}));
     expect(screen.queryByText('Terminal session: Windows')).toBeNull();
     expect(screen.queryByRole('button',{name:'Desktop'})).toBeNull();
   });
+
   it('uses shared control for an attached operator instead of owner transport', async () => {
     render(<WarRoomConsole {...props} selectedResourceId="binding1" resources={[{id:'binding1',type:'lab-instance',resourceId:'lab1',label:'Team operator',accessMode:'terminal'}]} />);
     await waitFor(()=>expect(screen.getByText('Shared control: Team operator')).toBeTruthy());
     expect(screen.queryByText('Terminal session: Operator')).toBeNull();
   });
-  it('supports keyboard machine selection and closes transport when paused', () => {
+
+  it('supports keyboard machine selection and closes mounted transports when paused', () => {
     const view=render(<WarRoomConsole {...props} />);
     fireEvent.keyDown(screen.getByRole('tab',{name:'Operator'}),{key:'End'});
     expect(screen.getByRole('tab',{name:'Windows'}).getAttribute('aria-selected')).toBe('true');
+
     view.rerender(<WarRoomConsole {...props} paused />);
+
+    expect(closed).toHaveBeenCalledWith('Operator');
     expect(closed).toHaveBeenCalledWith('Windows');
-    expect(screen.getByText('Resume the environment to connect.')).toBeTruthy();
+    expect(screen.getAllByText('Resume the environment to connect.')).toHaveLength(2);
   });
 });
 describe('Reported provisioning progress', () => {
