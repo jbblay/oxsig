@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/lib/auth/use-auth';
 import {
   createVaultItem,
   deleteVaultItem,
@@ -37,6 +38,12 @@ import {
   updateVaultItem,
 } from '@/lib/vault/api';
 import { optimisticTogglePinned, replaceVaultItem } from '@/lib/vault/optimistic';
+import {
+  clearVaultEditRecovery,
+  readVaultEditRecovery,
+  writeVaultEditRecovery,
+  type VaultEditRecoveryEditor,
+} from '@/lib/vault/recovery';
 import {
   VAULT_KIND_LABELS,
   VAULT_KINDS,
@@ -71,14 +78,7 @@ const BODY_PLACEHOLDERS: Record<VaultKind, string> = {
   playbook: 'Goal\n\nDiscover\n\nEnumerate\n\nValidate',
 };
 
-type EditorState = {
-  kind: VaultKind;
-  title: string;
-  summary: string;
-  body: string;
-  language: string;
-  tags: string;
-};
+type EditorState = VaultEditRecoveryEditor;
 
 function blankEditor(kind: VaultKind = 'command'): EditorState {
   return { kind, title: '', summary: '', body: '', language: '', tags: '' };
@@ -126,6 +126,7 @@ function firstUsefulLine(item: VaultItem) {
 
 export default function VaultPage() {
   const router = useRouter();
+  const { sessionIdentityId, isLoading: authLoading } = useAuth();
   const [items, setItems] = React.useState<VaultItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -137,23 +138,53 @@ export default function VaultPage() {
   const [creating, setCreating] = React.useState(false);
   const [editor, setEditor] = React.useState<EditorState>(() => blankEditor());
   const [baselineEditor, setBaselineEditor] = React.useState<EditorState>(() => blankEditor());
+  const [baselineUpdatedAt, setBaselineUpdatedAt] = React.useState<string | null>(null);
+  const [editorAccountId, setEditorAccountId] = React.useState<string | null>(null);
+  const identityRef = React.useRef<string | null>(sessionIdentityId);
+  const previousIdentityRef = React.useRef<string | null>(null);
+  const recoveredIdentityRef = React.useRef<string | null>(null);
+  identityRef.current = sessionIdentityId;
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (identityId: string) => {
     setLoading(true);
     setLoadError(null);
     try {
-      setItems(await listVaultItems());
+      const loadedItems = await listVaultItems();
+      if (identityRef.current !== identityId) return;
+      setItems(loadedItems);
     } catch (error) {
+      if (identityRef.current !== identityId) return;
       console.error('Failed to load Vault:', error);
       setLoadError(error instanceof Error ? error.message : 'Vault could not be loaded');
     } finally {
-      setLoading(false);
+      if (identityRef.current === identityId) setLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    if (authLoading) return;
+    const previousIdentity = previousIdentityRef.current;
+    if (previousIdentity === sessionIdentityId) return;
+    previousIdentityRef.current = sessionIdentityId;
+    recoveredIdentityRef.current = null;
+
+    if (previousIdentity === null) return;
+
+    const next = blankEditor();
+    setItems([]);
+    setLoadError(null);
+    setActiveId(null);
+    setCreating(false);
+    setEditor(next);
+    setBaselineEditor(next);
+    setBaselineUpdatedAt(null);
+    setEditorAccountId(null);
+  }, [authLoading, sessionIdentityId]);
+
+  React.useEffect(() => {
+    if (authLoading || !sessionIdentityId) return;
+    void load(sessionIdentityId);
+  }, [authLoading, load, sessionIdentityId]);
 
   const active = React.useMemo(
     () => items.find((item) => item.id === activeId) || null,
@@ -164,6 +195,63 @@ export default function VaultPage() {
     () => JSON.stringify(editor) !== JSON.stringify(baselineEditor),
     [baselineEditor, editor]
   );
+
+  React.useEffect(() => {
+    if (!sessionIdentityId || loading || loadError) return;
+    if (recoveredIdentityRef.current === sessionIdentityId) return;
+    recoveredIdentityRef.current = sessionIdentityId;
+
+    const recovery = readVaultEditRecovery(sessionIdentityId);
+    if (!recovery) return;
+    const item = items.find((candidate) => candidate.id === recovery.itemId);
+    if (!item) {
+      clearVaultEditRecovery(sessionIdentityId);
+      return;
+    }
+
+    const serverEditor = itemEditor(item);
+    if (JSON.stringify(serverEditor) === JSON.stringify(recovery.editor)) {
+      clearVaultEditRecovery(sessionIdentityId);
+      return;
+    }
+
+    if (recovery.baseUpdatedAt !== item.updatedAt) {
+      const restore = window.confirm(
+        'This Vault item has a newer saved version than your recovery draft. Restore your unsaved draft anyway?'
+      );
+      if (!restore) {
+        clearVaultEditRecovery(sessionIdentityId);
+        return;
+      }
+    }
+
+    setCreating(false);
+    setActiveId(item.id);
+    setEditor(recovery.editor);
+    setBaselineEditor(serverEditor);
+    setBaselineUpdatedAt(item.updatedAt);
+    setEditorAccountId(sessionIdentityId);
+    toast.success('Recovered unsaved Vault changes.');
+  }, [items, loadError, loading, sessionIdentityId]);
+
+  React.useEffect(() => {
+    if (
+      !sessionIdentityId ||
+      editorAccountId !== sessionIdentityId ||
+      creating ||
+      !active ||
+      !dirty ||
+      !baselineUpdatedAt
+    ) {
+      return;
+    }
+
+    writeVaultEditRecovery(sessionIdentityId, {
+      itemId: active.id,
+      baseUpdatedAt: baselineUpdatedAt,
+      editor,
+    });
+  }, [active, baselineUpdatedAt, creating, dirty, editor, editorAccountId, sessionIdentityId]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -188,8 +276,15 @@ export default function VaultPage() {
     });
   }, [items, kindFilter, pinnedOnly, query]);
 
+  function clearRecoveryForCurrentAccount() {
+    if (sessionIdentityId) clearVaultEditRecovery(sessionIdentityId);
+  }
+
   function canDiscardChanges() {
-    return !dirty || window.confirm('Discard your unsaved Vault changes?');
+    if (!dirty) return true;
+    if (!window.confirm('Discard your unsaved Vault changes?')) return false;
+    clearRecoveryForCurrentAccount();
+    return true;
   }
 
   function selectItem(item: VaultItem) {
@@ -200,6 +295,8 @@ export default function VaultPage() {
     setActiveId(item.id);
     setEditor(next);
     setBaselineEditor(next);
+    setBaselineUpdatedAt(item.updatedAt);
+    setEditorAccountId(sessionIdentityId);
   }
 
   function startCreate(kind: VaultKind = 'command') {
@@ -209,6 +306,8 @@ export default function VaultPage() {
     setCreating(true);
     setEditor(next);
     setBaselineEditor(next);
+    setBaselineUpdatedAt(null);
+    setEditorAccountId(sessionIdentityId);
   }
 
   async function createItem() {
@@ -228,11 +327,14 @@ export default function VaultPage() {
         sourceType: 'manual',
       });
       const next = itemEditor(created);
+      clearRecoveryForCurrentAccount();
       setItems((current) => [created, ...current]);
       setCreating(false);
       setActiveId(created.id);
       setEditor(next);
       setBaselineEditor(next);
+      setBaselineUpdatedAt(created.updatedAt);
+      setEditorAccountId(sessionIdentityId);
       toast.success('Saved to Vault.');
     } catch (error) {
       console.error('Failed to create Vault item:', error);
@@ -255,9 +357,12 @@ export default function VaultPage() {
         tags: parseTags(editor.tags),
       });
       const next = itemEditor(updated);
+      clearRecoveryForCurrentAccount();
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
       setEditor(next);
       setBaselineEditor(next);
+      setBaselineUpdatedAt(updated.updatedAt);
+      setEditorAccountId(sessionIdentityId);
       toast.success('Saved.');
     } catch (error) {
       console.error('Failed to update Vault item:', error);
@@ -275,6 +380,7 @@ export default function VaultPage() {
     try {
       const updated = await updateVaultItem(item.id, { pinned: optimistic.pinned });
       setItems((current) => replaceVaultItem(current, updated));
+      if (activeId === updated.id) setBaselineUpdatedAt(updated.updatedAt);
     } catch (error) {
       setItems((current) => replaceVaultItem(current, previous));
       toast.error(error instanceof Error ? error.message : 'Could not update pin');
@@ -289,11 +395,14 @@ export default function VaultPage() {
     try {
       await updateVaultItem(active.id, { archived: true });
       const next = blankEditor();
+      clearRecoveryForCurrentAccount();
       setItems((current) => current.filter((item) => item.id !== active.id));
       setActiveId(null);
       setCreating(false);
       setEditor(next);
       setBaselineEditor(next);
+      setBaselineUpdatedAt(null);
+      setEditorAccountId(null);
       toast.success('Archived.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not archive Vault item');
@@ -308,11 +417,14 @@ export default function VaultPage() {
     try {
       await deleteVaultItem(active.id);
       const next = blankEditor();
+      clearRecoveryForCurrentAccount();
       setItems((current) => current.filter((item) => item.id !== active.id));
       setActiveId(null);
       setCreating(false);
       setEditor(next);
       setBaselineEditor(next);
+      setBaselineUpdatedAt(null);
+      setEditorAccountId(null);
       toast.success('Deleted.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not delete Vault item');
@@ -371,28 +483,36 @@ export default function VaultPage() {
   }
 
   function cancelEditor() {
+    if (dirty) clearRecoveryForCurrentAccount();
     if (creating) {
       const next = blankEditor();
       setCreating(false);
       setActiveId(null);
       setEditor(next);
       setBaselineEditor(next);
+      setBaselineUpdatedAt(null);
+      setEditorAccountId(null);
       return;
     }
     if (active) {
       const next = itemEditor(active);
       setEditor(next);
       setBaselineEditor(next);
+      setBaselineUpdatedAt(active.updatedAt);
+      setEditorAccountId(sessionIdentityId);
     }
   }
 
   const closeEditor = () => {
     if (!canDiscardChanges()) return;
+    clearRecoveryForCurrentAccount();
     const next = blankEditor();
     setCreating(false);
     setActiveId(null);
     setEditor(next);
     setBaselineEditor(next);
+    setBaselineUpdatedAt(null);
+    setEditorAccountId(null);
   };
 
   const editorVisible = creating || !!active;
@@ -425,7 +545,7 @@ export default function VaultPage() {
               <LibraryBig className="h-8 w-8 text-muted-foreground/50" />
               <h2 className="mt-3 font-semibold">Could not load Vault</h2>
               <p className="mt-1 max-w-md text-sm text-muted-foreground">{loadError}</p>
-              <Button className="mt-4" size="sm" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" /> Retry</Button>
+              <Button className="mt-4" size="sm" variant="outline" onClick={() => sessionIdentityId && void load(sessionIdentityId)}><RefreshCw className="h-4 w-4" /> Retry</Button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
