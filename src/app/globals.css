@@ -209,20 +209,20 @@
   border-right: none;
 }
 
-/* Prevent horizontal overflow */
-html, body {
-  overflow-x: hidden !important;
+/* Root geometry stays fluid. Individual workspaces own intentional scrolling. */
+html,
+body {
   width: 100%;
+  min-width: 0;
 }
 
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
-/* Ensure no element can cause horizontal scroll */
 body > * {
-  max-width: 100vw;
-  overflow-x: hidden;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* Smooth content shift when sidebar toggles */
@@ -259,10 +259,9 @@ body > * {
     word-wrap: break-word !important;
   }
   
-  /* Prevent any potential horizontal scroll */
   [data-radix-tabs-content] {
     max-width: 100%;
-    overflow-x: hidden;
+    min-width: 0;
   }
   
   /* Compact spacing for mobile architecture */
