@@ -26,6 +26,7 @@ function workspaceKindFor(pathname: string): WorkspaceKind | null {
 
 function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
   if (workspaceKind === 'labs') return 'immersive';
+  if (workspaceKind === 'boards') return 'wide';
   return 'standard';
 }
 
@@ -66,20 +67,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       recordWorkspaceVisit(pathname);
     }
   }, [bare, pathname]);
-
-  React.useEffect(() => {
-    if (!mobileNavOpen || typeof document === 'undefined') return;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileNavOpen(false);
-    };
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [mobileNavOpen]);
 
   if (bare) return <>{children}</>;
 
