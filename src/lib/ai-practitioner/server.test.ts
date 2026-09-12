@@ -1,13 +1,40 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  generateStructuredAi: vi.fn(),
+}));
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/lib/ai/providers/server', () => ({
+  aiProviderConfigured: () => true,
+  aiProviderModel: () => 'test-model',
+  generateStructuredAi: mocks.generateStructuredAi,
+}));
 
 import {
   classifyPractitionerCommand,
+  planPractitionerStep,
   practitionerRequestSchema,
   truncatePractitionerEvidence,
   validatePractitionerCommand,
 } from './server';
+
+const validPlan = {
+  title: 'Inspect kernel',
+  explanation: 'Read the running kernel identity.',
+  objective: 'Inspect kernel information',
+  command: 'uname -a',
+  expected: 'Kernel and architecture information',
+  risk: 'read-only' as const,
+  approvalReason: 'This is a read-only inspection.',
+  nextConcept: 'Compare the kernel with the OS release.',
+};
+
+const lab = {
+  name: 'Ubuntu Security Lab',
+  platform: 'linux' as const,
+  shell: 'bash',
+};
 
 describe('AI Practitioner conversation contract', () => {
   it('accepts a normal question without a running lab', () => {
@@ -61,5 +88,46 @@ describe('AI Practitioner command policy', () => {
     const value = 'a'.repeat(25);
     expect(truncatePractitionerEvidence(value, 10)).toContain('output truncated by Oxsig');
     expect(truncatePractitionerEvidence('short', 10)).toBe('short');
+  });
+});
+
+describe('AI Practitioner structured result boundary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('accepts a complete validated plan', async () => {
+    mocks.generateStructuredAi.mockResolvedValue(validPlan);
+
+    await expect(planPractitionerStep({
+      prompt: 'Inspect the kernel',
+      history: [],
+      lab,
+    })).resolves.toMatchObject(validPlan);
+  });
+
+  it('rejects an incomplete structured plan even when it contains an executable command', async () => {
+    mocks.generateStructuredAi.mockResolvedValue({
+      title: 'Partial plan',
+      explanation: 'This response was cut off.',
+      command: 'uname -a',
+      risk: 'read-only',
+    });
+
+    await expect(planPractitionerStep({
+      prompt: 'Inspect the kernel',
+      history: [],
+      lab,
+    })).rejects.toThrow('invalid structured plan');
+  });
+
+  it('does not turn truncated provider JSON into a partial plan', async () => {
+    mocks.generateStructuredAi.mockRejectedValue(new SyntaxError('Unexpected end of JSON input'));
+
+    await expect(planPractitionerStep({
+      prompt: 'Inspect the kernel',
+      history: [],
+      lab,
+    })).rejects.toThrow('Unexpected end of JSON input');
   });
 });

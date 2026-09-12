@@ -2,12 +2,24 @@
 
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
-import { Bot, Loader2, Send, X } from 'lucide-react';
+import { Bot, Loader2, RotateCcw, Send, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import type { AiPractitionerPlan } from '@/lib/ai-practitioner/types';
+import {
+  aiRequestFailureLabel,
+  classifyAiRequestError,
+  clearAiRetrySnapshot,
+  loadAiRetrySnapshot,
+  readAiResponseError,
+  saveAiRetrySnapshot,
+  type AiRequestFailurePhase,
+  type AiRequestPhase,
+  type AiRetrySnapshot,
+} from '@/lib/ai/client-request';
+import { useAuth } from '@/lib/auth/use-auth';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type ChatLine = {
@@ -18,6 +30,12 @@ type ChatLine = {
 
 type AiHelperOpenDetail = {
   prompt?: string;
+};
+
+type RequestState = {
+  phase: AiRequestPhase;
+  retry: AiRetrySnapshot | null;
+  message?: string;
 };
 
 const MAX_PROMPT_LENGTH = 4000;
@@ -40,40 +58,82 @@ function surfaceLabel(pathname: string) {
   return 'OXSIG';
 }
 
-async function apiError(response: Response, fallback: string) {
-  const body = await response.json().catch(() => ({}));
-  return body?.error || fallback;
+function recoveryMessage(phase: AiRequestFailurePhase) {
+  if (phase === 'timed-out') return 'The AI request reached its time limit. Your prompt is preserved and can be retried.';
+  if (phase === 'failed') return 'The previous AI request failed. Your prompt is preserved and can be retried.';
+  return 'The previous request was interrupted before completion. Your prompt is ready to retry.';
 }
 
 export default function AiHelperDock() {
   const pathname = usePathname();
   const currentSurface = surfaceLabel(pathname);
+  const { sessionIdentityId } = useAuth();
   const [open, setOpen] = React.useState(false);
   const [prompt, setPrompt] = React.useState('');
   const [history, setHistory] = React.useState<ChatLine[]>([]);
   const [historyLoading, setHistoryLoading] = React.useState(true);
-  const [busy, setBusy] = React.useState(false);
+  const [requestState, setRequestState] = React.useState<RequestState>({ phase: 'idle', retry: null });
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const mountedRef = React.useRef(true);
+  const activeRequestRef = React.useRef<{
+    attemptId: string;
+    requestId: string;
+    controller: AbortController;
+    snapshot: AiRetrySnapshot;
+  } | null>(null);
+
+  const requestActive = requestState.phase === 'preparing' || requestState.phase === 'generating';
 
   React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      activeRequestRef.current?.controller.abort();
+      activeRequestRef.current = null;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!sessionIdentityId) return;
     let cancelled = false;
+    const controller = new AbortController();
+
+    const restoreRetry = (completedRequestIds: string[] = []) => {
+      const recovered = loadAiRetrySnapshot(sessionIdentityId);
+      const completed = new Set(completedRequestIds);
+      if (recovered && completed.has(recovered.requestId)) {
+        clearAiRetrySnapshot(sessionIdentityId);
+        return;
+      }
+      if (!recovered) return;
+      const phase = recovered.lastFailure ?? 'cancelled';
+      setPrompt(recovered.prompt);
+      setRequestState({ phase, retry: recovered, message: recoveryMessage(phase) });
+    };
+
     void (async () => {
       try {
-        const response = await fetch('/api/ai/practitioner', { cache: 'no-store' });
-        if (!response.ok) throw new Error(await apiError(response, 'AI history could not be loaded'));
-        const body = await response.json() as { history?: ChatLine[] };
-        if (!cancelled) setHistory(Array.isArray(body.history) ? body.history : []);
+        const response = await fetch('/api/ai/practitioner', { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw await readAiResponseError(response, 'AI history could not be loaded');
+        const body = await response.json() as { history?: ChatLine[]; completedRequestIds?: string[] };
+        if (cancelled) return;
+        setHistory(Array.isArray(body.history) ? body.history : []);
+        restoreRetry(Array.isArray(body.completedRequestIds) ? body.completedRequestIds : []);
       } catch (error) {
-        console.warn('[oxsig] AI helper history restore failed:', error);
+        if (!controller.signal.aborted) {
+          console.warn('[oxsig] AI helper history restore failed:', error);
+          restoreRetry();
+        }
       } finally {
         if (!cancelled) setHistoryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, []);
+  }, [sessionIdentityId]);
 
   React.useEffect(() => {
     const openHelper = (event: Event) => {
@@ -92,52 +152,141 @@ export default function AiHelperDock() {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
       inputRef.current?.focus();
     }, 40);
-  }, [busy, history, open]);
+  }, [requestState.phase, history, open]);
 
-  async function ask(value = prompt) {
+  function cancelActiveRequest() {
+    const active = activeRequestRef.current;
+    if (!active) return;
+    activeRequestRef.current = null;
+    active.controller.abort();
+    const cancelledSnapshot: AiRetrySnapshot = {
+      ...active.snapshot,
+      createdAt: Date.now(),
+      lastFailure: 'cancelled',
+    };
+    saveAiRetrySnapshot(sessionIdentityId, cancelledSnapshot);
+    setPrompt(cancelledSnapshot.prompt);
+    setRequestState({
+      phase: 'cancelled',
+      retry: cancelledSnapshot,
+      message: recoveryMessage('cancelled'),
+    });
+  }
+
+  async function runRequest(snapshot: AiRetrySnapshot) {
+    if (activeRequestRef.current || historyLoading) return;
+
+    const activeSnapshot: AiRetrySnapshot = {
+      ...snapshot,
+      createdAt: Date.now(),
+      lastFailure: undefined,
+    };
+    const attemptId = uid();
+    const controller = new AbortController();
+    activeRequestRef.current = {
+      attemptId,
+      requestId: activeSnapshot.requestId,
+      controller,
+      snapshot: activeSnapshot,
+    };
+    saveAiRetrySnapshot(sessionIdentityId, activeSnapshot);
+    setPrompt('');
+    setHistory((current) => current.some((line) => line.id === activeSnapshot.userLineId)
+      ? current
+      : [...current, { id: activeSnapshot.userLineId, role: 'user', content: activeSnapshot.prompt }]);
+    setRequestState({ phase: 'preparing', retry: activeSnapshot });
+
+    const isCurrentAttempt = () => mountedRef.current
+      && activeRequestRef.current?.attemptId === attemptId;
+
+    try {
+      const token = await getCsrfToken();
+      if (!isCurrentAttempt() || controller.signal.aborted) return;
+      setRequestState({ phase: 'generating', retry: activeSnapshot });
+
+      const response = await fetch('/api/ai/practitioner', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': token,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: 'plan',
+          requestId: activeSnapshot.requestId,
+          prompt: activeSnapshot.prompt,
+          history: activeSnapshot.history,
+        }),
+      });
+      if (!response.ok) throw await readAiResponseError(response, 'AI Helper could not answer');
+      const body = await response.json() as { plan?: Partial<AiPractitionerPlan> };
+      if (typeof body.plan?.explanation !== 'string') {
+        throw new Error('AI Helper returned an incomplete response');
+      }
+      if (!isCurrentAttempt() || controller.signal.aborted) return;
+
+      setHistory((current) => [
+        ...current,
+        { id: uid(), role: 'assistant', content: body.plan!.explanation! },
+      ]);
+      clearAiRetrySnapshot(sessionIdentityId);
+      setRequestState({ phase: 'completed', retry: null });
+    } catch (error) {
+      if (!isCurrentAttempt()) return;
+      const phase = classifyAiRequestError(error, controller.signal);
+      const failedSnapshot: AiRetrySnapshot = {
+        ...activeSnapshot,
+        createdAt: Date.now(),
+        lastFailure: phase,
+      };
+      const message = phase === 'failed' && error instanceof Error
+        ? error.message
+        : recoveryMessage(phase);
+      saveAiRetrySnapshot(sessionIdentityId, failedSnapshot);
+      setPrompt(failedSnapshot.prompt);
+      setRequestState({ phase, retry: failedSnapshot, message });
+      if (phase !== 'cancelled') toast.error(message);
+    } finally {
+      if (activeRequestRef.current?.attemptId === attemptId) activeRequestRef.current = null;
+    }
+  }
+
+  function ask(value = prompt) {
     const question = value.trim();
-    if (!question || busy || historyLoading) return;
+    if (!question || requestActive || activeRequestRef.current || historyLoading) return;
     if (question.length > MAX_PROMPT_LENGTH) {
       toast.error(`Keep the request under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`);
       return;
     }
 
+    const previousRetry = requestState.retry;
+    const baseHistory = previousRetry
+      ? history.filter((line) => line.id !== previousRetry.userLineId)
+      : history;
     const userLine: ChatLine = { id: uid(), role: 'user', content: question };
-    const nextHistory = [...history, userLine];
-    setHistory(nextHistory);
-    setPrompt('');
-    setBusy(true);
+    const nextHistory = [...baseHistory, userLine];
+    const modelHistory = [
+      {
+        role: 'assistant' as const,
+        content: `OXSIG UI context: the user is currently working in ${currentSurface}. Be direct and action-oriented. Use this context only when it materially helps the request; do not explain OXSIG unless asked.`,
+      },
+      ...nextHistory.slice(-7).map(({ role, content }) => ({ role, content })),
+    ];
+    const snapshot: AiRetrySnapshot = {
+      requestId: uid(),
+      userLineId: userLine.id,
+      prompt: question,
+      history: modelHistory,
+      createdAt: Date.now(),
+    };
 
-    try {
-      const modelHistory = [
-        {
-          role: 'assistant' as const,
-          content: `OXSIG UI context: the user is currently working in ${currentSurface}. Be direct and action-oriented. Use this context only when it materially helps the request; do not explain OXSIG unless asked.`,
-        },
-        ...nextHistory.slice(-7).map(({ role, content }) => ({ role, content })),
-      ];
-      const response = await fetch('/api/ai/practitioner', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-token': await getCsrfToken(),
-        },
-        body: JSON.stringify({
-          action: 'plan',
-          prompt: question,
-          history: modelHistory,
-        }),
-      });
-      if (!response.ok) throw new Error(await apiError(response, 'AI Helper could not answer'));
-      const body = await response.json() as { plan: AiPractitionerPlan };
-      setHistory((current) => [...current, { id: uid(), role: 'assistant', content: body.plan.explanation }]);
-    } catch (error) {
-      setHistory((current) => current.filter((line) => line.id !== userLine.id));
-      setPrompt(question);
-      toast.error(error instanceof Error ? error.message : 'AI Helper could not answer');
-    } finally {
-      setBusy(false);
-    }
+    setHistory(nextHistory);
+    void runRequest(snapshot);
+  }
+
+  function retry() {
+    if (!requestState.retry || requestActive || activeRequestRef.current) return;
+    void runRequest(requestState.retry);
   }
 
   if (!open) return null;
@@ -152,7 +301,18 @@ export default function AiHelperDock() {
             <Badge variant="outline" className="max-w-32 truncate text-[9px] font-normal">{currentSurface}</Badge>
           </div>
         </div>
-        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setOpen(false)} aria-label="Close AI Helper"><X className="h-4 w-4" /></Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 shrink-0"
+          onClick={() => {
+            cancelActiveRequest();
+            setOpen(false);
+          }}
+          aria-label="Close AI Helper"
+        >
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
       <div ref={scrollRef} className="oxsig-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
@@ -167,14 +327,33 @@ export default function AiHelperDock() {
             </div>
           ))
         )}
-        {busy && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…</div>}
+
+        {requestActive && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" />{requestState.phase === 'preparing' ? 'Preparing…' : 'Generating…'}</span>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={cancelActiveRequest}>Cancel</Button>
+          </div>
+        )}
+
+        {!requestActive && requestState.retry && ['failed', 'timed-out', 'cancelled'].includes(requestState.phase) && (
+          <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-medium">{aiRequestFailureLabel(requestState.phase)}</p>
+              <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={retry}>
+                <RotateCcw className="h-3.5 w-3.5" /> Retry
+              </Button>
+            </div>
+            <p className="text-muted-foreground">{requestState.message}</p>
+            <p className="line-clamp-2 text-muted-foreground"><span className="font-medium text-foreground">Prompt preserved:</span> {requestState.retry.prompt}</p>
+          </div>
+        )}
       </div>
 
       <form
         className="border-t bg-background p-2.5"
         onSubmit={(event) => {
           event.preventDefault();
-          void ask();
+          ask();
         }}
       >
         <div className="flex items-end gap-2">
@@ -185,16 +364,16 @@ export default function AiHelperDock() {
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
-                void ask();
+                ask();
               }
             }}
             maxLength={MAX_PROMPT_LENGTH}
             placeholder={`Ask from ${currentSurface}…`}
             className="min-h-[48px] resize-none rounded-lg"
-            disabled={historyLoading || busy}
+            disabled={historyLoading || requestActive}
           />
-          <Button type="submit" size="icon" className="h-10 w-10 shrink-0" disabled={!prompt.trim() || historyLoading || busy} aria-label="Send question">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <Button type="submit" size="icon" className="h-10 w-10 shrink-0" disabled={!prompt.trim() || historyLoading || requestActive} aria-label="Send question">
+            {requestActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
       </form>
