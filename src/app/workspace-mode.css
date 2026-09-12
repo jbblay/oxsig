@@ -3,7 +3,7 @@
 
 main[data-oxsig-workspace] {
   min-height: 0;
-  overflow-x: hidden;
+  min-width: 0;
 }
 
 main[data-oxsig-content-mode="standard"] {
@@ -29,6 +29,7 @@ main[data-oxsig-workspace="boards"] {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail,
@@ -39,15 +40,16 @@ main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail {
 main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div,
 main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
   min-height: 0;
+  min-width: 0;
   flex: 1 1 0%;
 }
 
-/* Boards use the same centered content geometry as Collaboration/Resources,
-   while the drawing viewport remains scrollable and zoomable inside it. */
+/* Boards are intentionally wide spatial workspaces. The shell supplies the
+   viewport and the drawing surface owns zoom/pan/scroll behavior. */
 main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail,
 main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
   width: 100%;
-  max-width: 72rem;
+  max-width: none;
   margin-inline: auto;
 }
 
