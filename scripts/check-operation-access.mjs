@@ -162,7 +162,7 @@ async function runtimeFixture(probeResults) {
   const run = { id: 'run-1', status: 'provisioning', operation_slug: 'black-domain', metadata: { readinessVersion: 1 }, operator_lab_instance_id: 'lab-1' };
   const probes = [];
   const sdk = {};
-  for (const name of ['DescribeImagesCommand', 'DescribeInstancesCommand', 'DescribeSecurityGroupsCommand', 'DescribeSubnetsCommand', 'RunInstancesCommand', 'TerminateInstancesCommand']) sdk[name] = class {};
+  for (const name of ['DescribeImagesCommand', 'DescribeInstancesCommand', 'DescribeSecurityGroupsCommand', 'DescribeSubnetsCommand', 'RunInstancesCommand', 'StopInstancesCommand', 'TerminateInstancesCommand']) sdk[name] = class {};
   sdk.EC2Client = class { async send() { return { Reservations: [{ Instances: [{ InstanceId: target.instanceId, State: { Name: 'running' } }] }] }; } };
   const pool = { async query(sql, args) {
     if (sql.includes('FROM operation_runs')) return { rows: [structuredClone(run)] };
