@@ -61,8 +61,42 @@
   min-height: 2.75rem;
   padding: 0.25rem 0;
 }
-.oxsig-lab-session { border-color: hsl(var(--primary) / 0.25); }
+.oxsig-lab-session {
+  min-width: 0;
+  max-width: 100%;
+  border-color: hsl(var(--primary) / 0.25);
+}
 .oxsig-lab-session[aria-label] { scroll-margin-top: 5rem; }
+
+/* Terminal and desktop sessions consume the parent workbench instead of
+   independently guessing the browser viewport. The accessible session labels
+   form a stable contract and keep these overrides scoped to Cyber Lab. */
+.oxsig-lab-session [aria-label^="Interactive terminal for"] {
+  height: clamp(18rem, 46dvh, 30rem) !important;
+  min-height: 18rem !important;
+}
+
+.oxsig-lab-session div:has(> canvas[aria-label^="Interactive browser desktop for"]) {
+  min-height: clamp(18rem, 46dvh, 30rem) !important;
+}
+
+.oxsig-lab-session canvas[aria-label^="Interactive browser desktop for"] {
+  max-height: min(46dvh, 30rem) !important;
+  max-width: 100%;
+}
+
+.oxsig-lab-session.fixed [aria-label^="Interactive terminal for"] {
+  height: clamp(20rem, calc(100dvh - 16rem), 64rem) !important;
+  min-height: 20rem !important;
+}
+
+.oxsig-lab-session.fixed div:has(> canvas[aria-label^="Interactive browser desktop for"]) {
+  min-height: clamp(20rem, calc(100dvh - 16rem), 64rem) !important;
+}
+
+.oxsig-lab-session.fixed canvas[aria-label^="Interactive browser desktop for"] {
+  max-height: calc(100dvh - 16rem) !important;
+}
 
 /* Machines are an icon palette, not a collapsible content panel. The existing
    component state is deliberately made visually equivalent in either state so
@@ -269,6 +303,9 @@
     border: 1px solid hsl(var(--border));
     border-radius: 0.75rem;
     background: hsl(var(--card));
+    position: sticky;
+    top: 0.5rem;
+    z-index: 50;
   }
   .oxsig-lab-runtime:not([data-compact-panel="machines"]) .oxsig-lab-machines,
   .oxsig-lab-runtime:not([data-compact-panel="topology"]) .oxsig-lab-canvas,
@@ -278,6 +315,18 @@
   .oxsig-machine-list {
     grid-template-columns: repeat(auto-fit, 2.75rem);
     min-height: 8rem;
+  }
+
+  /* Infrastructure Designer is another spatial tool inside /labs. On compact
+     screens its ReactFlow surface follows available viewport height instead of
+     keeping the old 520/620px minimums. */
+  main[data-oxsig-workspace="labs"] section:has(> .react-flow) {
+    height: clamp(22rem, 58dvh, 38rem) !important;
+    min-height: clamp(22rem, 58dvh, 38rem) !important;
+  }
+  main[data-oxsig-workspace="labs"] section:has(> .react-flow) > .react-flow {
+    height: 100%;
+    min-height: 0;
   }
 
   /* Compact layouts keep one primary surface at a time, with the panel switcher
@@ -293,15 +342,13 @@
   }
   .oxsig-lab-runtime[data-session-open="true"] > .oxsig-lab-panel-switcher {
     order: 20;
-    position: sticky;
-    top: 0.5rem;
-    z-index: 50;
     box-shadow: 0 8px 24px rgb(2 6 23 / 0.12);
   }
   .oxsig-lab-runtime[data-session-open="true"] > .oxsig-lab-session:not(.fixed) {
     order: 30;
     max-height: var(--lab-canvas-height);
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .oxsig-lab-runtime[data-session-open="true"] > div:has(.oxsig-lab-grid) {
     order: 40;
@@ -325,5 +372,23 @@
     left: 50%;
     top: calc(100% + 0.45rem);
     transform: translateX(-50%);
+  }
+
+  main[data-oxsig-workspace="labs"] section:has(> .react-flow) {
+    height: clamp(19rem, 52dvh, 29rem) !important;
+    min-height: clamp(19rem, 52dvh, 29rem) !important;
+  }
+
+  .oxsig-lab-session [aria-label^="Interactive terminal for"] {
+    height: clamp(17rem, 44dvh, 26rem) !important;
+    min-height: 17rem !important;
+  }
+
+  .oxsig-lab-session div:has(> canvas[aria-label^="Interactive browser desktop for"]) {
+    min-height: clamp(17rem, 44dvh, 26rem) !important;
+  }
+
+  .oxsig-lab-session canvas[aria-label^="Interactive browser desktop for"] {
+    max-height: min(44dvh, 26rem) !important;
   }
 }

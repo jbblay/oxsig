@@ -44,6 +44,18 @@ main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
   flex: 1 1 0%;
 }
 
+/* Collaboration is a bounded conversation surface. Keep the composer and
+   session header inside the available workspace while message history owns the
+   vertical scroll region. */
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div {
+  overflow: hidden;
+}
+
+main[data-oxsig-workspace="collab"] > .oxsig-workspace-rail + div > section {
+  min-height: 0;
+  min-width: 0;
+}
+
 /* Boards are intentionally wide spatial workspaces. The shell supplies the
    viewport and the drawing surface owns zoom/pan/scroll behavior. */
 main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail,
@@ -63,5 +75,6 @@ main[data-oxsig-workspace="boards"] > .oxsig-workspace-rail + div {
   main[data-oxsig-workspace] {
     padding-left: 0.375rem;
     padding-right: 0.375rem;
+    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
   }
 }
