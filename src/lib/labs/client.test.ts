@@ -41,6 +41,7 @@ function reconciliationResponse(status = 200) {
 describe('labs client cache', () => {
   beforeEach(() => {
     invalidateLabsSnapshot();
+    mocks.getCsrfToken.mockClear();
     mocks.getCsrfToken.mockResolvedValue('csrf-token');
   });
 
