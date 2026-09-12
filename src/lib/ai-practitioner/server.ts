@@ -16,6 +16,7 @@ import type {
 export const practitionerRequestSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('plan'),
+    requestId: z.string().uuid().optional(),
     labInstanceId: z.string().uuid().optional().nullable(),
     prompt: z.string().trim().min(1).max(4000),
     history: z.array(z.object({
@@ -37,6 +38,25 @@ export const practitionerRequestSchema = z.discriminatedUnion('action', [
 export const practitionerExecuteSchema = z.object({
   command: z.string().trim().min(1).max(1000),
   approved: z.literal(true),
+}).strict();
+
+export const aiPractitionerPlanSchema = z.object({
+  title: z.string(),
+  explanation: z.string(),
+  objective: z.string(),
+  command: z.string().max(1000).nullable(),
+  expected: z.string(),
+  risk: z.enum(['read-only', 'changes-system']),
+  approvalReason: z.string(),
+  nextConcept: z.string(),
+}).strict();
+
+export const aiPractitionerAnalysisSchema = z.object({
+  summary: z.string(),
+  observations: z.array(z.string()).max(8),
+  interpretation: z.string(),
+  nextStep: z.string(),
+  vaultNote: z.string(),
 }).strict();
 
 export function aiPractitionerConfigured() {
@@ -76,19 +96,20 @@ export function validatePractitionerCommand(command: string): { ok: true; risk: 
   return { ok: true, risk: classifyPractitionerCommand(value) };
 }
 
-async function callStructured<T>(
+async function callStructured(
   name: string,
   instructions: string,
   input: string,
-  schema: Record<string, unknown>
-): Promise<T> {
-  return generateStructuredAi<T>({
+  schema: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<unknown> {
+  return generateStructuredAi<unknown>({
     name,
     instructions,
     input,
     schema,
     maxOutputTokens: 1400,
-  });
+  }, { signal });
 }
 
 const PLAN_SCHEMA = {
@@ -134,6 +155,7 @@ export async function planPractitionerStep(args: {
   prompt: string;
   history: AiPractitionerHistoryItem[];
   lab?: PractitionerLabContext | null;
+  signal?: AbortSignal;
 }): Promise<AiPractitionerPlan> {
   const instructions = `You are Oxsig AI Practitioner, a practical technical teacher and assistant.
 
@@ -162,7 +184,11 @@ For a pure question, put the useful answer in explanation, set command to null, 
 
   const input = `${labText}\n\nRECENT CONVERSATION\n${historyText(args.history) || '(none)'}\n\nLEARNER REQUEST\n${args.prompt}`;
 
-  const plan = await callStructured<AiPractitionerPlan>('oxsig_practitioner_plan', instructions, input, PLAN_SCHEMA);
+  const rawPlan = await callStructured('oxsig_practitioner_plan', instructions, input, PLAN_SCHEMA, args.signal);
+  const parsedPlan = aiPractitionerPlanSchema.safeParse(rawPlan);
+  if (!parsedPlan.success) throw new Error('AI provider returned an invalid structured plan');
+  const plan = parsedPlan.data;
+
   if (!args.lab) {
     plan.command = null;
     plan.risk = 'read-only';
@@ -191,6 +217,7 @@ export async function explainPractitionerEvidence(args: {
   exitCode: number;
   labName: string;
   platform: 'linux' | 'windows';
+  signal?: AbortSignal;
 }): Promise<AiPractitionerAnalysis> {
   const instructions = `You are Oxsig AI Practitioner explaining REAL command evidence returned from an authenticated learner-owned Cyber Lab.
 
@@ -198,7 +225,10 @@ Explain what the evidence means. Do not pretend a command succeeded when the exi
 
   const input = `LAB: ${args.labName} (${args.platform})\nLEARNER GOAL: ${args.prompt}\nCOMMAND: ${args.command}\nEXIT CODE: ${args.exitCode}\nSTDOUT:\n${args.stdout.slice(0, 12000) || '(empty)'}\nSTDERR:\n${args.stderr.slice(0, 12000) || '(empty)'}`;
 
-  return callStructured<AiPractitionerAnalysis>('oxsig_practitioner_analysis', instructions, input, ANALYSIS_SCHEMA);
+  const rawAnalysis = await callStructured('oxsig_practitioner_analysis', instructions, input, ANALYSIS_SCHEMA, args.signal);
+  const parsedAnalysis = aiPractitionerAnalysisSchema.safeParse(rawAnalysis);
+  if (!parsedAnalysis.success) throw new Error('AI provider returned an invalid structured analysis');
+  return parsedAnalysis.data;
 }
 
 export function truncatePractitionerEvidence(value: string, max = 20000) {

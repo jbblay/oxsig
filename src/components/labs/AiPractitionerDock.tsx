@@ -11,6 +11,7 @@ import {
   Mic,
   Pause,
   Play,
+  RotateCcw,
   Save,
   ShieldCheck,
   Sparkles,
@@ -28,6 +29,13 @@ import type {
   AiPractitionerExecution,
   AiPractitionerPlan,
 } from '@/lib/ai-practitioner/types';
+import {
+  aiRequestFailureLabel,
+  classifyAiRequestError,
+  readAiResponseError,
+  type AiRequestFailurePhase,
+} from '@/lib/ai/client-request';
+import { useAuth } from '@/lib/auth/use-auth';
 import {
   AI_TERMINAL_QUERY_EVENT,
   AI_TERMINAL_RESULT_EVENT,
@@ -60,6 +68,22 @@ type PlanEntry = {
 
 type ChatLine = { id: string; role: 'user' | 'assistant'; content: string };
 
+type PlanRetrySnapshot = {
+  requestId: string;
+  userLineId: string;
+  prompt: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  labInstanceId?: string;
+  createdAt: number;
+  lastFailure?: AiRequestFailurePhase;
+};
+
+type PlanFailure = {
+  phase: AiRequestFailurePhase;
+  snapshot: PlanRetrySnapshot;
+  message: string;
+};
+
 type VaultHandoff = {
   destination?: string;
   title?: string;
@@ -70,6 +94,7 @@ type VaultHandoff = {
 };
 
 const MAX_PROMPT_LENGTH = 4000;
+const PLAN_RETRY_MAX_AGE_MS = 30 * 60 * 1000;
 
 async function apiError(response: Response, fallback: string) {
   const body = await response.json().catch(() => ({}));
@@ -79,6 +104,60 @@ async function apiError(response: Response, fallback: string) {
 function uid() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function planRetryKey(identityId: string) {
+  return `oxsig:ai-practitioner-retry:v1:${encodeURIComponent(identityId)}`;
+}
+
+function savePlanRetry(identityId: string | null, snapshot: PlanRetrySnapshot) {
+  if (!identityId || typeof window === 'undefined') return;
+  window.sessionStorage.setItem(planRetryKey(identityId), JSON.stringify(snapshot));
+}
+
+function clearPlanRetry(identityId: string | null) {
+  if (!identityId || typeof window === 'undefined') return;
+  window.sessionStorage.removeItem(planRetryKey(identityId));
+}
+
+function loadPlanRetry(identityId: string | null): PlanRetrySnapshot | null {
+  if (!identityId || typeof window === 'undefined') return null;
+  const key = planRetryKey(identityId);
+  const raw = window.sessionStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<PlanRetrySnapshot>;
+    if (
+      typeof parsed.requestId !== 'string'
+      || typeof parsed.userLineId !== 'string'
+      || typeof parsed.prompt !== 'string'
+      || !Array.isArray(parsed.history)
+      || typeof parsed.createdAt !== 'number'
+      || Date.now() - parsed.createdAt > PLAN_RETRY_MAX_AGE_MS
+    ) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    if (
+      parsed.lastFailure !== undefined
+      && parsed.lastFailure !== 'failed'
+      && parsed.lastFailure !== 'timed-out'
+      && parsed.lastFailure !== 'cancelled'
+    ) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return parsed as PlanRetrySnapshot;
+  } catch {
+    window.sessionStorage.removeItem(key);
+    return null;
+  }
+}
+
+function planRecoveryMessage(phase: AiRequestFailurePhase) {
+  if (phase === 'timed-out') return 'The AI request reached its time limit. Your prompt and lab context are preserved for retry.';
+  if (phase === 'failed') return 'The AI request failed. Your prompt and lab context are preserved for retry.';
+  return 'The AI request was interrupted. Your prompt and lab context are preserved for retry.';
 }
 
 function outputText(execution: AiPractitionerExecution) {
@@ -125,6 +204,7 @@ function executeInVisibleTerminal(labInstanceId: string, command: string) {
 
 export default function AiPractitionerDock() {
   const [open, setOpen] = React.useState(false);
+  const { sessionIdentityId } = useAuth();
 
   React.useEffect(() => {
     const openPractitioner = () => setOpen(true);
@@ -138,8 +218,14 @@ export default function AiPractitionerDock() {
   const [busy, setBusy] = React.useState<string | null>(null);
   const [entries, setEntries] = React.useState<PlanEntry[]>([]);
   const [history, setHistory] = React.useState<ChatLine[]>([]);
+  const [planFailure, setPlanFailure] = React.useState<PlanFailure | null>(null);
   const [savedIds, setSavedIds] = React.useState<Set<string>>(() => new Set());
   const [terminalConnected, setTerminalConnected] = React.useState(false);
+  const activePlanRef = React.useRef<{
+    attemptId: string;
+    controller: AbortController;
+    snapshot: PlanRetrySnapshot;
+  } | null>(null);
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
   const voiceInput = useOxsigVoiceInput({
     onTranscript: ({ transcript }) => {
@@ -151,6 +237,11 @@ export default function AiPractitionerDock() {
     onError: (error) => toast.error(error.message),
   });
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => () => {
+    activePlanRef.current?.controller.abort();
+    activePlanRef.current = null;
+  }, []);
 
   const loadLab = React.useCallback(async () => {
     try {
@@ -170,25 +261,46 @@ export default function AiPractitionerDock() {
   }, [loadLab]);
 
   React.useEffect(() => {
+    if (!sessionIdentityId) return;
     let cancelled = false;
+    const controller = new AbortController();
+    setHistoryLoading(true);
+
+    const restoreRetry = (completedRequestIds: string[] = []) => {
+      const recovered = loadPlanRetry(sessionIdentityId);
+      if (!recovered) return;
+      if (completedRequestIds.includes(recovered.requestId)) {
+        clearPlanRetry(sessionIdentityId);
+        return;
+      }
+      const phase = recovered.lastFailure ?? 'cancelled';
+      setPrompt(recovered.prompt);
+      setPlanFailure({ phase, snapshot: recovered, message: planRecoveryMessage(phase) });
+    };
+
     void (async () => {
       try {
-        const response = await fetch('/api/ai/practitioner', { cache: 'no-store' });
+        const response = await fetch('/api/ai/practitioner', { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner history could not be loaded'));
-        const body = await response.json() as { entries?: PlanEntry[]; history?: ChatLine[] };
+        const body = await response.json() as { entries?: PlanEntry[]; history?: ChatLine[]; completedRequestIds?: string[] };
         if (cancelled) return;
         setEntries(Array.isArray(body.entries) ? body.entries : []);
         setHistory(Array.isArray(body.history) ? body.history : []);
+        restoreRetry(Array.isArray(body.completedRequestIds) ? body.completedRequestIds : []);
       } catch (error) {
-        console.warn('[oxsig] AI Practitioner durable history restore failed:', error);
+        if (!controller.signal.aborted) {
+          console.warn('[oxsig] AI Practitioner durable history restore failed:', error);
+          restoreRetry();
+        }
       } finally {
         if (!cancelled) setHistoryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, []);
+  }, [sessionIdentityId]);
 
   React.useEffect(() => {
     const onTerminalState = (event: Event) => {
@@ -224,16 +336,103 @@ export default function AiPractitionerDock() {
   React.useEffect(() => {
     if (!open) return;
     window.setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 50);
-  }, [busy, entries, history, open]);
+  }, [busy, entries, history, open, planFailure]);
 
   const running = instance?.status === 'running';
-  const planning = !!busy && !busy.startsWith('run:') && !busy.startsWith('save:');
+  const planning = Boolean(busy?.startsWith('plan:'));
+  const preparingPlan = Boolean(busy?.startsWith('plan:preparing:'));
   const pendingQuestion = planning && history.at(-1)?.role === 'user' ? history.at(-1)?.content : null;
   const voiceInputBusy = voiceInput.recording || voiceInput.processing || voiceInput.state === 'requesting-permission';
 
-  async function ask(value = prompt) {
+  function cancelPlan() {
+    const active = activePlanRef.current;
+    if (!active) return;
+    activePlanRef.current = null;
+    active.controller.abort();
+    const snapshot: PlanRetrySnapshot = {
+      ...active.snapshot,
+      createdAt: Date.now(),
+      lastFailure: 'cancelled',
+    };
+    savePlanRetry(sessionIdentityId, snapshot);
+    setPrompt(snapshot.prompt);
+    setPlanFailure({ phase: 'cancelled', snapshot, message: planRecoveryMessage('cancelled') });
+    setBusy((current) => current?.startsWith('plan:') ? null : current);
+  }
+
+  async function executePlan(snapshot: PlanRetrySnapshot) {
+    if (activePlanRef.current || busy || historyLoading) return;
+    const activeSnapshot: PlanRetrySnapshot = {
+      ...snapshot,
+      createdAt: Date.now(),
+      lastFailure: undefined,
+    };
+    const attemptId = uid();
+    const controller = new AbortController();
+    activePlanRef.current = { attemptId, controller, snapshot: activeSnapshot };
+    savePlanRetry(sessionIdentityId, activeSnapshot);
+    setPrompt('');
+    setPlanFailure(null);
+    setHistory((current) => current.some((line) => line.id === activeSnapshot.userLineId)
+      ? current
+      : [...current, { id: activeSnapshot.userLineId, role: 'user', content: activeSnapshot.prompt }]);
+    setBusy(`plan:preparing:${attemptId}`);
+
+    const isCurrentAttempt = () => activePlanRef.current?.attemptId === attemptId;
+
+    try {
+      const token = await getCsrfToken();
+      if (!isCurrentAttempt() || controller.signal.aborted) return;
+      setBusy(`plan:generating:${attemptId}`);
+      const response = await fetch('/api/ai/practitioner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: 'plan',
+          requestId: activeSnapshot.requestId,
+          labInstanceId: activeSnapshot.labInstanceId,
+          prompt: activeSnapshot.prompt,
+          history: activeSnapshot.history,
+        }),
+      });
+      if (!response.ok) throw await readAiResponseError(response, 'AI Practitioner could not answer');
+      const body = await response.json() as { plan?: AiPractitionerPlan; lab?: { id?: string } | null };
+      if (!body.plan || typeof body.plan.explanation !== 'string') {
+        throw new Error('AI Practitioner returned an incomplete response');
+      }
+      if (!isCurrentAttempt() || controller.signal.aborted) return;
+      setEntries((current) => [...current, {
+        id: activeSnapshot.requestId,
+        prompt: activeSnapshot.prompt,
+        plan: body.plan!,
+        ...(body.lab?.id ? { labInstanceId: body.lab.id } : {}),
+      }]);
+      setHistory((current) => [...current, { id: uid(), role: 'assistant', content: body.plan!.explanation }]);
+      clearPlanRetry(sessionIdentityId);
+      setPlanFailure(null);
+    } catch (error) {
+      if (!isCurrentAttempt()) return;
+      const phase = classifyAiRequestError(error, controller.signal);
+      const failedSnapshot: PlanRetrySnapshot = {
+        ...activeSnapshot,
+        createdAt: Date.now(),
+        lastFailure: phase,
+      };
+      const message = phase === 'failed' && error instanceof Error ? error.message : planRecoveryMessage(phase);
+      savePlanRetry(sessionIdentityId, failedSnapshot);
+      setPrompt(failedSnapshot.prompt);
+      setPlanFailure({ phase, snapshot: failedSnapshot, message });
+      if (phase !== 'cancelled') toast.error(message);
+    } finally {
+      if (activePlanRef.current?.attemptId === attemptId) activePlanRef.current = null;
+      setBusy((current) => current?.includes(attemptId) ? null : current);
+    }
+  }
+
+  function ask(value = prompt) {
     const question = value.trim();
-    if (!question || historyLoading) return;
+    if (!question || historyLoading || busy || activePlanRef.current) return;
     if (question.length > MAX_PROMPT_LENGTH) {
       toast.error(`Keep the request under ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`);
       return;
@@ -241,44 +440,35 @@ export default function AiPractitionerDock() {
 
     voiceInput.cancel();
     stopVoice();
-    const id = uid();
+    const baseHistory = planFailure
+      ? history.filter((line) => line.id !== planFailure.snapshot.userLineId)
+      : history;
     const nextUser: ChatLine = { id: uid(), role: 'user', content: question };
-    const nextHistory = [...history, nextUser];
+    const nextHistory = [...baseHistory, nextUser];
+    const snapshot: PlanRetrySnapshot = {
+      requestId: uid(),
+      userLineId: nextUser.id,
+      prompt: question,
+      history: nextHistory.slice(-8).map(({ role, content }) => ({ role, content })),
+      ...(running && instance?.id ? { labInstanceId: instance.id } : {}),
+      createdAt: Date.now(),
+    };
     setHistory(nextHistory);
-    setPrompt('');
-    setBusy(id);
+    void executePlan(snapshot);
+  }
 
-    try {
-      const token = await getCsrfToken();
-      const response = await fetch('/api/ai/practitioner', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
-        body: JSON.stringify({
-          action: 'plan',
-          labInstanceId: running ? instance?.id : undefined,
-          prompt: question,
-          history: nextHistory.slice(-8).map(({ role, content }) => ({ role, content })),
-        }),
-      });
-      if (!response.ok) throw new Error(await apiError(response, 'AI Practitioner could not answer'));
-      const body = await response.json() as { plan: AiPractitionerPlan; lab?: { id?: string } | null };
-      setEntries((current) => [...current, {
-        id,
-        prompt: question,
-        plan: body.plan,
-        ...(body.lab?.id ? { labInstanceId: body.lab.id } : {}),
-      }]);
-      setHistory((current) => [...current, { id: uid(), role: 'assistant', content: body.plan.explanation }]);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'AI Practitioner failed');
-    } finally {
-      setBusy(null);
-    }
+  function retryPlan() {
+    if (!planFailure || busy || activePlanRef.current) return;
+    void executePlan(planFailure.snapshot);
   }
 
   async function run(entry: PlanEntry) {
     if (!instance || !running || !entry.plan.command) {
       toast.error('Start a Cyber Lab machine before running a command.');
+      return;
+    }
+    if (entry.labInstanceId && entry.labInstanceId !== instance.id) {
+      toast.error('This AI plan belongs to another lab session. Regenerate it in the current lab before execution.');
       return;
     }
     if (!terminalConnected) {
@@ -454,7 +644,7 @@ export default function AiPractitionerDock() {
                   </p>
                 </div>
               </div>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { voiceInput.cancel(); stopVoice(); setOpen(false); }} aria-label="Close AI Practitioner">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { cancelPlan(); voiceInput.cancel(); stopVoice(); setOpen(false); }} aria-label="Close AI Practitioner">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -558,7 +748,23 @@ export default function AiPractitionerDock() {
             )}
 
             {planning && (
-              <div className="flex items-center gap-2 rounded-xl border p-3 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> AI Practitioner is thinking…</div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border p-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> {preparingPlan ? 'Preparing…' : 'Generating…'}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={cancelPlan}>Cancel</Button>
+              </div>
+            )}
+
+            {!planning && planFailure && (
+              <div className="space-y-2 rounded-xl border bg-muted/30 p-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium">{aiRequestFailureLabel(planFailure.phase)}</p>
+                  <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={retryPlan}>
+                    <RotateCcw className="h-3.5 w-3.5" /> Retry
+                  </Button>
+                </div>
+                <p className="text-muted-foreground">{planFailure.message}</p>
+                <p className="line-clamp-2 text-muted-foreground"><span className="font-medium text-foreground">Prompt preserved:</span> {planFailure.snapshot.prompt}</p>
+              </div>
             )}
           </div>
 
@@ -570,7 +776,7 @@ export default function AiPractitionerDock() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
-                    if (!busy && !voiceInputBusy && !historyLoading) void ask();
+                    if (!busy && !voiceInputBusy && !historyLoading) ask();
                   }
                 }}
                 maxLength={MAX_PROMPT_LENGTH}
@@ -594,7 +800,7 @@ export default function AiPractitionerDock() {
                     ? <Square className="h-4 w-4" />
                     : <Mic className="h-4 w-4" />}
               </Button>
-              <Button size="icon" className="h-10 w-10 shrink-0" disabled={historyLoading || !!busy || voiceInputBusy || !prompt.trim()} onClick={() => void ask()} aria-label="Ask AI Practitioner">
+              <Button size="icon" className="h-10 w-10 shrink-0" disabled={historyLoading || !!busy || voiceInputBusy || !prompt.trim()} onClick={() => ask()} aria-label="Ask AI Practitioner">
                 {busy || historyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               </Button>
             </div>
