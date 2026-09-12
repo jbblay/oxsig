@@ -42,6 +42,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [layoutReady, setLayoutReady] = React.useState(false);
   const lastRecordedPathRef = React.useRef<string | null>(null);
+  const closeMobileNav = React.useCallback(() => setMobileNavOpen(false), []);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -86,7 +87,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             else setSidebarCollapsed((value) => !value);
           }}
           mobileOpen={mobileNavOpen}
-          onMobileClose={() => setMobileNavOpen(false)}
+          onMobileClose={closeMobileNav}
         />
         <div className={workspaceMain ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden' : 'min-w-0 flex-1'}>
           <AppHeader onOpenMobileNav={() => setMobileNavOpen(true)} />
