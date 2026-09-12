@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Menu, Search, Sparkles } from 'lucide-react';
+import { Menu, Network, PanelLeftClose, PanelLeftOpen, Search, Sparkles } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import ActivityCenter from './ActivityCenter';
 import AppCommandPalette from './AppCommandPalette';
@@ -25,7 +25,15 @@ function initials(value?: string | null) {
   return text.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'O';
 }
 
-export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
+export default function AppHeader({
+  onOpenMobileNav,
+  sidebarCollapsed,
+  onToggleSidebar,
+}: {
+  onOpenMobileNav: () => void;
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
+}) {
   const pathname = usePathname();
   const { user, isAuthenticated } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
@@ -49,13 +57,32 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
 
   return (
     <>
-      <header className="oxsig-app-header sticky top-0 z-30 border-b bg-background/82 backdrop-blur-xl">
-        <div className="flex h-12 items-center gap-1.5 px-2 sm:px-3 md:h-14 md:px-4">
-          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
+      <header className="oxsig-app-header sticky top-0 z-40 shrink-0 border-b bg-background/86 backdrop-blur-xl">
+        <div className="flex h-16 w-full items-center gap-1.5 px-3 sm:px-4 lg:px-5">
+          <Link href="/home" className="flex shrink-0 items-center gap-2.5" aria-label="OXSIG home">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
+              <Network className="h-4 w-4" />
+            </span>
+            <span className="text-[11px] font-bold tracking-[0.18em]">OXSIG</span>
+          </Link>
+
+          <Button size="icon" variant="ghost" className="ml-1 h-8 w-8 shrink-0 md:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
             <Menu className="h-4 w-4" />
           </Button>
 
-          <p className="min-w-0 truncate text-[13px] font-semibold">{pageTitle(pathname)}</p>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="ml-1 hidden h-8 w-8 shrink-0 md:inline-flex"
+            onClick={onToggleSidebar}
+            aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
+
+          <span className="mx-1 hidden h-5 w-px bg-border/70 sm:block" aria-hidden="true" />
+          <p className="hidden min-w-0 truncate text-[13px] font-semibold sm:block">{pageTitle(pathname)}</p>
 
           <button
             type="button"
@@ -68,7 +95,7 @@ export default function AppHeader({ onOpenMobileNav }: { onOpenMobileNav: () => 
             <kbd className="ml-auto rounded border bg-background px-1 py-0.5 font-mono text-[10px]">⌘K</kbd>
           </button>
 
-          <div className="ml-auto flex shrink-0 items-center gap-0.5 md:ml-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 lg:ml-1.5">
             {isAuthenticated ? <ActivityCenter /> : null}
             {isAuthenticated ? <WorkspaceWalkthrough /> : null}
             <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search commands and workspaces">
