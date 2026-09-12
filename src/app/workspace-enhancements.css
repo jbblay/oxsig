@@ -4,11 +4,13 @@
   align-items: center;
   gap: .5rem;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   border: 1px solid hsl(var(--border) / .8);
   border-radius: .6rem;
   background: hsl(var(--card) / .72);
   padding: .25rem .4rem;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
   backdrop-filter: blur(14px);
 }
 
@@ -17,7 +19,9 @@
 .oxsig-workspace-rail[data-workspace="collab"] { border-color: rgb(59 130 246 / .2); box-shadow: inset 2px 0 0 rgb(59 130 246 / .55); }
 .oxsig-workspace-rail[data-workspace="boards"] { border-color: rgb(236 72 153 / .22); box-shadow: inset 2px 0 0 rgb(236 72 153 / .62); }
 
-.oxsig-workspace-rail::-webkit-scrollbar { display: none; }
+.oxsig-workspace-rail::-webkit-scrollbar { height: .25rem; }
+.oxsig-workspace-rail::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / .3); border-radius: 999px; }
+.oxsig-workspace-rail::-webkit-scrollbar-track { background: transparent; }
 
 .oxsig-rail-title,
 .oxsig-rail-actions,
@@ -190,7 +194,10 @@ main[data-oxsig-workspace="boards"] canvas[aria-label="Storyboard drawing canvas
 }
 
 @media (max-width: 720px) {
-  .oxsig-workspace-rail { gap: .2rem; padding-inline: .25rem; }
+  .oxsig-workspace-rail {
+    gap: .2rem;
+    padding: .25rem .25rem .35rem;
+  }
   .oxsig-rail-title { position: sticky; left: 0; z-index: 1; background: hsl(var(--card) / .96); }
   .oxsig-rail-badges { margin-left: .15rem; }
   .oxsig-terminal-strip { padding-inline: .5rem; }
