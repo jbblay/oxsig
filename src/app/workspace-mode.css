@@ -22,6 +22,21 @@ main[data-oxsig-workspace] > * {
   min-width: 0;
 }
 
+/* The authenticated/guest application uses one full-width top bar, matching
+   the public site's responsive structure. Desktop side navigation begins below
+   that bar; its old internal brand row is hidden so the header is not split into
+   two competing systems. The mobile drawer keeps its own identity row. */
+@media (min-width: 768px) {
+  .oxsig-app-background > .oxsig-app-header + div > aside:has(> .oxsig-navigation) {
+    top: 4rem !important;
+    height: calc(100dvh - 4rem) !important;
+  }
+
+  .oxsig-app-background > .oxsig-app-header + div > aside > .oxsig-navigation > :first-child {
+    display: none;
+  }
+}
+
 /* Collaboration and Boards are viewport-bound application surfaces. Their
    components own their internal scrolling while the shell owns the viewport. */
 main[data-oxsig-workspace="collab"],

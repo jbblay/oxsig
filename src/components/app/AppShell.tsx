@@ -75,22 +75,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const workspaceMain = workspaceKind !== null;
   const standardCanvas = contentMode === 'standard';
   const boundedWorkspace = isAuthenticated && (workspaceKind === 'collab' || workspaceKind === 'boards');
+  const toggleSidebar = () => {
+    if (immersiveWorkspace) setImmersiveExpanded((value) => !value);
+    else setSidebarCollapsed((value) => !value);
+  };
 
   return (
-    <div className={workspaceMain ? 'oxsig-app-background h-dvh overflow-hidden' : 'oxsig-app-background min-h-screen'}>
+    <div className={workspaceMain ? 'oxsig-app-background flex h-dvh flex-col overflow-hidden' : 'oxsig-app-background flex min-h-screen flex-col'}>
       <WorkspaceActivitySync />
-      <div className={workspaceMain ? 'flex h-full min-h-0 w-full' : 'flex min-h-screen w-full'}>
+      <AppHeader
+        onOpenMobileNav={() => setMobileNavOpen(true)}
+        sidebarCollapsed={effectiveSidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
+      />
+      <div className={workspaceMain ? 'flex min-h-0 w-full flex-1' : 'flex min-h-0 w-full flex-1'}>
         <AppSidebar
           collapsed={effectiveSidebarCollapsed}
-          onToggle={() => {
-            if (immersiveWorkspace) setImmersiveExpanded((value) => !value);
-            else setSidebarCollapsed((value) => !value);
-          }}
+          onToggle={toggleSidebar}
           mobileOpen={mobileNavOpen}
           onMobileClose={closeMobileNav}
         />
         <div className={workspaceMain ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden' : 'min-w-0 flex-1'}>
-          <AppHeader onOpenMobileNav={() => setMobileNavOpen(true)} />
           <main
             data-oxsig-workspace={workspaceKind || undefined}
             data-oxsig-content-mode={contentMode}
