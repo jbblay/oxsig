@@ -226,3 +226,39 @@
   .tile { transition: none; }
   .tile:hover { transform: none; }
 }
+
+/* Readability pass: preserve the visual system while removing sub-readable UI type. */
+.headerTitle { font-size: 16px; }
+.headerText { font-size: 13px; line-height: 1.5; color: #a8b3c5; }
+.stageNumber { font-size: 11px; }
+.stageLabel { font-size: 11px; letter-spacing: .1em; }
+.domain { font-size: 10px; letter-spacing: .14em; }
+.codename { font-size: 16px; line-height: 1.25; }
+.name { font-size: 12px; line-height: 1.45; color: #94a3b8; }
+.summary { font-size: 13px; line-height: 1.6; color: #cbd5e1; }
+.systemChip { padding: 4px 7px; font-size: 10px; color: #b8c3d4; }
+.systemChip svg { width: 12px; height: 12px; }
+.tileFooter { font-size: 11px; color: #94a3b8; }
+.tileFooter svg { width: 13px; height: 13px; }
+.detailKicker { font-size: 11px; letter-spacing: .12em; }
+.detailState { font-size: 10px; color: #94a3b8; }
+.heroEyebrow { font-size: 11px; letter-spacing: .14em; }
+.heroName { font-size: 14px; line-height: 1.5; color: #b8c3d4; }
+.heroSummary { font-size: 13px; line-height: 1.75; color: #cbd5e1; }
+.metaBadge { padding: 5px 8px; font-size: 10px; }
+.topologyHeader { font-size: 10px; color: #94a3b8; }
+.launchStatus { font-size: 10px; color: #94a3b8; }
+.panelTitle { font-size: 11px; }
+.panelCount { font-size: 10px; color: #64748b; }
+.listItem { font-size: 12px; line-height: 1.6; color: #cbd5e1; }
+.index { font-size: 10px; }
+.tag { padding: 4px 7px; font-size: 10px; color: #94a3b8; }
+.planned { font-size: 12px; line-height: 1.6; color: #b8c3d4; }
+
+@media (max-width: 640px) {
+  .headerTitle { font-size: 15px; }
+  .headerText { font-size: 12px; }
+  .codename { font-size: 15px; }
+  .summary, .heroSummary { font-size: 12px; }
+  .listItem { font-size: 12px; }
+}
