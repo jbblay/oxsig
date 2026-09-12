@@ -26,6 +26,7 @@ function workspaceKindFor(pathname: string): WorkspaceKind | null {
 
 function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
   if (workspaceKind === 'labs') return 'immersive';
+  if (workspaceKind === 'boards') return 'wide';
   return 'standard';
 }
 
@@ -41,6 +42,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [layoutReady, setLayoutReady] = React.useState(false);
   const lastRecordedPathRef = React.useRef<string | null>(null);
+  const closeMobileNav = React.useCallback(() => setMobileNavOpen(false), []);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -67,20 +69,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [bare, pathname]);
 
-  React.useEffect(() => {
-    if (!mobileNavOpen || typeof document === 'undefined') return;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileNavOpen(false);
-    };
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [mobileNavOpen]);
-
   if (bare) return <>{children}</>;
 
   const effectiveSidebarCollapsed = immersiveWorkspace ? !immersiveExpanded : sidebarCollapsed;
@@ -99,7 +87,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             else setSidebarCollapsed((value) => !value);
           }}
           mobileOpen={mobileNavOpen}
-          onMobileClose={() => setMobileNavOpen(false)}
+          onMobileClose={closeMobileNav}
         />
         <div className={workspaceMain ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden' : 'min-w-0 flex-1'}>
           <AppHeader onOpenMobileNav={() => setMobileNavOpen(true)} />

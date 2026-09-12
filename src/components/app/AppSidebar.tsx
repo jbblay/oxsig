@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   BookOpen,
   Box,
@@ -233,31 +234,54 @@ export default function AppSidebar({
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const desktop = window.matchMedia('(min-width: 768px)');
+    const closeOnDesktop = () => {
+      if (desktop.matches) onMobileClose();
+    };
+    closeOnDesktop();
+    desktop.addEventListener('change', closeOnDesktop);
+    return () => desktop.removeEventListener('change', closeOnDesktop);
+  }, [onMobileClose]);
+
   return (
     <>
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border/70 bg-sidebar/92 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-200 ease-out md:flex',
+          'sticky top-0 hidden h-dvh shrink-0 border-r border-sidebar-border/70 bg-sidebar/92 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-200 ease-out md:flex',
           collapsed ? 'w-[64px]' : 'w-[220px]'
         )}
       >
         <SidebarContent collapsed={collapsed} onToggle={onToggle} />
       </aside>
 
-      <div className={cn('fixed inset-0 z-50 md:hidden', mobileOpen ? 'pointer-events-auto' : 'pointer-events-none')} aria-hidden={!mobileOpen}>
-        <button
-          type="button"
-          className={cn('absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200', mobileOpen ? 'opacity-100' : 'opacity-0')}
-          onClick={onMobileClose}
-          aria-label="Close navigation"
-        />
-        <aside className={cn('absolute inset-y-0 left-0 w-[252px] max-w-[calc(100vw-20px)] border-r bg-sidebar text-sidebar-foreground shadow-2xl transition-transform duration-200 ease-out', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
-          <Button size="icon" variant="ghost" className="absolute right-2 top-2.5 z-10 h-8 w-8" onClick={onMobileClose} aria-label="Close navigation">
-            <X className="h-4 w-4" />
-          </Button>
-          <SidebarContent collapsed={false} mobile onNavigate={onMobileClose} />
-        </aside>
-      </div>
+      <DialogPrimitive.Root open={mobileOpen} onOpenChange={(open) => { if (!open) onMobileClose(); }}>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity duration-200 data-[state=closed]:opacity-0 data-[state=open]:opacity-100 md:hidden" />
+          <DialogPrimitive.Content
+            className="fixed inset-y-0 left-0 z-50 w-[252px] max-w-[calc(100vw-20px)] border-r bg-sidebar text-sidebar-foreground shadow-2xl outline-none transition-transform duration-200 ease-out data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0 md:hidden"
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              requestAnimationFrame(() => {
+                const target = document.querySelector<HTMLElement>('[data-oxsig-mobile-nav-first]');
+                target?.focus();
+              });
+            }}
+          >
+            <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">Primary OXSIG application navigation</DialogPrimitive.Description>
+            <DialogPrimitive.Close asChild>
+              <Button size="icon" variant="ghost" className="absolute right-2 top-2.5 z-10 h-10 w-10" aria-label="Close navigation">
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogPrimitive.Close>
+            <div data-oxsig-mobile-nav-first tabIndex={-1} className="h-full outline-none">
+              <SidebarContent collapsed={false} mobile onNavigate={onMobileClose} />
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
     </>
   );
 }
