@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   captureProductEvent: vi.fn(),
 }));
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({
@@ -34,7 +35,7 @@ vi.mock('@/lib/audit/logger', () => ({
 }));
 vi.mock('@/lib/analytics/posthog', () => ({ captureProductEvent: mocks.captureProductEvent }));
 
-import { POST } from './route';
+import { GET, POST } from './route';
 
 const user = { id: 'user-1', clerkUserId: 'clerk-1', role: 'user' as const };
 
@@ -45,6 +46,94 @@ function request(body: unknown = { slug: 'ubuntu-security-lab', accessMode: 'ter
     headers: { 'content-type': 'application/json' },
   });
 }
+
+describe('GET /api/labs fast persisted read model', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireAuth.mockImplementation(async (
+      req: NextRequest,
+      handler: (req: NextRequest, currentUser: typeof user) => Promise<NextResponse>
+    ) => handler(req, user));
+  });
+
+  it('returns persisted state without waiting for slow AWS capability or reconciliation calls', async () => {
+    const observedAt = new Date(Date.now() - 120_000).toISOString();
+    mocks.query.mockResolvedValueOnce({
+      rows: [{
+        id: 'lab-1',
+        slug: 'ubuntu-security-lab',
+        name: 'Ubuntu Security Lab',
+        status: 'running',
+        runtime_provider: 'aws-ec2',
+        runtime_external_id: 'i-0123456789abcdef0',
+        created_at: '2026-09-12T00:00:00.000Z',
+        started_at: '2026-09-12T00:01:00.000Z',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        runtime_observed_at: observedAt,
+        reconciliation_warning: 'Lab status could not be confirmed with the cloud provider. Showing the last known state.',
+        metadata: { accessMode: 'terminal' },
+      }],
+    });
+
+    const never = new Promise(() => undefined);
+    mocks.labCapabilities.mockReturnValue(never);
+    mocks.describeLabVmStates.mockReturnValue(never);
+
+    const response = await Promise.race([
+      GET(new NextRequest('http://localhost/api/labs')),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 250)),
+    ]);
+
+    expect(response).not.toBe('timeout');
+    expect(response).toBeInstanceOf(NextResponse);
+    const body = await (response as NextResponse).json();
+
+    expect(body.instances).toEqual([
+      expect.objectContaining({
+        id: 'lab-1',
+        status: 'running',
+        observedAt,
+        stale: true,
+        reconciliationWarning: expect.stringContaining('last known state'),
+      }),
+    ]);
+    expect(body.reconciliationWarning).toContain('last known state');
+    expect(mocks.labCapabilities).not.toHaveBeenCalled();
+    expect(mocks.describeLabVmStates).not.toHaveBeenCalled();
+    expect(mocks.destroyLabVm).not.toHaveBeenCalled();
+  });
+
+  it('reports an unobserved persisted state as stale instead of treating it as provider-confirmed', async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [{
+        id: 'lab-2',
+        slug: 'ubuntu-security-lab',
+        name: 'Ubuntu Security Lab',
+        status: 'provisioning',
+        runtime_provider: 'aws-ec2',
+        runtime_external_id: 'i-0123456789abcdef1',
+        created_at: '2026-09-12T00:00:00.000Z',
+        started_at: null,
+        expires_at: '2099-01-01T00:00:00.000Z',
+        runtime_observed_at: null,
+        reconciliation_warning: null,
+        metadata: { accessMode: 'terminal' },
+      }],
+    });
+
+    const response = await GET(new NextRequest('http://localhost/api/labs'));
+    const body = await response.json();
+
+    expect(body.instances[0]).toMatchObject({
+      id: 'lab-2',
+      status: 'provisioning',
+      observedAt: null,
+      stale: true,
+      reconciliationWarning: null,
+    });
+    expect(body.reconciliationWarning).toContain('last provider observation');
+  });
+});
 
 describe('POST /api/labs provisioning cost boundary', () => {
   beforeEach(() => {
