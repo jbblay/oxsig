@@ -8,6 +8,7 @@ import {
   listExpiredTaggedLabVms,
 } from '@/lib/labs/aws-runtime';
 import { listExpiredTaggedOperationNodes } from '@/lib/operations/cleanup';
+import { advanceAllPreparedEnvironmentResets } from '@/lib/operations/environment-reset';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -299,6 +300,7 @@ export async function GET(request: NextRequest) {
     }
 
     const operationRuns = await reconcileOperationRuns(client);
+    const environmentResets = await advanceAllPreparedEnvironmentResets(pool);
 
     return NextResponse.json({
       ok: failures.length === 0,
@@ -314,6 +316,7 @@ export async function GET(request: NextRequest) {
       labsReconciled,
       operationNodesReconciled,
       operationRunsReconciled: operationRuns.rowCount || 0,
+      environmentResets,
       eventsWritten,
       expiredWithoutRuntime,
       operationNodesWithoutRuntime,
