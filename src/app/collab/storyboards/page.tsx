@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { useAuth } from "@/lib/auth/use-auth";
 import {
   deleteServerStoryboard,
   getServerStoryboard,
@@ -65,9 +66,12 @@ import {
   type StoryboardShapeTool,
 } from "@/lib/storyboards/shapes";
 import {
+  GUEST_STORYBOARD_DRAFT_NAMESPACE,
   deleteStoryboardDraft,
   listStoryboardDrafts,
   saveStoryboardDraft,
+  storyboardDraftNamespaceForAccount,
+  type StoryboardDraftNamespace,
 } from "@/lib/storyboards/storage";
 import {
   createStoryboardInitialFrame,
@@ -126,6 +130,16 @@ function downloadName(title: string) {
 }
 
 export default function StoryboardsPage() {
+  const { isAuthenticated, isLoading: authLoading, sessionIdentityId } = useAuth();
+  const storageNamespace = React.useMemo<StoryboardDraftNamespace | null>(() => {
+    if (isAuthenticated) {
+      return sessionIdentityId ? storyboardDraftNamespaceForAccount(sessionIdentityId) : null;
+    }
+    return authLoading ? null : GUEST_STORYBOARD_DRAFT_NAMESPACE;
+  }, [authLoading, isAuthenticated, sessionIdentityId]);
+  const storageNamespaceRef = React.useRef<StoryboardDraftNamespace | null>(storageNamespace);
+  storageNamespaceRef.current = storageNamespace;
+
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
@@ -150,6 +164,8 @@ export default function StoryboardsPage() {
   const [recordingState, setRecordingState] = React.useState<RecordingState>("idle");
   const [recordingElapsedMs, setRecordingElapsedMs] = React.useState(0);
   const [drafts, setDrafts] = React.useState<StoryboardDraft[]>([]);
+  const [loadedDraftNamespace, setLoadedDraftNamespace] =
+    React.useState<StoryboardDraftNamespace | null>(null);
   const [activeDraft, setActiveDraft] = React.useState<StoryboardDraft | null>(null);
   const [audioUrl, setAudioUrl] = React.useState<string | null>(null);
   const [recordingSupported, setRecordingSupported] = React.useState(true);
@@ -176,6 +192,8 @@ export default function StoryboardsPage() {
   const [zoom, setZoom] = React.useState(1);
   const [autosaveStatus, setAutosaveStatus] = React.useState<AutosaveStatus>("idle");
 
+  const draftContextReady =
+    storageNamespace !== null && loadedDraftNamespace === storageNamespace;
   const isCapturing = recordingState === "recording" || recordingState === "paused";
   const isBusy = recordingState === "saving";
   const isReviewingEarlierFrame =
@@ -187,12 +205,22 @@ export default function StoryboardsPage() {
     activeDraft?.serverPermission !== "viewer" &&
     !isReviewingEarlierFrame;
 
-  const loadDrafts = React.useCallback(async () => {
+  const loadDrafts = React.useCallback(async (namespace: StoryboardDraftNamespace) => {
     try {
-      setDrafts(await listStoryboardDrafts());
+      const nextDrafts = await listStoryboardDrafts(namespace);
+      if (storageNamespaceRef.current === namespace) {
+        setDrafts(nextDrafts);
+        setLoadedDraftNamespace(namespace);
+      }
+      return nextDrafts;
     } catch (error) {
-      console.error("Failed to load storyboard drafts:", error);
-      toast.error("This browser could not open local storyboard storage.");
+      if (storageNamespaceRef.current === namespace) {
+        setDrafts([]);
+        setLoadedDraftNamespace(namespace);
+        console.error("Failed to load storyboard drafts:", error);
+        toast.error("This browser could not open local storyboard storage.");
+      }
+      return [];
     }
   }, []);
 
@@ -344,12 +372,32 @@ export default function StoryboardsPage() {
   }, [cancelPlaybackFrame, syncPlaybackFromAudio]);
 
   React.useEffect(() => {
+    setDrafts([]);
+    setLoadedDraftNamespace(null);
+    setAutosaveStatus("idle");
+    stopPlayback();
+    eventsRef.current = [];
+    playbackEventCountRef.current = -1;
+    setHistoryRevision((revision) => revision + 1);
+    setActiveDraft(null);
+    setActiveServerSession(null);
+    setShares([]);
+    setTitle("Untitled storyboard");
+    setTimelineDurationMs(0);
+    setPlaybackMs(0);
+    setRecordingElapsedMs(0);
+    replaceAudioSource();
+    clearCanvas();
+
+    if (storageNamespace) void loadDrafts(storageNamespace);
+  }, [clearCanvas, loadDrafts, replaceAudioSource, storageNamespace, stopPlayback]);
+
+  React.useEffect(() => {
     setRecordingSupported(
       typeof window !== "undefined" &&
         "MediaRecorder" in window &&
         !!navigator.mediaDevices?.getUserMedia
     );
-    void loadDrafts();
     void loadServerSessions();
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -357,7 +405,7 @@ export default function StoryboardsPage() {
       audioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
-  }, [loadDrafts, loadServerSessions]);
+  }, [loadServerSessions]);
 
   const getRecordingElapsed = React.useCallback((now = performance.now()) => {
     if (!recordingStartedAtRef.current) return 0;
@@ -401,10 +449,11 @@ export default function StoryboardsPage() {
   }, [serverSessions, sessionFilter, sessionQuery]);
 
   const filteredDrafts = React.useMemo(() => {
+    if (!draftContextReady) return [];
     const query = sessionQuery.trim().toLowerCase();
     if (!query) return drafts;
     return drafts.filter((draft) => draft.title.toLowerCase().includes(query));
-  }, [drafts, sessionQuery]);
+  }, [draftContextReady, drafts, sessionQuery]);
 
   const pointFromPointer = (event: React.PointerEvent<HTMLCanvasElement>): StoryboardPoint => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -584,6 +633,8 @@ export default function StoryboardsPage() {
 
   React.useEffect(() => {
     if (
+      !draftContextReady ||
+      !storageNamespace ||
       isCapturing ||
       isBusy ||
       serverSaving ||
@@ -591,6 +642,7 @@ export default function StoryboardsPage() {
       eventsRef.current.length === 0
     ) return;
 
+    const namespace = storageNamespace;
     const timer = window.setTimeout(() => {
       const saveRecovery = async () => {
         const now = Date.now();
@@ -615,11 +667,13 @@ export default function StoryboardsPage() {
 
         setAutosaveStatus("saving");
         try {
-          await saveStoryboardDraft(draft);
+          await saveStoryboardDraft(namespace, draft);
+          if (storageNamespaceRef.current !== namespace) return;
           if (!activeDraft) setActiveDraft(draft);
-          await loadDrafts();
-          setAutosaveStatus("saved");
+          await loadDrafts(namespace);
+          if (storageNamespaceRef.current === namespace) setAutosaveStatus("saved");
         } catch (error) {
+          if (storageNamespaceRef.current !== namespace) return;
           console.error("Board recovery autosave failed:", error);
           setAutosaveStatus("idle");
         }
@@ -630,17 +684,19 @@ export default function StoryboardsPage() {
     return () => window.clearTimeout(timer);
   }, [
     activeDraft,
+    draftContextReady,
     historyRevision,
     isBusy,
     isCapturing,
     loadDrafts,
     serverSaving,
+    storageNamespace,
     timelineDurationMs,
     title,
   ]);
 
   const syncDraftToServer = React.useCallback(
-    async (draft: StoryboardDraft) => {
+    async (draft: StoryboardDraft, namespace: StoryboardDraftNamespace) => {
       setServerSaving(true);
       try {
         const session = await saveServerStoryboard(draft, draft.serverId);
@@ -650,10 +706,12 @@ export default function StoryboardsPage() {
           serverPermission: session.permission,
           updatedAt: Date.now(),
         };
-        await saveStoryboardDraft(securedDraft);
+        await saveStoryboardDraft(namespace, securedDraft);
+        if (storageNamespaceRef.current !== namespace) return securedDraft;
         setActiveDraft(securedDraft);
         setActiveServerSession(session);
-        await Promise.all([loadDrafts(), loadServerSessions()]);
+        await Promise.all([loadDrafts(namespace), loadServerSessions()]);
+        if (storageNamespaceRef.current !== namespace) return securedDraft;
         await refreshShares(session);
         toast.success(draft.serverId ? "Secure board updated." : "Board secured on the server.");
         return securedDraft;
@@ -665,6 +723,11 @@ export default function StoryboardsPage() {
   );
 
   const startRecording = async () => {
+    if (!draftContextReady || !storageNamespace) {
+      toast.error("Local recovery storage is still preparing. Try again in a moment.");
+      return;
+    }
+    const namespace = storageNamespace;
     if (!recordingSupported) {
       toast.error("Audio recording is not supported in this browser.");
       return;
@@ -722,29 +785,35 @@ export default function StoryboardsPage() {
         };
 
         recorderRef.current = null;
-        setActiveDraft(draft);
-        setTimelineDurationMs(durationMs);
-        setPlaybackMs(durationMs);
-        setRecordingElapsedMs(durationMs);
-        replaceAudioSource(draft.audio);
-        renderBoardAtTime(Number.POSITIVE_INFINITY, draft.events);
+        if (storageNamespaceRef.current === namespace) {
+          setActiveDraft(draft);
+          setTimelineDurationMs(durationMs);
+          setPlaybackMs(durationMs);
+          setRecordingElapsedMs(durationMs);
+          replaceAudioSource(draft.audio);
+          renderBoardAtTime(Number.POSITIVE_INFINITY, draft.events);
+        }
 
         try {
-          await saveStoryboardDraft(draft);
-          await loadDrafts();
-          try {
-            await syncDraftToServer(draft);
-          } catch (serverError) {
-            console.error("Failed to secure storyboard:", serverError);
-            toast.error(
-              serverError instanceof Error
-                ? `${serverError.message}. A local recovery copy was kept.`
-                : "Server save failed. A local recovery copy was kept."
-            );
+          await saveStoryboardDraft(namespace, draft);
+          await loadDrafts(namespace);
+          if (storageNamespaceRef.current === namespace) {
+            try {
+              await syncDraftToServer(draft, namespace);
+            } catch (serverError) {
+              console.error("Failed to secure storyboard:", serverError);
+              toast.error(
+                serverError instanceof Error
+                  ? `${serverError.message}. A local recovery copy was kept.`
+                  : "Server save failed. A local recovery copy was kept."
+              );
+            }
           }
         } catch (error) {
-          console.error("Failed to save board:", error);
-          toast.error("The recording is still open, but it could not be saved locally.");
+          if (storageNamespaceRef.current === namespace) {
+            console.error("Failed to save board:", error);
+            toast.error("The recording is still open, but it could not be saved locally.");
+          }
         } finally {
           setRecordingState("idle");
         }
@@ -796,6 +865,11 @@ export default function StoryboardsPage() {
   };
 
   const saveCurrentBoard = async () => {
+    if (!draftContextReady || !storageNamespace) {
+      toast.error("Local recovery storage is still preparing. Try again in a moment.");
+      return;
+    }
+    const namespace = storageNamespace;
     if (eventsRef.current.length === 0) {
       toast.error("Draw something before saving this board.");
       return;
@@ -818,13 +892,15 @@ export default function StoryboardsPage() {
     };
 
     try {
-      await saveStoryboardDraft(draft);
+      await saveStoryboardDraft(namespace, draft);
+      if (storageNamespaceRef.current !== namespace) return;
       setActiveDraft(draft);
       setTimelineDurationMs(durationMs);
       setPlaybackMs(durationMs);
-      await loadDrafts();
+      await loadDrafts(namespace);
+      if (storageNamespaceRef.current !== namespace) return;
       try {
-        await syncDraftToServer(draft);
+        await syncDraftToServer(draft, namespace);
       } catch (serverError) {
         console.error("Failed to secure board:", serverError);
         toast.error(
@@ -834,6 +910,7 @@ export default function StoryboardsPage() {
         );
       }
     } catch (error) {
+      if (storageNamespaceRef.current !== namespace) return;
       console.error("Failed to save board:", error);
       toast.error("This board could not be saved in the browser.");
     }
@@ -862,9 +939,12 @@ export default function StoryboardsPage() {
 
   const openServerSession = React.useCallback(
     async (session: StoryboardServerSession, autoplay = false) => {
+      if (!draftContextReady || !storageNamespace) return;
+      const namespace = storageNamespace;
       setServerLoading(true);
       try {
         const loaded = await getServerStoryboard(session.id);
+        if (storageNamespaceRef.current !== namespace) return;
         const now = Date.now();
         const draft: StoryboardDraft = {
           version: 1,
@@ -883,6 +963,7 @@ export default function StoryboardsPage() {
         openDraft(draft);
         setActiveServerSession(loaded.session);
         await refreshShares(loaded.session);
+        if (storageNamespaceRef.current !== namespace) return;
 
         if (autoplay && loaded.audio && audioRef.current) {
           audioRef.current.currentTime = 0;
@@ -892,13 +973,14 @@ export default function StoryboardsPage() {
           await audioRef.current.play();
         }
       } catch (error) {
+        if (storageNamespaceRef.current !== namespace) return;
         console.error("Failed to open secure board:", error);
         toast.error(error instanceof Error ? error.message : "Secure board could not be opened.");
       } finally {
         setServerLoading(false);
       }
     },
-    [openDraft, refreshShares, renderBoardAtTime]
+    [draftContextReady, openDraft, refreshShares, renderBoardAtTime, storageNamespace]
   );
 
   React.useEffect(() => {
@@ -1014,6 +1096,11 @@ export default function StoryboardsPage() {
   };
 
   const duplicateCurrentBoard = async () => {
+    if (!draftContextReady || !storageNamespace) {
+      toast.error("Local recovery storage is still preparing. Try again in a moment.");
+      return;
+    }
+    const namespace = storageNamespace;
     if (eventsRef.current.length === 0) {
       toast.error("Add something to the board before duplicating it.");
       return;
@@ -1032,11 +1119,13 @@ export default function StoryboardsPage() {
       status: "local-draft",
     };
     try {
-      await saveStoryboardDraft(duplicate);
-      await loadDrafts();
+      await saveStoryboardDraft(namespace, duplicate);
+      await loadDrafts(namespace);
+      if (storageNamespaceRef.current !== namespace) return;
       openDraft(duplicate);
       toast.success("A local copy was created. Secure it when you are ready.");
     } catch (error) {
+      if (storageNamespaceRef.current !== namespace) return;
       console.error("Failed to duplicate board:", error);
       toast.error("This board could not be duplicated.");
     }
@@ -1120,10 +1209,13 @@ export default function StoryboardsPage() {
   };
 
   const removeDraft = async (draft: StoryboardDraft) => {
+    if (!draftContextReady || !storageNamespace) return;
+    const namespace = storageNamespace;
     if (!window.confirm(`Delete “${draft.title}” from this device?`)) return;
     stopPlayback();
     try {
-      await deleteStoryboardDraft(draft.id);
+      await deleteStoryboardDraft(namespace, draft.id);
+      if (storageNamespaceRef.current !== namespace) return;
       if (activeDraft?.id === draft.id) {
         eventsRef.current = [];
         setHistoryRevision((revision) => revision + 1);
@@ -1133,9 +1225,10 @@ export default function StoryboardsPage() {
         replaceAudioSource();
         clearCanvas();
       }
-      await loadDrafts();
-      toast.success("Recovery draft deleted.");
+      await loadDrafts(namespace);
+      if (storageNamespaceRef.current === namespace) toast.success("Recovery draft deleted.");
     } catch (error) {
+      if (storageNamespaceRef.current !== namespace) return;
       console.error("Failed to delete board draft:", error);
       toast.error("This recovery draft could not be deleted.");
     }
@@ -1355,7 +1448,15 @@ export default function StoryboardsPage() {
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">
-          {editorCard}
+          {draftContextReady ? (
+            editorCard
+          ) : (
+            <Card>
+              <CardContent className="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparing local recovery storage…
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -1415,7 +1516,9 @@ export default function StoryboardsPage() {
               <CardTitle className="flex items-center gap-2 text-lg"><Save className="h-4 w-4" /> Recovery drafts</CardTitle>
             </CardHeader>
             <CardContent>
-              {filteredDrafts.length === 0 ? (
+              {!draftContextReady ? (
+                <div className="flex items-center justify-center rounded-lg border border-dashed p-6 text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Switching recovery context…</div>
+              ) : filteredDrafts.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No local drafts match this view.</div>
               ) : (
                 <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1 oxisg-scrollbar">
