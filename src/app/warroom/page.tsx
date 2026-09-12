@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { Activity, Crosshair, FileCheck2, Radio, ShieldCheck, Swords, UsersRound } from 'lucide-react';
+import { ChevronDown, Crosshair, FileCheck2, ShieldCheck, Swords, UsersRound } from 'lucide-react';
 import { OperationLaunchButton } from '@/components/operations/OperationLaunchButton';
-import { OperationIcon, OperationTopologyPreview } from '@/components/operations/OperationVisuals';
+import { TopologyNodeIcon } from '@/components/operations/OperationVisuals';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import WarRoomWorkspace from '@/components/warroom/WarRoomWorkspace';
@@ -19,130 +19,136 @@ export default async function WarRoomPage({ searchParams }: { searchParams: Sear
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2.5 text-slate-100">
-        <div className="mr-auto flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
+      <header className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2.5 text-slate-100">
+        <div className="mr-auto flex min-w-0 items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-50 motion-reduce:animate-none" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
           </span>
-          <Swords className="h-4 w-4 text-red-300" />
-          <h1 className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">WarRoom</h1>
-          <Badge variant="outline" className="h-5 border-white/15 bg-white/5 text-[9px] text-slate-300">2–4 operators</Badge>
+          <Swords className="h-4 w-4 shrink-0 text-red-300" />
+          <h1 className="font-mono text-sm font-bold uppercase tracking-[0.14em] text-white sm:text-base">Cyber Room</h1>
+          <Badge variant="outline" className="hidden h-6 border-white/15 bg-white/5 text-[10px] font-semibold text-slate-200 sm:inline-flex">2–4 operators</Badge>
         </div>
-        <span className="hidden font-mono text-[9px] uppercase tracking-widest text-slate-600 sm:inline">secure collaboration channel</span>
-        <Button asChild size="sm" variant="outline" className="h-8 border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"><Link href="/operations">Operations</Link></Button>
-        <Button asChild size="sm" variant="ghost" className="h-8 text-slate-300 hover:bg-white/10 hover:text-white"><Link href="/live"><UsersRound className="mr-2 h-4 w-4" />Live Workspace</Link></Button>
-      </div>
+        <Button asChild size="sm" variant="outline" className="h-8 border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white">
+          <Link href="/operations">Operations</Link>
+        </Button>
+        <Button asChild size="sm" variant="ghost" className="h-8 text-slate-200 hover:bg-white/10 hover:text-white">
+          <Link href="/live"><UsersRound className="mr-2 h-4 w-4" />Live Workspace</Link>
+        </Button>
+      </header>
 
       {params.run ? (
         <WarRoomWorkspace key={params.run} operation={selected} runId={params.run} initialWorkspaceId={params.workspace} />
       ) : (
         <section className={styles.shell} aria-label="Cyber Room mission briefing">
-          <div className={styles.topRail}>
+          <div className="relative z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-black/25 px-4 py-3">
             <span className={styles.liveDot} aria-hidden="true" />
             <Crosshair className="h-4 w-4 text-red-300" />
-            <span className={styles.kicker}>Cyber Room // Mission dossier</span>
-            <div className={styles.railMeta}>
-              <span>Channel encrypted</span>
-              <span>Standby</span>
-            </div>
+            <span className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-red-200">Mission ready</span>
+            <span className="ml-auto font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-300">Environment standby</span>
           </div>
 
-          <div className={styles.body}>
-            <div className={styles.hero}>
-              <div className={styles.heroHeader}>
-                <div>
-                  <p className={styles.eyebrow}>Operation intelligence</p>
-                  <h2 className={styles.title}>{selected.codename}</h2>
-                  <p className={styles.subtitle}>{selected.name}</p>
-                  <div className={styles.badges}>
-                    <span className={styles.badgeRed}>{selected.difficulty}</span>
-                    <span className={styles.badgeGreen}>WarRoom ready</span>
-                    <span className={styles.badgeBlue}>2–4 operators</span>
+          <div className="relative z-10 grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:p-5">
+            <main className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+              <div className="p-5 sm:p-7">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">Operation</p>
+                <h2 className="mt-2 font-mono text-3xl font-black uppercase leading-[0.95] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
+                  {selected.codename}
+                </h2>
+                <p className="mt-3 font-mono text-sm font-semibold uppercase tracking-[0.08em] text-slate-300">{selected.name}</p>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Badge variant="outline" className="border-red-400/30 bg-red-950/20 text-xs font-semibold text-red-200">{selected.difficulty}</Badge>
+                  <Badge variant="outline" className="border-emerald-400/30 bg-emerald-950/20 text-xs font-semibold text-emerald-200">WarRoom ready</Badge>
+                  <Badge variant="outline" className="border-sky-400/30 bg-sky-950/20 text-xs font-semibold text-sky-200">2–4 operators</Badge>
+                </div>
+
+                <div className="mt-6 border-l-2 border-red-400 bg-red-950/10 px-4 py-3">
+                  <p className="text-sm font-medium leading-6 text-slate-100 sm:text-base sm:leading-7">{selected.summary}</p>
+                </div>
+              </div>
+
+              <section className="border-t border-white/10 bg-black/20 p-4 sm:p-5" aria-labelledby="mission-machines-title">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <h3 id="mission-machines-title" className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-white">Mission machines</h3>
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-400">Loaded with the operation</span>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {selected.topologyNodes.map((node, index) => (
+                    <div key={`${node.label}:${index}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/10 bg-black/30 text-cyan-300">
+                        <TopologyNodeIcon kind={node.kind} className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{node.label}</p>
+                        <p className="mt-0.5 truncate text-xs font-medium text-slate-400">{node.platform || 'Mission runtime'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <div className="border-t border-white/10 p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="mr-auto">
+                    <p className="text-sm font-semibold text-white">Enter the environment and start operating.</p>
+                    <p className="mt-1 text-xs font-medium text-slate-400">Machine sessions stay available as you move between them.</p>
+                  </div>
+                  <div className="min-w-52">
+                    <OperationLaunchButton slug={selected.slug} mode="warroom" label="Launch Cyber Room" className="w-full" />
                   </div>
                 </div>
+              </div>
+            </main>
 
-                <div className={styles.summaryBlock}>
-                  {selected.summary}
+            <aside className="min-w-0 space-y-3" aria-label="Mission intelligence">
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+                <div className="border-b border-white/10 px-4 py-3">
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-slate-100">Mission intelligence</p>
+                  <p className="mt-1 text-xs font-medium leading-5 text-slate-400">Supporting detail stays here so the operating surface stays clean.</p>
                 </div>
+
+                <details className="group border-b border-white/10">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3.5 text-sm font-semibold text-white">
+                    <Crosshair className="h-4 w-4 text-red-300" />
+                    <span className="flex-1">Objectives</span>
+                    <span className="font-mono text-[10px] font-semibold text-slate-400">{selected.objectives.length}</span>
+                    <ChevronDown className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <ol className="space-y-2 px-4 pb-4">
+                    {selected.objectives.map((objective, index) => (
+                      <li key={objective} className="flex gap-3 rounded-lg border border-white/[0.07] bg-white/[0.025] p-3 text-sm leading-5 text-slate-200">
+                        <span className="font-mono text-xs font-bold text-red-300">{String(index + 1).padStart(2, '0')}</span>
+                        <span>{objective}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3.5 text-sm font-semibold text-white">
+                    <FileCheck2 className="h-4 w-4 text-emerald-300" />
+                    <span className="flex-1">Evidence package</span>
+                    <span className="font-mono text-[10px] font-semibold text-slate-400">{selected.evidence.length}</span>
+                    <ChevronDown className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <ul className="space-y-2 px-4 pb-4">
+                    {selected.evidence.map((item) => (
+                      <li key={item} className="flex gap-2 text-sm leading-5 text-slate-300">
+                        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               </div>
 
-              <div className={styles.visualPanel}>
-                <div className={styles.visualLabel}>
-                  <span>Tactical network</span>
-                  <span>Live topology preview</span>
-                </div>
-                <div className={styles.visualInner}>
-                  <OperationTopologyPreview nodes={selected.topologyNodes} />
-                </div>
+              <div className="rounded-xl border border-red-500/20 bg-red-950/10 p-4">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-red-200">Operator rule</p>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-200">Mission first. Machines second. Supporting intelligence only when you ask for it.</p>
               </div>
-
-              <div className={styles.launchZone}>
-                <div className={styles.launchHint}>
-                  <span>Room status <strong>Ready</strong></span>
-                  <span>Mission package <strong>Loaded</strong></span>
-                  <span>Operator slots <strong>2–4</strong></span>
-                </div>
-                <div className={styles.launchButton}>
-                  <OperationLaunchButton slug={selected.slug} mode="warroom" label="Start team Operation" />
-                </div>
-              </div>
-            </div>
-
-            <aside className={styles.sideRail} aria-label="Mission intelligence rail">
-              <section className={styles.panel}>
-                <div className={styles.panelHeader}>
-                  <Crosshair className="h-4 w-4 text-red-300" />
-                  Objectives
-                  <span className={styles.panelCount}>{selected.objectives.length} tracked</span>
-                </div>
-                <ol className={styles.objectiveList}>
-                  {selected.objectives.map((objective, index) => (
-                    <li key={objective} className={styles.objectiveItem}>
-                      <span className={styles.objectiveIndex}>{String(index + 1).padStart(2, '0')}</span>
-                      <span className={styles.itemText}>{objective}</span>
-                    </li>
-                  ))}
-                </ol>
-              </section>
-
-              <section className={styles.panel}>
-                <div className={styles.panelHeader}>
-                  <FileCheck2 className="h-4 w-4 text-emerald-300" />
-                  Evidence package
-                  <span className={styles.panelCount}>{selected.evidence.length} items</span>
-                </div>
-                <ul className={styles.evidenceList}>
-                  {selected.evidence.map((item) => (
-                    <li key={item} className={styles.evidenceItem}>
-                      <span className={styles.evidenceIcon}><ShieldCheck className="h-4 w-4" /></span>
-                      <span className={styles.itemText}>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className={`${styles.panel} ${styles.signalPanel}`}>
-                <div className={styles.signalLine}>
-                  <Radio className="h-3.5 w-3.5 text-cyan-300" />
-                  Collaboration channel
-                  <strong>Secure</strong>
-                </div>
-                <div className={styles.signalTrack} aria-hidden="true" />
-                <div className={styles.signalLine}>
-                  <Activity className="h-3.5 w-3.5 text-emerald-300" />
-                  Environment state
-                  <strong>Standby</strong>
-                </div>
-              </section>
             </aside>
-          </div>
-
-          <div className={styles.footerRail}>
-            <strong>OPSEC</strong>
-            <span>Brief first</span>
-            <span>Launch second</span>
-            <span>Operate inside the live WarRoom</span>
           </div>
         </section>
       )}
