@@ -8,5 +8,7 @@ describe('scheduled Operation cleanup wiring', () => {
     expect(source).toContain('listExpiredTaggedOperationNodes');
     expect(source).toContain('UPDATE operation_nodes');
     expect(source).toContain('operationRunsReconciled');
+    expect(source).toContain("NOT (metadata ? 'environmentId')");
+    expect(source).toContain('run.environment_id IS NULL');
   });
 });
