@@ -17,7 +17,7 @@ import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
 import { probeOperationNodeReadiness, operationReadinessError, type OperationReadinessResult } from '@/lib/operations/readiness';
-import { beginPreparedEnvironmentReset } from '@/lib/operations/environment-reset';
+import { advancePreparedEnvironmentReset, beginPreparedEnvironmentReset } from '@/lib/operations/environment-reset';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const SUBNET_ID = process.env.LAB_AWS_SUBNET_ID;
@@ -811,7 +811,14 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
     [args.runId, args.ownerId]
   );
   if (!run.rows[0]) throw new OperationRuntimeError('Operation run not found.', 404, 'OPERATION_RUN_NOT_FOUND');
-  if (run.rows[0].status === 'destroyed') return { destroyed: true, alreadyDestroyed: true };
+  if (run.rows[0].status === 'destroyed') {
+    const environmentId = run.rows[0].environment_id as string | null;
+    if (environmentId) {
+      const reset = await advancePreparedEnvironmentReset({ pool: args.pool, environmentId });
+      return { destroyed: true, alreadyDestroyed: true, reusableEnvironment: true, reset };
+    }
+    return { destroyed: true, alreadyDestroyed: true };
+  }
   const nodes = await args.pool.query(`SELECT runtime_external_id FROM operation_nodes WHERE run_id=$1 AND runtime_external_id IS NOT NULL`, [args.runId]);
   const externalIds = [...new Set(nodes.rows.map((row) => row.runtime_external_id as string).filter(Boolean))];
   await args.pool.query(`UPDATE operation_runs SET status='destroying',updated_at=NOW() WHERE id=$1 AND owner_id=$2`, [args.runId, args.ownerId]);
