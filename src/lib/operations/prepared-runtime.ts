@@ -7,6 +7,7 @@ import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
 import { OperationRuntimeError } from '@/lib/operations/runtime';
+import { advanceAllPreparedEnvironmentResets } from '@/lib/operations/environment-reset';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const SLOT_KEY = process.env.LAB_AWS_BLACK_DOMAIN_SLOT_KEY || 'black-domain-slot-01';
@@ -130,6 +131,7 @@ export async function provisionPreparedBlackDomainRun(args: {
   }
 
   const configured = requireSlotConfig();
+  await advanceAllPreparedEnvironmentResets(args.pool);
   const inspected = await inspectConfiguredSlot([configured.dc, configured.workstation, configured.operator]);
   const expiresAt = new Date(Date.now() + expiryMinutes(operation.estimatedMinutes) * 60_000).toISOString();
   const client = await args.pool.connect();
