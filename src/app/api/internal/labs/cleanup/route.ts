@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
             AND expires_at IS NOT NULL
             AND expires_at <= NOW()
             AND status NOT IN ('destroyed','failed')
+            AND NOT (metadata ? 'environmentId')
           ORDER BY expires_at ASC`
       ),
       listExpiredTaggedLabVms(now),
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
            FROM operation_nodes node
            JOIN operation_runs run ON run.id=node.run_id
           WHERE run.expires_at <= NOW()
+            AND run.environment_id IS NULL
             AND node.status NOT IN ('destroyed','failed')
           ORDER BY run.expires_at ASC,node.created_at ASC`
       ),
