@@ -185,6 +185,10 @@ async function runtimeFixture(probeResults) {
       probeOperationNodeReadiness: async args => { probes.push(args); return probeResults.shift(); },
       operationReadinessError: () => 'probe error',
     },
+    '@/lib/operations/environment-reset': {
+      beginPreparedEnvironmentReset: async () => ({ status: 'resetting', phase: 'starting' }),
+      advancePreparedEnvironmentReset: async () => ({ status: 'available', phase: 'complete' }),
+    },
   });
   return { node, run, probes, read: () => mod.getOperationRun({ pool, runId: 'run-1', ownerId: 'owner-1' }) };
 }
