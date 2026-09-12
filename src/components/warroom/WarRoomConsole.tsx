@@ -36,8 +36,9 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
   const [selected, setSelected] = React.useState<string | null>(null);
   const [mountedTabs, setMountedTabs] = React.useState<string[]>([]);
   const [surfaceByTab, setSurfaceByTab] = React.useState<Record<string, Surface>>({});
+  const [mountedSurfacesByTab, setMountedSurfacesByTab] = React.useState<Record<string, Surface[]>>({});
 
-  const tabs: MachineTab[] = [
+  const tabs = React.useMemo<MachineTab[]>(() => [
     ...nodes.map((node) => ({
       id: `node:${node.id}`,
       label: node.label,
@@ -47,15 +48,22 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
     ...controlProps.resources
       .filter((resource) => !nodes.some((node) => node.labInstanceId === resource.resourceId))
       .map((resource) => ({ id: `resource:${resource.id}`, label: resource.label, node: undefined, resource })),
-  ];
+  ], [controlProps.resources, nodes]);
 
-  const tabIds = tabs.map((tab) => tab.id).join('|');
   const active = tabs.find((tab) => tab.id === selected);
   const activeNode = active?.node;
 
+  const rememberSurface = React.useCallback((tabId: string, surface: Surface) => {
+    setMountedSurfacesByTab((current) => {
+      const mounted = current[tabId] || [];
+      return mounted.includes(surface) ? current : { ...current, [tabId]: [...mounted, surface] };
+    });
+  }, []);
+
   const rememberTab = React.useCallback((id: string) => {
     setMountedTabs((current) => current.includes(id) ? current : [...current, id]);
-  }, []);
+    rememberSurface(id, 'terminal');
+  }, [rememberSurface]);
 
   React.useEffect(() => {
     if (tabs.length === 0) {
@@ -68,7 +76,7 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
       setSelected(firstId);
       rememberTab(firstId);
     }
-  }, [rememberTab, selected, tabIds]);
+  }, [rememberTab, selected, tabs]);
 
   React.useEffect(() => {
     if (!selectedResourceId) return;
@@ -92,6 +100,7 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
   }
 
   function selectSurface(tabId: string, surface: Surface) {
+    rememberSurface(tabId, surface);
     setSurfaceByTab((current) => ({ ...current, [tabId]: surface }));
   }
 
@@ -107,6 +116,7 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
     const resource = tab.resource;
     const canOpen = canOpenTab(tab);
     const surface = surfaceByTab[tab.id] || 'terminal';
+    const mountedSurfaces = mountedSurfacesByTab[tab.id] || ['terminal'];
 
     if (!canOpen) {
       return (
@@ -160,25 +170,27 @@ export function WarRoomConsole({ runId, nodes, status, paused, isOwner, selected
             )}
           </div>
 
-          <div hidden={surface !== 'desktop'} aria-hidden={surface !== 'desktop'}>
-            {node.osFamily.toLowerCase().includes('windows') && surfaceByTab[tab.id] === 'desktop' ? (
+          {mountedSurfaces.includes('desktop') && node.osFamily.toLowerCase().includes('windows') ? (
+            <div hidden={surface !== 'desktop'} aria-hidden={surface !== 'desktop'}>
               <InteractiveSsmDesktop
                 key={`${runId}:${node.id}:desktop`}
                 labInstanceId={node.id}
                 machineLabel={node.label}
                 sessionEndpoint={`/api/operations/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(node.id)}/desktop/session`}
               />
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
-          <div hidden={surface !== 'terminal'} aria-hidden={surface !== 'terminal'}>
-            <OperationNodeTerminal
-              key={`${runId}:${node.id}:terminal`}
-              runId={runId}
-              nodeId={node.id}
-              machineLabel={node.label}
-            />
-          </div>
+          {mountedSurfaces.includes('terminal') ? (
+            <div hidden={surface !== 'terminal'} aria-hidden={surface !== 'terminal'}>
+              <OperationNodeTerminal
+                key={`${runId}:${node.id}:terminal`}
+                runId={runId}
+                nodeId={node.id}
+                machineLabel={node.label}
+              />
+            </div>
+          ) : null}
         </div>
       );
     }
