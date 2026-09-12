@@ -97,7 +97,7 @@ export default function AppHeader({
 
           <div className="ml-auto flex shrink-0 items-center gap-0.5 lg:ml-1.5">
             {isAuthenticated ? <ActivityCenter /> : null}
-            {isAuthenticated ? <WorkspaceWalkthrough /> : null}
+            {isAuthenticated ? <div className="hidden sm:contents"><WorkspaceWalkthrough /></div> : null}
             <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setCommandOpen(true)} aria-label="Search commands and workspaces">
               <Search className="h-3.5 w-3.5" />
             </Button>
@@ -119,7 +119,7 @@ export default function AppHeader({
             )}
             <Link
               href={accountHref}
-              className="group flex h-8 w-8 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
+              className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent transition hover:border-border hover:bg-muted/40"
               aria-label={isAuthenticated ? 'Open account' : 'Preview account benefits'}
               title={isAuthenticated ? (user?.displayName || user?.email || 'Account') : 'Preview account benefits'}
             >
