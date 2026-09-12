@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('server-only', () => ({}));
+
 import { getConfiguredLabCapabilities, labStatusFreshness } from './read-model';
 
 describe('Lab status read-model freshness', () => {
@@ -20,7 +23,6 @@ describe('Lab status read-model freshness', () => {
     }, now)).toMatchObject({ stale: true, reconciliationWarning: 'provider unavailable' });
   });
 });
-
 
 describe('Lab deployment capability read model', () => {
   afterEach(() => {

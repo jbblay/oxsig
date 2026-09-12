@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import type { LabInstanceStatus } from './types';
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/labs/aws-runtime', () => ({
   describeLabVmStates: vi.fn(),
   destroyLabVm: vi.fn(),
