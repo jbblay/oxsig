@@ -140,8 +140,10 @@ describe('labs client cache', () => {
     const first = reconcileLabsStatus();
     const second = reconcileLabsStatus();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(mocks.getCsrfToken).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(mocks.getCsrfToken).toHaveBeenCalledTimes(1);
+    });
 
     resolveReconciliation(reconciliationResponse());
     await expect(first).resolves.toMatchObject({ ok: true, status: 200 });
