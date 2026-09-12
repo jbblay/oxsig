@@ -10,8 +10,8 @@ export default async function CollaborationPage() {
   if (!isAuthenticated) return <GuestProductSurface surface="collaboration" />;
 
   return (
-    <div className="oxsig-surface oxsig-surface-collab mx-auto max-w-7xl space-y-4">
-      <header className="oxsig-surface-head">
+    <div className="oxsig-surface oxsig-surface-collab mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-3 sm:gap-4">
+      <header className="oxsig-surface-head shrink-0">
         <span className="oxsig-surface-mark"><MessageCircle className="h-5 w-5" /></span>
         <div className="oxsig-surface-copy">
           <p className="oxsig-surface-kicker">Signal exchange // Coordination</p>
@@ -24,7 +24,7 @@ export default async function CollaborationPage() {
           <span className="oxsig-surface-signal"><Radio className="h-3 w-3" /> Shared context</span>
         </div>
       </header>
-      <div className="oxsig-surface-content">
+      <div className="oxsig-surface-content min-h-0 flex-1 overflow-hidden">
         <CollaborationWorkspace />
       </div>
     </div>
