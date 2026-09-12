@@ -242,3 +242,16 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
     };
   }
 }
+
+
+export async function advanceAllPreparedEnvironmentResets(pool: Pool) {
+  const rows = await pool.query(
+    `SELECT id FROM operation_environments
+      WHERE status='resetting'
+      ORDER BY updated_at ASC
+      LIMIT 10`,
+  );
+  return Promise.all(rows.rows.map((row) =>
+    advancePreparedEnvironmentReset({ pool, environmentId: row.id as string })
+  ));
+}
