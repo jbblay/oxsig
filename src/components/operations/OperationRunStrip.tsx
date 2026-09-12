@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RuntimeProgress } from '@/components/warroom/RuntimeProgress';
 import { operationLifecycleVoiceCue } from '@/lib/operations/lifecycle-voice';
+import { finishReusableEnvironmentReset } from '@/lib/operations/reset-client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
@@ -134,7 +135,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   };
 
   const destroy = async () => {
-    if (!window.confirm('End and permanently destroy this Operation? All three machines will be terminated.')) return;
+    if (!window.confirm('End this Operation? Disposable machines are destroyed; reusable machines are restored to their clean baseline.')) return;
     setBusy('destroy');
     try {
       const csrf = await getCsrfToken();
@@ -144,8 +145,18 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'Could not end Operation');
-      toast.success('Destruction started for all Operation machines.');
       setRevealedAccess(null);
+      if (body?.reusableEnvironment && body?.reset) {
+        toast.info('Operation ended. Restoring the reusable environment to its clean baseline.');
+        await finishReusableEnvironmentReset({
+          runId,
+          csrfToken: csrf,
+          initial: body.reset,
+        });
+        toast.success('Environment reset verified and returned to standby.');
+      } else {
+        toast.success('Destruction started for all Operation machines.');
+      }
       await refresh(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not end Operation');
