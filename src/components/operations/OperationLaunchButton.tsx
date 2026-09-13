@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { authPathWithReturnTo } from '@/lib/auth-return';
 import { useAuth } from '@/lib/auth/use-auth';
+import { invalidateLabsSnapshot } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import type { OperationMode } from '@/lib/operations/catalog';
 
@@ -58,6 +59,8 @@ export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'def
       if (!response.ok) throw new Error(body?.error || 'Could not start Operation');
       const runId = body?.run?.runId as string | undefined;
       if (!runId) throw new Error('Operation runtime was created without a run id.');
+      const reused = body?.reused === true;
+      invalidateLabsSnapshot();
 
       let workspaceId: string | undefined;
       if (mode === 'warroom') {
@@ -77,7 +80,7 @@ export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'def
         }
       }
 
-      toast.success('Operation topology is provisioning.');
+      toast.success(reused ? 'Opening your active Operation.' : 'Operation topology is provisioning.');
       const destination = mode === 'warroom' ? '/warroom' : '/labs';
       const query = new URLSearchParams({ operation: slug, mode, run: runId });
       if (workspaceId) query.set('workspace', workspaceId);
