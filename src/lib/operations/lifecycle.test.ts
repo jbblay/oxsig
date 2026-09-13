@@ -21,7 +21,10 @@ function poolFor(run: Record<string, unknown>, ids = ['i-00000000000000001', 'i-
   const release = vi.fn();
   const query = vi.fn(async (sql: string) => {
     if (sql.includes('FROM operation_runs')) return { rows: [run], rowCount: 1 };
-    if (sql.includes('FROM operation_nodes')) return { rows: ids.map((runtime_external_id) => ({ runtime_external_id })), rowCount: ids.length };
+    if (sql.includes('FROM operation_nodes')) return {
+      rows: ids.map((runtime_external_id, index) => ({ id: `node-${index + 1}`, runtime_external_id })),
+      rowCount: ids.length,
+    };
     throw new Error(`Unexpected pool query: ${sql}`);
   });
   return {
@@ -55,6 +58,49 @@ describe('Operation lifecycle', () => {
     expect(mocks.send.mock.calls.map(([command]) => command.constructor.name)).toEqual(['DescribeInstancesCommand', 'StopInstancesCommand']);
     expect(clientQuery.mock.calls.map(([sql]) => sql)).toEqual(expect.arrayContaining(['BEGIN', 'COMMIT']));
     expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('reports pausing until every EC2 machine is actually stopped', async () => {
+    const { pool } = poolFor({
+      id: 'run-1', status: 'provisioning', expires_at: new Date(Date.now() + 60_000).toISOString(),
+      operator_lab_instance_id: 'lab-1', metadata: { lifecycleState: 'paused' },
+    });
+    mocks.send.mockResolvedValueOnce({ Reservations: [{ Instances: [
+      { InstanceId: 'i-00000000000000001', State: { Name: 'stopping' } },
+      { InstanceId: 'i-00000000000000002', State: { Name: 'stopped' } },
+      { InstanceId: 'i-00000000000000003', State: { Name: 'stopped' } },
+    ] }] });
+
+    const { getOperationLifecycleProgress } = await import('./lifecycle');
+    await expect(getOperationLifecycleProgress({ pool, runId: 'run-1', ownerId: 'owner-1' })).resolves.toEqual({
+      phase: 'pausing',
+      total: 3,
+      stopped: 2,
+      nodeStates: {
+        'node-1': 'stopping',
+        'node-2': 'stopped',
+        'node-3': 'stopped',
+      },
+    });
+  });
+
+  it('reports paused only after every EC2 machine is stopped', async () => {
+    const { pool } = poolFor({
+      id: 'run-1', status: 'provisioning', expires_at: new Date(Date.now() + 60_000).toISOString(),
+      operator_lab_instance_id: 'lab-1', metadata: { lifecycleState: 'paused' },
+    });
+    mocks.send.mockResolvedValueOnce({ Reservations: [{ Instances: [
+      { InstanceId: 'i-00000000000000001', State: { Name: 'stopped' } },
+      { InstanceId: 'i-00000000000000002', State: { Name: 'stopped' } },
+      { InstanceId: 'i-00000000000000003', State: { Name: 'stopped' } },
+    ] }] });
+
+    const { getOperationLifecycleProgress } = await import('./lifecycle');
+    await expect(getOperationLifecycleProgress({ pool, runId: 'run-1', ownerId: 'owner-1' })).resolves.toMatchObject({
+      phase: 'paused',
+      total: 3,
+      stopped: 3,
+    });
   });
 
   it('resumes only a fully stopped paused Operation and forces fresh readiness', async () => {
