@@ -1,15 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Activity, Loader2, Monitor, Network, RefreshCw, Server, Terminal } from 'lucide-react';
+import { Loader2, Monitor, RefreshCw, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import InteractiveSsmDesktop from '@/components/labs/InteractiveSsmDesktop';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
+import { LabOsIcon } from '@/components/labs/LabMachineNode';
 import OperationNodeTerminal from '@/components/operations/OperationNodeTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { getOperation } from '@/lib/operations/catalog';
+import type { LabOsFamily } from '@/lib/labs/types';
 import type { OperationAiRuntimeContext } from '@/lib/operations/ai-context';
 
 type RunNode = {
@@ -42,34 +43,40 @@ type Run = {
 
 type AccessMode = 'terminal' | 'desktop';
 
+type OpenedSessions = Record<string, true>;
+type AccessModes = Record<string, AccessMode>;
+
+function iconFamily(value: string): LabOsFamily {
+  const normalized = value.toLowerCase();
+  if (normalized.includes('windows')) return 'windows';
+  if (normalized.includes('kali')) return 'kali';
+  if (normalized.includes('rocky')) return 'rocky';
+  if (normalized.includes('amazon')) return 'amazon-linux';
+  return 'ubuntu';
+}
+
+function isWindows(node: RunNode) {
+  return iconFamily(node.osFamily) === 'windows';
+}
+
 function learnerStatus(node: RunNode, paused: boolean) {
   if (paused) return 'Paused';
-  if (node.status === 'running') return 'Exercise ready';
+  if (node.status === 'running') return 'Ready';
   if (node.status === 'failed') return 'Failed';
-  if (node.status === 'destroying' || node.status === 'destroyed') return 'Stopping';
-  if (node.computeStatus === 'running') return 'Initializing';
-  if (node.computeStatus === 'pending') return 'Starting';
-  return 'Provisioning';
+  if (node.status === 'destroying' || node.status === 'destroyed') return 'Ending';
+  return 'Starting';
 }
 
-function readinessLabel(reason?: string) {
-  switch (reason) {
-    case 'ready': return 'Exercise setup complete';
-    case 'probe-pending': return 'Checking exercise setup';
-    case 'ssm-offline': return 'Secure session starting';
-    case 'marker-missing': return 'Guest setup running';
-    case 'probe-failed': return 'Readiness check failed';
-    case 'bootstrapping': return 'Guest setup running';
-    case 'legacy': return 'Runtime ready';
-    case 'unavailable': return 'Access unavailable';
-    default: return reason ? 'Checking secure access' : null;
-  }
+function sessionKey(nodeId: string, mode: AccessMode) {
+  return `${nodeId}:${mode}`;
 }
 
-function roleHelp(node: RunNode) {
-  if (node.role === 'operator') return 'Starting point — use this Ubuntu terminal to work against the domain.';
-  if (node.role === 'target') return 'Domain workstation — open Terminal or Desktop when you want to inspect or sign in to this Windows target.';
-  return 'Domain controller — Active Directory, DNS and authentication services for the exercise.';
+function defaultNode(nodes: RunNode[]) {
+  return nodes.find((node) => node.role === 'target' && isWindows(node))
+    || nodes.find((node) => isWindows(node) && node.key === 'workstation')
+    || nodes.find((node) => node.role === 'operator')
+    || nodes[0]
+    || null;
 }
 
 export function OperationLabRuntimePanel({
@@ -82,10 +89,12 @@ export function OperationLabRuntimePanel({
   const [run, setRun] = React.useState<Run | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [accessMode, setAccessMode] = React.useState<AccessMode | null>(null);
-  const [refreshError, setRefreshError] = React.useState<string | null>(null);
+  const [accessModes, setAccessModes] = React.useState<AccessModes>({});
+  const [openedSessions, setOpenedSessions] = React.useState<OpenedSessions>({});
+  const [refreshError, setRefreshError] = React.useState(false);
   const refreshInFlight = React.useRef(false);
   const activeRunId = React.useRef(runId);
+  const defaultDesktopOpenedForRun = React.useRef<string | null>(null);
   activeRunId.current = runId;
 
   const refresh = React.useCallback(async (quiet = false) => {
@@ -97,17 +106,17 @@ export function OperationLabRuntimePanel({
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'Could not load Operation runtime');
       if (activeRunId.current !== runId) return;
-      setRefreshError(null);
       const next = body.run as Run;
+      setRefreshError(false);
       setRun(next);
       setSelectedId((current) => current && next.nodes.some((node) => node.id === current)
         ? current
-        : next.nodes.find((node) => node.role === 'operator')?.id || next.nodes[0]?.id || null);
+        : defaultNode(next.nodes)?.id || null);
     } catch (error) {
       if (activeRunId.current !== runId) return;
-      const message = error instanceof Error ? error.message : 'Could not load Operation runtime';
-      setRefreshError(message);
-      if (!quiet) toast.error(message);
+      console.error('Black Domain runtime refresh failed:', error);
+      setRefreshError(true);
+      if (!quiet) toast.error('Could not refresh the lab machines.');
     } finally {
       refreshInFlight.current = false;
       if (!quiet) setLoading(false);
@@ -117,21 +126,41 @@ export function OperationLabRuntimePanel({
   React.useEffect(() => {
     setRun(null);
     setSelectedId(null);
+    setAccessModes({});
+    setOpenedSessions({});
+    setRefreshError(false);
+    defaultDesktopOpenedForRun.current = null;
     void refresh();
     const timer = window.setInterval(() => void refresh(true), 5_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
   const paused = run?.metadata?.lifecycleState === 'paused';
+  const allReady = Boolean(
+    run
+    && !paused
+    && run.status === 'running'
+    && run.nodes.length > 0
+    && run.nodes.every((node) => node.status === 'running')
+  );
   const selected = (run?.id === runId ? run : null)?.nodes.find((node) => node.id === selectedId) || null;
-  const selectedReady = Boolean(selected && !paused && selected.status === 'running');
-  const accessAvailable = Boolean(selected && !paused && !['failed', 'destroying', 'destroyed'].includes(run?.status || '') && !['failed', 'destroying', 'destroyed'].includes(selected.status) && (selected.computeStatus === 'running' || selected.status === 'running'));
-  const windows = Boolean(selected?.osFamily.toLowerCase().includes('windows'));
-  const selectedReadiness = readinessLabel(selected?.readiness);
+  const selectedMode = selected ? accessModes[selected.id] || null : null;
+
+  const openAccess = React.useCallback((node: RunNode, mode: AccessMode) => {
+    if (mode === 'desktop' && !isWindows(node)) return;
+    setSelectedId(node.id);
+    setAccessModes((current) => ({ ...current, [node.id]: mode }));
+    setOpenedSessions((current) => ({ ...current, [sessionKey(node.id, mode)]: true }));
+  }, []);
 
   React.useEffect(() => {
-    setAccessMode(null);
-  }, [selectedId]);
+    if (!run || !allReady || defaultDesktopOpenedForRun.current === run.id) return;
+    const workstation = run.nodes.find((node) => node.role === 'target' && isWindows(node))
+      || run.nodes.find((node) => node.key === 'workstation' && isWindows(node));
+    if (!workstation) return;
+    defaultDesktopOpenedForRun.current = run.id;
+    openAccess(workstation, 'desktop');
+  }, [allReady, openAccess, run]);
 
   React.useEffect(() => {
     if (!onAiContextChange || !run || run.id !== runId) return;
@@ -147,106 +176,118 @@ export function OperationLabRuntimePanel({
   React.useEffect(() => () => onAiContextChange?.(null), [onAiContextChange]);
 
   if (loading && !run) {
-    return <div className="flex min-h-56 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading the live Operation…</div>;
+    return <div className="flex min-h-40 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Opening My Lab…</div>;
   }
-  if (!run) return <p role="alert" className="text-xs text-destructive">{refreshError || 'Could not load the Operation.'} <Button size="sm" variant="ghost" onClick={() => void refresh()}>Retry</Button></p>;
+  if (!run) {
+    return <div className="flex items-center justify-between rounded-xl border p-3 text-xs text-muted-foreground"><span>My Lab is temporarily unavailable.</span><Button size="sm" variant="ghost" onClick={() => void refresh()}>Retry</Button></div>;
+  }
+
+  // The Operation strip owns provisioning and lifecycle progress. Keep My Lab quiet
+  // until the three machines have passed the exercise readiness checks.
+  if (!allReady && !paused) return null;
 
   return (
     <div className="space-y-3">
-      {refreshError && <p role="alert" className="text-xs text-destructive">Status refresh failed: {refreshError}. Displayed status may be stale. Use Refresh to retry.</p>}
-      <Card>
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Network className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold">Black Domain — live machines</span>
-            <Badge variant={run.status === 'running' && !paused ? 'default' : 'outline'}>
-              {paused ? 'Environment paused' : run.status === 'running' ? 'Environment ready' : 'Environment initializing'}
-            </Badge>
-            {run.metadata?.domain && <Badge variant="secondary">{run.metadata.domain}</Badge>}
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
-          </div>
-          <p className="text-xs text-muted-foreground">These are the same three machines provisioned by Operations and shown in Build. Select the machine you want to use, then choose one of its available access methods.</p>
+      {refreshError && (
+        <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <span>Machine status may be out of date.</span>
+          <Button size="sm" variant="ghost" className="h-7" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
+        </div>
+      )}
 
-          <div className="grid gap-2 md:grid-cols-3">
-            {run.nodes.map((node) => {
-              const ready = node.status === 'running' && !paused;
-              const active = node.id === selectedId;
-              return (
-                <button key={node.id} type="button" onClick={() => { if (node.id !== selectedId) setAccessMode(null); setSelectedId(node.id); }} className={`rounded-xl border p-3 text-left transition ${active ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'}`}>
+      <div className="grid gap-2 md:grid-cols-3">
+        {run.nodes.map((node) => {
+          const active = node.id === selectedId;
+          const status = learnerStatus(node, Boolean(paused));
+          const ready = status === 'Ready';
+          return (
+            <button
+              key={node.id}
+              type="button"
+              onClick={() => setSelectedId(node.id)}
+              className={`rounded-xl border p-3 text-left transition ${active ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'hover:bg-muted/30'}`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted/60 ring-1 ring-border">
+                  <LabOsIcon osFamily={iconFamily(node.osFamily)} className="h-6 w-6" />
+                </span>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    {node.role === 'operator' ? <Terminal className="h-4 w-4" /> : <Server className="h-4 w-4" />}
                     <span className="min-w-0 flex-1 truncate text-xs font-semibold">{node.label}</span>
-                    <Badge variant={ready ? 'default' : 'outline'} className="text-[9px]">{learnerStatus(node, Boolean(paused))}</Badge>
+                    <Badge variant={ready ? 'default' : 'outline'} className="h-5 text-[9px]">{status}</Badge>
                   </div>
-                  <p className="mt-2 text-[10px] capitalize text-muted-foreground">{node.osFamily} · {node.role}{node.privateIp ? ` · ${node.privateIp}` : ''}</p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">{roleHelp(node)}</p>
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                  <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{node.privateIp || 'IP pending'}</p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
       {selected && (
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="flex flex-wrap items-center gap-2">
+              <LabOsIcon osFamily={iconFamily(selected.osFamily)} className="h-5 w-5" />
               <span className="text-sm font-semibold">{selected.label}</span>
-              <Badge variant={selectedReady ? 'default' : 'outline'}>{learnerStatus(selected, Boolean(paused))}</Badge>
-              {selected.computeStatus && selected.computeStatus !== selected.status && !paused && <Badge variant="secondary">EC2 {selected.computeStatus}</Badge>}
-              {selectedReadiness && !paused && <Badge variant="outline">{selectedReadiness}</Badge>}
+              {selected.privateIp && <span className="font-mono text-[10px] text-muted-foreground">{selected.privateIp}</span>}
+              <div className="ml-auto flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant={selectedMode === 'terminal' ? 'default' : 'outline'}
+                  onClick={() => openAccess(selected, 'terminal')}
+                  disabled={Boolean(paused)}
+                >
+                  <Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal
+                </Button>
+                {isWindows(selected) && (
+                  <Button
+                    size="sm"
+                    variant={selectedMode === 'desktop' ? 'default' : 'outline'}
+                    onClick={() => openAccess(selected, 'desktop')}
+                    disabled={Boolean(paused)}
+                  >
+                    <Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop
+                  </Button>
+                )}
+              </div>
             </div>
 
-            {paused ? (
-              <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Operation paused.</p>
-                <p className="mt-1">Resume the Operation from the controls above to restart the machines and check access again.</p>
-              </div>
-            ) : !accessAvailable ? (
-              <div className="flex items-start gap-2 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
-                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
-                <div>
-                  <p className="font-medium text-foreground">Machine access is not available yet.</p>
-                  <p className="mt-1">Wait for this machine to start, then open its Terminal or Desktop. Exercise setup is checked separately.</p>
-                </div>
-              </div>
-            ) : (
-              <>
-                {!selectedReady && <p className="text-xs text-muted-foreground">Exercise setup is not complete. You can try this machine’s access methods now; each connection checks its live availability.</p>}
-                <div>
-                  <p className="mb-2 text-xs font-medium">Open {selected.label}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant={accessMode === 'terminal' ? 'default' : 'outline'} onClick={() => setAccessMode('terminal')}><Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal</Button>
-                    {windows && <Button size="sm" variant={accessMode === 'desktop' ? 'default' : 'outline'} onClick={() => setAccessMode('desktop')}><Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop</Button>}
-                  </div>
-                </div>
+            {!paused && !selectedMode && <p className="text-xs text-muted-foreground">Choose Terminal{isWindows(selected) ? ' or Desktop' : ''}.</p>}
+            {paused && <Badge variant="outline">Paused</Badge>}
 
-                {accessMode === 'desktop' && windows ? (
-                  <InteractiveSsmDesktop
-                    key={`${run.id}:${selected.id}:desktop`}
-                    labInstanceId={selected.id}
-                    machineLabel={selected.label}
-                    sessionEndpoint={`/api/operations/runs/${encodeURIComponent(run.id)}/nodes/${encodeURIComponent(selected.id)}/desktop/session`}
-                  />
-                ) : accessMode === 'terminal' ? (
-                  selected.labInstanceId ? (
-                    <InteractiveSsmTerminal key={`${run.id}:${selected.id}:terminal:ai`} labInstanceId={selected.labInstanceId} machineLabel={selected.label} />
-                  ) : (
-                    <OperationNodeTerminal key={`${run.id}:${selected.id}:terminal`} runId={run.id} nodeId={selected.id} machineLabel={selected.label} />
-                  )
-                ) : <p className="text-xs text-muted-foreground">Choose an access method to connect to this machine.</p>}
-              </>
+            <div className={paused ? 'hidden' : 'block'} aria-hidden={Boolean(paused)}>
+              {run.nodes.flatMap((node) => {
+                const modes: AccessMode[] = isWindows(node) ? ['terminal', 'desktop'] : ['terminal'];
+                return modes.map((mode) => {
+                  const key = sessionKey(node.id, mode);
+                  if (!openedSessions[key]) return null;
+                  const active = node.id === selectedId && accessModes[node.id] === mode;
+                  return (
+                    <div key={`${run.id}:${key}`} className={active ? 'block' : 'hidden'} aria-hidden={!active}>
+                      {mode === 'desktop' ? (
+                        <InteractiveSsmDesktop
+                          labInstanceId={node.id}
+                          machineLabel={node.label}
+                          sessionEndpoint={`/api/operations/runs/${encodeURIComponent(run.id)}/nodes/${encodeURIComponent(node.id)}/desktop/session`}
+                        />
+                      ) : node.labInstanceId ? (
+                        <InteractiveSsmTerminal labInstanceId={node.labInstanceId} machineLabel={node.label} />
+                      ) : (
+                        <OperationNodeTerminal runId={run.id} nodeId={node.id} machineLabel={node.label} />
+                      )}
+                    </div>
+                  );
+                });
+              })}
+            </div>
+
+            {(selected.readinessError || selected.lastError) && !paused && (
+              <p role="alert" className="text-xs text-destructive">This machine needs attention. Refresh and try again.</p>
             )}
-
-            {selected.readinessError && <p role="alert" className="text-xs text-destructive">{selected.readinessError}</p>}
-            {selected.lastError && <p className="text-xs text-destructive">{selected.lastError}</p>}
           </CardContent>
         </Card>
       )}
-
-      <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
-        <Activity className="mr-1.5 inline h-3.5 w-3.5" />The starting domain identity shown above belongs to the Black Domain Windows environment. Begin from the Ubuntu operator unless the exercise tells you to sign in directly to a Windows node.
-      </div>
     </div>
   );
 }
