@@ -4,6 +4,7 @@ import { DescribeInstancesCommand, EC2Client, StartInstancesCommand } from '@aws
 import type { Pool, PoolClient } from 'pg';
 import { awsClientConfig } from '@/lib/aws/client-config';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
+import { reconcileOwnedLabReadModel } from '@/lib/labs/reconciliation';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
 import { OperationRuntimeError } from '@/lib/operations/runtime';
@@ -14,9 +15,9 @@ const SLOT_KEY = process.env.LAB_AWS_BLACK_DOMAIN_SLOT_KEY || 'black-domain-slot
 const DC_INSTANCE_ID = process.env.LAB_AWS_BLACK_DOMAIN_DC_INSTANCE_ID;
 const WORKSTATION_INSTANCE_ID = process.env.LAB_AWS_BLACK_DOMAIN_WORKSTATION_INSTANCE_ID;
 const OPERATOR_INSTANCE_ID = process.env.LAB_AWS_BLACK_DOMAIN_OPERATOR_INSTANCE_ID;
-const DC_SNAPSHOT_ID = process.env.LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID || null;
-const WORKSTATION_SNAPSHOT_ID = process.env.LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID || null;
-const OPERATOR_SNAPSHOT_ID = process.env.LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID || null;
+const DC_SNAPSHOT_ID = process.env.LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID;
+const WORKSTATION_SNAPSHOT_ID = process.env.LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID;
+const OPERATOR_SNAPSHOT_ID = process.env.LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID;
 const INITIAL_PASSWORD = process.env.LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD;
 const READINESS_VERSION = 1;
 const ONE_LAB_INDEX = 'idx_lab_instances_one_nonterminal_per_owner';
@@ -33,18 +34,28 @@ type SlotNode = {
   labInstanceId: string | null;
 };
 
+type ConfiguredSlotNode = {
+  nodeKey: 'dc' | 'workstation' | 'operator';
+  instanceId: string;
+  snapshotId: string;
+};
+
 function requireSlotConfig() {
-  if (!DC_INSTANCE_ID || !WORKSTATION_INSTANCE_ID || !OPERATOR_INSTANCE_ID || !INITIAL_PASSWORD) {
+  if (
+    !DC_INSTANCE_ID || !WORKSTATION_INSTANCE_ID || !OPERATOR_INSTANCE_ID
+    || !DC_SNAPSHOT_ID || !WORKSTATION_SNAPSHOT_ID || !OPERATOR_SNAPSHOT_ID
+    || !INITIAL_PASSWORD
+  ) {
     throw new OperationRuntimeError(
-      'Prepared Black Domain requires all three instance ids and its initial password.',
+      'Prepared Black Domain requires all three instance ids, all three baseline snapshot ids, and its initial password.',
       503,
       'OPERATION_ENVIRONMENT_CONFIGURATION_INCOMPLETE',
     );
   }
   return {
-    dc: DC_INSTANCE_ID,
-    workstation: WORKSTATION_INSTANCE_ID,
-    operator: OPERATOR_INSTANCE_ID,
+    dc: { nodeKey: 'dc', instanceId: DC_INSTANCE_ID, snapshotId: DC_SNAPSHOT_ID } satisfies ConfiguredSlotNode,
+    workstation: { nodeKey: 'workstation', instanceId: WORKSTATION_INSTANCE_ID, snapshotId: WORKSTATION_SNAPSHOT_ID } satisfies ConfiguredSlotNode,
+    operator: { nodeKey: 'operator', instanceId: OPERATOR_INSTANCE_ID, snapshotId: OPERATOR_SNAPSHOT_ID } satisfies ConfiguredSlotNode,
     initialPassword: INITIAL_PASSWORD,
   };
 }
@@ -53,7 +64,8 @@ function expiryMinutes(estimatedMinutes: number) {
   return Math.min(180, Math.max(60, estimatedMinutes + 30));
 }
 
-async function inspectConfiguredSlot(instanceIds: string[]) {
+async function inspectConfiguredSlot(configuredNodes: ConfiguredSlotNode[]) {
+  const instanceIds = configuredNodes.map((node) => node.instanceId);
   const response = await ec2.send(new DescribeInstancesCommand({ InstanceIds: instanceIds }));
   const instances = (response.Reservations || []).flatMap((reservation) => reservation.Instances || []);
   if (instances.length !== instanceIds.length) {
@@ -61,8 +73,8 @@ async function inspectConfiguredSlot(instanceIds: string[]) {
   }
 
   const byId = new Map(instances.filter((instance) => instance.InstanceId).map((instance) => [instance.InstanceId!, instance]));
-  return instanceIds.map((instanceId) => {
-    const instance = byId.get(instanceId);
+  return configuredNodes.map((configuredNode) => {
+    const instance = byId.get(configuredNode.instanceId);
     const state = instance?.State?.Name;
     if (!instance?.PrivateIpAddress || !state) {
       throw new OperationRuntimeError('A configured Black Domain slot has incomplete EC2 state.', 503, 'OPERATION_ENVIRONMENT_INVALID');
@@ -71,10 +83,20 @@ async function inspectConfiguredSlot(instanceIds: string[]) {
       throw new OperationRuntimeError('Black Domain Slot 01 is not available yet.', 409, 'OPERATION_ENVIRONMENT_BUSY');
     }
     const tags = new Map((instance.Tags || []).filter((tag) => tag.Key && tag.Value).map((tag) => [tag.Key!, tag.Value!]));
-    if (tags.get('EnvironmentSlot') !== SLOT_KEY || tags.get('Lifecycle') !== 'Reusable') {
-      throw new OperationRuntimeError('Configured Black Domain compute is not tagged as a reusable slot.', 503, 'OPERATION_ENVIRONMENT_INVALID');
+    const validTags = tags.get('App') === 'Oxsig'
+      && tags.get('Purpose') === 'OperationEnvironment'
+      && tags.get('OperationSlug') === 'black-domain'
+      && tags.get('EnvironmentSlot') === SLOT_KEY
+      && tags.get('Lifecycle') === 'Reusable'
+      && tags.get('OperationNodeKey') === configuredNode.nodeKey;
+    if (!validTags) {
+      throw new OperationRuntimeError('Configured Black Domain compute is not tagged as the expected reusable slot node.', 503, 'OPERATION_ENVIRONMENT_INVALID');
     }
-    return { instanceId, privateIp: instance.PrivateIpAddress };
+    return {
+      nodeKey: configuredNode.nodeKey,
+      instanceId: configuredNode.instanceId,
+      privateIp: instance.PrivateIpAddress,
+    };
   });
 }
 
@@ -104,15 +126,15 @@ async function ensureEnvironmentRow(client: PoolClient, configured: ReturnType<t
      RETURNING id`,
     [
       SLOT_KEY,
-      configured.dc,
-      configured.workstation,
-      configured.operator,
+      configured.dc.instanceId,
+      configured.workstation.instanceId,
+      configured.operator.instanceId,
       dc.privateIp,
       workstation.privateIp,
       operator.privateIp,
-      DC_SNAPSHOT_ID,
-      WORKSTATION_SNAPSHOT_ID,
-      OPERATOR_SNAPSHOT_ID,
+      configured.dc.snapshotId,
+      configured.workstation.snapshotId,
+      configured.operator.snapshotId,
       stringifyPostgresJson({ region: REGION, managedBy: 'oxsig', baselineSet: 'black-domain-slot-01-2026-09-12' }),
     ],
   );
@@ -132,6 +154,10 @@ export async function provisionPreparedBlackDomainRun(args: {
 
   const configured = requireSlotConfig();
   await advanceAllPreparedEnvironmentResets(args.pool);
+  // Reconcile any previous disposable/manual EC2 cleanup before enforcing the
+  // one-lab allocation rule. This prevents a terminated stale lab row from
+  // blocking the prepared reusable slot on the next launch.
+  await reconcileOwnedLabReadModel(args.pool, args.ownerId);
   const inspected = await inspectConfiguredSlot([configured.dc, configured.workstation, configured.operator]);
   const expiresAt = new Date(Date.now() + expiryMinutes(operation.estimatedMinutes) * 60_000).toISOString();
   const client = await args.pool.connect();
@@ -277,7 +303,7 @@ export async function provisionPreparedBlackDomainRun(args: {
 
   try {
     await ec2.send(new StartInstancesCommand({
-      InstanceIds: [configured.dc, configured.workstation, configured.operator],
+      InstanceIds: [configured.dc.instanceId, configured.workstation.instanceId, configured.operator.instanceId],
     }));
     return {
       runId,

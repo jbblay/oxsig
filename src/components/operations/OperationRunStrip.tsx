@@ -33,6 +33,8 @@ type Run = {
   expiresAt: string;
   metadata: {
     domain?: string;
+    lifecycle?: string;
+    environmentSlot?: string;
     lifecycleState?: string;
     initialAccess?: { username?: string; available?: boolean };
   };
@@ -135,7 +137,11 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   };
 
   const destroy = async () => {
-    if (!window.confirm('End this Operation? Disposable machines are destroyed; reusable machines are restored to their clean baseline.')) return;
+    const prepared = run?.metadata?.lifecycle === 'prepared-environment';
+    const message = prepared
+      ? 'End this Operation and restore the reusable Black Domain environment to its clean baseline?'
+      : 'End this Operation and destroy its disposable machines?';
+    if (!window.confirm(message)) return;
     setBusy('destroy');
     try {
       const csrf = await getCsrfToken();
@@ -193,6 +199,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
 
   const initialAccess = run.metadata?.initialAccess;
   const paused = run.metadata?.lifecycleState === 'paused';
+  const prepared = run.metadata?.lifecycle === 'prepared-environment';
   const bootstrapping = run.nodes.some((node) => node.computeStatus === 'running' && node.status === 'provisioning');
   const terminalState = ['destroying', 'destroyed', 'failed'].includes(run.status);
 
@@ -200,10 +207,11 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
     <div className="mb-3 rounded-xl border bg-card/70 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Network className="h-4 w-4 text-primary" />
-        <span className="text-xs font-semibold">{compact ? 'Environment readiness' : 'Provisioned topology'}</span>
+        <span className="text-xs font-semibold">{compact ? 'Environment readiness' : prepared ? 'Reusable Black Domain environment' : 'Provisioned topology'}</span>
         <Badge variant={run.status === 'running' && !paused ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">
           {paused ? 'paused' : run.status}
         </Badge>
+        {prepared && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.environmentSlot || 'reusable slot'}</Badge>}
         {run.metadata?.domain && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.domain}</Badge>}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
           {voiceCue && (
@@ -233,7 +241,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
           )}
           {!['destroying', 'destroyed'].includes(run.status) && (
             <Button size="sm" variant="outline" className="h-7" onClick={() => void destroy()} disabled={Boolean(busy)}>
-              {busy === 'destroy' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}End &amp; destroy
+              {busy === 'destroy' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}{prepared ? 'End & reset' : 'End & destroy'}
             </Button>
           )}
         </div>
@@ -280,12 +288,16 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       )}
       {run.lastError && <p className="mt-2 text-[10px] text-destructive">{run.lastError}</p>}
       {!compact && (paused ? (
-        <p className="mt-2 text-[10px] text-muted-foreground">Operation paused. All three EC2 machines are being kept as the same environment without being destroyed. Resume when you are ready to continue.</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Operation paused. All three {prepared ? 'reusable ' : ''}EC2 machines are being kept as the same environment without being destroyed. Resume when you are ready to continue.</p>
       ) : run.status !== 'running' && !['failed', 'destroyed'].includes(run.status) ? (
         <p className="mt-2 text-[10px] text-muted-foreground">
-          {bootstrapping
-            ? 'EC2 is online. OXSIG is checking Systems Manager and guest readiness while AD DS promotion, domain join, and operator tooling finish.'
-            : 'EC2 machines are launching. OXSIG will keep the Operation in provisioning until guest readiness is verified.'}
+          {prepared
+            ? bootstrapping
+              ? 'Reusable EC2 machines are online. OXSIG is re-verifying Systems Manager, domain trust, and operator readiness.'
+              : 'Starting the existing reusable Black Domain machines. No new EC2 instances are being created.'
+            : bootstrapping
+              ? 'EC2 is online. OXSIG is checking Systems Manager and guest readiness while AD DS promotion, domain join, and operator tooling finish.'
+              : 'EC2 machines are launching. OXSIG will keep the Operation in provisioning until guest readiness is verified.'}
         </p>
       ) : null)}
     </div>

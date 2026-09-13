@@ -48,6 +48,8 @@ describe('reconcileOwnedLabReadModel', () => {
 
     const failed = await reconcileOwnedLabReadModel(pool, ownerId, { describeStates, destroyVm, now });
     expect(failed).toMatchObject({ failed: 1, reconciled: 0, skipped: false });
+    const candidateSelect = query.mock.calls.find(([sql]) => String(sql).includes('FROM lab_instances'));
+    expect(String(candidateSelect?.[0])).toContain("NOT (metadata ? 'environmentId')");
     expect(query.mock.calls.some(([sql]) => String(sql).includes('SET reconciliation_warning=$1'))).toBe(true);
     expect(query.mock.calls.some(([sql]) => String(sql).includes('runtime_observed_at=$2::timestamptz'))).toBe(false);
 

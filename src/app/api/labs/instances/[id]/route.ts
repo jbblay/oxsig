@@ -13,7 +13,8 @@ import {
 } from '@/lib/labs/aws-runtime';
 import { validateLabLifecycleAction } from '@/lib/labs/lifecycle';
 import type { LabInstanceStatus } from '@/lib/labs/types';
-import { destroyOperationRun } from '@/lib/operations/runtime';
+import { pauseOperationRun, resumeOperationRun, OperationLifecycleError } from '@/lib/operations/lifecycle';
+import { destroyOperationRun, OperationRuntimeError } from '@/lib/operations/runtime';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
@@ -53,25 +54,42 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const action = parsed.data.action;
     const externalId = instance.runtime_external_id as string;
     const operationRunId = typeof instance.metadata?.operationRunId === 'string' ? instance.metadata.operationRunId : null;
+    const operationManaged = Boolean(operationRunId && uuidSchema.safeParse(operationRunId).success);
 
     try {
-      if (action === 'destroy' && operationRunId && uuidSchema.safeParse(operationRunId).success) {
-        const operationResult = await destroyOperationRun({ pool, runId: operationRunId, ownerId: user.id });
+      if (operationManaged) {
+        // The operator lab is only the access surface for a multi-node Operation.
+        // Never start or stop that EC2 instance independently of its DC/workstation.
+        const operationResult = action === 'destroy'
+          ? await destroyOperationRun({ pool, runId: operationRunId!, ownerId: user.id })
+          : action === 'stop'
+            ? await pauseOperationRun({ pool, runId: operationRunId!, ownerId: user.id })
+            : await resumeOperationRun({ pool, runId: operationRunId!, ownerId: user.id });
+
+        const nextStatus: LabInstanceStatus = action === 'destroy'
+          ? 'destroying'
+          : action === 'stop'
+            ? 'stopping'
+            : 'provisioning';
         await pool.query(
           `INSERT INTO lab_events (lab_instance_id,event_type,payload)
-           VALUES ($1,'destroy',$2)`,
-          [id, stringifyPostgresJson({ provider: 'aws-ec2', externalId, operationRunId, wholeOperation: true })]
+           VALUES ($1,$2,$3)`,
+          [id, action, stringifyPostgresJson({ provider: 'aws-ec2', externalId, operationRunId, wholeOperation: true })]
         );
         await logAudit({
           userId: user.id,
-          action: AUDIT_ACTIONS.LAB_DESTROY,
+          action: {
+            start: AUDIT_ACTIONS.LAB_START,
+            stop: AUDIT_ACTIONS.LAB_STOP,
+            destroy: AUDIT_ACTIONS.LAB_DESTROY,
+          }[action],
           resourceType: 'operation-run',
-          resourceId: operationRunId,
+          resourceId: operationRunId!,
           ...getRequestMetadata(req),
-          metadata: { provider: 'aws-ec2', operatorLabInstanceId: id, wholeOperation: true },
+          metadata: { provider: 'aws-ec2', operatorLabInstanceId: id, lifecycleAction: action, wholeOperation: true },
         });
         return NextResponse.json({
-          instance: { ...instance, status: 'destroying' },
+          instance: { ...instance, status: nextStatus },
           operation: operationResult,
         });
       }
@@ -141,6 +159,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
       return NextResponse.json({ instance: result.rows[0] });
     } catch (error: any) {
+      if (error instanceof OperationLifecycleError || error instanceof OperationRuntimeError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
       if (error?.name === 'InvalidInstanceID.NotFound') {
         await pool.query(
           `UPDATE lab_instances

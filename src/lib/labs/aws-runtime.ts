@@ -21,6 +21,7 @@ import {
   TerminateSessionCommand,
 } from '@aws-sdk/client-ssm';
 import { awsClientConfig } from '@/lib/aws/client-config';
+import { assertDisposableInstances } from './termination-guard';
 import type { LabDefinition, LabInstanceStatus, LabOsFamily, LabRuntimeCapabilities } from './types';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
@@ -395,6 +396,7 @@ export async function stopLabVm(instanceId: string) {
 
 export async function destroyLabVm(instanceId: string) {
   assertAwsInstanceId(instanceId);
+  await assertDisposableInstances(ec2, [instanceId]);
   await ec2.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
 }
 

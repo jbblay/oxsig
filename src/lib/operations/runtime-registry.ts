@@ -7,10 +7,7 @@ import {
   type OperationMode,
   type OperationRuntimeDriver,
 } from '@/lib/operations/catalog';
-import {
-  OperationRuntimeError,
-  provisionOperationRun as provisionBlackDomainRun,
-} from '@/lib/operations/runtime';
+import { OperationRuntimeError } from '@/lib/operations/runtime';
 import { provisionPreparedBlackDomainRun } from '@/lib/operations/prepared-runtime';
 
 export { OperationRuntimeError } from '@/lib/operations/runtime';
@@ -22,11 +19,24 @@ export type OperationProvisionArgs = {
   mode: OperationMode;
 };
 
-type OperationProvisioner = (args: OperationProvisionArgs) => ReturnType<typeof provisionBlackDomainRun>;
+type OperationProvisioner = (args: OperationProvisionArgs) => ReturnType<typeof provisionPreparedBlackDomainRun>;
 
-const blackDomainProvisioner: OperationProvisioner = process.env.LAB_AWS_BLACK_DOMAIN_PREPARED === 'true'
+const preparedBlackDomainEnabled = process.env.LAB_AWS_ENABLED === 'true'
+  && process.env.LAB_AWS_BLACK_DOMAIN_PREPARED === 'true';
+
+const disabledBlackDomainProvisioner: OperationProvisioner = async () => {
+  throw new OperationRuntimeError(
+    'Black Domain is disabled until AWS labs and the prepared reusable environment are enabled for this deployment.',
+    503,
+    'OPERATION_PREPARED_ENVIRONMENT_DISABLED',
+  );
+};
+
+// Black Domain is intentionally fail-closed. If the prepared environment flag is
+// missing or false, never fall back to the legacy disposable three-instance path.
+const blackDomainProvisioner: OperationProvisioner = preparedBlackDomainEnabled
   ? provisionPreparedBlackDomainRun
-  : provisionBlackDomainRun;
+  : disabledBlackDomainProvisioner;
 
 const runtimeDrivers: Record<OperationRuntimeDriver, OperationProvisioner> = {
   'black-domain-v1': blackDomainProvisioner,

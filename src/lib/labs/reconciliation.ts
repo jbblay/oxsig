@@ -94,11 +94,15 @@ async function runReconciliation(
           AND runtime_provider='aws-ec2'
           AND runtime_external_id IS NOT NULL
           AND status <> 'destroyed'
+          AND NOT (metadata ? 'environmentId')
         ORDER BY created_at DESC
         LIMIT 20`,
       [ownerId]
     );
 
+    // Reusable Operation environments have their own reset lifecycle. Excluding
+    // rows carrying environmentId here prevents ordinary lab expiry cleanup from
+    // ever terminating a permanent prepared Operation node.
     const rows = (result.rows as ReconciliationRow[]).filter((row) => Boolean(row.runtime_external_id));
     if (rows.length === 0) {
       return {
