@@ -21,6 +21,7 @@ describe('Operation runtime registry', () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv('LAB_AWS_ENABLED', 'true');
     mocks.provisionPreparedBlackDomainRun.mockResolvedValue({
       runId: 'run-1',
       operatorLabInstanceId: 'lab-1',
@@ -53,6 +54,23 @@ describe('Operation runtime registry', () => {
 
   it('fails closed instead of falling back to disposable Black Domain instances', async () => {
     vi.stubEnv('LAB_AWS_BLACK_DOMAIN_PREPARED', 'false');
+    const { provisionRegisteredOperationRun } = await import('./runtime-registry');
+
+    await expect(provisionRegisteredOperationRun({
+      pool: {} as any,
+      ownerId: 'owner-1',
+      slug: 'black-domain',
+      mode: 'practice',
+    })).rejects.toMatchObject({
+      code: 'OPERATION_PREPARED_ENVIRONMENT_DISABLED',
+      status: 503,
+    });
+    expect(mocks.provisionPreparedBlackDomainRun).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when AWS labs are globally disabled', async () => {
+    vi.stubEnv('LAB_AWS_ENABLED', 'false');
+    vi.stubEnv('LAB_AWS_BLACK_DOMAIN_PREPARED', 'true');
     const { provisionRegisteredOperationRun } = await import('./runtime-registry');
 
     await expect(provisionRegisteredOperationRun({
