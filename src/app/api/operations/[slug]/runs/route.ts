@@ -98,8 +98,9 @@ async function preflightOperationAllocation(
   }
 
   if (slug === 'black-domain') {
-    // Pool-aware preflight: a quarantined/busy slot must not block a different
-    // available slot when Black Domain grows beyond a single prepared environment.
+    // Keep transient pool contention out of the expensive provisioning quota.
+    // A fully quarantined pool is different: the runtime registry is allowed to
+    // use the controlled disposable fallback so Black Domain remains available.
     const environment = await pool.query(
       `SELECT
          COUNT(*)::int AS total_count,
@@ -118,13 +119,7 @@ async function preflightOperationAllocation(
 
     if (total > 0 && available === 0) {
       if (maintenance === total) {
-        return NextResponse.json(
-          {
-            error: 'Black Domain is temporarily unavailable while its clean environment is being repaired.',
-            code: 'OPERATION_ENVIRONMENT_MAINTENANCE',
-          },
-          { status: 503, headers: PRIVATE_HEADERS },
-        );
+        return null;
       }
       return NextResponse.json(
         {
