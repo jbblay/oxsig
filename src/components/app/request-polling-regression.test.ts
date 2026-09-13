@@ -12,13 +12,17 @@ describe('background request polling regressions', () => {
     expect(value).not.toContain('window.setInterval');
     expect(value).toContain("subscribeWorkspaceActivity(schedule)");
     expect(value).toContain("document.addEventListener('visibilitychange'");
+    expect(value).toContain('REMOTE_PULL_COOLDOWN_MS');
+    expect(value).toContain('pullRemote: false');
   });
 
-  it('does not continuously refetch stable Cyber Lab snapshots', () => {
+  it('does not continuously refetch stable or hidden Cyber Lab snapshots', () => {
     const value = source('src/lib/labs/client.ts');
     expect(value).not.toContain('LABS_CACHE_TTL_MS');
     expect(value).toContain('snapshotNeedsProgressRefresh');
     expect(value).toContain('TRANSITIONAL_LAB_STATUSES');
+    expect(value).toContain('canRefreshProgressFromThisDocument');
+    expect(value).toContain("document.visibilityState === 'visible'");
   });
 
   it('polls ordinary lab readiness only while progress is unresolved and visible', () => {
