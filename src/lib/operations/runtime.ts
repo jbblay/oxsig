@@ -13,6 +13,7 @@ import {
 } from '@aws-sdk/client-ec2';
 import type { Pool } from 'pg';
 import { awsClientConfig } from '@/lib/aws/client-config';
+import { assertDisposableInstances } from '@/lib/labs/termination-guard';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation, type OperationMode } from '@/lib/operations/catalog';
 import { sealOperationAccessSecret } from '@/lib/operations/access-secret';
@@ -821,6 +822,7 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
   }
   const nodes = await args.pool.query(`SELECT runtime_external_id FROM operation_nodes WHERE run_id=$1 AND runtime_external_id IS NOT NULL`, [args.runId]);
   const externalIds = [...new Set(nodes.rows.map((row) => row.runtime_external_id as string).filter(Boolean))];
+  if (!run.rows[0].environment_id) await assertDisposableInstances(ec2, externalIds);
   await args.pool.query(`UPDATE operation_runs SET status='destroying',updated_at=NOW() WHERE id=$1 AND owner_id=$2`, [args.runId, args.ownerId]);
   await args.pool.query(`UPDATE operation_nodes SET status='destroying',updated_at=NOW() WHERE run_id=$1 AND status NOT IN ('destroyed','failed')`, [args.runId]);
   if (run.rows[0].operator_lab_instance_id) {
