@@ -39,14 +39,18 @@ describe('background request polling regressions', () => {
     expect(provider).toContain('/reconcile');
     expect(provider).toContain('window.setInterval');
 
-    for (const path of [
-      'src/components/operations/OperationRunStrip.tsx',
-      'src/components/operations/OperationLabRuntimePanel.tsx',
-      'src/components/operations/OperationTopologyBuild.tsx',
-    ]) {
-      const value = source(path);
-      expect(value).not.toContain('window.setInterval');
-      expect(value).not.toContain("fetch(`/api/operations/runs/${encodeURIComponent(runId)}`");
-    }
+    const strip = source('src/components/operations/OperationRunStrip.tsx');
+    const runtime = source('src/components/operations/OperationLabRuntimePanel.tsx');
+    const topology = source('src/components/operations/OperationTopologyBuild.tsx');
+
+    // Strip still owns explicit learner writes (pause/resume/end), but none of
+    // the mounted views may own their own read/polling interval anymore.
+    expect(strip).not.toContain('window.setInterval');
+    expect(runtime).not.toContain('window.setInterval');
+    expect(topology).not.toContain('window.setInterval');
+    expect(runtime).not.toContain('fetch(`/api/operations/runs/');
+    expect(topology).not.toContain('fetch(`/api/operations/runs/');
+    expect(runtime).toContain('useOperationRun()');
+    expect(topology).toContain('useOperationRun()');
   });
 });
