@@ -61,6 +61,12 @@ function environmentNodes(row: EnvironmentRow) {
   ];
 }
 
+async function stopEnvironmentNodesBestEffort(row: EnvironmentRow) {
+  const instanceIds = environmentNodes(row).map((node) => node.instanceId);
+  if (!instanceIds.length) return;
+  await ec2.send(new StopInstancesCommand({ InstanceIds: instanceIds })).catch(() => undefined);
+}
+
 async function failReset(pool: Pool, environmentId: string, error: unknown) {
   const message = error instanceof Error ? error.message.slice(0, 800) : 'Prepared environment reset failed.';
   await pool.query(
@@ -89,6 +95,10 @@ export async function beginPreparedEnvironmentReset(args: { pool: Pool; environm
   try {
     await ec2.send(new StartInstancesCommand({ InstanceIds: nodes.map((node) => node.instanceId) }));
   } catch (error) {
+    // A multi-instance start may partially succeed. Never leave a failed reusable
+    // reset consuming compute indefinitely; the next repair attempt can start all
+    // nodes again from a known stopped baseline.
+    await stopEnvironmentNodesBestEffort(row);
     await failReset(args.pool, args.environmentId, error);
     throw error;
   }
@@ -233,6 +243,10 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
 
     throw new Error(`Unknown prepared environment reset phase: ${phase}`);
   } catch (error) {
+    // Reset failures are terminal for this attempt. Best-effort stop the reusable
+    // compute before persisting the failure so authorization/provider regressions
+    // cannot leave three paid instances running indefinitely.
+    await stopEnvironmentNodesBestEffort(row);
     await failReset(args.pool, row.id, error);
     return {
       environmentId: row.id,
@@ -242,7 +256,6 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
     };
   }
 }
-
 
 export async function advanceAllPreparedEnvironmentResets(pool: Pool) {
   const rows = await pool.query(
