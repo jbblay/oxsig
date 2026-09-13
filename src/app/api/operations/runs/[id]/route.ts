@@ -12,7 +12,8 @@ import {
   OperationLifecycleError,
   type OperationLifecycleProgress,
 } from '@/lib/operations/lifecycle';
-import { destroyOperationRun, getOperationRun, OperationRuntimeError } from '@/lib/operations/runtime';
+import { destroyOperationRun, OperationRuntimeError } from '@/lib/operations/runtime';
+import { getLearnerOperationRun } from '@/lib/operations/run-view';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
@@ -20,7 +21,7 @@ const idSchema = z.string().uuid();
 const actionSchema = z.object({ action: z.enum(['pause', 'resume']) }).strict();
 const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Pragma: 'no-cache' };
 
-type OperationRunView = Awaited<ReturnType<typeof getOperationRun>>;
+type OperationRunView = Awaited<ReturnType<typeof getLearnerOperationRun>>;
 
 function errorResponse(error: unknown) {
   if (error instanceof OperationRuntimeError || error instanceof OperationLifecycleError) {
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'Invalid Operation run' }, { status: 400, headers: PRIVATE_HEADERS });
     try {
       const pool = getPool();
-      const run = await getOperationRun({ pool, runId: id, ownerId: user.id });
+      const run = await getLearnerOperationRun({ pool, runId: id, ownerId: user.id });
       const lifecycle = await readLifecycleProgress(pool, run, user.id);
       return NextResponse.json({ run, lifecycle }, { headers: PRIVATE_HEADERS });
     } catch (error) {
@@ -83,7 +84,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         metadata: { lifecycleAction: parsed.data.action, wholeOperation: true },
       });
 
-      const run = await getOperationRun({ pool, runId: id, ownerId: user.id });
+      const run = await getLearnerOperationRun({ pool, runId: id, ownerId: user.id });
       const lifecycle = await readLifecycleProgress(pool, run, user.id);
       return NextResponse.json({ ...result, run, lifecycle }, { headers: PRIVATE_HEADERS });
     } catch (error) {
