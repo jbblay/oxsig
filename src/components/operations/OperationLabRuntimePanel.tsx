@@ -131,8 +131,6 @@ export function OperationLabRuntimePanel({
     setRefreshError(false);
     defaultDesktopOpenedForRun.current = null;
     void refresh();
-    const timer = window.setInterval(() => void refresh(true), 5_000);
-    return () => window.clearInterval(timer);
   }, [refresh]);
 
   const paused = run?.metadata?.lifecycleState === 'paused';
@@ -143,8 +141,25 @@ export function OperationLabRuntimePanel({
     && run.nodes.length > 0
     && run.nodes.every((node) => node.status === 'running')
   );
+  const terminalState = Boolean(run && ['failed', 'destroying', 'destroyed'].includes(run.status));
+  const needsProgressPolling = Boolean(run && !paused && !allReady && !terminalState);
   const selected = (run?.id === runId ? run : null)?.nodes.find((node) => node.id === selectedId) || null;
   const selectedMode = selected ? accessModes[selected.id] || null : null;
+
+  React.useEffect(() => {
+    if (!needsProgressPolling) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    }, 5_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [needsProgressPolling, refresh]);
 
   const openAccess = React.useCallback((node: RunNode, mode: AccessMode) => {
     if (mode === 'desktop' && !isWindows(node)) return;
