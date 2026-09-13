@@ -9,6 +9,7 @@ import {
 } from '@/lib/labs/aws-runtime';
 import { listExpiredTaggedOperationNodes } from '@/lib/operations/cleanup';
 import { advanceAllPreparedEnvironmentResets } from '@/lib/operations/environment-reset';
+import { destroyOperationRun } from '@/lib/operations/runtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,7 +39,7 @@ function isMissingInstance(error: unknown): boolean {
     'name' in error && (error as { name?: string }).name === 'InvalidInstanceID.NotFound';
 }
 
-async function reconcileOperationRuns(client: { query: (sql: string, params?: unknown[]) => Promise<any> }) {
+async function reconcileDisposableOperationRuns(client: { query: (sql: string, params?: unknown[]) => Promise<any> }) {
   return client.query(
     `UPDATE operation_runs run
         SET status = CASE
@@ -54,6 +55,7 @@ async function reconcileOperationRuns(client: { query: (sql: string, params?: un
             END,
             updated_at=NOW()
       WHERE run.expires_at <= NOW()
+        AND run.environment_id IS NULL
         AND run.status NOT IN ('destroyed','failed')
         AND EXISTS (SELECT 1 FROM operation_nodes node WHERE node.run_id=run.id)
       RETURNING id,status`
@@ -299,11 +301,37 @@ export async function GET(request: NextRequest) {
       operationNodesReconciled += result.rowCount || 0;
     }
 
-    const operationRuns = await reconcileOperationRuns(client);
+    // Prepared Operations must never enter the generic terminate-on-expiry path.
+    // Expiry performs the same whole-Operation end action as the UI, which starts
+    // the coordinated baseline reset for the reusable environment.
+    const expiredPreparedRuns = await client.query(
+      `SELECT id::text AS id,owner_id::text AS owner_id
+         FROM operation_runs
+        WHERE expires_at <= NOW()
+          AND environment_id IS NOT NULL
+          AND status NOT IN ('destroyed','failed')
+        ORDER BY expires_at ASC
+        LIMIT 20`
+    );
+    let preparedResetsRequested = 0;
+    const preparedResetFailures: Array<{ runId: string; error: string }> = [];
+    for (const row of expiredPreparedRuns.rows) {
+      try {
+        await destroyOperationRun({ pool, runId: row.id, ownerId: row.owner_id });
+        preparedResetsRequested += 1;
+      } catch (error) {
+        preparedResetFailures.push({
+          runId: row.id,
+          error: error instanceof Error ? error.message.slice(0, 500) : 'Prepared Operation expiry reset failed',
+        });
+      }
+    }
+
+    const operationRuns = await reconcileDisposableOperationRuns(client);
     const environmentResets = await advanceAllPreparedEnvironmentResets(pool);
 
     return NextResponse.json({
-      ok: failures.length === 0,
+      ok: failures.length === 0 && preparedResetFailures.length === 0,
       checkedAt: now.toISOString(),
       databaseExpired: dbExpiredLabs.rowCount || 0,
       awsTaggedExpired: awsExpiredLabs.length,
@@ -316,12 +344,15 @@ export async function GET(request: NextRequest) {
       labsReconciled,
       operationNodesReconciled,
       operationRunsReconciled: operationRuns.rowCount || 0,
+      preparedExpiredRuns: expiredPreparedRuns.rowCount || 0,
+      preparedResetsRequested,
+      preparedResetFailures,
       environmentResets,
       eventsWritten,
       expiredWithoutRuntime,
       operationNodesWithoutRuntime,
       failures,
-    }, { status: failures.length === 0 ? 200 : 207 });
+    }, { status: failures.length === 0 && preparedResetFailures.length === 0 ? 200 : 207 });
   } finally {
     if (lockAcquired) {
       try {
