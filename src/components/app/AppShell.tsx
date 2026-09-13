@@ -4,6 +4,7 @@ import * as React from 'react';
 import { usePathname } from 'next/navigation';
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
 import { useAuth } from '@/lib/auth/use-auth';
+import { invalidateLabsSnapshot } from '@/lib/labs/client';
 import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
@@ -32,7 +33,7 @@ function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, sessionIdentityId } = useAuth();
   const bare = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up') || pathname.startsWith('/explore');
   const workspaceKind = workspaceKindFor(pathname);
   const contentMode = contentModeFor(workspaceKind);
@@ -42,7 +43,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [layoutReady, setLayoutReady] = React.useState(false);
   const lastRecordedPathRef = React.useRef<string | null>(null);
+  const labCacheIdentityRef = React.useRef<string | null>(null);
   const closeMobileNav = React.useCallback(() => setMobileNavOpen(false), []);
+
+  React.useLayoutEffect(() => {
+    const scope = isAuthenticated ? sessionIdentityId || 'authenticated-pending' : 'guest';
+    if (labCacheIdentityRef.current === scope) return;
+    labCacheIdentityRef.current = scope;
+    invalidateLabsSnapshot();
+  }, [isAuthenticated, sessionIdentityId]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;

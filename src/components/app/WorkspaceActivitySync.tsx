@@ -96,21 +96,23 @@ export default function WorkspaceActivitySync() {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(() => void sync(), 700);
     };
-    const onFocus = () => void sync();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void sync();
+    };
     const onOnline = () => void sync();
 
     void sync();
     const unsubscribe = subscribeWorkspaceActivity(schedule);
-    const interval = window.setInterval(() => void sync(), 60_000);
-    window.addEventListener('focus', onFocus);
+    window.addEventListener('focus', refreshWhenVisible);
     window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
 
     return () => {
       unsubscribe();
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      window.clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('focus', refreshWhenVisible);
       window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [isAuthenticated, isLoading, sessionIdentityId, sync]);
 

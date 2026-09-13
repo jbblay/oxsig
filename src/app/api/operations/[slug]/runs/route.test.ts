@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   validateCsrfToken: vi.fn(),
   checkRateLimit: vi.fn(),
   getPool: vi.fn(),
+  poolQuery: vi.fn(),
   provisionRegisteredOperationRun: vi.fn(),
 }));
 
@@ -23,6 +24,7 @@ vi.mock('@/lib/operations/runtime-registry', () => ({
 import { POST } from './route';
 
 const user = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', clerkUserId: 'clerk-user', role: 'user' as const };
+const pool = { query: mocks.poolQuery };
 
 function request(body: unknown) {
   return new NextRequest('http://localhost/api/operations/black-domain/runs', {
@@ -38,7 +40,8 @@ describe('Operation provisioning API', () => {
     mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
-    mocks.getPool.mockReturnValue({});
+    mocks.poolQuery.mockResolvedValue({ rows: [] });
+    mocks.getPool.mockReturnValue(pool);
     mocks.provisionRegisteredOperationRun.mockResolvedValue({
       runId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       operatorLabInstanceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
@@ -47,17 +50,70 @@ describe('Operation provisioning API', () => {
     });
   });
 
-  it('starts the requested registered Operation mode', async () => {
+  it('starts the requested registered Operation mode after preflight', async () => {
     const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
     expect(response.status).toBe(201);
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
     expect(mocks.provisionRegisteredOperationRun).toHaveBeenCalledWith({
-      pool: expect.anything(), ownerId: user.id, slug: 'black-domain', mode: 'practice',
+      pool, ownerId: user.id, slug: 'black-domain', mode: 'practice',
     });
+  });
+
+  it('returns the matching active run without consuming provisioning quota', async () => {
+    mocks.poolQuery.mockResolvedValueOnce({
+      rows: [{
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        operation_slug: 'black-domain',
+        mode: 'practice',
+        status: 'running',
+        operator_lab_instance_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        environment_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        expires_at: '2099-01-01T00:00:00.000Z',
+      }],
+    });
+
+    const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ reused: true, run: { runId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', status: 'running' } });
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
+  });
+
+  it('rejects an occupied Cyber Lab slot before consuming provisioning quota', async () => {
+    mocks.poolQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'lab-1' }] });
+
+    const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe('OPERATION_LAB_SLOT_OCCUPIED');
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
+  });
+
+  it('rejects a resetting prepared environment before consuming provisioning quota', async () => {
+    mocks.poolQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ status: 'resetting' }] });
+
+    const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe('OPERATION_ENVIRONMENT_BUSY');
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported modes before provisioning', async () => {
     const response = await POST(request({ mode: 'root-everything' }), { params: Promise.resolve({ slug: 'black-domain' }) });
     expect(response.status).toBe(400);
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
     expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
   });
 
@@ -65,6 +121,7 @@ describe('Operation provisioning API', () => {
     mocks.validateCsrfToken.mockResolvedValue(false);
     const response = await POST(request({ mode: 'challenge' }), { params: Promise.resolve({ slug: 'black-domain' }) });
     expect(response.status).toBe(403);
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
     expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
   });
 });

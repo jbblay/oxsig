@@ -10,7 +10,7 @@ vi.mock('@/lib/security/csrf-client', () => ({
 
 import { getLabsSnapshot, invalidateLabsSnapshot, reconcileLabsStatus } from './client';
 
-function labsResponse(id: string, status = 200) {
+function labsResponse(id: string, status = 200, instanceStatus = 'running') {
   return new Response(JSON.stringify({
     catalog: [],
     capabilities: { provider: 'unconfigured', configured: false, supportsContainers: false, supportsVMs: false, supportsTerminal: false, supportsReset: false },
@@ -18,7 +18,7 @@ function labsResponse(id: string, status = 200) {
       id,
       slug: 'ubuntu',
       name: 'Ubuntu',
-      status: 'running',
+      status: instanceStatus,
       createdAt: '2026-09-05T00:00:00.000Z',
       expiresAt: '2026-09-05T01:00:00.000Z',
       observedAt: '2026-09-05T00:00:05.000Z',
@@ -50,12 +50,23 @@ describe('labs client cache', () => {
     vi.useRealTimers();
   });
 
-  it('reuses a short-lived successful snapshot', async () => {
+  it('reuses a stable successful snapshot until it is explicitly invalidated', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(labsResponse('lab-1'));
 
     await expect(getLabsSnapshot()).resolves.toMatchObject({ ok: true, data: { instances: [{ id: 'lab-1' }] } });
     await expect(getLabsSnapshot()).resolves.toMatchObject({ ok: true, data: { instances: [{ id: 'lab-1' }] } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads transitional snapshots so lifecycle progress can advance', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(labsResponse('lab-1', 200, 'provisioning'))
+      .mockResolvedValueOnce(labsResponse('lab-1', 200, 'running'));
+
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'provisioning' }] } });
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'running' }] } });
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'running' }] } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('coalesces concurrent reads into one network request', async () => {

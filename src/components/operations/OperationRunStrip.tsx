@@ -62,9 +62,12 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   const [voiceEnabled, setVoiceEnabled] = React.useState(false);
   const lastVoiceStageRef = React.useRef<string | null>(null);
   const voiceErrorStageRef = React.useRef<string | null>(null);
+  const refreshInFlight = React.useRef(false);
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
 
   const refresh = React.useCallback(async (quiet = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
     if (!quiet) setLoading(true);
     try {
       const response = await fetch(`/api/operations/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
@@ -75,11 +78,13 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
     } catch (error) {
       if (!quiet) toast.error(error instanceof Error ? error.message : 'Could not load Operation runtime');
     } finally {
+      refreshInFlight.current = false;
       if (!quiet) setLoading(false);
     }
   }, [runId]);
 
   React.useEffect(() => {
+    setRun(null);
     setRevealedAccess(null);
     setLifecycle(null);
     setVoiceEnabled(false);
@@ -87,9 +92,43 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
     voiceErrorStageRef.current = null;
     stopVoice();
     void refresh();
-    const timer = window.setInterval(() => void refresh(true), 5_000);
-    return () => window.clearInterval(timer);
   }, [refresh, stopVoice]);
+
+  const pauseRequested = run?.metadata?.lifecycleState === 'paused';
+  const pausing = Boolean(run && pauseRequested && lifecycle?.phase !== 'paused');
+  const paused = Boolean(run && pauseRequested && lifecycle?.phase === 'paused');
+  const terminalState = Boolean(run && ['destroying', 'destroyed', 'failed'].includes(run.status));
+  const allReady = Boolean(
+    run
+    && run.status === 'running'
+    && run.nodes.length > 0
+    && run.nodes.every((node) => node.status === 'running')
+  );
+  const needsProgressPolling = Boolean(
+    run
+    && !terminalState
+    && (pausing || (!pauseRequested && !allReady))
+  );
+
+  React.useEffect(() => {
+    if (!needsProgressPolling) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [needsProgressPolling, refresh]);
+
+  React.useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [refresh]);
 
   const voiceCue = React.useMemo(() => run ? operationLifecycleVoiceCue(run) : null, [run]);
 
@@ -203,12 +242,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   if (!run) return null;
 
   const initialAccess = run.metadata?.initialAccess;
-  const pauseRequested = run.metadata?.lifecycleState === 'paused';
-  const pausing = pauseRequested && lifecycle?.phase !== 'paused';
-  const paused = pauseRequested && lifecycle?.phase === 'paused';
   const prepared = run.metadata?.lifecycle === 'prepared-environment';
-  const terminalState = ['destroying', 'destroyed', 'failed'].includes(run.status);
-  const allReady = run.status === 'running' && run.nodes.length > 0 && run.nodes.every((node) => node.status === 'running');
   const showProgress = compact || pausing || (!pauseRequested && !allReady && !terminalState);
   const visibleStatus = pausing ? 'pausing' : paused ? 'paused' : run.status === 'provisioning' ? 'starting' : run.status;
 
