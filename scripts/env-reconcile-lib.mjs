@@ -20,6 +20,7 @@ export const PRODUCTION_REPLACE_KEYS = new Set([
   'OXSIG_APP_HOST',
   'CRON_SECRET',
   'OXSIG_TERMINAL_BRIDGE_SECRET',
+  'LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD',
 ]);
 
 export const LOCAL_REQUIRED_KEYS = [
@@ -42,8 +43,18 @@ export const LAB_REQUIRED_KEYS = [
   'LAB_AWS_REGION',
   'LAB_AWS_SUBNET_ID',
   'LAB_AWS_SECURITY_GROUP_ID',
-  'LAB_AWS_OPERATION_SECURITY_GROUP_ID',
   'LAB_AWS_INSTANCE_PROFILE',
+];
+
+export const PREPARED_BLACK_DOMAIN_REQUIRED_KEYS = [
+  'LAB_AWS_BLACK_DOMAIN_SLOT_KEY',
+  'LAB_AWS_BLACK_DOMAIN_DC_INSTANCE_ID',
+  'LAB_AWS_BLACK_DOMAIN_WORKSTATION_INSTANCE_ID',
+  'LAB_AWS_BLACK_DOMAIN_OPERATOR_INSTANCE_ID',
+  'LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID',
+  'LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID',
+  'LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID',
+  'LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD',
 ];
 
 function assignment(line, { includeCommented = false } = {}) {
@@ -184,7 +195,13 @@ export function validateEnvironment(values, { production = false } = {}) {
       if (!isConfigured(values, key) && !errors.includes(key)) errors.push(key);
     }
   }
-  return { errors, labsEnabled };
+  const preparedBlackDomainEnabled = values.get('LAB_AWS_BLACK_DOMAIN_PREPARED')?.value?.trim().toLowerCase() === 'true';
+  if (preparedBlackDomainEnabled) {
+    for (const key of PREPARED_BLACK_DOMAIN_REQUIRED_KEYS) {
+      if (!isConfigured(values, key) && !errors.includes(key)) errors.push(key);
+    }
+  }
+  return { errors, labsEnabled, preparedBlackDomainEnabled };
 }
 
 async function readOptional(path) {
