@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 export const LOCAL_ONLY_KEYS = new Set([
   'AWS_PROFILE',
   'OXSIG_TEST_RESET_ENABLED',
+  'LAB_AWS_OPERATION_SECURITY_GROUP_ID',
+  'LAB_AWS_OPERATION_PUBLIC_IP',
+  'LAB_AWS_OPERATION_LINUX_INSTANCE_TYPE',
+  'LAB_AWS_OPERATION_WINDOWS_INSTANCE_TYPE',
 ]);
 
 // These values must be chosen explicitly for production. Reusing a local value
