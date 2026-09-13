@@ -149,6 +149,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         req,
         { maxRequests: 4, windowMs: 60 * 60_000 },
         `${user.id}:operation:${slug}`,
+        `operation-provision:${slug}:v2`,
       );
       if (rateLimit) return rateLimit;
 
