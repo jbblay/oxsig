@@ -108,6 +108,15 @@ async function preflightOperationAllocation(
       [slug],
     );
     const environmentStatus = environment.rows[0]?.status as string | undefined;
+    if (environmentStatus === 'failed') {
+      return NextResponse.json(
+        {
+          error: 'Black Domain is temporarily unavailable while its clean environment is being repaired.',
+          code: 'OPERATION_ENVIRONMENT_FAILED',
+        },
+        { status: 503, headers: PRIVATE_HEADERS },
+      );
+    }
     if (environmentStatus) {
       return NextResponse.json(
         {
