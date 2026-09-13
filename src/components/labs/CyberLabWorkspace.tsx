@@ -165,11 +165,7 @@ export default function CyberLabWorkspace({
       </div>
 
       {operation && operationSlug && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-3 py-2 shadow-sm">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold">{learningFocus ? `Adaptive Instructor · ${learningFocus.capabilityTitle}` : 'Adaptive learning workspace'}</p>
-            <p className="text-[10px] text-muted-foreground">{learningFocus ? `Instructor guidance is constrained to this capability and its live Operation evidence target.` : 'Ask concepts before starting a machine, learn with voice and diagrams, or connect the same Instructor to live Operation evidence.'}</p>
-          </div>
+        <div className="mb-3 flex justify-end">
           <OperationAiInstructor
             runId={operationAiContext?.runId || operationRunId || null}
             operationSlug={operationSlug}
