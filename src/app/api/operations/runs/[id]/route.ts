@@ -13,7 +13,7 @@ import {
   type OperationLifecycleProgress,
 } from '@/lib/operations/lifecycle';
 import { destroyOperationRun, OperationRuntimeError } from '@/lib/operations/runtime';
-import { getLearnerOperationRun } from '@/lib/operations/run-view';
+import { getLearnerOperationRun, OperationRunReadError } from '@/lib/operations/run-view';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
@@ -24,7 +24,7 @@ const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Pragm
 type OperationRunView = Awaited<ReturnType<typeof getLearnerOperationRun>>;
 
 function errorResponse(error: unknown) {
-  if (error instanceof OperationRuntimeError || error instanceof OperationLifecycleError) {
+  if (error instanceof OperationRuntimeError || error instanceof OperationLifecycleError || error instanceof OperationRunReadError) {
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: PRIVATE_HEADERS });
   }
   console.error('Operation run request failed:', error);
@@ -36,8 +36,8 @@ async function readLifecycleProgress(pool: Pool, run: OperationRunView, ownerId:
   try {
     return await getOperationLifecycleProgress({ pool, runId: run.id, ownerId });
   } catch (error) {
-    // Fail closed for the learner controls. If provider state cannot be confirmed,
-    // keep Resume disabled instead of exposing a button that can race EC2 stopping.
+    // Fail closed for learner controls. A control-plane action may confirm EC2
+    // state, but ordinary GET requests never invoke this helper.
     console.error('Operation lifecycle progress check failed:', error);
     return { phase: 'pausing', total: run.nodes.length, stopped: 0, nodeStates: {} };
   }
@@ -48,10 +48,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'Invalid Operation run' }, { status: 400, headers: PRIVATE_HEADERS });
     try {
-      const pool = getPool();
-      const run = await getLearnerOperationRun({ pool, runId: id, ownerId: user.id });
-      const lifecycle = await readLifecycleProgress(pool, run, user.id);
-      return NextResponse.json({ run, lifecycle }, { headers: PRIVATE_HEADERS });
+      const run = await getLearnerOperationRun({ pool: getPool(), runId: id, ownerId: user.id });
+      // The learner read model is database-only. Transitional AWS reconciliation
+      // is an explicit POST handled by /reconcile and owned by one client source.
+      return NextResponse.json({ run, lifecycle: null }, { headers: PRIVATE_HEADERS });
     } catch (error) {
       return errorResponse(error);
     }
