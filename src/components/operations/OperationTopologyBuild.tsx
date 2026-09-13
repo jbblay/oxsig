@@ -43,8 +43,11 @@ function nodePurpose(node: RunNode) {
 export default function OperationTopologyBuild({ runId }: { runId: string }) {
   const [run, setRun] = React.useState<Run | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const refreshInFlight = React.useRef(false);
 
   const refresh = React.useCallback(async (quiet = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
     if (!quiet) setLoading(true);
     try {
       const response = await fetch(`/api/operations/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
@@ -54,22 +57,45 @@ export default function OperationTopologyBuild({ runId }: { runId: string }) {
     } catch (error) {
       if (!quiet) toast.error(error instanceof Error ? error.message : 'Could not load the Operation topology');
     } finally {
+      refreshInFlight.current = false;
       if (!quiet) setLoading(false);
     }
   }, [runId]);
 
   React.useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(true), 5000);
-    return () => window.clearInterval(timer);
   }, [refresh]);
+
+  const paused = run?.metadata?.lifecycleState === 'paused';
+  const allReady = Boolean(
+    run
+    && run.status === 'running'
+    && run.nodes.length > 0
+    && run.nodes.every((node) => node.status === 'running')
+  );
+  const terminalState = Boolean(run && ['failed', 'destroying', 'destroyed'].includes(run.status));
+  const needsProgressPolling = Boolean(run && !paused && !allReady && !terminalState);
+
+  React.useEffect(() => {
+    if (!needsProgressPolling) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    }, 5_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [needsProgressPolling, refresh]);
 
   if (loading && !run) {
     return <div className="flex min-h-[50vh] items-center justify-center rounded-xl border"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
   if (!run) return null;
 
-  const paused = run.metadata?.lifecycleState === 'paused';
   const ordered = [
     run.nodes.find((node) => node.role === 'operator'),
     run.nodes.find((node) => node.role === 'target'),
@@ -99,7 +125,7 @@ export default function OperationTopologyBuild({ runId }: { runId: string }) {
                 <div className="flex items-center gap-2">
                   {node.role === 'operator' ? <Terminal className="h-4 w-4" /> : <Server className="h-4 w-4" />}
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">{node.label}</span>
-                  <Badge variant={node.status === 'running' && !paused ? 'default' : 'outline'} className="text-[9px]">{statusLabel(node, paused)}</Badge>
+                  <Badge variant={node.status === 'running' && !paused ? 'default' : 'outline'} className="text-[9px]">{statusLabel(node, Boolean(paused))}</Badge>
                 </div>
                 <p className="mt-2 text-xs capitalize text-muted-foreground">{node.osFamily} · {node.role}</p>
                 <p className="mt-1 font-mono text-[10px] text-muted-foreground">{node.privateIp || 'IP pending'}</p>
