@@ -59,6 +59,10 @@ function snapshotNeedsProgressRefresh(result: LabsSnapshotResult | null): boolea
   return (result.data.instances || []).some((instance) => TRANSITIONAL_LAB_STATUSES.has(instance.status));
 }
 
+function canRefreshProgressFromThisDocument(): boolean {
+  return typeof document === 'undefined' || document.visibilityState === 'visible';
+}
+
 async function requestLabsSnapshot(requestGeneration: number): Promise<LabsSnapshotResult> {
   const response = await fetch(LABS_ENDPOINT, {
     cache: 'no-store',
@@ -113,16 +117,18 @@ export async function reconcileLabsStatus(): Promise<LabsReconciliationResult> {
 
 export async function getLabsSnapshot(options: { force?: boolean } = {}): Promise<LabsSnapshotResult> {
   // Stable snapshots are event-driven: keep them until an explicit invalidation or
-  // refresh. Transitional snapshots are intentionally re-read so lifecycle progress
-  // remains live without a permanent heartbeat when nothing is changing.
+  // refresh. Transitional snapshots may refresh only while the document is visible.
+  // Hidden/mobile-background tabs must never turn browser timer throttling into a
+  // minute-by-minute API heartbeat.
   if (options.force) {
     try {
       await reconcileLabsStatus();
     } catch {
       // Provider/network refresh failure must never hide the persisted read model.
     }
-  } else if (cachedResult && !snapshotNeedsProgressRefresh(cachedResult)) {
-    return cachedResult;
+  } else if (cachedResult) {
+    const needsProgress = snapshotNeedsProgressRefresh(cachedResult);
+    if (!needsProgress || !canRefreshProgressFromThisDocument()) return cachedResult;
   }
 
   if (inFlight) return inFlight;

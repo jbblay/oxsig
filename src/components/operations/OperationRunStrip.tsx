@@ -6,129 +6,47 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RuntimeProgress } from '@/components/warroom/RuntimeProgress';
+import { OperationRunProvider, useOperationRun, useOptionalOperationRun } from '@/components/operations/OperationRunProvider';
 import { operationLifecycleVoiceCue } from '@/lib/operations/lifecycle-voice';
 import { finishReusableEnvironmentReset } from '@/lib/operations/reset-client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import { useOxsigVoicePlayback } from '@/lib/voice/use-voice-playback';
 
-type RunNode = {
-  id: string;
-  key: string;
-  label: string;
-  role: 'operator' | 'target' | 'infrastructure';
-  osFamily: string;
-  status: string;
-  computeStatus?: string;
-  readiness?: string;
-  privateIp: string | null;
-  labInstanceId: string | null;
-  lastError: string | null;
-};
-
-type Run = {
-  id: string;
-  operationSlug: string;
-  mode: string;
-  status: string;
-  expiresAt: string;
-  metadata: {
-    domain?: string;
-    lifecycle?: string;
-    environmentSlot?: string;
-    lifecycleState?: string;
-    initialAccess?: { username?: string; available?: boolean };
-  };
-  lastError: string | null;
-  nodes: RunNode[];
-};
-
-type LifecycleProgress = {
-  phase: 'active' | 'ready' | 'pausing' | 'paused';
-  total: number;
-  stopped: number;
-  nodeStates: Record<string, string>;
-} | null;
-
 type RevealedAccess = { username: string; password: string };
 type BusyAction = 'pause' | 'resume' | 'destroy' | null;
 
-export function OperationRunStrip({ runId, compact = false }: { runId: string; compact?: boolean }) {
-  const [run, setRun] = React.useState<Run | null>(null);
-  const [lifecycle, setLifecycle] = React.useState<LifecycleProgress>(null);
-  const [loading, setLoading] = React.useState(true);
+function OperationRunStripContent({ compact = false }: { compact?: boolean }) {
+  const {
+    runId,
+    run,
+    lifecycle,
+    loading,
+    refreshError,
+    allReady,
+    paused,
+    terminalState,
+    needsProgressPolling,
+    refresh,
+    applyPayload,
+  } = useOperationRun();
   const [busy, setBusy] = React.useState<BusyAction>(null);
   const [revealingAccess, setRevealingAccess] = React.useState(false);
   const [revealedAccess, setRevealedAccess] = React.useState<RevealedAccess | null>(null);
   const [voiceEnabled, setVoiceEnabled] = React.useState(false);
   const lastVoiceStageRef = React.useRef<string | null>(null);
   const voiceErrorStageRef = React.useRef<string | null>(null);
-  const refreshInFlight = React.useRef(false);
   const { speakingKey, play: playVoice, stop: stopVoice } = useOxsigVoicePlayback();
 
-  const refresh = React.useCallback(async (quiet = false) => {
-    if (refreshInFlight.current) return;
-    refreshInFlight.current = true;
-    if (!quiet) setLoading(true);
-    try {
-      const response = await fetch(`/api/operations/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body?.error || 'Could not load Operation runtime');
-      setRun(body.run as Run);
-      setLifecycle((body.lifecycle || null) as LifecycleProgress);
-    } catch (error) {
-      if (!quiet) toast.error(error instanceof Error ? error.message : 'Could not load Operation runtime');
-    } finally {
-      refreshInFlight.current = false;
-      if (!quiet) setLoading(false);
-    }
-  }, [runId]);
-
   React.useEffect(() => {
-    setRun(null);
     setRevealedAccess(null);
-    setLifecycle(null);
     setVoiceEnabled(false);
     lastVoiceStageRef.current = null;
     voiceErrorStageRef.current = null;
     stopVoice();
-    void refresh();
-  }, [refresh, stopVoice]);
+  }, [runId, stopVoice]);
 
   const pauseRequested = run?.metadata?.lifecycleState === 'paused';
   const pausing = Boolean(run && pauseRequested && lifecycle?.phase !== 'paused');
-  const paused = Boolean(run && pauseRequested && lifecycle?.phase === 'paused');
-  const terminalState = Boolean(run && ['destroying', 'destroyed', 'failed'].includes(run.status));
-  const allReady = Boolean(
-    run
-    && run.status === 'running'
-    && run.nodes.length > 0
-    && run.nodes.every((node) => node.status === 'running')
-  );
-  const needsProgressPolling = Boolean(
-    run
-    && !terminalState
-    && (pausing || (!pauseRequested && !allReady))
-  );
-
-  React.useEffect(() => {
-    if (!needsProgressPolling) return;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh(true);
-    }, 5_000);
-    return () => window.clearInterval(timer);
-  }, [needsProgressPolling, refresh]);
-
-  React.useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void refresh(true);
-    };
-    window.addEventListener('focus', refreshWhenVisible);
-    document.addEventListener('visibilitychange', refreshWhenVisible);
-    return () => {
-      window.removeEventListener('focus', refreshWhenVisible);
-      document.removeEventListener('visibilitychange', refreshWhenVisible);
-    };
-  }, [refresh]);
 
   const voiceCue = React.useMemo(() => run ? operationLifecycleVoiceCue(run) : null, [run]);
 
@@ -167,12 +85,8 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       if (!response.ok) throw new Error(body?.error || `Could not ${action} Operation`);
       toast.success(action === 'pause' ? 'Pausing Operation.' : 'Resuming Operation.');
       setRevealedAccess(null);
-      if (body.run) {
-        setRun(body.run as Run);
-        setLifecycle((body.lifecycle || null) as LifecycleProgress);
-      } else {
-        await refresh(true);
-      }
+      if (body.run) applyPayload(body);
+      else await refresh({ quiet: true, reconcile: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not ${action} Operation`);
     } finally {
@@ -207,9 +121,10 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       } else {
         toast.success('Operation ending.');
       }
-      await refresh(true);
+      await refresh({ quiet: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not end Operation');
+      await refresh({ quiet: true }).catch(() => undefined);
     } finally {
       setBusy(null);
     }
@@ -239,7 +154,14 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   if (loading && !run) {
     return <div className="mb-3 flex min-h-14 items-center justify-center rounded-xl border text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting Operation…</div>;
   }
-  if (!run) return null;
+  if (!run) {
+    return (
+      <div className="mb-3 flex min-h-14 items-center justify-between rounded-xl border px-3 text-xs text-muted-foreground">
+        <span>{refreshError || 'Operation runtime is temporarily unavailable.'}</span>
+        <Button size="sm" variant="ghost" onClick={() => void refresh()}>Retry</Button>
+      </div>
+    );
+  }
 
   const initialAccess = run.metadata?.initialAccess;
   const prepared = run.metadata?.lifecycle === 'prepared-environment';
@@ -266,7 +188,16 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
               {voiceEnabled ? 'Voice on' : 'Voice'}
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="h-7 px-2" aria-label="Refresh environment status" onClick={() => void refresh()} disabled={loading || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2"
+            aria-label="Refresh environment status"
+            onClick={() => void refresh({ reconcile: needsProgressPolling })}
+            disabled={loading || Boolean(busy)}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
           {!terminalState && pausing && (
             <Button size="sm" variant="outline" className="h-7" disabled>
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Pausing…
@@ -311,7 +242,20 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
         </details>
       )}
 
+      {refreshError && !terminalState && <p className="mt-2 text-[10px] text-muted-foreground">Machine status may be out of date.</p>}
       {run.lastError && !terminalState && <p className="mt-2 text-[10px] text-destructive">Environment needs attention. Refresh the status or try again.</p>}
     </div>
   );
+}
+
+export function OperationRunStrip({ runId, compact = false }: { runId: string; compact?: boolean }) {
+  const shared = useOptionalOperationRun();
+  if (!shared || shared.runId !== runId) {
+    return (
+      <OperationRunProvider runId={runId}>
+        <OperationRunStripContent compact={compact} />
+      </OperationRunProvider>
+    );
+  }
+  return <OperationRunStripContent compact={compact} />;
 }

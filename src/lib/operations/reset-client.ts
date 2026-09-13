@@ -7,6 +7,7 @@ export type PreparedEnvironmentReset = {
 
 const POLL_MS = 5_000;
 const MAX_WAIT_MS = 12 * 60_000;
+const TERMINAL_RESET_STATUSES = new Set(['available', 'failed', 'maintenance']);
 
 export async function finishReusableEnvironmentReset(args: {
   runId: string;
@@ -17,7 +18,7 @@ export async function finishReusableEnvironmentReset(args: {
   let reset = args.initial;
   const deadline = Date.now() + MAX_WAIT_MS;
 
-  while (!reset || (reset.status !== 'available' && reset.status !== 'failed')) {
+  while (!reset || !TERMINAL_RESET_STATUSES.has(reset.status)) {
     if (Date.now() >= deadline) {
       throw new Error('The environment reset is still running. It remains quarantined and will not be reused until verification finishes.');
     }
@@ -32,7 +33,7 @@ export async function finishReusableEnvironmentReset(args: {
     args.onProgress?.(reset);
   }
 
-  if (reset.status === 'failed') {
+  if (reset.status === 'failed' || reset.status === 'maintenance') {
     throw new Error(reset.error || 'Environment reset failed. The slot is quarantined for maintenance.');
   }
   return reset;

@@ -12,13 +12,17 @@ describe('background request polling regressions', () => {
     expect(value).not.toContain('window.setInterval');
     expect(value).toContain("subscribeWorkspaceActivity(schedule)");
     expect(value).toContain("document.addEventListener('visibilitychange'");
+    expect(value).toContain('REMOTE_PULL_COOLDOWN_MS');
+    expect(value).toContain('pullRemote: false');
   });
 
-  it('does not continuously refetch stable Cyber Lab snapshots', () => {
+  it('does not continuously refetch stable or hidden Cyber Lab snapshots', () => {
     const value = source('src/lib/labs/client.ts');
     expect(value).not.toContain('LABS_CACHE_TTL_MS');
     expect(value).toContain('snapshotNeedsProgressRefresh');
     expect(value).toContain('TRANSITIONAL_LAB_STATUSES');
+    expect(value).toContain('canRefreshProgressFromThisDocument');
+    expect(value).toContain("document.visibilityState === 'visible'");
   });
 
   it('polls ordinary lab readiness only while progress is unresolved and visible', () => {
@@ -28,15 +32,25 @@ describe('background request polling regressions', () => {
     expect(value).not.toContain('window.setInterval(() => void refresh(), 4_000)');
   });
 
-  it('stops Operation polling after the run and machine surfaces become stable', () => {
-    for (const path of [
-      'src/components/operations/OperationRunStrip.tsx',
-      'src/components/operations/OperationLabRuntimePanel.tsx',
-      'src/components/operations/OperationTopologyBuild.tsx',
-    ]) {
-      const value = source(path);
-      expect(value).toContain('needsProgressPolling');
-      expect(value).toContain("document.visibilityState === 'visible'");
-    }
+  it('uses one shared visible-only Operation polling owner', () => {
+    const provider = source('src/components/operations/OperationRunProvider.tsx');
+    expect(provider).toContain('needsProgressPolling');
+    expect(provider).toContain("document.visibilityState === 'visible'");
+    expect(provider).toContain('/reconcile');
+    expect(provider).toContain('window.setInterval');
+
+    const strip = source('src/components/operations/OperationRunStrip.tsx');
+    const runtime = source('src/components/operations/OperationLabRuntimePanel.tsx');
+    const topology = source('src/components/operations/OperationTopologyBuild.tsx');
+
+    // Strip still owns explicit learner writes (pause/resume/end), but none of
+    // the mounted views may own their own read/polling interval anymore.
+    expect(strip).not.toContain('window.setInterval');
+    expect(runtime).not.toContain('window.setInterval');
+    expect(topology).not.toContain('window.setInterval');
+    expect(runtime).not.toContain('fetch(`/api/operations/runs/');
+    expect(topology).not.toContain('fetch(`/api/operations/runs/');
+    expect(runtime).toContain('useOperationRun()');
+    expect(topology).toContain('useOperationRun()');
   });
 });

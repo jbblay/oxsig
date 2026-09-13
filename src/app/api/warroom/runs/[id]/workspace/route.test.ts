@@ -11,13 +11,14 @@ const mocks = vi.hoisted(() => ({
   stringifyPostgresJson: vi.fn((value: unknown) => JSON.stringify(value)),
 }));
 
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
 vi.mock('@/lib/db/postgres-safe', () => ({ stringifyPostgresJson: mocks.stringifyPostgresJson }));
 vi.mock('@/lib/operations/catalog', () => ({ getOperation: mocks.getOperation }));
-vi.mock('@/lib/operations/runtime', () => ({ getOperationRun: mocks.getOperationRun }));
+vi.mock('@/lib/operations/run-view', () => ({ getLearnerOperationRun: mocks.getOperationRun }));
 
 import { GET, POST } from './route';
 

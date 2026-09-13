@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   validateCsrfToken: vi.fn(),
   checkRateLimit: vi.fn(),
   getPool: vi.fn(),
-  getOperationRun: vi.fn(),
+  getLearnerOperationRun: vi.fn(),
+  getOperationLifecycleProgress: vi.fn(),
   destroyOperationRun: vi.fn(),
   pauseOperationRun: vi.fn(),
   resumeOperationRun: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfTok
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
 vi.mock('@/lib/operations/lifecycle', () => ({
+  getOperationLifecycleProgress: mocks.getOperationLifecycleProgress,
   pauseOperationRun: mocks.pauseOperationRun,
   resumeOperationRun: mocks.resumeOperationRun,
   OperationLifecycleError: class OperationLifecycleError extends Error {
@@ -25,10 +27,15 @@ vi.mock('@/lib/operations/lifecycle', () => ({
   },
 }));
 vi.mock('@/lib/operations/runtime', () => ({
-  getOperationRun: mocks.getOperationRun,
   destroyOperationRun: mocks.destroyOperationRun,
   OperationRuntimeError: class OperationRuntimeError extends Error {
     constructor(message: string, readonly status = 409, readonly code = 'OPERATION_RUNTIME_CONFLICT') { super(message); }
+  },
+}));
+vi.mock('@/lib/operations/run-view', () => ({
+  getLearnerOperationRun: mocks.getLearnerOperationRun,
+  OperationRunReadError: class OperationRunReadError extends Error {
+    constructor(message: string, readonly status = 404, readonly code = 'OPERATION_RUN_NOT_FOUND') { super(message); }
   },
 }));
 vi.mock('@/lib/audit/logger', () => ({
@@ -56,17 +63,32 @@ describe('Operation run API', () => {
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.getPool.mockReturnValue({});
-    mocks.getOperationRun.mockResolvedValue({ id: runId, status: 'running', nodes: [] });
+    mocks.getLearnerOperationRun.mockResolvedValue({ id: runId, status: 'running', metadata: {}, nodes: [] });
+    mocks.getOperationLifecycleProgress.mockResolvedValue({ phase: 'paused', total: 3, stopped: 3, nodeStates: {} });
     mocks.destroyOperationRun.mockResolvedValue({ destroyed: true, alreadyDestroyed: false, terminating: 3 });
     mocks.pauseOperationRun.mockResolvedValue({ paused: true, stopping: 3 });
     mocks.resumeOperationRun.mockResolvedValue({ resumed: true, starting: 3 });
     mocks.logAudit.mockResolvedValue(undefined);
   });
 
-  it('returns only the authenticated owner run', async () => {
+  it('returns only the authenticated owner run from the durable read model', async () => {
     const response = await GET(request(), { params: Promise.resolve({ id: runId }) });
     expect(response.status).toBe(200);
-    expect(mocks.getOperationRun).toHaveBeenCalledWith({ pool: expect.anything(), runId, ownerId: user.id });
+    expect(mocks.getLearnerOperationRun).toHaveBeenCalledWith({ pool: expect.anything(), runId, ownerId: user.id });
+    expect(mocks.getOperationLifecycleProgress).not.toHaveBeenCalled();
+  });
+
+  it('keeps a paused GET database-only instead of checking AWS lifecycle state', async () => {
+    mocks.getLearnerOperationRun.mockResolvedValue({
+      id: runId,
+      status: 'provisioning',
+      metadata: { lifecycleState: 'paused' },
+      nodes: [{ id: 'node-1' }],
+    });
+    const response = await GET(request(), { params: Promise.resolve({ id: runId }) });
+    expect(response.status).toBe(200);
+    expect(mocks.getOperationLifecycleProgress).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({ lifecycle: null });
   });
 
   it('pauses the whole run behind CSRF protection', async () => {
@@ -98,6 +120,6 @@ describe('Operation run API', () => {
   it('rejects malformed run ids', async () => {
     const response = await GET(request(), { params: Promise.resolve({ id: 'not-a-uuid' }) });
     expect(response.status).toBe(400);
-    expect(mocks.getOperationRun).not.toHaveBeenCalled();
+    expect(mocks.getLearnerOperationRun).not.toHaveBeenCalled();
   });
 });

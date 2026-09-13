@@ -4,7 +4,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
 import { getOperation } from '@/lib/operations/catalog';
-import { getOperationRun } from '@/lib/operations/runtime';
+import { getLearnerOperationRun } from '@/lib/operations/run-view';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ error: 'This Operation was not launched in WarRoom mode' }, { status: 409, headers: PRIVATE_HEADERS });
       }
 
-      const run = await getOperationRun({ pool: getPool(), runId: id, ownerId: linked.owner_id });
+      const run = await getLearnerOperationRun({ pool: getPool(), runId: id, ownerId: linked.owner_id });
       return NextResponse.json({
         workspaceId: linked.workspace_id,
         canCreateWorkspace: linked.owner_id === user.id && !linked.workspace_id,

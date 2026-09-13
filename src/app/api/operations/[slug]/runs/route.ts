@@ -98,22 +98,34 @@ async function preflightOperationAllocation(
   }
 
   if (slug === 'black-domain') {
+    // Keep transient pool contention out of the expensive provisioning quota.
+    // A fully quarantined pool is different: the runtime registry is allowed to
+    // use the controlled disposable fallback so Black Domain remains available.
     const environment = await pool.query(
-      `SELECT status
-         FROM operation_environments
-        WHERE operation_slug=$1
-          AND status <> 'available'
-        ORDER BY updated_at DESC
-        LIMIT 1`,
+      `SELECT
+         COUNT(*)::int AS total_count,
+         COUNT(*) FILTER (WHERE status='available')::int AS available_count,
+         COUNT(*) FILTER (WHERE status='resetting')::int AS resetting_count,
+         COUNT(*) FILTER (WHERE status IN ('failed','maintenance'))::int AS maintenance_count
+       FROM operation_environments
+       WHERE operation_slug=$1`,
       [slug],
     );
-    const environmentStatus = environment.rows[0]?.status as string | undefined;
-    if (environmentStatus) {
+    const summary = environment.rows[0] || {};
+    const total = Number(summary.total_count || 0);
+    const available = Number(summary.available_count || 0);
+    const resetting = Number(summary.resetting_count || 0);
+    const maintenance = Number(summary.maintenance_count || 0);
+
+    if (total > 0 && available === 0) {
+      if (maintenance === total) {
+        return null;
+      }
       return NextResponse.json(
         {
-          error: environmentStatus === 'resetting'
+          error: resetting > 0
             ? 'Black Domain is still restoring its clean baseline. Try again when reset completes.'
-            : 'Black Domain is still preparing its reusable environment. Try again shortly.',
+            : 'Black Domain is currently in use. Try again when an environment becomes available.',
           code: 'OPERATION_ENVIRONMENT_BUSY',
         },
         { status: 409, headers: PRIVATE_HEADERS },

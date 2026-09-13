@@ -34,13 +34,28 @@ function request(body: unknown) {
   });
 }
 
+function environmentSummary(overrides: Partial<Record<string, number>> = {}) {
+  return {
+    rows: [{
+      total_count: 0,
+      available_count: 0,
+      resetting_count: 0,
+      maintenance_count: 0,
+      ...overrides,
+    }],
+  };
+}
+
 describe('Operation provisioning API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
-    mocks.poolQuery.mockResolvedValue({ rows: [] });
+    mocks.poolQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(environmentSummary());
     mocks.getPool.mockReturnValue(pool);
     mocks.provisionRegisteredOperationRun.mockResolvedValue({
       runId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -60,7 +75,7 @@ describe('Operation provisioning API', () => {
   });
 
   it('returns the matching active run without consuming provisioning quota', async () => {
-    mocks.poolQuery.mockResolvedValueOnce({
+    mocks.poolQuery.mockReset().mockResolvedValueOnce({
       rows: [{
         id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
         operation_slug: 'black-domain',
@@ -82,7 +97,7 @@ describe('Operation provisioning API', () => {
   });
 
   it('rejects an occupied Cyber Lab slot before consuming provisioning quota', async () => {
-    mocks.poolQuery
+    mocks.poolQuery.mockReset()
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 'lab-1' }] });
 
@@ -96,10 +111,10 @@ describe('Operation provisioning API', () => {
   });
 
   it('rejects a resetting prepared environment before consuming provisioning quota', async () => {
-    mocks.poolQuery
+    mocks.poolQuery.mockReset()
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ status: 'resetting' }] });
+      .mockResolvedValueOnce(environmentSummary({ total_count: 1, resetting_count: 1 }));
 
     const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
     const body = await response.json();
@@ -108,6 +123,29 @@ describe('Operation provisioning API', () => {
     expect(body.code).toBe('OPERATION_ENVIRONMENT_BUSY');
     expect(mocks.checkRateLimit).not.toHaveBeenCalled();
     expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
+  });
+
+  it('allows the runtime fallback when every prepared environment is under maintenance', async () => {
+    mocks.poolQuery.mockReset()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(environmentSummary({ total_count: 1, maintenance_count: 1 }));
+
+    const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
+    expect(response.status).toBe(201);
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(mocks.provisionRegisteredOperationRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows provisioning when at least one prepared slot is available', async () => {
+    mocks.poolQuery.mockReset()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(environmentSummary({ total_count: 2, available_count: 1, maintenance_count: 1 }));
+
+    const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
+    expect(response.status).toBe(201);
+    expect(mocks.provisionRegisteredOperationRun).toHaveBeenCalledTimes(1);
   });
 
   it('rejects unsupported modes before provisioning', async () => {
