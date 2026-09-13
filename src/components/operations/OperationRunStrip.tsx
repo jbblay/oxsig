@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Eye, Loader2, Network, Pause, Play, RefreshCw, Trash2, Volume2, VolumeX } from 'lucide-react';
+import { Eye, Loader2, Pause, Play, RefreshCw, Trash2, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,20 +42,19 @@ type Run = {
   nodes: RunNode[];
 };
 
+type LifecycleProgress = {
+  phase: 'active' | 'ready' | 'pausing' | 'paused';
+  total: number;
+  stopped: number;
+  nodeStates: Record<string, string>;
+} | null;
+
 type RevealedAccess = { username: string; password: string };
 type BusyAction = 'pause' | 'resume' | 'destroy' | null;
 
-function readinessLabel(node: RunNode, paused: boolean) {
-  if (paused) return 'paused';
-  if (node.status === 'running') return 'ready';
-  if (node.status === 'destroying' || node.status === 'destroyed' || node.status === 'failed') return node.status;
-  if (node.computeStatus === 'running') return 'initializing';
-  if (node.computeStatus === 'pending') return 'starting';
-  return node.computeStatus || node.status;
-}
-
 export function OperationRunStrip({ runId, compact = false }: { runId: string; compact?: boolean }) {
   const [run, setRun] = React.useState<Run | null>(null);
+  const [lifecycle, setLifecycle] = React.useState<LifecycleProgress>(null);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<BusyAction>(null);
   const [revealingAccess, setRevealingAccess] = React.useState(false);
@@ -72,6 +71,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || 'Could not load Operation runtime');
       setRun(body.run as Run);
+      setLifecycle((body.lifecycle || null) as LifecycleProgress);
     } catch (error) {
       if (!quiet) toast.error(error instanceof Error ? error.message : 'Could not load Operation runtime');
     } finally {
@@ -81,6 +81,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
 
   React.useEffect(() => {
     setRevealedAccess(null);
+    setLifecycle(null);
     setVoiceEnabled(false);
     lastVoiceStageRef.current = null;
     voiceErrorStageRef.current = null;
@@ -125,10 +126,14 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || `Could not ${action} Operation`);
-      toast.success(action === 'pause' ? 'Pausing all Operation machines.' : 'Starting all Operation machines.');
+      toast.success(action === 'pause' ? 'Pausing Operation.' : 'Resuming Operation.');
       setRevealedAccess(null);
-      if (body.run) setRun(body.run as Run);
-      else await refresh(true);
+      if (body.run) {
+        setRun(body.run as Run);
+        setLifecycle((body.lifecycle || null) as LifecycleProgress);
+      } else {
+        await refresh(true);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not ${action} Operation`);
     } finally {
@@ -139,7 +144,7 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   const destroy = async () => {
     const prepared = run?.metadata?.lifecycle === 'prepared-environment';
     const message = prepared
-      ? 'End this Operation and restore the reusable Black Domain environment to its clean baseline?'
+      ? 'End this Operation and restore the environment to its clean baseline?'
       : 'End this Operation and destroy its disposable machines?';
     if (!window.confirm(message)) return;
     setBusy('destroy');
@@ -153,15 +158,15 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
       if (!response.ok) throw new Error(body?.error || 'Could not end Operation');
       setRevealedAccess(null);
       if (body?.reusableEnvironment && body?.reset) {
-        toast.info('Operation ended. Restoring the reusable environment to its clean baseline.');
+        toast.info('Operation ended. Restoring the environment to its clean baseline.');
         await finishReusableEnvironmentReset({
           runId,
           csrfToken: csrf,
           initial: body.reset,
         });
-        toast.success('Environment reset verified and returned to standby.');
+        toast.success('Environment restored and returned to standby.');
       } else {
-        toast.success('Destruction started for all Operation machines.');
+        toast.success('Operation ending.');
       }
       await refresh(true);
     } catch (error) {
@@ -193,27 +198,26 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
   };
 
   if (loading && !run) {
-    return <div className="mb-3 flex min-h-14 items-center justify-center rounded-xl border text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading Operation topology…</div>;
+    return <div className="mb-3 flex min-h-14 items-center justify-center rounded-xl border text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting Operation…</div>;
   }
   if (!run) return null;
 
   const initialAccess = run.metadata?.initialAccess;
-  const paused = run.metadata?.lifecycleState === 'paused';
+  const pauseRequested = run.metadata?.lifecycleState === 'paused';
+  const pausing = pauseRequested && lifecycle?.phase !== 'paused';
+  const paused = pauseRequested && lifecycle?.phase === 'paused';
   const prepared = run.metadata?.lifecycle === 'prepared-environment';
-  const bootstrapping = run.nodes.some((node) => node.computeStatus === 'running' && node.status === 'provisioning');
   const terminalState = ['destroying', 'destroyed', 'failed'].includes(run.status);
+  const allReady = run.status === 'running' && run.nodes.length > 0 && run.nodes.every((node) => node.status === 'running');
+  const showProgress = compact || pausing || (!pauseRequested && !allReady && !terminalState);
+  const visibleStatus = pausing ? 'pausing' : paused ? 'paused' : run.status === 'provisioning' ? 'starting' : run.status;
 
   return (
     <div className="mb-3 rounded-xl border bg-card/70 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Network className="h-4 w-4 text-primary" />
-        <span className="text-xs font-semibold">{compact ? 'Environment readiness' : prepared ? 'Reusable Black Domain environment' : 'Provisioned topology'}</span>
-        <Badge variant={run.status === 'running' && !paused ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">
-          {paused ? 'paused' : run.status}
-        </Badge>
-        {prepared && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.environmentSlot || 'reusable slot'}</Badge>}
-        {run.metadata?.domain && <Badge variant="secondary" className="h-5 text-[9px]">{run.metadata.domain}</Badge>}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+        {compact && <span className="text-xs font-semibold">Environment readiness</span>}
+        <Badge variant={allReady && !pauseRequested ? 'default' : 'outline'} className="h-5 text-[9px] capitalize">{visibleStatus}</Badge>
+        <div className={`${compact ? 'ml-auto' : ''} flex flex-1 flex-wrap items-center justify-end gap-1`}>
           {voiceCue && (
             <Button
               size="sm"
@@ -225,81 +229,55 @@ export function OperationRunStrip({ runId, compact = false }: { runId: string; c
               onClick={toggleVoice}
             >
               {speakingKey ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : voiceEnabled ? <Volume2 className="mr-1.5 h-3.5 w-3.5" /> : <VolumeX className="mr-1.5 h-3.5 w-3.5" />}
-              {voiceEnabled ? 'Mission voice on' : 'Mission voice'}
+              {voiceEnabled ? 'Voice on' : 'Voice'}
             </Button>
           )}
           <Button size="sm" variant="ghost" className="h-7 px-2" aria-label="Refresh environment status" onClick={() => void refresh()} disabled={loading || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></Button>
+          {!terminalState && pausing && (
+            <Button size="sm" variant="outline" className="h-7" disabled>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Pausing…
+            </Button>
+          )}
           {!terminalState && paused && (
             <Button size="sm" variant="outline" className="h-7" onClick={() => void changeLifecycle('resume')} disabled={Boolean(busy)}>
               {busy === 'resume' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}Resume
             </Button>
           )}
-          {!terminalState && !paused && run.status === 'running' && (
+          {!terminalState && !pauseRequested && allReady && (
             <Button size="sm" variant="outline" className="h-7" onClick={() => void changeLifecycle('pause')} disabled={Boolean(busy)}>
               {busy === 'pause' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Pause className="mr-1.5 h-3.5 w-3.5" />}Pause
             </Button>
           )}
           {!['destroying', 'destroyed'].includes(run.status) && (
-            <Button size="sm" variant="outline" className="h-7" onClick={() => void destroy()} disabled={Boolean(busy)}>
+            <Button size="sm" variant="outline" className="h-7" onClick={() => void destroy()} disabled={Boolean(busy) || pausing}>
               {busy === 'destroy' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}{prepared ? 'End & reset' : 'End & destroy'}
             </Button>
           )}
         </div>
       </div>
 
-      {voiceEnabled && voiceCue && (
-        <p className="mt-2 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-violet-500 dark:text-violet-300">
-          <Volume2 className="h-3 w-3" /> Mission voice // {voiceCue.label}
-        </p>
-      )}
+      {showProgress && <RuntimeProgress nodes={run.nodes} paused={paused} status={run.status} lifecycle={lifecycle} />}
 
-      {compact ? <RuntimeProgress nodes={run.nodes} paused={paused} status={run.status} /> : <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        {run.nodes.map((node) => (
-          <div key={node.id} className="rounded-lg border px-2.5 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-[11px] font-semibold">{node.label}</span>
-              <Badge variant={node.status === 'running' && !paused ? 'default' : 'outline'} className="h-4 px-1 text-[8px] capitalize">{readinessLabel(node, paused)}</Badge>
-            </div>
-            <p className="mt-1 text-[9px] text-muted-foreground">
-              {node.osFamily} · {node.role}{node.privateIp ? ` · ${node.privateIp}` : ''}
-              {node.computeStatus && node.computeStatus !== node.status && !paused ? ` · EC2 ${node.computeStatus}` : ''}
-            </p>
-          </div>
-        ))}
-      </div>}
-
-      {initialAccess?.username && initialAccess.available && !paused && !terminalState && (
+      {initialAccess?.username && initialAccess.available && allReady && !pauseRequested && !terminalState && (
         <details className="mt-2 rounded-lg border bg-muted/20 px-2.5 py-2" onToggle={(event) => {
           if (event.currentTarget.open && !revealedAccess && !revealingAccess) void revealAccess();
         }}>
           <summary className="cursor-pointer text-[10px] font-medium">Starting identity</summary>
           <div className="mt-2">
             {revealingAccess ? (
-              <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Authorizing reveal…</p>
+              <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Preparing access…</p>
             ) : revealedAccess ? (
               <p className="break-all font-mono text-[10px] text-muted-foreground">{revealedAccess.username} / {revealedAccess.password}</p>
             ) : (
               <Button size="sm" variant="ghost" className="h-7 px-2 text-[10px]" onClick={() => void revealAccess()}>
-                <Eye className="mr-1.5 h-3 w-3" />Reveal starting password
+                <Eye className="mr-1.5 h-3 w-3" />Reveal password
               </Button>
             )}
           </div>
         </details>
       )}
-      {run.lastError && <p className="mt-2 text-[10px] text-destructive">{run.lastError}</p>}
-      {!compact && (paused ? (
-        <p className="mt-2 text-[10px] text-muted-foreground">Operation paused. All three {prepared ? 'reusable ' : ''}EC2 machines are being kept as the same environment without being destroyed. Resume when you are ready to continue.</p>
-      ) : run.status !== 'running' && !['failed', 'destroyed'].includes(run.status) ? (
-        <p className="mt-2 text-[10px] text-muted-foreground">
-          {prepared
-            ? bootstrapping
-              ? 'Reusable EC2 machines are online. OXSIG is re-verifying Systems Manager, domain trust, and operator readiness.'
-              : 'Starting the existing reusable Black Domain machines. No new EC2 instances are being created.'
-            : bootstrapping
-              ? 'EC2 is online. OXSIG is checking Systems Manager and guest readiness while AD DS promotion, domain join, and operator tooling finish.'
-              : 'EC2 machines are launching. OXSIG will keep the Operation in provisioning until guest readiness is verified.'}
-        </p>
-      ) : null)}
+
+      {run.lastError && !terminalState && <p className="mt-2 text-[10px] text-destructive">Environment needs attention. Refresh the status or try again.</p>}
     </div>
   );
 }
