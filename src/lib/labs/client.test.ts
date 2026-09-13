@@ -47,6 +47,7 @@ describe('labs client cache', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -65,6 +66,22 @@ describe('labs client cache', () => {
 
     await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'provisioning' }] } });
     await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'running' }] } });
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'running' }] } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refresh a transitional snapshot while the browser tab is hidden', async () => {
+    vi.stubGlobal('document', { visibilityState: 'visible' });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(labsResponse('lab-1', 200, 'provisioning'))
+      .mockResolvedValueOnce(labsResponse('lab-1', 200, 'running'));
+
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'provisioning' }] } });
+    vi.stubGlobal('document', { visibilityState: 'hidden' });
+    await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'provisioning' }] } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.stubGlobal('document', { visibilityState: 'visible' });
     await expect(getLabsSnapshot()).resolves.toMatchObject({ data: { instances: [{ status: 'running' }] } });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
