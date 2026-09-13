@@ -27,6 +27,13 @@ type OwnedRun = {
   metadata: Record<string, unknown> | null;
 };
 
+export type OperationLifecycleProgress = {
+  phase: 'active' | 'ready' | 'pausing' | 'paused';
+  total: number;
+  stopped: number;
+  nodeStates: Record<string, string>;
+};
+
 async function getOwnedRun(pool: Pool, runId: string, ownerId: string): Promise<OwnedRun> {
   const result = await pool.query(
     `SELECT id,status,expires_at,operator_lab_instance_id,metadata
@@ -48,6 +55,18 @@ async function getRuntimeIds(pool: Pool, runId: string) {
     [runId]
   );
   return [...new Set(result.rows.map((row) => String(row.runtime_external_id || '')).filter(Boolean))];
+}
+
+async function getRuntimeRefs(pool: Pool, runId: string) {
+  const result = await pool.query(
+    `SELECT id::text AS id,runtime_external_id
+       FROM operation_nodes
+      WHERE run_id=$1 AND runtime_external_id IS NOT NULL`,
+    [runId]
+  );
+  return result.rows
+    .map((row) => ({ id: String(row.id || ''), runtimeExternalId: String(row.runtime_external_id || '') }))
+    .filter((row) => row.id && row.runtimeExternalId);
 }
 
 async function getEc2States(ids: string[]) {
@@ -75,6 +94,21 @@ async function inTransaction<T>(pool: Pool, work: (client: PoolClient) => Promis
   } finally {
     client.release();
   }
+}
+
+export async function getOperationLifecycleProgress(args: { pool: Pool; runId: string; ownerId: string }): Promise<OperationLifecycleProgress> {
+  const run = await getOwnedRun(args.pool, args.runId, args.ownerId);
+  const refs = await getRuntimeRefs(args.pool, args.runId);
+  const states = await getEc2States(refs.map((ref) => ref.runtimeExternalId));
+  const nodeStates = Object.fromEntries(refs.map((ref) => [ref.id, states.get(ref.runtimeExternalId) || 'unknown']));
+  const stopped = Object.values(nodeStates).filter((state) => state === 'stopped').length;
+  const total = refs.length;
+  const lifecycleState = run.metadata?.lifecycleState;
+  const phase: OperationLifecycleProgress['phase'] = lifecycleState === 'paused'
+    ? total > 0 && stopped === total ? 'paused' : 'pausing'
+    : run.status === 'running' ? 'ready' : 'active';
+
+  return { phase, total, stopped, nodeStates };
 }
 
 export async function pauseOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
@@ -190,4 +224,3 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
 
   return { resumed: true, starting: stoppedIds.length };
 }
-
