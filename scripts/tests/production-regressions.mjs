@@ -32,6 +32,42 @@ for (const name of ['SENTRY_DSN', 'NEXT_PUBLIC_SENTRY_DSN']) {
   });
 }
 
+const awsEnv = {
+  ...baseEnv,
+  LAB_AWS_ENABLED: 'true',
+  LAB_AWS_REGION: 'eu-central-1',
+  LAB_AWS_SUBNET_ID: 'subnet-0123456789abcdef0',
+  LAB_AWS_SECURITY_GROUP_ID: 'sg-0123456789abcdef0',
+  LAB_AWS_INSTANCE_PROFILE: 'oxsig-lab-ssm-role',
+};
+
+const preparedBlackDomainEnv = {
+  ...awsEnv,
+  LAB_AWS_BLACK_DOMAIN_PREPARED: 'true',
+  LAB_AWS_BLACK_DOMAIN_SLOT_KEY: 'black-domain-slot-01',
+  LAB_AWS_BLACK_DOMAIN_DC_INSTANCE_ID: 'i-0123456789abcdef0',
+  LAB_AWS_BLACK_DOMAIN_WORKSTATION_INSTANCE_ID: 'i-1123456789abcdef0',
+  LAB_AWS_BLACK_DOMAIN_OPERATOR_INSTANCE_ID: 'i-2123456789abcdef0',
+  LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID: 'snap-0123456789abcdef0',
+  LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID: 'snap-1123456789abcdef0',
+  LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID: 'snap-2123456789abcdef0',
+  LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD: 'test-only-password',
+};
+
+test('prepared Black Domain requires the complete reusable slot contract', () => {
+  const incomplete = { ...preparedBlackDomainEnv };
+  delete incomplete.LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID;
+  const result = spawnSync(process.execPath, [contract], { env: incomplete, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes('LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID is required'));
+});
+
+test('prepared Black Domain accepts a complete reusable slot contract without legacy Operation SG settings', () => {
+  const result = spawnSync(process.execPath, [contract], { env: preparedBlackDomainEnv, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(!result.stderr.includes('LAB_AWS_OPERATION_SECURITY_GROUP_ID'));
+});
+
 test('build gate requires the public bridge mapping and compiled handler', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'oxsig-routes-'));
   const run = () => spawnSync(process.execPath, [routeCheck], { cwd, encoding: 'utf8' });
