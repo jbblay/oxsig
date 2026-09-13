@@ -67,14 +67,19 @@ async function stopEnvironmentNodesBestEffort(row: EnvironmentRow) {
   await ec2.send(new StopInstancesCommand({ InstanceIds: instanceIds })).catch(() => undefined);
 }
 
-async function failReset(pool: Pool, environmentId: string, error: unknown) {
+async function quarantineReset(pool: Pool, environmentId: string, error: unknown) {
   const message = error instanceof Error ? error.message.slice(0, 800) : 'Prepared environment reset failed.';
   await pool.query(
     `UPDATE operation_environments
-        SET status='failed',last_error=$1,
+        SET status='maintenance',last_error=$1,
             metadata=metadata || $2::jsonb,updated_at=NOW()
       WHERE id=$3`,
-    [message, stringifyPostgresJson({ resetPhase: 'failed', resetFailedAt: new Date().toISOString() }), environmentId],
+    [message, stringifyPostgresJson({
+      resetPhase: 'failed',
+      resetFailedAt: new Date().toISOString(),
+      repairRequired: true,
+      maintenanceReason: 'reset-failed',
+    }), environmentId],
   );
 }
 
@@ -88,7 +93,7 @@ export async function beginPreparedEnvironmentReset(args: { pool: Pool; environm
   await args.pool.query(
     `UPDATE operation_environments
         SET status='resetting',assigned_run_id=NULL,last_error=NULL,
-            metadata=(metadata - 'resetTasks' - 'resetReadiness') || $1::jsonb,updated_at=NOW()
+            metadata=(metadata - 'resetTasks' - 'resetReadiness' - 'repairRequired' - 'maintenanceReason') || $1::jsonb,updated_at=NOW()
       WHERE id=$2`,
     [stringifyPostgresJson({ resetPhase: 'starting', resetStartedAt: startedAt, resetAfterRunId: args.runId }), args.environmentId],
   );
@@ -96,10 +101,10 @@ export async function beginPreparedEnvironmentReset(args: { pool: Pool; environm
     await ec2.send(new StartInstancesCommand({ InstanceIds: nodes.map((node) => node.instanceId) }));
   } catch (error) {
     // A multi-instance start may partially succeed. Never leave a failed reusable
-    // reset consuming compute indefinitely; the next repair attempt can start all
-    // nodes again from a known stopped baseline.
+    // reset consuming compute indefinitely; a later operator repair can restart
+    // all nodes from a known stopped baseline.
     await stopEnvironmentNodesBestEffort(row);
-    await failReset(args.pool, args.environmentId, error);
+    await quarantineReset(args.pool, args.environmentId, error);
     throw error;
   }
   return { environmentId: args.environmentId, status: 'resetting' as const, phase: 'starting' as const };
@@ -109,7 +114,11 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
   const row = await loadEnvironment(args.pool, args.environmentId);
   if (!row) throw new Error('Prepared Operation environment was not found.');
   if (row.status === 'available') return { environmentId: row.id, status: 'available' as const, phase: 'complete' as const };
-  if (row.status === 'failed') return { environmentId: row.id, status: 'failed' as const, phase: 'failed' as const };
+  // `failed` is retained as a legacy terminal value. New failures use maintenance,
+  // which expresses the real invariant: the slot is quarantined and cannot allocate.
+  if (row.status === 'failed' || row.status === 'maintenance') {
+    return { environmentId: row.id, status: row.status, phase: 'failed' as const };
+  }
   if (row.status !== 'resetting') return { environmentId: row.id, status: row.status, phase: 'idle' as const };
 
   const metadata = metadataObject(row.metadata);
@@ -234,7 +243,7 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
       await args.pool.query(
         `UPDATE operation_environments
             SET status='available',last_error=NULL,
-                metadata=(metadata - 'resetTasks' - 'resetReadiness') || $1::jsonb,updated_at=NOW()
+                metadata=(metadata - 'resetTasks' - 'resetReadiness' - 'repairRequired' - 'maintenanceReason') || $1::jsonb,updated_at=NOW()
           WHERE id=$2 AND status='resetting'`,
         [stringifyPostgresJson({ resetPhase: 'complete', resetCompletedAt: new Date().toISOString(), resetRequired: false }), row.id],
       );
@@ -244,13 +253,13 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
     throw new Error(`Unknown prepared environment reset phase: ${phase}`);
   } catch (error) {
     // Reset failures are terminal for this attempt. Best-effort stop the reusable
-    // compute before persisting the failure so authorization/provider regressions
-    // cannot leave three paid instances running indefinitely.
+    // compute before quarantining the slot so provider/IAM regressions cannot
+    // leave paid instances running or return a damaged environment to learners.
     await stopEnvironmentNodesBestEffort(row);
-    await failReset(args.pool, row.id, error);
+    await quarantineReset(args.pool, row.id, error);
     return {
       environmentId: row.id,
-      status: 'failed' as const,
+      status: 'maintenance' as const,
       phase: 'failed' as const,
       error: operationReadinessError(error, `environment-reset:${phase}`),
     };
@@ -258,6 +267,8 @@ export async function advancePreparedEnvironmentReset(args: { pool: Pool; enviro
 }
 
 export async function advanceAllPreparedEnvironmentResets(pool: Pool) {
+  // Maintenance/legacy-failed slots are deliberately excluded. Automatic retries
+  // could repeatedly start compute against a persistent IAM or snapshot failure.
   const rows = await pool.query(
     `SELECT id FROM operation_environments
       WHERE status='resetting'
