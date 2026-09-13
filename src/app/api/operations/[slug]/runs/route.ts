@@ -98,31 +98,39 @@ async function preflightOperationAllocation(
   }
 
   if (slug === 'black-domain') {
+    // Pool-aware preflight: a quarantined/busy slot must not block a different
+    // available slot when Black Domain grows beyond a single prepared environment.
     const environment = await pool.query(
-      `SELECT status
-         FROM operation_environments
-        WHERE operation_slug=$1
-          AND status <> 'available'
-        ORDER BY updated_at DESC
-        LIMIT 1`,
+      `SELECT
+         COUNT(*)::int AS total_count,
+         COUNT(*) FILTER (WHERE status='available')::int AS available_count,
+         COUNT(*) FILTER (WHERE status='resetting')::int AS resetting_count,
+         COUNT(*) FILTER (WHERE status IN ('failed','maintenance'))::int AS maintenance_count
+       FROM operation_environments
+       WHERE operation_slug=$1`,
       [slug],
     );
-    const environmentStatus = environment.rows[0]?.status as string | undefined;
-    if (environmentStatus === 'failed') {
+    const summary = environment.rows[0] || {};
+    const total = Number(summary.total_count || 0);
+    const available = Number(summary.available_count || 0);
+    const resetting = Number(summary.resetting_count || 0);
+    const maintenance = Number(summary.maintenance_count || 0);
+
+    if (total > 0 && available === 0) {
+      if (maintenance === total) {
+        return NextResponse.json(
+          {
+            error: 'Black Domain is temporarily unavailable while its clean environment is being repaired.',
+            code: 'OPERATION_ENVIRONMENT_MAINTENANCE',
+          },
+          { status: 503, headers: PRIVATE_HEADERS },
+        );
+      }
       return NextResponse.json(
         {
-          error: 'Black Domain is temporarily unavailable while its clean environment is being repaired.',
-          code: 'OPERATION_ENVIRONMENT_FAILED',
-        },
-        { status: 503, headers: PRIVATE_HEADERS },
-      );
-    }
-    if (environmentStatus) {
-      return NextResponse.json(
-        {
-          error: environmentStatus === 'resetting'
+          error: resetting > 0
             ? 'Black Domain is still restoring its clean baseline. Try again when reset completes.'
-            : 'Black Domain is still preparing its reusable environment. Try again shortly.',
+            : 'Black Domain is currently in use. Try again when an environment becomes available.',
           code: 'OPERATION_ENVIRONMENT_BUSY',
         },
         { status: 409, headers: PRIVATE_HEADERS },
