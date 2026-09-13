@@ -21,11 +21,12 @@ export type OperationProvisionArgs = {
 
 type OperationProvisioner = (args: OperationProvisionArgs) => ReturnType<typeof provisionPreparedBlackDomainRun>;
 
-const preparedBlackDomainEnabled = process.env.LAB_AWS_BLACK_DOMAIN_PREPARED === 'true';
+const preparedBlackDomainEnabled = process.env.LAB_AWS_ENABLED === 'true'
+  && process.env.LAB_AWS_BLACK_DOMAIN_PREPARED === 'true';
 
 const disabledBlackDomainProvisioner: OperationProvisioner = async () => {
   throw new OperationRuntimeError(
-    'Black Domain is disabled until the prepared reusable environment is enabled for this deployment.',
+    'Black Domain is disabled until AWS labs and the prepared reusable environment are enabled for this deployment.',
     503,
     'OPERATION_PREPARED_ENVIRONMENT_DISABLED',
   );
