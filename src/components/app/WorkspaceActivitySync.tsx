@@ -13,12 +13,18 @@ import {
   type WorkspaceRecent,
 } from '@/lib/persistence/workspace-activity';
 
+const REMOTE_PULL_COOLDOWN_MS = 5_000;
+
+type SyncOptions = { pullRemote?: boolean };
+
 export default function WorkspaceActivitySync() {
   const { isAuthenticated, isLoading, sessionIdentityId } = useAuth();
   const runningRef = React.useRef(false);
   const rerunRef = React.useRef(false);
+  const rerunPullRef = React.useRef(false);
   const timerRef = React.useRef<number | null>(null);
   const lastUploadedRef = React.useRef<string | null>(null);
+  const lastPulledAtRef = React.useRef(0);
 
   const stateKey = React.useCallback((state: ReturnType<typeof getWorkspaceStateSnapshot>) => (
     `${sessionIdentityId || 'guest'}:${JSON.stringify(state)}`
@@ -35,10 +41,11 @@ export default function WorkspaceActivitySync() {
     return true;
   }, [isAuthenticated, isLoading, sessionIdentityId]);
 
-  const sync = React.useCallback(async () => {
+  const sync = React.useCallback(async ({ pullRemote = true }: SyncOptions = {}) => {
     if (!prepareScope()) return;
     if (runningRef.current) {
       rerunRef.current = true;
+      rerunPullRef.current ||= pullRemote;
       return;
     }
 
@@ -61,6 +68,13 @@ export default function WorkspaceActivitySync() {
         lastUploadedRef.current = uploadKey;
       }
 
+      // Local activity already represents the newest browser state. Do not follow
+      // every successful POST with another database read. Pull remote state only
+      // at session entry or when the user genuinely returns/reconnects.
+      if (!pullRemote) return;
+      const now = Date.now();
+      if (now - lastPulledAtRef.current < REMOTE_PULL_COOLDOWN_MS) return;
+
       const response = await fetch('/api/workspace-state', {
         credentials: 'include',
         cache: 'no-store',
@@ -71,14 +85,17 @@ export default function WorkspaceActivitySync() {
         activity: Array.isArray(body.activity) ? body.activity as WorkspaceActivity[] : [],
         recents: Array.isArray(body.recents) ? body.recents as WorkspaceRecent[] : [],
       });
+      lastPulledAtRef.current = Date.now();
       lastUploadedRef.current = stateKey(merged);
     } catch {
       // Local activity remains usable while offline or when durable sync is unavailable.
     } finally {
       runningRef.current = false;
       if (rerunRef.current) {
+        const shouldPull = rerunPullRef.current;
         rerunRef.current = false;
-        window.setTimeout(() => void sync(), 0);
+        rerunPullRef.current = false;
+        window.setTimeout(() => void sync({ pullRemote: shouldPull }), 0);
       }
     }
   }, [prepareScope, sessionIdentityId, stateKey]);
@@ -87,6 +104,7 @@ export default function WorkspaceActivitySync() {
     if (isLoading) return;
     prepareScope();
     lastUploadedRef.current = null;
+    lastPulledAtRef.current = 0;
   }, [isLoading, prepareScope, sessionIdentityId]);
 
   React.useEffect(() => {
@@ -94,14 +112,14 @@ export default function WorkspaceActivitySync() {
 
     const schedule = () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => void sync(), 700);
+      timerRef.current = window.setTimeout(() => void sync({ pullRemote: false }), 700);
     };
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void sync();
+      if (document.visibilityState === 'visible') void sync({ pullRemote: true });
     };
-    const onOnline = () => void sync();
+    const onOnline = () => void sync({ pullRemote: true });
 
-    void sync();
+    void sync({ pullRemote: true });
     const unsubscribe = subscribeWorkspaceActivity(schedule);
     window.addEventListener('focus', refreshWhenVisible);
     window.addEventListener('online', onOnline);
