@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { DescribeInstancesCommand, EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2';
+import { DescribeInstancesCommand, EC2Client, StartInstancesCommand, StopInstancesCommand } from '@aws-sdk/client-ec2';
 import type { Pool, PoolClient } from 'pg';
 import { awsClientConfig } from '@/lib/aws/client-config';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
@@ -301,10 +301,9 @@ export async function provisionPreparedBlackDomainRun(args: {
     client.release();
   }
 
+  const instanceIds = [configured.dc.instanceId, configured.workstation.instanceId, configured.operator.instanceId];
   try {
-    await ec2.send(new StartInstancesCommand({
-      InstanceIds: [configured.dc.instanceId, configured.workstation.instanceId, configured.operator.instanceId],
-    }));
+    await ec2.send(new StartInstancesCommand({ InstanceIds: instanceIds }));
     return {
       runId,
       operatorLabInstanceId,
@@ -314,11 +313,26 @@ export async function provisionPreparedBlackDomainRun(args: {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 800) : 'Prepared environment start failed';
+    // StartInstances can partially succeed. Compensate best-effort before marking
+    // the reusable slot unavailable so a provider/IAM failure cannot leak compute
+    // or return a partially-started environment to another learner.
+    await ec2.send(new StopInstancesCommand({ InstanceIds: instanceIds })).catch(() => undefined);
+    const quarantineMetadata = stringifyPostgresJson({
+      repairRequired: true,
+      maintenanceReason: 'start-failed',
+      maintenanceAt: new Date().toISOString(),
+    });
     await Promise.all([
       args.pool.query(`UPDATE operation_runs SET status='failed',last_error=$1,updated_at=NOW() WHERE id=$2`, [message, runId]),
       args.pool.query(`UPDATE operation_nodes SET status='failed',last_error=$1,updated_at=NOW() WHERE run_id=$2`, [message, runId]),
       args.pool.query(`UPDATE lab_instances SET status='failed',last_error=$1,updated_at=NOW() WHERE id=$2 AND owner_id=$3`, [message, operatorLabInstanceId, args.ownerId]),
-      args.pool.query(`UPDATE operation_environments SET status='failed',last_error=$1,updated_at=NOW() WHERE id=$2`, [message, environmentId]),
+      args.pool.query(
+        `UPDATE operation_environments
+            SET status='maintenance',assigned_owner_id=NULL,assigned_run_id=NULL,assigned_at=NULL,last_error=$1,
+                metadata=metadata || $2::jsonb,updated_at=NOW()
+          WHERE id=$3`,
+        [message, quarantineMetadata, environmentId],
+      ),
     ]);
     throw new OperationRuntimeError(message, 503, 'OPERATION_ENVIRONMENT_START_FAILED');
   }
