@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Pool } from 'pg';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
-import { pauseOperationRun, resumeOperationRun, OperationLifecycleError } from '@/lib/operations/lifecycle';
+import {
+  getOperationLifecycleProgress,
+  pauseOperationRun,
+  resumeOperationRun,
+  OperationLifecycleError,
+  type OperationLifecycleProgress,
+} from '@/lib/operations/lifecycle';
 import { destroyOperationRun, getOperationRun, OperationRuntimeError } from '@/lib/operations/runtime';
 import { AUDIT_ACTIONS, getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
@@ -12,6 +19,8 @@ export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
 const actionSchema = z.object({ action: z.enum(['pause', 'resume']) }).strict();
 const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Pragma: 'no-cache' };
+
+type OperationRunView = Awaited<ReturnType<typeof getOperationRun>>;
 
 function errorResponse(error: unknown) {
   if (error instanceof OperationRuntimeError || error instanceof OperationLifecycleError) {
@@ -21,13 +30,27 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: 'Could not operate the Operation run' }, { status: 500, headers: PRIVATE_HEADERS });
 }
 
+async function readLifecycleProgress(pool: Pool, run: OperationRunView, ownerId: string): Promise<OperationLifecycleProgress | null> {
+  if (run.metadata?.lifecycleState !== 'paused') return null;
+  try {
+    return await getOperationLifecycleProgress({ pool, runId: run.id, ownerId });
+  } catch (error) {
+    // Fail closed for the learner controls. If provider state cannot be confirmed,
+    // keep Resume disabled instead of exposing a button that can race EC2 stopping.
+    console.error('Operation lifecycle progress check failed:', error);
+    return { phase: 'pausing', total: run.nodes.length, stopped: 0, nodeStates: {} };
+  }
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return requireAuth(request, async (_req, user) => {
     const { id } = await params;
     if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'Invalid Operation run' }, { status: 400, headers: PRIVATE_HEADERS });
     try {
-      const run = await getOperationRun({ pool: getPool(), runId: id, ownerId: user.id });
-      return NextResponse.json({ run }, { headers: PRIVATE_HEADERS });
+      const pool = getPool();
+      const run = await getOperationRun({ pool, runId: id, ownerId: user.id });
+      const lifecycle = await readLifecycleProgress(pool, run, user.id);
+      return NextResponse.json({ run, lifecycle }, { headers: PRIVATE_HEADERS });
     } catch (error) {
       return errorResponse(error);
     }
@@ -61,7 +84,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
 
       const run = await getOperationRun({ pool, runId: id, ownerId: user.id });
-      return NextResponse.json({ ...result, run }, { headers: PRIVATE_HEADERS });
+      const lifecycle = await readLifecycleProgress(pool, run, user.id);
+      return NextResponse.json({ ...result, run, lifecycle }, { headers: PRIVATE_HEADERS });
     } catch (error) {
       return errorResponse(error);
     }
