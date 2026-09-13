@@ -11,6 +11,11 @@ function requireValue(name, message = `${name} is required`) {
   if (!value(name)) errors.push(message);
 }
 
+function requirePattern(name, pattern, message) {
+  const raw = value(name);
+  if (raw && !pattern.test(raw)) errors.push(message);
+}
+
 function positiveNumber(name, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const raw = value(name);
   if (!raw) return;
@@ -72,11 +77,43 @@ if (labsEnabled) {
   requireValue('LAB_AWS_REGION', 'LAB_AWS_REGION is required when LAB_AWS_ENABLED=true');
   requireValue('LAB_AWS_SUBNET_ID', 'LAB_AWS_SUBNET_ID is required when LAB_AWS_ENABLED=true');
   requireValue('LAB_AWS_SECURITY_GROUP_ID', 'LAB_AWS_SECURITY_GROUP_ID is required when LAB_AWS_ENABLED=true');
-  requireValue(
-    'LAB_AWS_OPERATION_SECURITY_GROUP_ID',
-    'LAB_AWS_OPERATION_SECURITY_GROUP_ID is required when LAB_AWS_ENABLED=true so multi-node Operations can use their dedicated private security group'
-  );
   requireValue('LAB_AWS_INSTANCE_PROFILE', 'LAB_AWS_INSTANCE_PROFILE is required when LAB_AWS_ENABLED=true');
+}
+
+const preparedBlackDomainEnabled = value('LAB_AWS_BLACK_DOMAIN_PREPARED').toLowerCase() === 'true';
+if (preparedBlackDomainEnabled) {
+  if (!labsEnabled) {
+    errors.push('LAB_AWS_ENABLED must be true when LAB_AWS_BLACK_DOMAIN_PREPARED=true');
+  }
+  const preparedKeys = [
+    'LAB_AWS_BLACK_DOMAIN_SLOT_KEY',
+    'LAB_AWS_BLACK_DOMAIN_DC_INSTANCE_ID',
+    'LAB_AWS_BLACK_DOMAIN_WORKSTATION_INSTANCE_ID',
+    'LAB_AWS_BLACK_DOMAIN_OPERATOR_INSTANCE_ID',
+    'LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID',
+    'LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID',
+    'LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID',
+    'LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD',
+  ];
+  for (const name of preparedKeys) {
+    requireValue(name, `${name} is required when LAB_AWS_BLACK_DOMAIN_PREPARED=true`);
+  }
+  for (const name of [
+    'LAB_AWS_BLACK_DOMAIN_DC_INSTANCE_ID',
+    'LAB_AWS_BLACK_DOMAIN_WORKSTATION_INSTANCE_ID',
+    'LAB_AWS_BLACK_DOMAIN_OPERATOR_INSTANCE_ID',
+  ]) {
+    requirePattern(name, /^i-[0-9a-f]{8,17}$/i, `${name} must be an EC2 instance id`);
+  }
+  for (const name of [
+    'LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID',
+    'LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID',
+    'LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID',
+  ]) {
+    requirePattern(name, /^snap-[0-9a-f]{8,17}$/i, `${name} must be an EBS snapshot id`);
+  }
+} else if (labsEnabled) {
+  warnings.push('Prepared Black Domain is disabled; Black Domain launches will fail closed instead of creating disposable fallback instances');
 }
 
 const resendKey = value('RESEND_API_KEY');
@@ -178,4 +215,3 @@ if (warnings.length) {
 
 if (errors.length) process.exit(1);
 console.log(`[oxsig] Production configuration contract passed${warnings.length ? ` with ${warnings.length} warning(s)` : ''}.`);
-
