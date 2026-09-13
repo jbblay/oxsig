@@ -5,7 +5,13 @@ import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const LABS_ENDPOINT = '/api/labs';
 const LABS_RECONCILE_ENDPOINT = '/api/labs/reconcile';
-const LABS_CACHE_TTL_MS = 1000;
+const TRANSITIONAL_LAB_STATUSES = new Set<LabInstanceStatus>([
+  'created',
+  'provisioning',
+  'stopping',
+  'destroying',
+  'resetting',
+]);
 
 export type ClientLabInstance = {
   id: string;
@@ -44,10 +50,14 @@ export type LabsReconciliationResult = {
 };
 
 let cachedResult: LabsSnapshotResult | null = null;
-let cachedUntil = 0;
 let inFlight: Promise<LabsSnapshotResult> | null = null;
 let reconciliationInFlight: Promise<LabsReconciliationResult> | null = null;
 let generation = 0;
+
+function snapshotNeedsProgressRefresh(result: LabsSnapshotResult | null): boolean {
+  if (!result?.ok) return false;
+  return (result.data.instances || []).some((instance) => TRANSITIONAL_LAB_STATUSES.has(instance.status));
+}
 
 async function requestLabsSnapshot(requestGeneration: number): Promise<LabsSnapshotResult> {
   const response = await fetch(LABS_ENDPOINT, {
@@ -59,7 +69,6 @@ async function requestLabsSnapshot(requestGeneration: number): Promise<LabsSnaps
 
   if (response.ok && requestGeneration === generation) {
     cachedResult = result;
-    cachedUntil = Date.now() + LABS_CACHE_TTL_MS;
   }
 
   return result;
@@ -87,7 +96,6 @@ async function requestLabsReconciliation(): Promise<LabsReconciliationResult> {
 export function invalidateLabsSnapshot(): void {
   generation += 1;
   cachedResult = null;
-  cachedUntil = 0;
   inFlight = null;
 }
 
@@ -104,15 +112,16 @@ export async function reconcileLabsStatus(): Promise<LabsReconciliationResult> {
 }
 
 export async function getLabsSnapshot(options: { force?: boolean } = {}): Promise<LabsSnapshotResult> {
-  // `force` is the explicit refresh path. It may wait on provider reconciliation,
-  // while the default ordinary read below remains a fast persisted snapshot.
+  // Stable snapshots are event-driven: keep them until an explicit invalidation or
+  // refresh. Transitional snapshots are intentionally re-read so lifecycle progress
+  // remains live without a permanent heartbeat when nothing is changing.
   if (options.force) {
     try {
       await reconcileLabsStatus();
     } catch {
       // Provider/network refresh failure must never hide the persisted read model.
     }
-  } else if (cachedResult && Date.now() < cachedUntil) {
+  } else if (cachedResult && !snapshotNeedsProgressRefresh(cachedResult)) {
     return cachedResult;
   }
 
