@@ -84,7 +84,7 @@ describe('Reported provisioning progress', () => {
   it('counts only verified nodes and makes unfinished node progress indeterminate', () => {
     render(<RuntimeProgress nodes={[nodes[0],{...nodes[1],status:'provisioning',computeStatus:'running'}]} status="provisioning" />);
     expect(screen.getByRole('progressbar',{name:'Machines verified ready'}).getAttribute('value')).toBe('1');
-    expect(screen.getByRole('progressbar',{name:'Windows: Guest setup'}).hasAttribute('aria-valuenow')).toBe(false);
+    expect(screen.getByRole('progressbar',{name:'Windows: Setting up'}).hasAttribute('aria-valuenow')).toBe(false);
   });
   it('does not report paused machines as ready', () => {
     render(<RuntimeProgress nodes={nodes} status="running" paused />);
