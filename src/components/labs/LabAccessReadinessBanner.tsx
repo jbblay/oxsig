@@ -9,6 +9,7 @@ import { getLabsSnapshot, type ClientLabInstance } from '@/lib/labs/client';
 type Diagnostics = { ec2State?: string; ssmRegistered?: boolean; ssmPingStatus?: string | null; ready?: boolean };
 
 const TRANSITIONAL = new Set(['created', 'provisioning', 'stopping', 'destroying', 'resetting']);
+const PROVIDER_RECONCILE = new Set(['created', 'stopping', 'destroying', 'resetting']);
 
 function observationLabel(observedAt?: string | null) {
   if (!observedAt) return 'never provider-confirmed';
@@ -30,9 +31,10 @@ export default function LabAccessReadinessBanner() {
       let current = snapshot.data.instances?.[0] || null;
       setInstance(current);
 
-      // Transitional lifecycle state is the one place the existing Lab UI needs
-      // automatic provider progress. Ordinary stable reads remain persisted-only.
-      if (!reconcile && current && TRANSITIONAL.has(current.status)) {
+      // Stop/destroy/reset transitions need an authoritative provider reconciliation.
+      // Provisioning is cheaper: terminal diagnostics below observes EC2/SSM and
+      // persists the running state without a second /api/labs round-trip.
+      if (!reconcile && current && PROVIDER_RECONCILE.has(current.status)) {
         snapshot = await getLabsSnapshot({ force: true });
         if (snapshot.ok) {
           current = snapshot.data.instances?.[0] || null;
@@ -59,14 +61,35 @@ export default function LabAccessReadinessBanner() {
 
   React.useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 4_000);
-    return () => window.clearInterval(timer);
   }, [refresh]);
+
+  const checkingAccess = Boolean(instance && ['provisioning', 'running'].includes(instance.status));
+  const ready = diagnostics?.ready === true;
+  const needsAutomaticRefresh = Boolean(
+    instance
+    && (TRANSITIONAL.has(instance.status) || (checkingAccess && !ready))
+  );
+
+  React.useEffect(() => {
+    if (!needsAutomaticRefresh) return;
+
+    const tick = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    const timer = window.setInterval(tick, 4_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [needsAutomaticRefresh, refresh]);
 
   if (!instance) return null;
 
-  const checkingAccess = ['provisioning', 'running'].includes(instance.status);
-  const ready = diagnostics?.ready === true;
   const ec2Running = diagnostics?.ec2State === 'running' || instance.status === 'running';
   const stale = instance.stale === true;
   const detail = ready
