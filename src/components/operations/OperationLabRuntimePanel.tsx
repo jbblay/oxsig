@@ -2,47 +2,18 @@
 
 import * as React from 'react';
 import { Loader2, Monitor, RefreshCw, Terminal } from 'lucide-react';
-import { toast } from 'sonner';
 import InteractiveSsmDesktop from '@/components/labs/InteractiveSsmDesktop';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
 import { LabOsIcon } from '@/components/labs/LabMachineNode';
 import OperationNodeTerminal from '@/components/operations/OperationNodeTerminal';
+import { useOperationRun, type OperationRunNode } from '@/components/operations/OperationRunProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import type { LabOsFamily } from '@/lib/labs/types';
 import type { OperationAiRuntimeContext } from '@/lib/operations/ai-context';
 
-type RunNode = {
-  id: string;
-  key: string;
-  label: string;
-  role: 'operator' | 'target' | 'infrastructure';
-  osFamily: string;
-  status: string;
-  computeStatus?: string;
-  readiness?: string;
-  readinessError?: string | null;
-  privateIp: string | null;
-  labInstanceId: string | null;
-  lastError: string | null;
-};
-
-type Run = {
-  id: string;
-  operationSlug: string;
-  mode: string;
-  status: string;
-  metadata?: {
-    domain?: string;
-    lifecycleState?: string;
-    initialAccess?: { username?: string; available?: boolean };
-  };
-  nodes: RunNode[];
-};
-
 type AccessMode = 'terminal' | 'desktop';
-
 type OpenedSessions = Record<string, true>;
 type AccessModes = Record<string, AccessMode>;
 
@@ -55,11 +26,11 @@ function iconFamily(value: string): LabOsFamily {
   return 'ubuntu';
 }
 
-function isWindows(node: RunNode) {
+function isWindows(node: OperationRunNode) {
   return iconFamily(node.osFamily) === 'windows';
 }
 
-function learnerStatus(node: RunNode, paused: boolean) {
+function learnerStatus(node: OperationRunNode, paused: boolean) {
   if (paused) return 'Paused';
   if (node.status === 'running') return 'Ready';
   if (node.status === 'failed') return 'Failed';
@@ -71,7 +42,7 @@ function sessionKey(nodeId: string, mode: AccessMode) {
   return `${nodeId}:${mode}`;
 }
 
-function defaultNode(nodes: RunNode[]) {
+function defaultNode(nodes: OperationRunNode[]) {
   return nodes.find((node) => node.role === 'target' && isWindows(node))
     || nodes.find((node) => isWindows(node) && node.key === 'workstation')
     || nodes.find((node) => node.role === 'operator')
@@ -86,82 +57,38 @@ export function OperationLabRuntimePanel({
   runId: string;
   onAiContextChange?: (context: OperationAiRuntimeContext | null) => void;
 }) {
-  const [run, setRun] = React.useState<Run | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const {
+    run,
+    loading,
+    refreshError,
+    allReady,
+    paused,
+    needsProgressPolling,
+    refresh,
+  } = useOperationRun();
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [accessModes, setAccessModes] = React.useState<AccessModes>({});
   const [openedSessions, setOpenedSessions] = React.useState<OpenedSessions>({});
-  const [refreshError, setRefreshError] = React.useState(false);
-  const refreshInFlight = React.useRef(false);
-  const activeRunId = React.useRef(runId);
   const defaultDesktopOpenedForRun = React.useRef<string | null>(null);
-  activeRunId.current = runId;
-
-  const refresh = React.useCallback(async (quiet = false) => {
-    if (refreshInFlight.current) return;
-    refreshInFlight.current = true;
-    if (!quiet) setLoading(true);
-    try {
-      const response = await fetch(`/api/operations/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body?.error || 'Could not load Operation runtime');
-      if (activeRunId.current !== runId) return;
-      const next = body.run as Run;
-      setRefreshError(false);
-      setRun(next);
-      setSelectedId((current) => current && next.nodes.some((node) => node.id === current)
-        ? current
-        : defaultNode(next.nodes)?.id || null);
-    } catch (error) {
-      if (activeRunId.current !== runId) return;
-      console.error('Black Domain runtime refresh failed:', error);
-      setRefreshError(true);
-      if (!quiet) toast.error('Could not refresh the lab machines.');
-    } finally {
-      refreshInFlight.current = false;
-      if (!quiet) setLoading(false);
-    }
-  }, [runId]);
 
   React.useEffect(() => {
-    setRun(null);
     setSelectedId(null);
     setAccessModes({});
     setOpenedSessions({});
-    setRefreshError(false);
     defaultDesktopOpenedForRun.current = null;
-    void refresh();
-  }, [refresh]);
+  }, [runId]);
 
-  const paused = run?.metadata?.lifecycleState === 'paused';
-  const allReady = Boolean(
-    run
-    && !paused
-    && run.status === 'running'
-    && run.nodes.length > 0
-    && run.nodes.every((node) => node.status === 'running')
-  );
-  const terminalState = Boolean(run && ['failed', 'destroying', 'destroyed'].includes(run.status));
-  const needsProgressPolling = Boolean(run && !paused && !allReady && !terminalState);
+  React.useEffect(() => {
+    if (!run || run.id !== runId) return;
+    setSelectedId((current) => current && run.nodes.some((node) => node.id === current)
+      ? current
+      : defaultNode(run.nodes)?.id || null);
+  }, [run, runId]);
+
   const selected = (run?.id === runId ? run : null)?.nodes.find((node) => node.id === selectedId) || null;
   const selectedMode = selected ? accessModes[selected.id] || null : null;
 
-  React.useEffect(() => {
-    if (!needsProgressPolling) return;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh(true);
-    }, 5_000);
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void refresh(true);
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [needsProgressPolling, refresh]);
-
-  const openAccess = React.useCallback((node: RunNode, mode: AccessMode) => {
+  const openAccess = React.useCallback((node: OperationRunNode, mode: AccessMode) => {
     if (mode === 'desktop' && !isWindows(node)) return;
     setSelectedId(node.id);
     setAccessModes((current) => ({ ...current, [node.id]: mode }));
@@ -193,12 +120,12 @@ export function OperationLabRuntimePanel({
   if (loading && !run) {
     return <div className="flex min-h-40 items-center justify-center rounded-xl border text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Opening My Lab…</div>;
   }
-  if (!run) {
+  if (!run || run.id !== runId) {
     return <div className="flex items-center justify-between rounded-xl border p-3 text-xs text-muted-foreground"><span>My Lab is temporarily unavailable.</span><Button size="sm" variant="ghost" onClick={() => void refresh()}>Retry</Button></div>;
   }
 
-  // The Operation strip owns provisioning and lifecycle progress. Keep My Lab quiet
-  // until the three machines have passed the exercise readiness checks.
+  // The shared Operation provider owns provisioning/reconciliation. Keep My Lab
+  // quiet until all three machines have passed readiness checks.
   if (!allReady && !paused) return null;
 
   return (
@@ -206,14 +133,14 @@ export function OperationLabRuntimePanel({
       {refreshError && (
         <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
           <span>Machine status may be out of date.</span>
-          <Button size="sm" variant="ghost" className="h-7" onClick={() => void refresh()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
+          <Button size="sm" variant="ghost" className="h-7" onClick={() => void refresh({ reconcile: needsProgressPolling })}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
         </div>
       )}
 
       <div className="grid gap-2 md:grid-cols-3">
         {run.nodes.map((node) => {
           const active = node.id === selectedId;
-          const status = learnerStatus(node, Boolean(paused));
+          const status = learnerStatus(node, paused);
           const ready = status === 'Ready';
           return (
             <button
@@ -251,7 +178,7 @@ export function OperationLabRuntimePanel({
                   size="sm"
                   variant={selectedMode === 'terminal' ? 'default' : 'outline'}
                   onClick={() => openAccess(selected, 'terminal')}
-                  disabled={Boolean(paused)}
+                  disabled={paused}
                 >
                   <Terminal className="mr-1.5 h-3.5 w-3.5" />Terminal
                 </Button>
@@ -260,7 +187,7 @@ export function OperationLabRuntimePanel({
                     size="sm"
                     variant={selectedMode === 'desktop' ? 'default' : 'outline'}
                     onClick={() => openAccess(selected, 'desktop')}
-                    disabled={Boolean(paused)}
+                    disabled={paused}
                   >
                     <Monitor className="mr-1.5 h-3.5 w-3.5" />Desktop
                   </Button>
@@ -271,7 +198,7 @@ export function OperationLabRuntimePanel({
             {!paused && !selectedMode && <p className="text-xs text-muted-foreground">Choose Terminal{isWindows(selected) ? ' or Desktop' : ''}.</p>}
             {paused && <Badge variant="outline">Paused</Badge>}
 
-            <div className={paused ? 'hidden' : 'block'} aria-hidden={Boolean(paused)}>
+            <div className={paused ? 'hidden' : 'block'} aria-hidden={paused}>
               {run.nodes.flatMap((node) => {
                 const modes: AccessMode[] = isWindows(node) ? ['terminal', 'desktop'] : ['terminal'];
                 return modes.map((mode) => {
