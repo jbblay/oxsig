@@ -125,20 +125,16 @@ describe('Operation provisioning API', () => {
     expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
   });
 
-  it('reports a maintenance environment as unavailable instead of still preparing', async () => {
+  it('allows the runtime fallback when every prepared environment is under maintenance', async () => {
     mocks.poolQuery.mockReset()
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce(environmentSummary({ total_count: 1, maintenance_count: 1 }));
 
     const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
-    const body = await response.json();
-
-    expect(response.status).toBe(503);
-    expect(body.code).toBe('OPERATION_ENVIRONMENT_MAINTENANCE');
-    expect(body.error).toContain('temporarily unavailable');
-    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
-    expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
+    expect(response.status).toBe(201);
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(mocks.provisionRegisteredOperationRun).toHaveBeenCalledTimes(1);
   });
 
   it('allows provisioning when at least one prepared slot is available', async () => {
