@@ -32,15 +32,21 @@ describe('background request polling regressions', () => {
     expect(value).not.toContain('window.setInterval(() => void refresh(), 4_000)');
   });
 
-  it('stops Operation polling after the run and machine surfaces become stable', () => {
+  it('uses one shared visible-only Operation polling owner', () => {
+    const provider = source('src/components/operations/OperationRunProvider.tsx');
+    expect(provider).toContain('needsProgressPolling');
+    expect(provider).toContain("document.visibilityState === 'visible'");
+    expect(provider).toContain('/reconcile');
+    expect(provider).toContain('window.setInterval');
+
     for (const path of [
       'src/components/operations/OperationRunStrip.tsx',
       'src/components/operations/OperationLabRuntimePanel.tsx',
       'src/components/operations/OperationTopologyBuild.tsx',
     ]) {
       const value = source(path);
-      expect(value).toContain('needsProgressPolling');
-      expect(value).toContain("document.visibilityState === 'visible'");
+      expect(value).not.toContain('window.setInterval');
+      expect(value).not.toContain("fetch(`/api/operations/runs/${encodeURIComponent(runId)}`");
     }
   });
 });
