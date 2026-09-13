@@ -110,6 +110,22 @@ describe('Operation provisioning API', () => {
     expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
   });
 
+  it('reports a failed prepared environment as unavailable instead of still preparing', async () => {
+    mocks.poolQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ status: 'failed' }] });
+
+    const response = await POST(request({ mode: 'practice' }), { params: Promise.resolve({ slug: 'black-domain' }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.code).toBe('OPERATION_ENVIRONMENT_FAILED');
+    expect(body.error).toContain('temporarily unavailable');
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.provisionRegisteredOperationRun).not.toHaveBeenCalled();
+  });
+
   it('rejects unsupported modes before provisioning', async () => {
     const response = await POST(request({ mode: 'root-everything' }), { params: Promise.resolve({ slug: 'black-domain' }) });
     expect(response.status).toBe(400);
