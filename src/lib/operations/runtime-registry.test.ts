@@ -5,15 +5,13 @@ const mocks = vi.hoisted(() => ({
   provisionOperationRun: vi.fn(),
 }));
 
-class MockOperationRuntimeError extends Error {
-  constructor(message: string, readonly status = 409, readonly code = 'OPERATION_RUNTIME_CONFLICT') {
-    super(message);
-  }
-}
-
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/operations/runtime', () => ({
-  OperationRuntimeError: MockOperationRuntimeError,
+  OperationRuntimeError: class OperationRuntimeError extends Error {
+    constructor(message: string, readonly status = 409, readonly code = 'OPERATION_RUNTIME_CONFLICT') {
+      super(message);
+    }
+  },
   provisionOperationRun: mocks.provisionOperationRun,
 }));
 vi.mock('@/lib/operations/prepared-runtime', () => ({
@@ -112,9 +110,11 @@ describe('Operation runtime registry', () => {
 
   it('falls back on a narrow prepared reservation race', async () => {
     vi.stubEnv('LAB_AWS_BLACK_DOMAIN_PREPARED', 'true');
-    mocks.provisionPreparedBlackDomainRun.mockRejectedValueOnce(
-      new MockOperationRuntimeError('slot unavailable', 409, 'OPERATION_ENVIRONMENT_UNAVAILABLE'),
-    );
+    mocks.provisionPreparedBlackDomainRun.mockRejectedValueOnce({
+      message: 'slot unavailable',
+      status: 409,
+      code: 'OPERATION_ENVIRONMENT_UNAVAILABLE',
+    });
     const { provisionRegisteredOperationRun } = await import('./runtime-registry');
     const pool = poolSummary();
 
