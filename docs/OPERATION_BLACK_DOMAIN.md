@@ -1,41 +1,56 @@
 # OXSIG Operation Black Domain
 
-`Operation Black Domain` is the first automated multi-node Operation runtime.
+`Operation Black Domain` is the first automated multi-node Operation runtime. Production uses a reusable prepared environment rather than creating three fresh EC2 instances for every launch.
 
 ## Runtime topology
 
+Slot `black-domain-slot-01` contains three permanent EC2 machines:
+
 - Operator terminal: Ubuntu 24.04, exposed through the existing managed Cyber Lab terminal path.
-- Domain controller: Windows Server 2022, promoted to `blackdomain.local` with DNS.
+- Domain controller: Windows Server 2022, configured as `blackdomain.local` with DNS.
 - Workstation: Windows Server 2022, configured to use the domain controller for DNS and joined to `blackdomain.local`.
 
-The three EC2 instances share the configured lab subnet and a dedicated Operation security group. That group must allow all-protocol traffic from itself so DNS, LDAP, Kerberos, RPC and SMB work inside the scenario boundary without opening ordinary Cyber Labs to the Operation.
+The machines are prepared ahead of time and remain stopped while the slot is available. Starting an Operation reserves the slot and starts those exact three instance IDs in parallel. The launch path never creates disposable fallback Black Domain instances.
 
 ## Safety and lifecycle
 
-- Only the operator machine is an interactive `lab_instances` allocation.
-- Target nodes are tracked in `operation_nodes`; they are not directly exposed as privileged user terminals.
-- Every node has an absolute expiry shutdown task and EC2 `InstanceInitiatedShutdownBehavior=terminate`.
-- The scheduled cloud cleanup scans both durable Operation-node records and `Purpose=OperationNode` EC2 tags, so a node created just before a process/database failure can still be recovered and terminated by expiry.
-- Ending the Operation terminates all node instance IDs together.
-- Destroying the operator Cyber Lab also destroys the whole Operation, preventing target-node orphans.
-- Partial provisioning failure terminates all EC2 instances already created for that run and marks the run failed.
+- `LAB_AWS_BLACK_DOMAIN_PREPARED=true` is required to enable Black Domain production launches.
+- If the prepared flag is false or missing, launch fails closed. It does not fall back to the legacy disposable three-instance provisioner.
+- The configured instance IDs must be stopped and tagged as the expected `Oxsig` reusable `OperationEnvironment` Slot 01 nodes before they can be reserved.
+- Only the operator machine is represented as an interactive `lab_instances` access surface. Start, stop, and destroy actions on that access surface delegate to the whole Operation instead of manipulating the operator EC2 instance independently.
+- Ordinary Cyber Lab expiry reconciliation excludes prepared rows carrying an `environmentId`, so generic lab cleanup cannot terminate a permanent reusable Operation node.
+- Ending the Operation does not terminate the prepared machines. It moves the environment into reset and restores all three root volumes from the coordinated baseline snapshots.
+- A reset becomes reusable only after root-volume replacement succeeds, guest readiness is verified through Systems Manager, all three machines are stopped, and the environment is marked `available`.
+- A reset failure leaves the slot quarantined as `failed` rather than returning damaged state to another user.
 
-## Scenario bootstrap
+## Scenario bootstrap and readiness
 
-The domain controller creates ephemeral lab-only identities after AD DS promotion. The workstation waits for LDAP and then joins the domain. The operator receives scope, private target addresses, Kerberos configuration and the initial low-privilege identity in `/opt/oxsig/operation.env`.
+The prepared baseline already contains the configured Active Directory scenario and the low-privilege starting identity. The Ubuntu operator exposes the scenario scope in `/opt/oxsig/operation.env`.
 
-The Operation UI reports EC2 lifecycle separately from guest bootstrap: `running` means the instances are running, not that AD promotion or domain join has necessarily finished. Guest readiness remains observable work rather than a fabricated instant-ready state.
+EC2 `running` is not treated as sufficient readiness. OXSIG re-verifies Systems Manager and guest postconditions for the domain controller, workstation, and operator before the Operation is shown as ready.
 
-## Deployment requirements
+## Production environment contract
+
+General AWS Cyber Lab configuration remains required:
 
 - `LAB_AWS_ENABLED=true`
+- `LAB_AWS_REGION`
 - `LAB_AWS_SUBNET_ID`
+- `LAB_AWS_SECURITY_GROUP_ID`
 - `LAB_AWS_INSTANCE_PROFILE`
-- `LAB_AWS_OPERATION_SECURITY_GROUP_ID` (dedicated; self-referencing; no fallback to the ordinary lab group)
-- AWS credentials with the same EC2/SSM permissions already required by Cyber Lab
 
-Optional overrides:
+Prepared Black Domain additionally requires:
 
-- `LAB_AWS_OPERATION_LINUX_INSTANCE_TYPE`
-- `LAB_AWS_OPERATION_WINDOWS_INSTANCE_TYPE`
-- existing Ubuntu and Windows AMI override variables
+- `LAB_AWS_BLACK_DOMAIN_PREPARED=true`
+- `LAB_AWS_BLACK_DOMAIN_SLOT_KEY`
+- `LAB_AWS_BLACK_DOMAIN_DC_INSTANCE_ID`
+- `LAB_AWS_BLACK_DOMAIN_WORKSTATION_INSTANCE_ID`
+- `LAB_AWS_BLACK_DOMAIN_OPERATOR_INSTANCE_ID`
+- `LAB_AWS_BLACK_DOMAIN_DC_SNAPSHOT_ID`
+- `LAB_AWS_BLACK_DOMAIN_WORKSTATION_SNAPSHOT_ID`
+- `LAB_AWS_BLACK_DOMAIN_OPERATOR_SNAPSHOT_ID`
+- `LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD`
+
+`LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD` is a deployment secret and must never be committed.
+
+The legacy disposable Black Domain variables `LAB_AWS_OPERATION_SECURITY_GROUP_ID`, `LAB_AWS_OPERATION_PUBLIC_IP`, `LAB_AWS_OPERATION_LINUX_INSTANCE_TYPE`, and `LAB_AWS_OPERATION_WINDOWS_INSTANCE_TYPE` are not part of the production contract for the prepared runtime.
