@@ -179,6 +179,9 @@ async function runtimeFixture(probeResults) {
     'server-only': {}, 'node:crypto': { randomBytes: crypto.randomBytes, randomInt: crypto.randomInt },
     '@aws-sdk/client-ec2': sdk, '@/lib/aws/client-config': { awsClientConfig: () => ({}) },
     '@/lib/db/postgres-safe': { stringifyPostgresJson: JSON.stringify },
+    '@/lib/labs/termination-guard': {
+      assertDisposableInstances: async () => assert.fail('Readiness reconciliation must not request termination'),
+    },
     '@/lib/operations/catalog': { getOperation: () => ({}) },
     '@/lib/operations/access-secret': { sealOperationAccessSecret: () => '' },
     '@/lib/operations/readiness': {
