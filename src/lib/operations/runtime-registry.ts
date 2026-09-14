@@ -45,21 +45,12 @@ async function preparedPoolRequiresFallback(pool: Pool) {
   return total > 0 && available === 0 && maintenance === total;
 }
 
-function isPreparedUnavailable(error: unknown) {
-  return Boolean(
-    error
-      && typeof error === 'object'
-      && 'code' in error
-      && (error as { code?: unknown }).code === 'OPERATION_ENVIRONMENT_UNAVAILABLE',
-  );
-}
-
 /**
  * Black Domain prefers the prepared reusable pool for fast startup. A pool that
  * is explicitly quarantined/under maintenance must not become a product-wide
  * outage, so the existing disposable runtime is retained as a controlled
- * fallback. Busy or resetting prepared capacity still fails closed instead of
- * silently creating extra compute.
+ * fallback. Busy, resetting, or reservation-race capacity fails closed instead
+ * of silently creating extra disposable compute.
  */
 const blackDomainProvisioner: OperationProvisioner = async (args) => {
   if (!awsLabsEnabled) {
@@ -78,16 +69,7 @@ const blackDomainProvisioner: OperationProvisioner = async (args) => {
     return provisionOperationRun(args);
   }
 
-  try {
-    return await provisionPreparedBlackDomainRun(args);
-  } catch (error) {
-    // Covers the narrow race where the slot becomes unavailable after the
-    // pool-health read but before its reservation transaction completes.
-    if (isPreparedUnavailable(error)) {
-      return provisionOperationRun(args);
-    }
-    throw error;
-  }
+  return provisionPreparedBlackDomainRun(args);
 };
 
 const runtimeDrivers: Record<OperationRuntimeDriver, OperationProvisioner> = {
