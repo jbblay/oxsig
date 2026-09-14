@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -61,6 +63,12 @@ describe('disposable Operation run network isolation', () => {
     ]);
     expect(ingressCommand.input.IpPermissions?.[0]?.IpRanges).toBeUndefined();
     expect(ingressCommand.input.IpPermissions?.[0]?.Ipv6Ranges).toBeUndefined();
+  });
+
+  it('never attaches disposable nodes to the shared Operation security group', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/operations/runtime.ts'), 'utf8');
+    expect(source).toContain('Groups: [args.securityGroupId]');
+    expect(source).not.toContain('Groups: [OPERATION_SECURITY_GROUP_ID]');
   });
 
   it('deletes the new group and fails closed if self-only ingress cannot be installed', async () => {
