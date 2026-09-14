@@ -108,7 +108,7 @@ describe('Operation runtime registry', () => {
     expect(mocks.provisionPreparedBlackDomainRun).not.toHaveBeenCalled();
   });
 
-  it('falls back on a narrow prepared reservation race', async () => {
+  it('fails closed on a prepared reservation race instead of creating disposable compute', async () => {
     vi.stubEnv('LAB_AWS_BLACK_DOMAIN_PREPARED', 'true');
     mocks.provisionPreparedBlackDomainRun.mockRejectedValueOnce({
       message: 'slot unavailable',
@@ -118,16 +118,18 @@ describe('Operation runtime registry', () => {
     const { provisionRegisteredOperationRun } = await import('./runtime-registry');
     const pool = poolSummary();
 
-    const result = await provisionRegisteredOperationRun({
+    await expect(provisionRegisteredOperationRun({
       pool,
       ownerId: 'owner-1',
       slug: 'black-domain',
       mode: 'practice',
+    })).rejects.toMatchObject({
+      code: 'OPERATION_ENVIRONMENT_UNAVAILABLE',
+      status: 409,
     });
 
-    expect(result.runId).toBe('run-fallback');
     expect(mocks.provisionPreparedBlackDomainRun).toHaveBeenCalledOnce();
-    expect(mocks.provisionOperationRun).toHaveBeenCalledOnce();
+    expect(mocks.provisionOperationRun).not.toHaveBeenCalled();
   });
 
   it('fails closed when AWS labs are globally disabled', async () => {
