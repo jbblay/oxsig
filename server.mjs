@@ -2,12 +2,16 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import pg from 'pg';
 import { WebSocket, WebSocketServer } from 'ws';
-import { SSMClient } from '@aws-sdk/client-ssm';
+import { SSMClient, TerminateSessionCommand } from '@aws-sdk/client-ssm';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { HttpRequest } from '@smithy/protocol-http';
 import { SignatureV4 } from '@smithy/signature-v4';
 import { awsClientConfig } from './scripts/aws-client-config.mjs';
 import { verifyTerminalBridgeTicket } from './src/lib/labs/terminal-bridge-ticket.js';
+import {
+  assertTerminalWorkspaceControl,
+  terminalFrameRequiresWorkspaceControlRevalidation,
+} from './src/lib/labs/terminal-workspace-control.js';
 
 const { Pool } = pg;
 const dev = !process.argv.includes('--prod');
@@ -50,6 +54,7 @@ const BRIDGE_PATH = '/__oxsig/terminal-bridge';
 const MAX_PENDING_BYTES = 1024 * 1024;
 const TICKET_RETENTION_MS = 90_000;
 const AWS_PING_INTERVAL_MS = 5 * 60_000;
+const SHARED_CONTROL_RECHECK_MS = 2_000;
 
 const configuredBridgeSecret = process.env.OXSIG_TERMINAL_BRIDGE_SECRET?.trim();
 if (!configuredBridgeSecret) {
@@ -65,7 +70,7 @@ if (!configuredBridgeSecret) {
 }
 
 const usedTickets = new Map();
-const terminalTicketPool = !dev && process.env.DATABASE_URL
+const terminalTicketPool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
       max: 2,
@@ -127,6 +132,28 @@ async function consumeTicket(ticket) {
     });
 
   return payload;
+}
+
+async function requireWorkspaceControl(payload) {
+  if (!payload.workspaceControl) return;
+  await assertTerminalWorkspaceControl(terminalTicketPool, payload.workspaceControl);
+}
+
+async function terminateSharedSession(payload) {
+  if (!payload.workspaceControl || !payload.sessionId) return;
+  const client = new SSMClient(awsClientConfig(payload.region));
+  try {
+    await client.send(new TerminateSessionCommand({ SessionId: payload.sessionId }));
+  } catch (error) {
+    console.warn(`[oxsig] Could not terminate revoked shared SSM session ${payload.sessionId}:`, error);
+    captureServerException(error, {
+      component: 'terminal-bridge-session-termination',
+      sessionId: payload.sessionId,
+      region: payload.region,
+    });
+  } finally {
+    client.destroy();
+  }
 }
 
 function validateBrowserOrigin(req) {
@@ -201,32 +228,63 @@ function closeQuietly(socket, code = 1000, reason = '') {
 async function bridgeConnection(browserSocket, payload) {
   let awsSocket;
   let pingTimer;
+  let authorizationTimer;
+  let closed = false;
   let pendingBytes = 0;
   const pending = [];
+  let browserForwardChain = Promise.resolve();
 
-  const stopPings = () => {
+  const stopTimers = () => {
     if (pingTimer) clearInterval(pingTimer);
+    if (authorizationTimer) clearInterval(authorizationTimer);
     pingTimer = undefined;
+    authorizationTimer = undefined;
   };
 
-  const fail = (message) => {
-    stopPings();
+  const fail = (message, authorizationFailure = false) => {
+    if (closed) return;
+    closed = true;
+    stopTimers();
     const error = new Error(message);
     console.error(`[oxsig] Terminal bridge failed for ${payload.sessionId}: ${message}`);
     captureServerException(error, {
       component: 'terminal-bridge',
       sessionId: payload.sessionId,
       region: payload.region,
+      sharedControl: Boolean(payload.workspaceControl),
+      authorizationFailure,
     });
-    closeQuietly(browserSocket, 1011, 'AWS Session Manager bridge failed');
-    if (awsSocket) closeQuietly(awsSocket, 1011, 'Bridge failed');
+    closeQuietly(
+      browserSocket,
+      authorizationFailure ? 1008 : 1011,
+      authorizationFailure ? 'Shared terminal control lease is no longer active' : 'AWS Session Manager bridge failed'
+    );
+    if (awsSocket) {
+      closeQuietly(
+        awsSocket,
+        authorizationFailure ? 1008 : 1011,
+        authorizationFailure ? 'Shared control revoked' : 'Bridge failed'
+      );
+    }
+    if (authorizationFailure) void terminateSharedSession(payload);
   };
 
-  browserSocket.on('message', (data, isBinary) => {
+  const forwardBrowserData = async (data, isBinary) => {
+    if (closed) return;
+    if (payload.workspaceControl && terminalFrameRequiresWorkspaceControlRevalidation(data)) {
+      try {
+        await requireWorkspaceControl(payload);
+      } catch (error) {
+        fail(error instanceof Error ? error.message : 'Shared terminal authorization failed', true);
+        return;
+      }
+    }
+
     if (awsSocket?.readyState === WebSocket.OPEN) {
       awsSocket.send(data, { binary: isBinary });
       return;
     }
+
     const size = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
     pendingBytes += size;
     if (pendingBytes > MAX_PENDING_BYTES) {
@@ -234,20 +292,33 @@ async function bridgeConnection(browserSocket, payload) {
       return;
     }
     pending.push({ data, isBinary });
+  };
+
+  browserSocket.on('message', (data, isBinary) => {
+    browserForwardChain = browserForwardChain
+      .then(() => forwardBrowserData(data, isBinary))
+      .catch((error) => {
+        fail(error instanceof Error ? error.message : 'Terminal bridge input failed');
+      });
   });
 
   browserSocket.on('close', () => {
-    stopPings();
+    if (closed) return;
+    closed = true;
+    stopTimers();
     if (awsSocket) closeQuietly(awsSocket, 1000, 'Browser disconnected');
   });
   browserSocket.on('error', () => {
-    stopPings();
+    if (closed) return;
+    closed = true;
+    stopTimers();
     if (awsSocket) closeQuietly(awsSocket, 1011, 'Browser connection error');
   });
 
   try {
+    await requireWorkspaceControl(payload);
     const headers = await signedAwsHeaders(payload.streamUrl, payload.region);
-    if (browserSocket.readyState !== WebSocket.OPEN) return;
+    if (browserSocket.readyState !== WebSocket.OPEN || closed) return;
     awsSocket = new WebSocket(payload.streamUrl, {
       headers,
       handshakeTimeout: 12_000,
@@ -256,31 +327,52 @@ async function bridgeConnection(browserSocket, payload) {
     });
 
     awsSocket.on('open', () => {
-      pingTimer = setInterval(() => {
-        if (awsSocket?.readyState === WebSocket.OPEN) awsSocket.ping('keepalive');
-      }, AWS_PING_INTERVAL_MS);
-      pingTimer.unref?.();
+      void (async () => {
+        try {
+          await requireWorkspaceControl(payload);
+          if (closed || awsSocket?.readyState !== WebSocket.OPEN) return;
 
-      for (const item of pending.splice(0)) {
-        if (awsSocket.readyState !== WebSocket.OPEN) break;
-        awsSocket.send(item.data, { binary: item.isBinary });
-      }
-      pendingBytes = 0;
+          pingTimer = setInterval(() => {
+            if (awsSocket?.readyState === WebSocket.OPEN) awsSocket.ping('keepalive');
+          }, AWS_PING_INTERVAL_MS);
+          pingTimer.unref?.();
+
+          if (payload.workspaceControl) {
+            authorizationTimer = setInterval(() => {
+              void requireWorkspaceControl(payload).catch((error) => {
+                fail(error instanceof Error ? error.message : 'Shared terminal authorization failed', true);
+              });
+            }, SHARED_CONTROL_RECHECK_MS);
+            authorizationTimer.unref?.();
+          }
+
+          for (const item of pending.splice(0)) {
+            if (closed || awsSocket.readyState !== WebSocket.OPEN) break;
+            awsSocket.send(item.data, { binary: item.isBinary });
+          }
+          pendingBytes = 0;
+        } catch (error) {
+          fail(error instanceof Error ? error.message : 'Shared terminal authorization failed', Boolean(payload.workspaceControl));
+        }
+      })();
     });
     awsSocket.on('message', (data, isBinary) => {
-      if (browserSocket.readyState === WebSocket.OPEN) {
+      if (!closed && browserSocket.readyState === WebSocket.OPEN) {
         browserSocket.send(data, { binary: isBinary });
       }
     });
     awsSocket.on('close', (code, reason) => {
-      stopPings();
+      if (closed) return;
+      closed = true;
+      stopTimers();
       closeQuietly(browserSocket, code === 1000 ? 1000 : 1011, reason.toString() || 'AWS channel closed');
     });
     awsSocket.on('error', (error) => {
       fail(error instanceof Error ? error.message : 'AWS WebSocket error');
     });
   } catch (error) {
-    fail(error instanceof Error ? error.message : 'Could not open AWS Session Manager WebSocket');
+    const authorizationFailure = Boolean(payload.workspaceControl);
+    fail(error instanceof Error ? error.message : 'Could not open AWS Session Manager WebSocket', authorizationFailure);
   }
 }
 
@@ -327,8 +419,9 @@ server.on('upgrade', async (req, socket, head) => {
   try {
     payload = await consumeTicket(ticket);
     validateAwsStreamUrl(payload.streamUrl, payload.region);
+    await requireWorkspaceControl(payload);
   } catch {
-    rejectUpgrade(socket);
+    rejectUpgrade(socket, 403, 'Forbidden');
     return;
   }
 
