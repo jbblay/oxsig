@@ -2,6 +2,9 @@ import 'server-only';
 
 import { randomBytes, randomInt } from 'node:crypto';
 import {
+  AuthorizeSecurityGroupIngressCommand,
+  CreateSecurityGroupCommand,
+  DeleteSecurityGroupCommand,
   DescribeImagesCommand,
   DescribeInstancesCommand,
   DescribeSecurityGroupsCommand,
@@ -182,8 +185,99 @@ export async function assertOperationRuntimeReady() {
   return {
     subnetId: SUBNET_ID,
     securityGroupId: OPERATION_SECURITY_GROUP_ID,
+    vpcId: subnet.VpcId,
     publicIpEnabled: operationPublicIpEnabled(),
   };
+}
+
+function awsErrorName(error: unknown) {
+  return error && typeof error === 'object' && 'name' in error
+    ? String((error as { name?: unknown }).name || '')
+    : '';
+}
+
+function isSecurityGroupDependencyViolation(error: unknown) {
+  return awsErrorName(error) === 'DependencyViolation';
+}
+
+export async function createDisposableOperationSecurityGroup(args: {
+  vpcId: string;
+  runId: string;
+  ownerId: string;
+  expiresAt: string;
+}) {
+  const created = await ec2.send(new CreateSecurityGroupCommand({
+    GroupName: `oxsig-operation-${args.runId}`,
+    Description: 'OXSIG disposable Operation run network',
+    VpcId: args.vpcId,
+    TagSpecifications: [{
+      ResourceType: 'security-group',
+      Tags: [
+        { Key: 'Name', Value: `oxsig-operation-${args.runId.slice(0, 8)}` },
+        { Key: 'App', Value: 'Oxsig' },
+        { Key: 'Purpose', Value: 'OperationRun' },
+        { Key: 'Lifecycle', Value: 'Disposable' },
+        { Key: 'OperationRunId', Value: args.runId },
+        { Key: 'OwnerId', Value: args.ownerId },
+        { Key: 'ExpiresAt', Value: args.expiresAt },
+      ],
+    }],
+  }));
+  const groupId = created.GroupId;
+  if (!groupId) {
+    throw new OperationRuntimeError(
+      'AWS did not return a security group id for the disposable Operation network.',
+      503,
+      'OPERATION_NETWORK_CREATE_FAILED',
+    );
+  }
+
+  try {
+    await ec2.send(new AuthorizeSecurityGroupIngressCommand({
+      GroupId: groupId,
+      IpPermissions: [{
+        IpProtocol: '-1',
+        UserIdGroupPairs: [{
+          GroupId: groupId,
+          Description: 'OXSIG same-run east-west traffic only',
+        }],
+      }],
+    }));
+  } catch (error) {
+    await ec2.send(new DeleteSecurityGroupCommand({ GroupId: groupId })).catch(() => undefined);
+    throw new OperationRuntimeError(
+      error instanceof Error ? `Could not isolate the disposable Operation network: ${error.message}` : 'Could not isolate the disposable Operation network.',
+      503,
+      'OPERATION_NETWORK_CREATE_FAILED',
+    );
+  }
+  return groupId;
+}
+
+async function deleteDisposableOperationSecurityGroup(groupId: string) {
+  await ec2.send(new DeleteSecurityGroupCommand({ GroupId: groupId }));
+}
+
+async function cleanupDisposableOperationSecurityGroup(pool: Pool, runId: string, metadata: unknown) {
+  const runMetadata = metadataObject(metadata);
+  const groupId = typeof runMetadata.operationSecurityGroupId === 'string'
+    ? runMetadata.operationSecurityGroupId
+    : null;
+  if (!groupId) return false;
+
+  try {
+    await deleteDisposableOperationSecurityGroup(groupId);
+    await pool.query(
+      `UPDATE operation_runs SET metadata=metadata - 'operationSecurityGroupId',updated_at=NOW() WHERE id=$1`,
+      [runId],
+    );
+    return true;
+  } catch (error) {
+    if (!isSecurityGroupDependencyViolation(error)) {
+      console.warn('[oxsig] Disposable Operation security-group cleanup deferred:', error);
+    }
+    return false;
+  }
 }
 
 function linuxUserData(expiresAt: string, extra: string) {
@@ -369,10 +463,11 @@ async function launchNode(args: {
   imageId: string;
   instanceType: string;
   userData: string;
+  securityGroupId: string;
   purpose: 'CyberLab' | 'OperationNode';
   labInstanceId?: string;
 }) : Promise<LaunchedNode> {
-  if (!SUBNET_ID || !OPERATION_SECURITY_GROUP_ID) throw new OperationRuntimeError('Operation network configuration disappeared.', 503);
+  if (!SUBNET_ID || !args.securityGroupId) throw new OperationRuntimeError('Operation network configuration disappeared.', 503);
   const tags = [
     { Key: 'Name', Value: `oxsig-${args.operationSlug}-${args.nodeKey}-${args.idForTag.slice(0, 8)}` },
     { Key: 'App', Value: 'Oxsig' },
@@ -393,7 +488,7 @@ async function launchNode(args: {
     NetworkInterfaces: [{
       DeviceIndex: 0,
       SubnetId: SUBNET_ID,
-      Groups: [OPERATION_SECURITY_GROUP_ID],
+      Groups: [args.securityGroupId],
       AssociatePublicIpAddress: operationPublicIpEnabled(),
       DeleteOnTermination: true,
     }],
@@ -439,7 +534,7 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
     throw new OperationRuntimeError('This Operation does not have an automated multi-node runtime yet.', 409, 'OPERATION_RUNTIME_NOT_AUTOMATED');
   }
 
-  await assertOperationRuntimeReady();
+  const network = await assertOperationRuntimeReady();
   const [ubuntuImageId, windowsImageId] = await Promise.all([resolveImage('ubuntu'), resolveImage('windows')]);
   const expiresAt = new Date(Date.now() + expiryMinutes(operation.estimatedMinutes) * 60_000).toISOString();
   const joinPassword = generatedPassword();
@@ -548,13 +643,26 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
   const dc = nodes.find((node) => node.nodeKey === 'dc')!;
   const workstation = nodes.find((node) => node.nodeKey === 'workstation')!;
   const operator = nodes.find((node) => node.nodeKey === 'operator')!;
+  let operationSecurityGroupId = '';
 
   try {
+    operationSecurityGroupId = await createDisposableOperationSecurityGroup({
+      vpcId: network.vpcId,
+      runId,
+      ownerId: args.ownerId,
+      expiresAt,
+    });
+    await args.pool.query(
+      `UPDATE operation_runs SET metadata=metadata || $1::jsonb,updated_at=NOW() WHERE id=$2 AND owner_id=$3`,
+      [stringifyPostgresJson({ operationSecurityGroupId }), runId, args.ownerId],
+    );
+
     const dcRuntime = await launchNode({
       idForTag: dc.id, operationRunId: runId, nodeId: dc.id, nodeKey: dc.nodeKey,
       label: dc.label, ownerId: args.ownerId, operationSlug: operation.slug, expiresAt,
       osFamily: 'windows', imageId: windowsImageId, instanceType: windowsInstanceType(),
       userData: windowsUserData(expiresAt, domainControllerBootstrap({ joinPassword, learnerPassword, servicePassword })),
+      securityGroupId: operationSecurityGroupId,
       purpose: 'OperationNode',
     });
     createdExternalIds.push(dcRuntime.externalId);
@@ -565,6 +673,7 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
       label: workstation.label, ownerId: args.ownerId, operationSlug: operation.slug, expiresAt,
       osFamily: 'windows', imageId: windowsImageId, instanceType: windowsInstanceType(),
       userData: windowsUserData(expiresAt, workstationBootstrap({ dcIp: dcRuntime.privateIp, joinPassword })),
+      securityGroupId: operationSecurityGroupId,
       purpose: 'OperationNode',
     });
     createdExternalIds.push(workstationRuntime.externalId);
@@ -580,6 +689,7 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
         learnerPassword,
         mode: args.mode,
       })),
+      securityGroupId: operationSecurityGroupId,
       purpose: 'CyberLab', labInstanceId: operatorLabInstanceId,
     });
     createdExternalIds.push(operatorRuntime.externalId);
@@ -609,6 +719,9 @@ export async function provisionOperationRun(args: { pool: Pool; ownerId: string;
   } catch (error) {
     if (createdExternalIds.length) {
       await ec2.send(new TerminateInstancesCommand({ InstanceIds: createdExternalIds })).catch(() => undefined);
+    }
+    if (operationSecurityGroupId) {
+      await deleteDisposableOperationSecurityGroup(operationSecurityGroupId).catch(() => undefined);
     }
     const message = error instanceof Error ? error.message.slice(0, 800) : 'Operation provisioning failed';
     await Promise.all([
@@ -641,6 +754,7 @@ function readinessCheckDue(metadata: OperationNodeMetadata) {
 function publicOperationMetadata(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const metadata = { ...(value as Record<string, unknown>) };
+  delete metadata.operationSecurityGroupId;
   const rawAccess = metadata.initialAccess;
   if (rawAccess && typeof rawAccess === 'object' && !Array.isArray(rawAccess)) {
     const access = rawAccess as Record<string, unknown>;
@@ -656,7 +770,7 @@ function publicOperationMetadata(value: unknown) {
 
 export async function getOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
   const runResult = await args.pool.query(
-    `SELECT id,operation_slug,mode,status,operator_lab_instance_id,expires_at,metadata,last_error,created_at,updated_at
+    `SELECT id,operation_slug,mode,status,operator_lab_instance_id,environment_id,expires_at,metadata,last_error,created_at,updated_at
        FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
     [args.runId, args.ownerId]
   );
@@ -793,6 +907,9 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
       await args.pool.query(`UPDATE lab_instances SET status='running',started_at=COALESCE(started_at,NOW()),updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND status='provisioning'`, [run.operator_lab_instance_id, args.ownerId]);
     }
   }
+  if (!run.environment_id && (nextStatus === 'destroyed' || nextStatus === 'failed')) {
+    await cleanupDisposableOperationSecurityGroup(args.pool, args.runId, run.metadata);
+  }
   return {
     id: run.id,
     operationSlug: run.operation_slug,
@@ -808,7 +925,7 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
 
 export async function destroyOperationRun(args: { pool: Pool; runId: string; ownerId: string }) {
   const run = await args.pool.query(
-    `SELECT id,status,operator_lab_instance_id,environment_id FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
+    `SELECT id,status,operator_lab_instance_id,environment_id,metadata FROM operation_runs WHERE id=$1 AND owner_id=$2 LIMIT 1`,
     [args.runId, args.ownerId]
   );
   if (!run.rows[0]) throw new OperationRuntimeError('Operation run not found.', 404, 'OPERATION_RUN_NOT_FOUND');
@@ -818,6 +935,7 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
       const reset = await advancePreparedEnvironmentReset({ pool: args.pool, environmentId });
       return { destroyed: true, alreadyDestroyed: true, reusableEnvironment: true, reset };
     }
+    await cleanupDisposableOperationSecurityGroup(args.pool, args.runId, run.rows[0].metadata);
     return { destroyed: true, alreadyDestroyed: true };
   }
   const nodes = await args.pool.query(`SELECT runtime_external_id FROM operation_nodes WHERE run_id=$1 AND runtime_external_id IS NOT NULL`, [args.runId]);
@@ -866,6 +984,6 @@ export async function destroyOperationRun(args: { pool: Pool; runId: string; own
   }
 
   if (externalIds.length) await ec2.send(new TerminateInstancesCommand({ InstanceIds: externalIds }));
+  await cleanupDisposableOperationSecurityGroup(args.pool, args.runId, run.rows[0].metadata);
   return { destroyed: true, alreadyDestroyed: false, terminating: externalIds.length };
 }
-
