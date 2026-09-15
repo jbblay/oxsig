@@ -446,8 +446,7 @@ INITIAL_USER='${DOMAIN_NETBIOS}\\labuser'
 ${passwordLine}
 EOF
 chmod 0640 /opt/oxsig/operation.env
-printf '%s\
-' 'Operation Black Domain' 'Use /opt/oxsig/operation.env for scope and starting access.' > /opt/oxsig/README
+printf '%s\n' 'Operation Black Domain' 'Use /opt/oxsig/operation.env for scope and starting access.' > /opt/oxsig/README
 `;
 }
 
