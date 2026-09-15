@@ -219,3 +219,13 @@ test('paused operations do not submit readiness probes', async () => {
   await f.read();
   assert.equal(f.probes.length, 0);
 });
+test('destroyed run and node stay terminal even if EC2 still reports running', async () => {
+  const f = await runtimeFixture([]);
+  f.run.status = 'destroyed';
+  f.node.status = 'destroyed';
+  const value = await f.read();
+  assert.equal(value.status, 'destroyed');
+  assert.equal(value.nodes[0].status, 'destroyed');
+  assert.equal(f.run.status, 'destroyed');
+  assert.equal(f.probes.length, 0);
+});

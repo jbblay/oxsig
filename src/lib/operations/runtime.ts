@@ -863,7 +863,9 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
     const knownReady = Boolean(metadata.bootstrapReadyAt) || readinessByNode.get(node.id)?.ready === true;
 
     let status = node.status as string;
-    if (hasFreshComputeState) {
+    if (node.status === 'destroyed') {
+      status = 'destroyed';
+    } else if (hasFreshComputeState) {
       if (computeStatus === 'destroyed') status = 'destroyed';
       else if (node.status === 'failed') status = 'failed';
       else if (node.status === 'destroying') status = 'destroying';
@@ -897,7 +899,15 @@ export async function getOperationRun(args: { pool: Pool; runId: string; ownerId
   });
   const allRunning = nodes.length > 0 && nodes.every((node) => node.status === 'running');
   const allDestroyed = nodes.length > 0 && nodes.every((node) => node.status === 'destroyed');
-  const nextStatus = run.status === 'failed' ? 'failed' : allDestroyed ? 'destroyed' : allRunning ? 'running' : run.status === 'destroying' ? 'destroying' : 'provisioning';
+  const nextStatus = run.status === 'destroyed' || run.status === 'failed'
+    ? run.status
+    : allDestroyed
+      ? 'destroyed'
+      : allRunning
+        ? 'running'
+        : run.status === 'destroying'
+          ? 'destroying'
+          : 'provisioning';
   if (nextStatus !== run.status) {
     await args.pool.query(`UPDATE operation_runs SET status=$1,updated_at=NOW() WHERE id=$2 AND owner_id=$3`, [nextStatus, args.runId, args.ownerId]);
   }
