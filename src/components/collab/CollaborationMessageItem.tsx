@@ -144,6 +144,7 @@ export default function CollaborationMessageItem({
     : null;
   const practiceHref = typeof message.metadata.href === 'string' ? message.metadata.href : '/labs';
   const persisted = !message.deliveryState;
+  const senderOnline = onlineIds.includes(message.senderId);
   const canEdit = persisted && message.isOwnMessage && !message.deleted && ['text', 'explain'].includes(message.type);
   const canDelete = persisted && message.isOwnMessage && !message.deleted;
 
@@ -186,17 +187,34 @@ export default function CollaborationMessageItem({
   return (
     <div className={`group flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
       {!message.isOwnMessage && (
-        <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
-          {initials(message.senderName)}
-          {onlineIds.includes(message.senderId) && (
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />
+        <div
+          className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center overflow-visible rounded-full bg-muted text-[10px] font-semibold"
+          title={`${message.senderName} · ${senderOnline ? 'Online' : 'Offline'}`}
+          aria-label={`${message.senderName}, ${senderOnline ? 'online' : 'offline'}`}
+        >
+          {message.senderAvatar ? (
+            <img src={message.senderAvatar} alt="" className="h-8 w-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            initials(message.senderName)
           )}
+          <span
+            className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background ${senderOnline ? 'bg-emerald-500' : 'bg-muted-foreground/35'}`}
+            aria-hidden="true"
+          />
         </div>
       )}
 
       <div className={`flex max-w-[94%] flex-col sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'}`}>
         <div className="mb-1 flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
-          {!message.isOwnMessage && <span className="font-medium text-foreground">{message.senderName}</span>}
+          {!message.isOwnMessage && (
+            <>
+              <span className="font-medium text-foreground">{message.senderName}</span>
+              <span className={`inline-flex items-center gap-1 ${senderOnline ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${senderOnline ? 'bg-emerald-500' : 'bg-muted-foreground/35'}`} aria-hidden="true" />
+                {senderOnline ? 'Online' : 'Offline'}
+              </span>
+            </>
+          )}
           {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
           <span>{formatTime(message.createdAt)}</span>
           {message.editedAt && !message.deleted && <span>Edited</span>}
