@@ -59,6 +59,11 @@ export function OperationLaunchButton({
 
     setBusy(true);
     try {
+      const handoffWorkspaceId = sourceWorkspaceId || (
+        mode === 'warroom' && typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('workspace') || undefined
+          : undefined
+      );
       const csrf = await getCsrfToken();
       const response = await fetch(`/api/operations/${encodeURIComponent(slug)}/runs`, {
         method: 'POST',
@@ -78,7 +83,7 @@ export function OperationLaunchButton({
           const workspaceResponse = await fetch(`/api/warroom/runs/${encodeURIComponent(runId)}/workspace`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
-            body: JSON.stringify(sourceWorkspaceId ? { sourceWorkspaceId } : {}),
+            body: JSON.stringify(handoffWorkspaceId ? { sourceWorkspaceId: handoffWorkspaceId } : {}),
           });
           const workspaceBody = await workspaceResponse.json().catch(() => ({}));
           if (workspaceResponse.ok && typeof workspaceBody?.workspaceId === 'string') {
@@ -86,13 +91,13 @@ export function OperationLaunchButton({
             if (workspaceBody?.reusedSource === true) {
               toast.success('Live Workspace carried into Cyber Room.');
             }
-          } else if (sourceWorkspaceId) {
+          } else if (handoffWorkspaceId) {
             throw new Error(workspaceBody?.error || 'Could not carry this Live Workspace into Cyber Room');
           } else {
             toast.warning('Operation started. WarRoom will finish linking the team workspace when it opens.');
           }
         } catch (error) {
-          if (sourceWorkspaceId) throw error;
+          if (handoffWorkspaceId) throw error;
           toast.warning('Operation started. WarRoom will finish linking the team workspace when it opens.');
         }
       }
