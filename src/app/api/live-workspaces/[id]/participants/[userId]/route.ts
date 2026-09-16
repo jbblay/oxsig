@@ -5,12 +5,24 @@ import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { revokeControlForBinding, revokeControlForParticipant } from '@/lib/live-workspace/control';
+import { recordLiveWorkspaceActivity } from '@/lib/live-workspace/coordination';
 import { assignLiveWorkspaceRole, LiveWorkspaceError } from '@/lib/live-workspace/server';
 import { publishCollaborationEvent } from '@/lib/realtime/ably';
 
 export const runtime = 'nodejs';
 const idSchema = z.string().uuid();
 const bodySchema = z.object({ role: z.enum(['instructor', 'learner', 'observer']) }).strict();
+
+async function participantName(userId: string) {
+  const result = await getPool().query(
+    `SELECT COALESCE(display_name, split_part(email,'@',1), 'Participant') AS display_name
+       FROM users
+      WHERE id = $1
+      LIMIT 1`,
+    [userId]
+  );
+  return result.rows[0]?.display_name || 'Participant';
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -76,6 +88,15 @@ export async function PATCH(
           client.release();
         }
       }
+      const displayName = await participantName(userId);
+      await recordLiveWorkspaceActivity({
+        queryable: pool,
+        collaborationId: id,
+        actorId: user.id,
+        eventType: 'participant.role-changed',
+        summary: `Changed ${displayName} to ${parsed.data.role}`,
+        metadata: { participantId: userId, role: parsed.data.role, detachedResources },
+      }).catch((error) => console.warn('Live Workspace participant activity could not be recorded:', error));
       await publishCollaborationEvent({
         collaborationId: id,
         name: 'members.changed',
@@ -148,10 +169,6 @@ export async function DELETE(
       }
 
       const reason = user.id === userId ? 'participant_left' : 'participant_removed';
-
-      // A contributed lab is participant-owned. Once that participant leaves,
-      // detach every owned binding in the same transaction and revoke control
-      // held by any controller against those bindings before membership commits.
       const detached = await client.query(
         `UPDATE live_workspace_resources
             SET status='detached', detached_at=NOW(), updated_at=NOW()
@@ -191,6 +208,16 @@ export async function DELETE(
         [id, userId]
       );
       await client.query('COMMIT');
+
+      const displayName = await participantName(userId);
+      await recordLiveWorkspaceActivity({
+        queryable: pool,
+        collaborationId: id,
+        actorId: user.id,
+        eventType: user.id === userId ? 'participant.left' : 'participant.removed',
+        summary: user.id === userId ? `${displayName} left the workspace` : `Removed ${displayName} from the workspace`,
+        metadata: { participantId: userId, detachedResources: detached.rowCount || 0 },
+      }).catch((error) => console.warn('Live Workspace participant activity could not be recorded:', error));
       await publishCollaborationEvent({
         collaborationId: id,
         name: 'members.changed',
