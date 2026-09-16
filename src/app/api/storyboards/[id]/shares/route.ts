@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { emailProviderConfigured } from '@/lib/email/resend';
 import { logAudit, getRequestMetadata, AUDIT_ACTIONS } from '@/lib/audit/logger';
+import { publishStoryboardEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { canManageStoryboard } from '@/lib/storyboards/access';
@@ -214,6 +215,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         resourceId: id,
         ...getRequestMetadata(req),
         metadata: { targetUserId: target.id, permission, hasExpiration: !!expiresAt },
+      });
+      await publishStoryboardEvent({
+        storyboardId: id,
+        name: 'access.changed',
+        data: { actorId: user.id, targetUserId: target.id, permission, action: 'granted' },
       });
       return NextResponse.json({
         share: {
