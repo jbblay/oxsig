@@ -106,7 +106,9 @@ export async function getOperationLifecycleProgress(args: { pool: Pool; runId: s
   const lifecycleState = run.metadata?.lifecycleState;
   const phase: OperationLifecycleProgress['phase'] = lifecycleState === 'paused'
     ? total > 0 && stopped === total ? 'paused' : 'pausing'
-    : run.status === 'running' ? 'ready' : 'active';
+    : lifecycleState === 'pausing'
+      ? 'pausing'
+      : run.status === 'running' ? 'ready' : 'active';
 
   return { phase, total, stopped, nodeStates };
 }
@@ -152,7 +154,9 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
             SET status='provisioning',
                 metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"paused"'::jsonb, true),
                 updated_at=NOW()
-          WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='pausing'
+          WHERE id=$1 AND owner_id=$2
+            AND status='running'
+            AND metadata->>'lifecycleState'='pausing'
           RETURNING id`,
         [args.runId, args.ownerId]
       );
@@ -175,13 +179,18 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
       }
     });
   } catch (error) {
-    await ec2.send(new StartInstancesCommand({ InstanceIds: runningIds })).catch(() => undefined);
-    await args.pool.query(
+    const restored = await args.pool.query(
       `UPDATE operation_runs
           SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"active"'::jsonb, true), updated_at=NOW()
-        WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='pausing'`,
+        WHERE id=$1 AND owner_id=$2
+          AND status='running'
+          AND metadata->>'lifecycleState'='pausing'
+        RETURNING id`,
       [args.runId, args.ownerId]
-    ).catch(() => undefined);
+    ).catch(() => null);
+    if (restored?.rowCount) {
+      await ec2.send(new StartInstancesCommand({ InstanceIds: runningIds })).catch(() => undefined);
+    }
     throw error;
   }
 
@@ -213,8 +222,8 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
         SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"resuming"'::jsonb, true),
             updated_at=NOW()
       WHERE id=$1 AND owner_id=$2
+        AND status='provisioning'
         AND metadata->>'lifecycleState'='paused'
-        AND status NOT IN ('destroying','destroyed','failed')
       RETURNING id`,
     [args.runId, args.ownerId]
   );
@@ -231,7 +240,9 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
                 metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"active"'::jsonb, true),
                 last_error=NULL,
                 updated_at=NOW()
-          WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='resuming'
+          WHERE id=$1 AND owner_id=$2
+            AND status='provisioning'
+            AND metadata->>'lifecycleState'='resuming'
           RETURNING id`,
         [args.runId, args.ownerId]
       );
@@ -257,13 +268,18 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
       }
     });
   } catch (error) {
-    await ec2.send(new StopInstancesCommand({ InstanceIds: stoppedIds })).catch(() => undefined);
-    await args.pool.query(
+    const restored = await args.pool.query(
       `UPDATE operation_runs
           SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"paused"'::jsonb, true), updated_at=NOW()
-        WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='resuming'`,
+        WHERE id=$1 AND owner_id=$2
+          AND status='provisioning'
+          AND metadata->>'lifecycleState'='resuming'
+        RETURNING id`,
       [args.runId, args.ownerId]
-    ).catch(() => undefined);
+    ).catch(() => null);
+    if (restored?.rowCount) {
+      await ec2.send(new StopInstancesCommand({ InstanceIds: stoppedIds })).catch(() => undefined);
+    }
     throw error;
   }
 
