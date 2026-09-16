@@ -10,11 +10,11 @@ const idSchema = z.string().uuid();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; memberId: string }> }
+  { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
   return requireAuth(request, async (_req, user) => {
-    const { id, memberId } = await params;
-    if (!idSchema.safeParse(id).success || !idSchema.safeParse(memberId).success) {
+    const { id, userId } = await params;
+    if (!idSchema.safeParse(id).success || !idSchema.safeParse(userId).success) {
       return NextResponse.json({ error: 'Invalid collaboration member' }, { status: 400 });
     }
 
@@ -42,7 +42,7 @@ export async function GET(
         WHERE c.id = $1
           AND (c.owner_id = u.id OR cm.user_id IS NOT NULL)
         LIMIT 1`,
-      [id, memberId]
+      [id, userId]
     );
 
     const row = result.rows[0];
