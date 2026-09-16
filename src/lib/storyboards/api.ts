@@ -2,7 +2,9 @@
 
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import type {
+  StoryboardComment,
   StoryboardDraft,
+  StoryboardPoint,
   StoryboardServerSession,
   StoryboardShare,
 } from './types';
@@ -23,6 +25,7 @@ type PresignedStoryboardAudio = {
 };
 
 const serverAudioBlobs = new WeakSet<Blob>();
+const knownServerVersions = new Map<string, number>();
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -31,6 +34,24 @@ async function readError(response: Response): Promise<string> {
   } catch {
     return `Request failed (${response.status})`;
   }
+}
+
+function rememberVersion(session: StoryboardServerSession) {
+  knownServerVersions.set(session.id, session.version);
+}
+
+function emitActiveBoard(session: StoryboardServerSession | null) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('oxsig:board:active', {
+    detail: session ? {
+      id: session.id,
+      title: session.title,
+      permission: session.permission,
+      version: session.version,
+      ownerId: session.ownerId,
+      ownerName: session.ownerName,
+    } : null,
+  }));
 }
 
 function storyboardAudioFilename(audio: Blob): string {
@@ -83,7 +104,8 @@ async function cleanupStoryboardAudio(object: StoryboardAudioObject): Promise<vo
 
 function storyboardSaveForm(
   draft: StoryboardDraft,
-  uploadedAudio: StoryboardAudioObject | null
+  uploadedAudio: StoryboardAudioObject | null,
+  expectedVersion?: number
 ): FormData {
   const form = new FormData();
   form.set('metadata', JSON.stringify({
@@ -94,6 +116,7 @@ function storyboardSaveForm(
     events: draft.events,
   }));
   if (uploadedAudio) form.set('audioStorage', JSON.stringify(uploadedAudio));
+  if (expectedVersion !== undefined) form.set('expectedVersion', String(expectedVersion));
   return form;
 }
 
@@ -102,18 +125,21 @@ async function sendStoryboardSave(args: {
   uploadedAudio: StoryboardAudioObject | null;
   token: string;
   existingId?: string;
+  expectedVersion?: number;
 }): Promise<Response> {
   return fetch(args.existingId ? `/api/storyboards/${args.existingId}` : '/api/storyboards', {
     method: args.existingId ? 'PATCH' : 'POST',
     headers: { 'x-csrf-token': args.token },
-    body: storyboardSaveForm(args.draft, args.uploadedAudio),
+    body: storyboardSaveForm(args.draft, args.uploadedAudio, args.expectedVersion),
   });
 }
 
 export async function listServerStoryboards(): Promise<StoryboardServerSession[]> {
   const response = await fetch('/api/storyboards', { cache: 'no-store' });
   if (!response.ok) throw new Error(await readError(response));
-  return (await response.json()).sessions;
+  const sessions = (await response.json()).sessions as StoryboardServerSession[];
+  sessions.forEach(rememberVersion);
+  return sessions;
 }
 
 export async function getServerStoryboard(
@@ -122,6 +148,8 @@ export async function getServerStoryboard(
   const response = await fetch(`/api/storyboards/${id}`, { cache: 'no-store' });
   if (!response.ok) throw new Error(await readError(response));
   const session: StoryboardServerSession = (await response.json()).session;
+  rememberVersion(session);
+  emitActiveBoard(session);
 
   if (!session.hasAudio) return { session };
   const audioResponse = await fetch(`/api/storyboards/${id}/audio`, { cache: 'no-store' });
@@ -141,6 +169,7 @@ export async function saveServerStoryboard(
     uploadedAudio = await uploadStoryboardAudio(draft.audio);
   }
 
+  const expectedVersion = existingId ? knownServerVersions.get(existingId) : undefined;
   try {
     const token = await getCsrfToken();
     let response = await sendStoryboardSave({
@@ -148,6 +177,7 @@ export async function saveServerStoryboard(
       uploadedAudio,
       token,
       existingId,
+      expectedVersion,
     });
 
     // A recovery draft can outlive an owner Board that was deleted elsewhere.
@@ -155,6 +185,7 @@ export async function saveServerStoryboard(
     // fail closed so revoked access never silently becomes a private fork.
     const canRecreate = draft.serverPermission === 'owner';
     if (existingId && response.status === 404 && canRecreate) {
+      knownServerVersions.delete(existingId);
       response = await sendStoryboardSave({
         draft,
         uploadedAudio,
@@ -168,8 +199,11 @@ export async function saveServerStoryboard(
     }
 
     const body = await response.json();
+    const session = body.session as StoryboardServerSession;
+    rememberVersion(session);
+    emitActiveBoard(session);
     if (draft.audio) serverAudioBlobs.add(draft.audio);
-    return body.session;
+    return session;
   } catch (error) {
     throw error;
   }
@@ -182,6 +216,8 @@ export async function deleteServerStoryboard(id: string): Promise<void> {
     headers: { 'x-csrf-token': token },
   });
   if (!response.ok) throw new Error(await readError(response));
+  knownServerVersions.delete(id);
+  emitActiveBoard(null);
 }
 
 export async function listStoryboardShares(id: string): Promise<StoryboardShare[]> {
@@ -208,6 +244,51 @@ export async function shareStoryboard(
 export async function revokeStoryboardShare(id: string, userId: string): Promise<void> {
   const token = await getCsrfToken();
   const response = await fetch(`/api/storyboards/${id}/shares/${userId}`, {
+    method: 'DELETE',
+    headers: { 'x-csrf-token': token },
+  });
+  if (!response.ok) throw new Error(await readError(response));
+}
+
+export async function listStoryboardComments(id: string): Promise<StoryboardComment[]> {
+  const response = await fetch(`/api/storyboards/${id}/comments`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()).comments;
+}
+
+export async function createStoryboardComment(
+  id: string,
+  point: StoryboardPoint,
+  body: string
+): Promise<StoryboardComment> {
+  const token = await getCsrfToken();
+  const response = await fetch(`/api/storyboards/${id}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+    body: JSON.stringify({ x: point.x, y: point.y, body }),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()).comment;
+}
+
+export async function updateStoryboardComment(
+  id: string,
+  commentId: string,
+  patch: { body?: string; resolved?: boolean }
+): Promise<StoryboardComment> {
+  const token = await getCsrfToken();
+  const response = await fetch(`/api/storyboards/${id}/comments/${commentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()).comment;
+}
+
+export async function deleteStoryboardComment(id: string, commentId: string): Promise<void> {
+  const token = await getCsrfToken();
+  const response = await fetch(`/api/storyboards/${id}/comments/${commentId}`, {
     method: 'DELETE',
     headers: { 'x-csrf-token': token },
   });
