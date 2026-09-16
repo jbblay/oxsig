@@ -174,6 +174,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           return NextResponse.json({ error: 'This Live Workspace is already linked to another Cyber Room operation' }, { status: 409, headers: PRIVATE_HEADERS });
         }
 
+        // The operation row is already locked, so every linker for this run is serialized.
+        // Refuse to create a second active workspace link if this run was linked elsewhere.
+        const existingRunWorkspace = await client.query(
+          `SELECT c.id
+             FROM collaborations c
+             JOIN live_workspaces lw
+               ON lw.collaboration_id = c.id
+              AND lw.status = 'active'
+            WHERE c.owner_id = $1
+              AND c.collaboration_type = 'live-workspace'
+              AND c.status = 'active'
+              AND c.settings->'operation'->>'runId' = $2
+            ORDER BY c.updated_at DESC
+            LIMIT 1`,
+          [user.id, id]
+        );
+        if (existingRunWorkspace.rows[0] && existingRunWorkspace.rows[0].id !== sourceWorkspace.id) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({
+            error: 'This Cyber Room operation is already linked to another Live Workspace',
+          }, { status: 409, headers: PRIVATE_HEADERS });
+        }
+
         await client.query(
           `UPDATE collaborations
               SET settings = COALESCE(settings, '{}'::jsonb) || $3::jsonb,
