@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import BoardLiveReview from '@/components/storyboards/BoardLiveReview';
 import { listVaultItems } from '@/lib/vault/api';
 import type { VaultItem } from '@/lib/vault/types';
 import TerminalActivityStrip from './TerminalActivityStrip';
@@ -86,20 +87,23 @@ export default function WorkspaceEnhancements({ kind }: { kind: WorkspaceKind })
 
   if (kind === 'boards') {
     return (
-      <div className="oxsig-workspace-rail mb-2" data-workspace="boards">
-        <div className="oxsig-rail-title"><BookOpen className="h-4 w-4" /><span>Board controls</span></div>
-        <div className="oxsig-rail-actions">
-          <BoardAction shortcut="p" label="Pen" icon={Pencil} />
-          <BoardAction shortcut="e" label="Eraser" icon={Eraser} />
-          <BoardAction shortcut="l" label="Line" icon={Minus} />
-          <BoardAction shortcut="a" label="Arrow" icon={ArrowUpRight} />
-          <BoardAction shortcut="r" label="Rectangle" icon={Square} />
-          <BoardAction shortcut="o" label="Ellipse" icon={Circle} />
-          <BoardAction shortcut="g" label="Grid" icon={Grid3X3} />
-          <BoardAction shortcut="s" label="Snap" icon={Magnet} />
-          <BoardAction shortcut="0" label="Fit" icon={RotateCcw} />
+      <>
+        <div className="oxsig-workspace-rail mb-2" data-workspace="boards">
+          <div className="oxsig-rail-title"><BookOpen className="h-4 w-4" /><span>Board controls</span></div>
+          <div className="oxsig-rail-actions">
+            <BoardAction shortcut="p" label="Pen" icon={Pencil} />
+            <BoardAction shortcut="e" label="Eraser" icon={Eraser} />
+            <BoardAction shortcut="l" label="Line" icon={Minus} />
+            <BoardAction shortcut="a" label="Arrow" icon={ArrowUpRight} />
+            <BoardAction shortcut="r" label="Rectangle" icon={Square} />
+            <BoardAction shortcut="o" label="Ellipse" icon={Circle} />
+            <BoardAction shortcut="g" label="Grid" icon={Grid3X3} />
+            <BoardAction shortcut="s" label="Snap" icon={Magnet} />
+            <BoardAction shortcut="0" label="Fit" icon={RotateCcw} />
+          </div>
         </div>
-      </div>
+        <BoardLiveReview />
+      </>
     );
   }
 
