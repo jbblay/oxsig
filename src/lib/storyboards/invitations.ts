@@ -199,23 +199,23 @@ export async function acceptStoryboardInvitation(args: {
     const claimed = await client.query(
       `UPDATE storyboard_invitations
        SET status='accepted', accepted_by=$2, accepted_at=NOW(), updated_at=NOW()
-       WHERE id=$1 AND status='pending'
-       RETURNING session_id,permission,invited_by`,
+       WHERE id=$1 AND status='pending' AND expires_at > NOW()
+       RETURNING session_id,permission,invited_by,expires_at`,
       [invitation.id, args.userId]
     );
     if (!claimed.rowCount) {
-      throw new StoryboardInvitationError('This Board invitation was already claimed.', 409);
+      throw new StoryboardInvitationError('This Board invitation was already claimed or expired.', 409);
     }
 
     const claimedInvitation = claimed.rows[0];
     await client.query(
       `INSERT INTO storyboard_shares (
          session_id,user_id,permission,shared_by,expires_at
-       ) VALUES ($1,$2,$3,$4,NULL)
+       ) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (session_id,user_id) DO UPDATE
        SET permission=EXCLUDED.permission,
            shared_by=EXCLUDED.shared_by,
-           expires_at=NULL,
+           expires_at=EXCLUDED.expires_at,
            revoked_at=NULL,
            updated_at=NOW()`,
       [
@@ -223,6 +223,7 @@ export async function acceptStoryboardInvitation(args: {
         args.userId,
         claimedInvitation.permission,
         claimedInvitation.invited_by,
+        claimedInvitation.expires_at,
       ]
     );
     await client.query('COMMIT');
