@@ -13,8 +13,22 @@ const idSchema = z.string().uuid();
 const editSchema = z.object({ text: z.string().trim().min(1).max(5000) }).strict();
 
 type RouteParams = { params: Promise<{ id: string; messageId: string }> };
+type MutableMessageRow = {
+  id: string;
+  user_id: string;
+  message_type: string;
+  deleted_at: string | Date | null;
+};
+type MutationAuthorization =
+  | { response: NextResponse; pool?: never; row?: never }
+  | { response?: never; pool: ReturnType<typeof getPool>; row: MutableMessageRow };
 
-async function authorizeMutation(request: NextRequest, id: string, messageId: string, userId: string) {
+async function authorizeMutation(
+  request: NextRequest,
+  id: string,
+  messageId: string,
+  userId: string
+): Promise<MutationAuthorization> {
   if (!(await validateCsrfToken(request))) {
     return { response: NextResponse.json({ error: 'Invalid or missing CSRF token' }, { status: 403 }) };
   }
@@ -31,7 +45,7 @@ async function authorizeMutation(request: NextRequest, id: string, messageId: st
     return { response: NextResponse.json({ error: 'Collaboration not found or access denied' }, { status: 404 }) };
   }
 
-  const message = await pool.query(
+  const message = await pool.query<MutableMessageRow>(
     `SELECT id, user_id, message_type, deleted_at
        FROM collaboration_messages
       WHERE id = $1 AND collaboration_id = $2
@@ -56,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   return requireAuth(request, async (req, user) => {
     const { id, messageId } = await params;
     const authorized = await authorizeMutation(req, id, messageId, user.id);
-    if ('response' in authorized) return authorized.response;
+    if (authorized.response) return authorized.response;
 
     const parsed = editSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
@@ -95,7 +109,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   return requireAuth(request, async (req, user) => {
     const { id, messageId } = await params;
     const authorized = await authorizeMutation(req, id, messageId, user.id);
-    if ('response' in authorized) return authorized.response;
+    if (authorized.response) return authorized.response;
 
     try {
       const deleted = await authorized.pool.query(
