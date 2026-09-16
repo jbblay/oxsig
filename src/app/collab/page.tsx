@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import GuestProductSurface from '@/components/auth/GuestProductSurface';
+import CollaborationCommandCenter from '@/components/collab/CollaborationCommandCenter';
 import CollaborationStatusControl from '@/components/collab/CollaborationStatusControl';
 import CollaborationTypingIndicator from '@/components/collab/CollaborationTypingIndicator';
 import CollaborationWorkspace from '@/components/collab/CollaborationWorkspace';
@@ -16,6 +17,7 @@ export default async function CollaborationPage() {
         <CollaborationWorkspace />
       </div>
       <CollaborationStatusControl />
+      <CollaborationCommandCenter />
       <CollaborationTypingIndicator />
     </div>
   );

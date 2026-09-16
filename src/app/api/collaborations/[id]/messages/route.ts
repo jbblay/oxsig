@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { getCollaborationAccess } from '@/lib/collab/server';
+import { createWorkspaceNotification } from '@/lib/notifications/server';
 import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -49,6 +50,9 @@ function mapMessage(row: Record<string, any>, userId: string) {
     editedAt: row.edited_at || null,
     deletedAt: row.deleted_at || null,
     deleted,
+    pinned: Boolean(row.pinned_at),
+    pinnedAt: row.pinned_at || null,
+    pinnedBy: row.pinned_by || null,
     senderId: row.user_id,
     senderName: row.sender_name || row.sender_email || 'Member',
     senderEmail: row.sender_email || null,
@@ -56,6 +60,7 @@ function mapMessage(row: Record<string, any>, userId: string) {
     isOwnMessage: row.user_id === userId,
     replyTo,
     reactions: Array.isArray(row.reactions) ? row.reactions : [],
+    seenBy: Array.isArray(row.seen_by) ? row.seen_by : [],
   };
 }
 
@@ -69,6 +74,8 @@ const MESSAGE_SELECT = `SELECT m.id,
                 m.deleted_at,
                 m.metadata,
                 m.reply_to_message_id,
+                m.pinned_at,
+                m.pinned_by,
                 u.display_name AS sender_name,
                 u.email AS sender_email,
                 u.avatar_url AS sender_avatar,
@@ -92,11 +99,100 @@ const MESSAGE_SELECT = `SELECT m.id,
                     WHERE r.message_id = m.id
                     GROUP BY r.emoji
                   ) grouped
-                ), '[]'::jsonb) AS reactions
+                ), '[]'::jsonb) AS reactions,
+                COALESCE((
+                  SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'userId', readers.user_id,
+                      'displayName', readers.display_name,
+                      'avatarUrl', readers.avatar_url,
+                      'readAt', readers.last_read_at
+                    ) ORDER BY readers.last_read_at DESC
+                  )
+                  FROM (
+                    SELECT cm.user_id,
+                           reader.display_name,
+                           reader.avatar_url,
+                           cm.last_read_at
+                    FROM collaboration_members cm
+                    JOIN users reader ON reader.id = cm.user_id
+                    WHERE cm.collaboration_id = m.collaboration_id
+                      AND cm.status = 'active'
+                      AND cm.user_id <> m.user_id
+                      AND cm.last_read_at >= m.created_at
+                  ) readers
+                ), '[]'::jsonb) AS seen_by
          FROM collaboration_messages m
          JOIN users u ON u.id = m.user_id
          LEFT JOIN collaboration_messages parent ON parent.id = m.reply_to_message_id
          LEFT JOIN users parent_user ON parent_user.id = parent.user_id`;
+
+async function notifyRecipients(args: {
+  pool: ReturnType<typeof getPool>;
+  collaborationId: string;
+  senderId: string;
+  senderName: string;
+  messageId: string;
+  text: string;
+  type: string;
+}) {
+  const recipients = await args.pool.query(
+    `SELECT c.name AS collaboration_name,
+            owner.id AS user_id,
+            owner.display_name,
+            owner.email,
+            COALESCE(owner_cm.notification_mode, 'all') AS notification_mode
+       FROM collaborations c
+       JOIN users owner ON owner.id = c.owner_id
+       LEFT JOIN collaboration_members owner_cm
+         ON owner_cm.collaboration_id = c.id AND owner_cm.user_id = owner.id AND owner_cm.status = 'active'
+      WHERE c.id = $1 AND owner.id <> $2
+      UNION ALL
+     SELECT c.name AS collaboration_name,
+            member.id AS user_id,
+            member.display_name,
+            member.email,
+            COALESCE(cm.notification_mode, 'all') AS notification_mode
+       FROM collaboration_members cm
+       JOIN collaborations c ON c.id = cm.collaboration_id
+       JOIN users member ON member.id = cm.user_id
+      WHERE cm.collaboration_id = $1
+        AND cm.status = 'active'
+        AND cm.user_id <> c.owner_id
+        AND cm.user_id <> $2`,
+    [args.collaborationId, args.senderId]
+  );
+
+  const normalizedText = args.text.toLowerCase();
+  await Promise.all(recipients.rows.map(async (row) => {
+    const mode = String(row.notification_mode || 'all');
+    if (mode === 'muted') return;
+    const displayName = String(row.display_name || '').trim().toLowerCase();
+    const email = String(row.email || '').trim().toLowerCase();
+    const localPart = email.split('@')[0] || '';
+    const mentioned = Boolean(
+      (displayName && normalizedText.includes(`@${displayName}`))
+      || (localPart && normalizedText.includes(`@${localPart}`))
+      || (email && normalizedText.includes(email))
+    );
+    if (mode === 'mentions' && !mentioned) return;
+
+    const collaborationName = String(row.collaboration_name || 'Collaboration');
+    const preview = args.text.trim() || (args.type === 'audio' ? 'Voice message' : args.type === 'resource' ? 'Shared resource' : 'New message');
+    await createWorkspaceNotification({
+      ownerId: row.user_id,
+      type: mentioned ? 'collaboration.mention' : 'collaboration.message',
+      title: mentioned ? `${args.senderName} mentioned you in ${collaborationName}` : `${args.senderName} in ${collaborationName}`,
+      detail: preview.slice(0, 300),
+      href: '/collab',
+      severity: mentioned ? 'warning' : 'info',
+      sourceType: 'collaboration',
+      sourceId: args.collaborationId,
+      dedupeKey: `collaboration:${args.collaborationId}:message:${args.messageId}:user:${row.user_id}`,
+      queryable: args.pool,
+    });
+  }));
+}
 
 export async function GET(
   request: NextRequest,
@@ -200,7 +296,7 @@ export async function POST(
            WHERE client_message_id IS NOT NULL
          DO UPDATE SET client_message_id = EXCLUDED.client_message_id
          RETURNING id, collaboration_id, user_id, content, message_type, created_at, edited_at,
-                   deleted_at, metadata, reply_to_message_id`,
+                   deleted_at, metadata, reply_to_message_id, pinned_at, pinned_by`,
         [
           id,
           user.id,
@@ -217,6 +313,7 @@ export async function POST(
         `SELECT display_name, email, avatar_url FROM users WHERE id = $1 LIMIT 1`,
         [user.id]
       );
+      const senderName = sender.rows[0]?.display_name || sender.rows[0]?.email || 'Member';
       const message = mapMessage({
         ...inserted.rows[0],
         sender_name: sender.rows[0]?.display_name,
@@ -227,6 +324,7 @@ export async function POST(
         reply_sender_name: replyRow?.sender_name,
         reply_sender_email: replyRow?.sender_email,
         reactions: [],
+        seen_by: [],
       }, user.id);
 
       await publishCollaborationEvent({
@@ -239,6 +337,20 @@ export async function POST(
           createdAt: message.createdAt,
         },
       });
+
+      try {
+        await notifyRecipients({
+          pool,
+          collaborationId: id,
+          senderId: user.id,
+          senderName,
+          messageId: message.id,
+          text: message.text,
+          type: message.type,
+        });
+      } catch (notificationError) {
+        console.warn('Collaboration message notification failed:', notificationError);
+      }
 
       return NextResponse.json({ message }, { status: 201 });
     } catch (error) {

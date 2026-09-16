@@ -106,6 +106,12 @@ function emitTypingState(collaborationId: string, ids: Set<string>) {
   }));
 }
 
+function emitActiveCollaboration(collaborationId: string | null) {
+  window.dispatchEvent(new CustomEvent('oxsig:collaboration:active', {
+    detail: { collaborationId },
+  }));
+}
+
 export function useCollaborationRealtime(
   collaborationId: string | null,
   callbacks: RealtimeCallbacks
@@ -119,6 +125,7 @@ export function useCollaborationRealtime(
   }, [callbacks]);
 
   React.useEffect(() => {
+    emitActiveCollaboration(collaborationId);
     if (!collaborationId) {
       setState('disabled');
       setOnlineIds([]);
@@ -245,6 +252,8 @@ export function useCollaborationRealtime(
         await channel.subscribe('message.updated', onMessageChanged);
         await channel.subscribe('message.deleted', onMessageChanged);
         await channel.subscribe('message.reaction', onMessageChanged);
+        await channel.subscribe('message.pinned', onMessageChanged);
+        await channel.subscribe('read.updated', onMessageChanged);
         await channel.subscribe('members.changed', onMembersChanged);
         await channel.subscribe('session.changed', onSessionChanged);
         await channel.subscribe('typing.started', onTypingStarted);

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getCollaborationAccess } from '@/lib/collab/server';
 import { getPool } from '@/lib/db/pool';
+import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 
 export const runtime = 'nodejs';
@@ -79,6 +80,16 @@ export async function PATCH(
         );
         persistedReadAt = inserted.rows[0]?.last_read_at || readAt;
       }
+
+      await publishCollaborationEvent({
+        collaborationId: id,
+        name: 'read.updated',
+        data: {
+          userId: user.id,
+          messageId: parsed.data.messageId || null,
+          lastReadAt: new Date(persistedReadAt).toISOString(),
+        },
+      });
 
       return NextResponse.json({ ok: true, lastReadAt: persistedReadAt });
     } catch (error) {

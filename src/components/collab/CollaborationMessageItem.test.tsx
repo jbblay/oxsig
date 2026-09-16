@@ -39,7 +39,7 @@ describe('CollaborationMessageItem member identity', () => {
       />
     );
 
-    expect(screen.getByLabelText('Alex Morgan, online')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Alex Morgan profile, online' })).toBeInTheDocument();
     expect(screen.getByText('Online')).toBeInTheDocument();
     expect(view.container.querySelector('img')).toHaveAttribute('src', 'https://images.example.test/alex.jpg');
   });
@@ -54,7 +54,7 @@ describe('CollaborationMessageItem member identity', () => {
       />
     );
 
-    expect(screen.getByLabelText('Alex Morgan, offline')).toHaveTextContent('AM');
+    expect(screen.getByRole('button', { name: 'Open Alex Morgan profile, offline' })).toHaveTextContent('AM');
     expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 });
