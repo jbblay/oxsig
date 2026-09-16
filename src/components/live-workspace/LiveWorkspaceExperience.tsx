@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Link2, Loader2, Plus, RadioTower, RefreshCw, UsersRound, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, Link2, ListChecks, Loader2, Plus, RadioTower, RefreshCw, UsersRound, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
   shouldReconcileLiveWorkspaceOnVisibility,
 } from '@/lib/live-workspace/freshness';
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import LiveWorkspaceCoordinationPanel from './LiveWorkspaceCoordinationPanel';
 import LiveWorkspaceParticipantCard, {
   type LiveWorkspaceAvailability,
   type LiveWorkspaceRole,
@@ -126,7 +127,8 @@ export default function LiveWorkspaceExperience() {
   const [freshnessNow, setFreshnessNow] = React.useState(0);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [showCreate, setShowCreate] = React.useState(false);
-  const [mobileSection, setMobileSection] = React.useState<'people' | 'resources'>('people');
+  const [mobileSection, setMobileSection] = React.useState<'plan' | 'people' | 'resources'>('plan');
+  const [coordinationRevision, setCoordinationRevision] = React.useState(0);
 
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -162,6 +164,7 @@ export default function LiveWorkspaceExperience() {
       setSyncError(null);
       setLastSuccessfulSyncAt(syncedAt);
       setFreshnessNow(syncedAt);
+      setCoordinationRevision((value) => value + 1);
     }
     return next;
   }, []);
@@ -210,7 +213,7 @@ export default function LiveWorkspaceExperience() {
 
   React.useEffect(() => {
     detailRequestRef.current += 1;
-    setMobileSection('people');
+    setMobileSection('plan');
     if (!selectedId) {
       detailRef.current = null;
       setDetail(null);
@@ -533,13 +536,20 @@ export default function LiveWorkspaceExperience() {
                 </CardContent>
               </Card>
 
-              <div className="grid grid-cols-2 gap-2 lg:hidden">
-                <Button variant={mobileSection === 'people' ? 'secondary' : 'outline'} onClick={() => setMobileSection('people')}><UsersRound className="h-4 w-4" /> People</Button>
-                <Button variant={mobileSection === 'resources' ? 'secondary' : 'outline'} onClick={() => setMobileSection('resources')}><Link2 className="h-4 w-4" /> Resources</Button>
+              <div className="grid grid-cols-3 gap-2 xl:hidden">
+                <Button variant={mobileSection === 'plan' ? 'secondary' : 'outline'} onClick={() => setMobileSection('plan')}><ListChecks className="h-4 w-4" /> <span className="hidden sm:inline">Plan</span></Button>
+                <Button variant={mobileSection === 'people' ? 'secondary' : 'outline'} onClick={() => setMobileSection('people')}><UsersRound className="h-4 w-4" /> <span className="hidden sm:inline">People</span></Button>
+                <Button variant={mobileSection === 'resources' ? 'secondary' : 'outline'} onClick={() => setMobileSection('resources')}><Link2 className="h-4 w-4" /> <span className="hidden sm:inline">Resources</span></Button>
               </div>
 
-              <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                <Card className={mobileSection === 'people' ? 'block' : 'hidden lg:block'}>
+              <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]">
+                <LiveWorkspaceCoordinationPanel
+                  workspaceId={detail.workspace.id}
+                  refreshToken={coordinationRevision}
+                  className={mobileSection === 'plan' ? 'block' : 'hidden xl:block'}
+                />
+
+                <Card className={mobileSection === 'people' ? 'block' : 'hidden xl:block'}>
                   <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4" /> People</CardTitle><CardDescription className="text-xs">Presence, availability and workspace roles.</CardDescription></CardHeader>
                   <CardContent className="space-y-3">
                     {detail.workspace.isOwner && (
@@ -566,11 +576,11 @@ export default function LiveWorkspaceExperience() {
                   </CardContent>
                 </Card>
 
-                <Card className={mobileSection === 'resources' ? 'block' : 'hidden lg:block'}>
+                <Card className={mobileSection === 'resources' ? 'block' : 'hidden xl:block'}>
                   <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4" /> Resources</CardTitle><CardDescription className="text-xs">Open shared technical context directly from the workspace.</CardDescription></CardHeader>
                   <CardContent className="space-y-3">
                     {canAttachResources && (
-                      <div className="grid gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-end">
+                      <div className="grid gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-end xl:grid-cols-1">
                         <div className="space-y-1.5">
                           <label htmlFor="live-resource-type" className="text-xs font-medium">Type</label>
                           {detail.workspace.capabilities.manageResources ? (
@@ -594,7 +604,7 @@ export default function LiveWorkspaceExperience() {
                     )}
 
                     {detail.resources.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-center text-xs text-muted-foreground">No resources attached yet.</p> : (
-                      <div className="grid gap-2 xl:grid-cols-2">
+                      <div className="grid gap-2 2xl:grid-cols-2">
                         {detail.resources.map((resource) => (
                           <LiveWorkspaceResourceCard
                             key={resource.id}
