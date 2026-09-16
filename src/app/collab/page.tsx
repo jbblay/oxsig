@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import GuestProductSurface from '@/components/auth/GuestProductSurface';
+import CollaborationStatusControl from '@/components/collab/CollaborationStatusControl';
 import CollaborationTypingIndicator from '@/components/collab/CollaborationTypingIndicator';
 import CollaborationWorkspace from '@/components/collab/CollaborationWorkspace';
 
@@ -14,6 +15,7 @@ export default async function CollaborationPage() {
       <div className="oxsig-surface-content min-h-0 flex-1 overflow-hidden">
         <CollaborationWorkspace />
       </div>
+      <CollaborationStatusControl />
       <CollaborationTypingIndicator />
     </div>
   );
