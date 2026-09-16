@@ -7,6 +7,8 @@ import {
   Bot,
   Box,
   ChevronDown,
+  Check,
+  Copy,
   FileText,
   Loader2,
   MessageCircle,
@@ -171,6 +173,8 @@ export default function CollaborationWorkspace() {
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [conversationError, setConversationError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
+  const [sendError, setSendError] = React.useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const [hasNewMessages, setHasNewMessages] = React.useState(false);
@@ -438,14 +442,28 @@ export default function CollaborationWorkspace() {
     const targetIdentity = sessionIdentityId;
     if (!text || !targetId || sending) return;
     setSending(true);
+    setSendError(null);
     try {
       await sendMessage(text);
       writeCollaborationDraft(targetIdentity, targetId, '');
       if (activeIdRef.current === targetId && sessionIdentityRef.current === targetIdentity) setDraft('');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not send message');
+      const message = error instanceof Error ? error.message : 'Could not send message';
+      setSendError(message);
+      toast.error(message);
     } finally {
       setSending(false);
+    }
+  };
+
+  const copyMessage = async (message: CollaborationMessage) => {
+    if (!message.text.trim()) return;
+    try {
+      await navigator.clipboard.writeText(message.text);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1500);
+    } catch {
+      toast.error('Could not copy message');
     }
   };
 
@@ -832,6 +850,7 @@ export default function CollaborationWorkspace() {
                             {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
                             <span>{formatTime(message.createdAt)}</span>
                           </div>
+                          <div className="group relative">
                           <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
                             {sharedBoard ? (
                               <div className="min-w-[220px] space-y-2.5">
@@ -864,6 +883,12 @@ export default function CollaborationWorkspace() {
                             ) : (
                               <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
                             )}
+                          </div>
+                          {message.text.trim() && (
+                            <button type="button" onClick={() => void copyMessage(message)} className={`absolute -bottom-3 ${message.isOwnMessage ? 'left-1' : 'right-1'} hidden h-6 items-center gap-1 rounded-md border bg-card px-1.5 text-[9px] text-muted-foreground shadow-sm group-hover:flex`} aria-label={`Copy message from ${message.senderName}`}>
+                              {copiedMessageId === message.id ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}{copiedMessageId === message.id ? 'Copied' : 'Copy'}
+                            </button>
+                          )}
                           </div>
                         </div>
                       </div>
@@ -923,6 +948,7 @@ export default function CollaborationWorkspace() {
                   {sending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}Send
                 </Button>
               </div>
+              {sendError && <div className="flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-[10px] text-destructive"><span>Message not sent. Your draft is saved and ready to retry.</span><Button type="button" size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => void submitDraft()} disabled={sending}>Retry</Button></div>}
               {uploading && <p className="text-[10px] text-muted-foreground">Uploading and verifying attachment…</p>}
             </form>
           </div>
