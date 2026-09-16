@@ -29,6 +29,7 @@ export const vaultCreateSchema = z.object({
 }).strict();
 
 export const vaultUpdateSchema = z.object({
+  version: z.number().int().positive(),
   kind: z.enum(VAULT_KINDS).optional(),
   title: z.string().trim().min(1).max(160).optional(),
   summary: z.string().trim().max(500).optional(),
@@ -62,6 +63,7 @@ export function mapVaultRow(row: Record<string, any>): VaultItem {
     sourceType: row.source_type || null,
     sourceId: row.source_id || null,
     metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
+    version: Number(row.version || 1),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
