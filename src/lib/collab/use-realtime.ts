@@ -4,6 +4,8 @@ import * as React from 'react';
 
 const ABLY_BROWSER_SDK = 'https://cdn.ably.com/lib/ably.min-2.js';
 const ABLY_SCRIPT_ID = 'oxsig-ably-browser-sdk';
+const TYPING_IDLE_MS = 1200;
+const REMOTE_TYPING_TTL_MS = 3500;
 
 export type RealtimeMessage = {
   name?: string;
@@ -94,6 +96,16 @@ type RealtimeCallbacks = {
   onSessionChanged?: (message: RealtimeMessage) => void;
 };
 
+function isComposer(target: EventTarget | null): target is HTMLTextAreaElement {
+  return target instanceof HTMLTextAreaElement && target.placeholder.startsWith('Message ');
+}
+
+function emitTypingState(collaborationId: string, ids: Set<string>) {
+  window.dispatchEvent(new CustomEvent('oxsig:collaboration:typing', {
+    detail: { collaborationId, typingIds: [...ids] },
+  }));
+}
+
 export function useCollaborationRealtime(
   collaborationId: string | null,
   callbacks: RealtimeCallbacks
@@ -110,6 +122,7 @@ export function useCollaborationRealtime(
     if (!collaborationId) {
       setState('disabled');
       setOnlineIds([]);
+      window.dispatchEvent(new CustomEvent('oxsig:collaboration:typing', { detail: { typingIds: [] } }));
       return;
     }
 
@@ -118,6 +131,64 @@ export function useCollaborationRealtime(
     let channel: RealtimeChannel | null = null;
     let onConnectionState: (() => void) | null = null;
     let onPresence: ((message: RealtimePresenceMessage) => void) | null = null;
+    let localTyping = false;
+    let localTypingTimer: ReturnType<typeof setTimeout> | null = null;
+    const remoteTyping = new Set<string>();
+    const remoteTypingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const publishTyping = async (typing: boolean) => {
+      if (!channel || disposed) return;
+      if (typing === localTyping) return;
+      localTyping = typing;
+      try {
+        await channel.publish(typing ? 'typing.started' : 'typing.stopped', { surface: 'collaboration' });
+      } catch {
+        // Typing state is intentionally best effort and must never block composing.
+      }
+    };
+
+    const stopLocalTypingSoon = () => {
+      if (localTypingTimer) clearTimeout(localTypingTimer);
+      localTypingTimer = setTimeout(() => void publishTyping(false), TYPING_IDLE_MS);
+    };
+
+    const onComposerInput = (event: Event) => {
+      if (!isComposer(event.target)) return;
+      const hasText = Boolean(event.target.value.trim());
+      if (!hasText) {
+        if (localTypingTimer) clearTimeout(localTypingTimer);
+        localTypingTimer = null;
+        void publishTyping(false);
+        return;
+      }
+      void publishTyping(true);
+      stopLocalTypingSoon();
+    };
+
+    const onComposerBlur = (event: FocusEvent) => {
+      if (!isComposer(event.target)) return;
+      if (localTypingTimer) clearTimeout(localTypingTimer);
+      localTypingTimer = null;
+      void publishTyping(false);
+    };
+
+    const updateRemoteTyping = (clientId: string, typing: boolean) => {
+      const previousTimer = remoteTypingTimers.get(clientId);
+      if (previousTimer) clearTimeout(previousTimer);
+      remoteTypingTimers.delete(clientId);
+
+      if (typing) {
+        remoteTyping.add(clientId);
+        remoteTypingTimers.set(clientId, setTimeout(() => {
+          remoteTyping.delete(clientId);
+          remoteTypingTimers.delete(clientId);
+          if (!disposed) emitTypingState(collaborationId, remoteTyping);
+        }, REMOTE_TYPING_TTL_MS));
+      } else {
+        remoteTyping.delete(clientId);
+      }
+      if (!disposed) emitTypingState(collaborationId, remoteTyping);
+    };
 
     const connect = async () => {
       setState('connecting');
@@ -161,6 +232,12 @@ export function useCollaborationRealtime(
         const onMessageChanged = (message: RealtimeMessage) => callbacksRef.current.onMessageChanged?.(message);
         const onMembersChanged = (message: RealtimeMessage) => callbacksRef.current.onMembersChanged?.(message);
         const onSessionChanged = (message: RealtimeMessage) => callbacksRef.current.onSessionChanged?.(message);
+        const onTypingStarted = (message: RealtimeMessage) => {
+          if (message.clientId) updateRemoteTyping(message.clientId, true);
+        };
+        const onTypingStopped = (message: RealtimeMessage) => {
+          if (message.clientId) updateRemoteTyping(message.clientId, false);
+        };
         onPresence = (_message: RealtimePresenceMessage) => void refreshPresence();
 
         client.connection.on(onConnectionState);
@@ -170,8 +247,12 @@ export function useCollaborationRealtime(
         await channel.subscribe('message.reaction', onMessageChanged);
         await channel.subscribe('members.changed', onMembersChanged);
         await channel.subscribe('session.changed', onSessionChanged);
+        await channel.subscribe('typing.started', onTypingStarted);
+        await channel.subscribe('typing.stopped', onTypingStopped);
         await channel.presence.subscribe(onPresence);
         await channel.presence.enter({ surface: 'collaboration' });
+        document.addEventListener('input', onComposerInput);
+        document.addEventListener('focusout', onComposerBlur);
         await refreshPresence();
         onConnectionState();
       } catch {
@@ -187,7 +268,15 @@ export function useCollaborationRealtime(
 
     return () => {
       disposed = true;
+      document.removeEventListener('input', onComposerInput);
+      document.removeEventListener('focusout', onComposerBlur);
+      if (localTypingTimer) clearTimeout(localTypingTimer);
+      remoteTypingTimers.forEach((timer) => clearTimeout(timer));
+      remoteTypingTimers.clear();
+      remoteTyping.clear();
+      emitTypingState(collaborationId, remoteTyping);
       if (channel) {
+        if (localTyping) void channel.publish('typing.stopped', { surface: 'collaboration' }).catch(() => undefined);
         channel.unsubscribe();
         channel.presence.unsubscribe();
         void channel.presence.leave().catch(() => undefined);
