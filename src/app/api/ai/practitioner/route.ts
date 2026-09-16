@@ -262,9 +262,9 @@ export async function POST(request: NextRequest) {
     if (requestId && parsed.data.action === 'plan') {
       const persisted = await findPersistedPlan(user.id, requestId);
       if (persisted) {
-        if (persisted.prompt !== parsed.data.prompt) {
+        if (persisted.prompt !== parsed.data.prompt || persisted.labInstanceId !== (parsed.data.labInstanceId ?? null)) {
           return NextResponse.json({
-            error: 'This AI request identifier is already bound to another prompt',
+            error: 'This AI request identifier is already bound to another prompt or lab',
             code: 'AI_REQUEST_ID_CONFLICT',
           }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
         }
@@ -326,9 +326,9 @@ export async function POST(request: NextRequest) {
         if (insert.rows.length === 0) {
           const persisted = await findPersistedPlan(user.id, requestId!);
           if (!persisted) throw new Error('AI plan could not be persisted safely');
-          if (persisted.prompt !== parsed.data.prompt) {
+          if (persisted.prompt !== parsed.data.prompt || persisted.labInstanceId !== (parsed.data.labInstanceId ?? null)) {
             return NextResponse.json({
-              error: 'This AI request identifier is already bound to another prompt',
+              error: 'This AI request identifier is already bound to another prompt or lab',
               code: 'AI_REQUEST_ID_CONFLICT',
             }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
           }

@@ -104,7 +104,9 @@ export function verifyTerminalBridgeTicket(ticket) {
   }
 
   const parts = ticket.split('.');
-  if (parts.length !== 4 || Number(parts[0]) !== VERSION) {
+  // Replay protection hashes the serialized ticket, so every segment must have
+  // exactly one accepted representation, including the unencrypted version.
+  if (parts.length !== 4 || parts[0] !== String(VERSION)) {
     throw new Error('Invalid terminal bridge ticket version.');
   }
 

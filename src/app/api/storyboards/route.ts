@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
     if (rateLimit) return rateLimit;
 
     let materializedAudio: VerifiedStoryboardAudioReference | null = null;
+    let audioCreatedByRequest = false;
     let committed = false;
     try {
       const parsed = await parseCreateRequest(req);
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
         materializedAudio = await verifyStoryboardAudioReference(user.id, audioReference);
       } else if (legacyAudio) {
         materializedAudio = await uploadLegacyStoryboardAudio(user.id, legacyAudio, legacyAudio.name || 'storyboard-audio');
+        audioCreatedByRequest = true;
       }
 
       const result = await getPool().query(
@@ -166,7 +168,9 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ session }, { status: 201 });
     } catch (error) {
-      if (!committed && materializedAudio?.key) {
+      // A presigned reference may already belong to a successful earlier save.
+      // Verification does not grant this request ownership of object cleanup.
+      if (!committed && audioCreatedByRequest && materializedAudio?.key) {
         await deleteStoryboardAudioObject(materializedAudio.key).catch((cleanupError) => {
           console.warn('Failed to clean up uncommitted Storyboard audio:', cleanupError);
         });

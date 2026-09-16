@@ -95,6 +95,20 @@ describe('terminal bridge tickets', () => {
     expect(() => verifyTerminalBridgeTicket(parts.join('.'))).toThrow('Invalid terminal bridge ticket');
   });
 
+  it.each(['01', '001', '1e0', '1E0', '0x1', '+1', ' 1', '1 '])(
+    'rejects alternate version spelling %j so one ticket has one replay key',
+    (version) => {
+      const ticket = createTerminalBridgeTicket({
+        streamUrl: 'wss://ssmmessages.eu-central-1.amazonaws.com/v1/data-channel/session-123',
+        region: 'eu-central-1',
+        sessionId: 'session-123',
+        target: 'i-0123456789abcdef0',
+      });
+      const alternate = version + ticket.slice(ticket.indexOf('.'));
+      expect(() => verifyTerminalBridgeTicket(alternate)).toThrow('Invalid terminal bridge ticket version');
+    }
+  );
+
   it('requires the server-generated bridge secret', () => {
     delete process.env.OXSIG_TERMINAL_BRIDGE_SECRET;
     expect(() => createTerminalBridgeTicket({
