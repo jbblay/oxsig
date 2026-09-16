@@ -23,7 +23,7 @@ type Queryable = Pick<Pool | PoolClient, 'query'>;
 
 function compactSummary(value: string) {
   const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized.length <= 240 ? normalized : `${normalized.slice(0, 237)}…`;
+  return normalized.length <= 240 ? normalized : `${normalized.slice(0, 239)}…`;
 }
 
 export async function recordLiveWorkspaceActivity(args: {
