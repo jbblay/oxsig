@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   sendInvitation: vi.fn(),
   emailProviderConfigured: vi.fn(),
   logAudit: vi.fn(),
+  publishStoryboardEvent: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
@@ -22,6 +23,7 @@ vi.mock('@/lib/storyboards/invitations', () => ({
   sendStoryboardInvitationEmail: mocks.sendInvitation,
 }));
 vi.mock('@/lib/email/resend', () => ({ emailProviderConfigured: mocks.emailProviderConfigured }));
+vi.mock('@/lib/realtime/ably', () => ({ publishStoryboardEvent: mocks.publishStoryboardEvent }));
 vi.mock('@/lib/audit/logger', () => ({
   AUDIT_ACTIONS: { STORYBOARD_SHARE: 'storyboard.share' },
   getRequestMetadata: () => ({}),
@@ -31,6 +33,8 @@ vi.mock('@/lib/audit/logger', () => ({
 import { POST } from './route';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
+const ownerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const targetId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 function request(body: unknown) {
   return new Request(`https://app.example.com/api/storyboards/${sessionId}/shares`, {
@@ -44,13 +48,14 @@ describe('Storyboard share POST', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAuth.mockImplementation(async (req, handler) =>
-      handler(req, { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'owner@example.com', name: 'Owner' })
+      handler(req, { id: ownerId, email: 'owner@example.com', name: 'Owner' })
     );
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
     mocks.getStoryboardAccess.mockResolvedValue({ permission: 'owner' });
     mocks.emailProviderConfigured.mockReturnValue(true);
     mocks.logAudit.mockResolvedValue(undefined);
+    mocks.publishStoryboardEvent.mockResolvedValue(undefined);
   });
 
   it('sends an invitation when the recipient does not have an account yet', async () => {
@@ -80,6 +85,30 @@ describe('Storyboard share POST', () => {
       permission: 'viewer',
     }));
     expect(mocks.sendInvitation).toHaveBeenCalled();
+    expect(mocks.publishStoryboardEvent).not.toHaveBeenCalled();
+  });
+
+  it('publishes access.changed when an existing user receives Board access', async () => {
+    mocks.query
+      .mockResolvedValueOnce({ rows: [{ id: targetId, display_name: 'Reviewer', email: 'reviewer@example.com' }] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const response = await POST(
+      request({ email: 'reviewer@example.com', permission: 'editor' }) as never,
+      { params: Promise.resolve({ id: sessionId }) }
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.publishStoryboardEvent).toHaveBeenCalledWith({
+      storyboardId: sessionId,
+      name: 'access.changed',
+      data: {
+        actorId: ownerId,
+        targetUserId: targetId,
+        permission: 'editor',
+        action: 'granted',
+      },
+    });
   });
 
   it('fails clearly when external email delivery is not configured', async () => {
@@ -95,5 +124,6 @@ describe('Storyboard share POST', () => {
     expect(response.status).toBe(503);
     expect(body.configurationRequired).toEqual(['RESEND_API_KEY', 'EMAIL_FROM']);
     expect(mocks.createInvitation).not.toHaveBeenCalled();
+    expect(mocks.publishStoryboardEvent).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { logAudit, getRequestMetadata, AUDIT_ACTIONS } from '@/lib/audit/logger';
+import { publishStoryboardEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { canManageStoryboard } from '@/lib/storyboards/access';
 import { getStoryboardAccess } from '@/lib/storyboards/server';
@@ -59,6 +60,13 @@ export async function DELETE(
           ? { targetUserId: userId }
           : { invitationId: userId },
       });
+      if (revokedKind === 'share') {
+        await publishStoryboardEvent({
+          storyboardId: id,
+          name: 'access.changed',
+          data: { actorId: user.id, targetUserId: userId, action: 'revoked' },
+        });
+      }
       return NextResponse.json({ success: true, revokedKind });
     } catch (error) {
       console.error('Failed to revoke storyboard access:', error);

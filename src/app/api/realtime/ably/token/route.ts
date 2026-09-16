@@ -5,10 +5,12 @@ import { getPool } from '@/lib/db/pool';
 import { getCollaborationAccess } from '@/lib/collab/server';
 import { getActiveControlLease } from '@/lib/live-workspace/control';
 import { getLiveWorkspaceAccess } from '@/lib/live-workspace/server';
+import { getStoryboardAccess } from '@/lib/storyboards/server';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import {
   issueCollaborationRealtimeToken,
   issueLiveTerminalRealtimeToken,
+  issueStoryboardRealtimeToken,
   realtimeProviderConfigured,
 } from '@/lib/realtime/ably';
 
@@ -27,24 +29,47 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(req.url);
+    const boardId = url.searchParams.get('boardId');
     const collaborationId = url.searchParams.get('collaborationId') || '';
-    if (!idSchema.safeParse(collaborationId).success) {
-      return NextResponse.json({ error: 'Invalid collaboration session' }, { status: 400 });
-    }
-
     const terminalBindingId = url.searchParams.get('terminalBindingId');
     const terminalLeaseId = url.searchParams.get('terminalLeaseId');
     const terminalMode = url.searchParams.get('terminalMode');
     const terminalRequested = terminalBindingId !== null || terminalLeaseId !== null || terminalMode !== null;
 
-    const rateLimit = await checkRateLimit(
-      req,
-      { maxRequests: terminalRequested ? 120 : 90, windowMs: 60_000 },
-      terminalRequested ? `${user.id}:${collaborationId}:terminal-realtime` : user.id
-    );
-    if (rateLimit) return rateLimit;
-
     try {
+      if (boardId !== null) {
+        if (collaborationId || terminalRequested || !idSchema.safeParse(boardId).success) {
+          return NextResponse.json({ error: 'Invalid Board realtime authorization request' }, { status: 400 });
+        }
+        const rateLimit = await checkRateLimit(
+          req,
+          { maxRequests: 90, windowMs: 60_000 },
+          `${user.id}:${boardId}:board-realtime`
+        );
+        if (rateLimit) return rateLimit;
+
+        const access = await getStoryboardAccess(boardId, user.id);
+        if (!access) {
+          return NextResponse.json({ error: 'Board not found or access denied' }, { status: 404 });
+        }
+        const token = await issueStoryboardRealtimeToken({ storyboardId: boardId, clientId: user.id });
+        if (!token) {
+          return NextResponse.json({ error: 'Realtime collaboration is not configured' }, { status: 503 });
+        }
+        return NextResponse.json(token, { headers: { 'Cache-Control': 'no-store' } });
+      }
+
+      if (!idSchema.safeParse(collaborationId).success) {
+        return NextResponse.json({ error: 'Invalid collaboration session' }, { status: 400 });
+      }
+
+      const rateLimit = await checkRateLimit(
+        req,
+        { maxRequests: terminalRequested ? 120 : 90, windowMs: 60_000 },
+        terminalRequested ? `${user.id}:${collaborationId}:terminal-realtime` : user.id
+      );
+      if (rateLimit) return rateLimit;
+
       if (terminalRequested) {
         const parsedTerminalMode = terminalModeSchema.safeParse(terminalMode);
         if (

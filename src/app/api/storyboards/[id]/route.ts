@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { logAudit, getRequestMetadata, AUDIT_ACTIONS } from '@/lib/audit/logger';
+import { publishStoryboardEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { canEditStoryboard, canManageStoryboard } from '@/lib/storyboards/access';
 import { getStoryboardAccess, mapStoryboardRow } from '@/lib/storyboards/server';
@@ -50,6 +51,14 @@ async function parseUpdateRequest(req: NextRequest) {
   const validation = storyboardSessionSchema.safeParse(rawMetadata);
   if (!validation.success) return { validationError: validation.error.flatten() } as const;
 
+  const expectedVersionValue = form.get('expectedVersion');
+  let expectedVersion: number | undefined;
+  if (typeof expectedVersionValue === 'string' && expectedVersionValue.trim()) {
+    const parsedVersion = Number(expectedVersionValue);
+    if (!Number.isInteger(parsedVersion) || parsedVersion < 1) throw new Error('INVALID_EXPECTED_VERSION');
+    expectedVersion = parsedVersion;
+  }
+
   let audioReference = null;
   const audioStorageValue = form.get('audioStorage');
   if (typeof audioStorageValue === 'string' && audioStorageValue.trim()) {
@@ -70,7 +79,7 @@ async function parseUpdateRequest(req: NextRequest) {
   if (legacyAudio && legacyAudio.size > LEGACY_STORYBOARD_AUDIO_BYTES) throw new Error('LEGACY_AUDIO_TOO_LARGE');
   if (legacyAudio && !ALLOWED_STORYBOARD_AUDIO_TYPES.has(legacyAudio.type)) throw new Error('AUDIO_TYPE');
 
-  return { data: validation.data, audioReference, legacyAudio } as const;
+  return { data: validation.data, audioReference, legacyAudio, expectedVersion } as const;
 }
 
 export async function GET(request: NextRequest, { params }: RouteContext) {
@@ -128,6 +137,12 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           { status: 400 }
         );
       }
+      if (parsed.expectedVersion !== undefined && parsed.expectedVersion !== access.version) {
+        return NextResponse.json(
+          { error: 'Board changed in another session. Reload before saving again.', code: 'BOARD_VERSION_CONFLICT', currentVersion: access.version },
+          { status: 409 }
+        );
+      }
 
       const existingAudio = await getPool().query(
         `SELECT audio_storage_key FROM storyboard_sessions
@@ -161,6 +176,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
              version = version + 1, updated_at = NOW()
          WHERE id = $10
            AND deleted_at IS NULL
+           AND ($15::integer IS NULL OR version = $15::integer)
            AND (
              owner_id = $14::uuid
              OR EXISTS (
@@ -193,10 +209,19 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           access.ownerEmail || null,
           access.permission === 'owner' ? null : access.permission,
           user.id,
+          parsed.expectedVersion ?? null,
         ]
       );
 
-      if (!result.rows[0]) throw new Error('STORYBOARD_PERMISSION_CHANGED');
+      if (!result.rows[0]) {
+        if (parsed.expectedVersion !== undefined) {
+          const latest = await getStoryboardAccess(id, user.id);
+          if (latest && canEditStoryboard(latest.permission) && latest.version !== parsed.expectedVersion) {
+            throw new Error('BOARD_VERSION_CONFLICT');
+          }
+        }
+        throw new Error('STORYBOARD_PERMISSION_CHANGED');
+      }
       committed = true;
 
       if (materializedAudio?.key && oldStorageKey && oldStorageKey !== materializedAudio.key) {
@@ -229,6 +254,11 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           metadata: { durationMs: data.durationMs, audioSize: materializedAudio.size, storage: 's3' },
         });
       }
+      await publishStoryboardEvent({
+        storyboardId: id,
+        name: 'board.updated',
+        data: { actorId: user.id, version: session.version, updatedAt: session.updatedAt },
+      });
       return NextResponse.json({ session });
     } catch (error) {
       // Referenced audio can be live on another successful save or this Board.
@@ -238,8 +268,15 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         });
       }
       const code = error instanceof Error ? error.message : '';
-      if (code === 'MISSING_METADATA' || code === 'INVALID_METADATA') {
+      if (code === 'MISSING_METADATA' || code === 'INVALID_METADATA' || code === 'INVALID_EXPECTED_VERSION') {
         return NextResponse.json({ error: 'Invalid storyboard metadata' }, { status: 400 });
+      }
+      if (code === 'BOARD_VERSION_CONFLICT') {
+        const latest = await getStoryboardAccess(id, user.id).catch(() => null);
+        return NextResponse.json(
+          { error: 'Board changed in another session. Reload before saving again.', code, currentVersion: latest?.version },
+          { status: 409 }
+        );
       }
       if (code === 'STORYBOARD_PERMISSION_CHANGED') {
         return NextResponse.json(
@@ -300,6 +337,11 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
         resourceType: 'storyboard',
         resourceId: id,
         ...getRequestMetadata(req),
+      });
+      await publishStoryboardEvent({
+        storyboardId: id,
+        name: 'board.deleted',
+        data: { actorId: user.id },
       });
       return NextResponse.json({ success: true });
     } catch (error) {

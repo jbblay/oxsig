@@ -1,7 +1,11 @@
 import 'server-only';
 
 import { Rest } from 'ably';
-import { collaborationChannelName, liveTerminalChannelName } from '@/lib/realtime/channel-names';
+import {
+  collaborationChannelName,
+  liveTerminalChannelName,
+  storyboardChannelName,
+} from '@/lib/realtime/channel-names';
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const TERMINAL_TOKEN_TTL_MS = 60 * 1000;
@@ -30,6 +34,23 @@ export async function issueCollaborationRealtimeToken(args: {
   if (!client) return null;
 
   const channelName = collaborationChannelName(args.collaborationId);
+  return client.auth.requestToken({
+    clientId: args.clientId,
+    ttl: TOKEN_TTL_MS,
+    capability: {
+      [channelName]: ['subscribe', 'publish', 'presence'],
+    },
+  });
+}
+
+export async function issueStoryboardRealtimeToken(args: {
+  storyboardId: string;
+  clientId: string;
+}) {
+  const client = getRestClient();
+  if (!client) return null;
+
+  const channelName = storyboardChannelName(args.storyboardId);
   return client.auth.requestToken({
     clientId: args.clientId,
     ttl: TOKEN_TTL_MS,
@@ -90,6 +111,32 @@ export async function publishCollaborationEvent(args: {
     return { configured: true, published: true } as const;
   } catch (error) {
     console.warn('Collaboration realtime publish failed:', error);
+    return { configured: true, published: false } as const;
+  }
+}
+
+export type StoryboardEventName =
+  | 'board.updated'
+  | 'board.deleted'
+  | 'access.changed'
+  | 'comment.created'
+  | 'comment.updated'
+  | 'comment.deleted';
+
+export async function publishStoryboardEvent(args: {
+  storyboardId: string;
+  name: StoryboardEventName;
+  data: Record<string, unknown>;
+}) {
+  const client = getRestClient();
+  if (!client) return { configured: false, published: false } as const;
+
+  try {
+    const channel = client.channels.get(storyboardChannelName(args.storyboardId));
+    await channel.publish(args.name, args.data);
+    return { configured: true, published: true } as const;
+  } catch (error) {
+    console.warn('Board realtime publish failed:', error);
     return { configured: true, published: false } as const;
   }
 }
