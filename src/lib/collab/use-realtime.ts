@@ -89,6 +89,7 @@ export type CollaborationRealtimeState = 'disabled' | 'connecting' | 'connected'
 
 type RealtimeCallbacks = {
   onMessageCreated?: (message: RealtimeMessage) => void;
+  onMessageChanged?: (message: RealtimeMessage) => void;
   onMembersChanged?: (message: RealtimeMessage) => void;
   onSessionChanged?: (message: RealtimeMessage) => void;
 };
@@ -157,12 +158,16 @@ export function useCollaborationRealtime(
         };
 
         const onMessageCreated = (message: RealtimeMessage) => callbacksRef.current.onMessageCreated?.(message);
+        const onMessageChanged = (message: RealtimeMessage) => callbacksRef.current.onMessageChanged?.(message);
         const onMembersChanged = (message: RealtimeMessage) => callbacksRef.current.onMembersChanged?.(message);
         const onSessionChanged = (message: RealtimeMessage) => callbacksRef.current.onSessionChanged?.(message);
         onPresence = (_message: RealtimePresenceMessage) => void refreshPresence();
 
         client.connection.on(onConnectionState);
         await channel.subscribe('message.created', onMessageCreated);
+        await channel.subscribe('message.updated', onMessageChanged);
+        await channel.subscribe('message.deleted', onMessageChanged);
+        await channel.subscribe('message.reaction', onMessageChanged);
         await channel.subscribe('members.changed', onMembersChanged);
         await channel.subscribe('session.changed', onSessionChanged);
         await channel.presence.subscribe(onPresence);

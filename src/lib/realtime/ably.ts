@@ -66,9 +66,17 @@ export async function issueLiveTerminalRealtimeToken(args: {
   });
 }
 
+type CollaborationEventName =
+  | 'message.created'
+  | 'message.updated'
+  | 'message.deleted'
+  | 'message.reaction'
+  | 'members.changed'
+  | 'session.changed';
+
 export async function publishCollaborationEvent(args: {
   collaborationId: string;
-  name: 'message.created' | 'members.changed' | 'session.changed';
+  name: CollaborationEventName;
   data: Record<string, unknown>;
 }) {
   const client = getRestClient();
