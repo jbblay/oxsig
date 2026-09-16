@@ -25,11 +25,11 @@ describe('review stabilization regressions', () => {
     });
   });
 
-  it('keeps constrained inspection commands read-only', () => {
+  it('keeps only constrained inspection commands read-only', () => {
     expect(classifyPractitionerCommand('ls -la /tmp')).toBe('read-only');
-    expect(classifyPractitionerCommand('systemctl status nginx')).toBe('read-only');
     expect(classifyPractitionerCommand('cat /etc/os-release | grep NAME')).toBe('read-only');
     expect(classifyPractitionerCommand('cat /etc/os-release > /tmp/copy')).toBe('changes-system');
+    expect(classifyPractitionerCommand('systemctl status nginx')).toBe('changes-system');
   });
 
   it('requires an optimistic version for Vault updates', () => {
