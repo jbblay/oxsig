@@ -3,8 +3,10 @@ import 'server-only';
 import { Rest } from 'ably';
 import {
   collaborationChannelName,
+  collaborationSignalChannelName,
   liveTerminalChannelName,
   storyboardChannelName,
+  storyboardSignalChannelName,
 } from '@/lib/realtime/channel-names';
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -34,11 +36,13 @@ export async function issueCollaborationRealtimeToken(args: {
   if (!client) return null;
 
   const channelName = collaborationChannelName(args.collaborationId);
+  const signalChannelName = collaborationSignalChannelName(args.collaborationId);
   return client.auth.requestToken({
     clientId: args.clientId,
     ttl: TOKEN_TTL_MS,
     capability: {
-      [channelName]: ['subscribe', 'publish', 'presence'],
+      [channelName]: ['subscribe'],
+      [signalChannelName]: ['subscribe', 'publish', 'presence'],
     },
   });
 }
@@ -51,11 +55,13 @@ export async function issueStoryboardRealtimeToken(args: {
   if (!client) return null;
 
   const channelName = storyboardChannelName(args.storyboardId);
+  const signalChannelName = storyboardSignalChannelName(args.storyboardId);
   return client.auth.requestToken({
     clientId: args.clientId,
     ttl: TOKEN_TTL_MS,
     capability: {
-      [channelName]: ['subscribe', 'publish', 'presence'],
+      [channelName]: ['subscribe'],
+      [signalChannelName]: ['subscribe', 'publish', 'presence'],
     },
   });
 }

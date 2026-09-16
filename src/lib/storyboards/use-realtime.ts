@@ -7,7 +7,7 @@ import {
   type RealtimeChannel,
   type RealtimeMessage,
 } from '@/lib/collab/use-realtime';
-import { storyboardChannelName } from '@/lib/realtime/channel-names';
+import { storyboardChannelName, storyboardSignalChannelName } from '@/lib/realtime/channel-names';
 import type { StoryboardPermission } from './types';
 
 const CURSOR_PUBLISH_MS = 60;
@@ -81,12 +81,13 @@ export function useStoryboardRealtime(
     let disposed = false;
     let client: RealtimeClient | null = null;
     let channel: RealtimeChannel | null = null;
+    let signalChannel: RealtimeChannel | null = null;
     let onConnectionState: (() => void) | null = null;
 
     const refreshPresence = async () => {
-      if (!channel) return;
+      if (!signalChannel) return;
       try {
-        const members = await channel.presence.get() as Array<{ clientId?: string; data?: unknown }>;
+        const members = await signalChannel.presence.get() as Array<{ clientId?: string; data?: unknown }>;
         const unique = new Map<string, StoryboardPresence>();
         for (const member of members) {
           if (!member.clientId) continue;
@@ -143,7 +144,8 @@ export function useStoryboardRealtime(
           echoMessages: false,
         });
         channel = client.channels.get(storyboardChannelName(storyboardId));
-        channelRef.current = channel;
+        signalChannel = client.channels.get(storyboardSignalChannelName(storyboardId));
+        channelRef.current = signalChannel;
 
         onConnectionState = () => {
           if (!client || disposed) return;
@@ -154,15 +156,15 @@ export function useStoryboardRealtime(
         };
         client.connection.on(onConnectionState);
 
-        await channel.subscribe('cursor.moved', updateCursor);
+        await signalChannel.subscribe('cursor.moved', updateCursor);
         await channel.subscribe('board.updated', (message) => callbacksRef.current.onBoardChanged?.(message));
         await channel.subscribe('board.deleted', (message) => callbacksRef.current.onBoardDeleted?.(message));
         await channel.subscribe('access.changed', (message) => callbacksRef.current.onAccessChanged?.(message));
         await channel.subscribe('comment.created', (message) => callbacksRef.current.onCommentsChanged?.(message));
         await channel.subscribe('comment.updated', (message) => callbacksRef.current.onCommentsChanged?.(message));
         await channel.subscribe('comment.deleted', (message) => callbacksRef.current.onCommentsChanged?.(message));
-        await channel.presence.subscribe(() => void refreshPresence());
-        await channel.presence.enter({
+        await signalChannel.presence.subscribe(() => void refreshPresence());
+        await signalChannel.presence.enter({
           surface: 'board',
           displayName: profile.displayName,
           avatarUrl: profile.avatarUrl || null,
@@ -188,10 +190,11 @@ export function useStoryboardRealtime(
       cursorTimersRef.current.forEach((timer) => clearTimeout(timer));
       cursorTimersRef.current.clear();
       setRemoteCursors([]);
-      if (channel) {
-        channel.unsubscribe();
-        channel.presence.unsubscribe();
-        void channel.presence.leave().catch(() => undefined);
+      if (channel) channel.unsubscribe();
+      if (signalChannel) {
+        signalChannel.unsubscribe();
+        signalChannel.presence.unsubscribe();
+        void signalChannel.presence.leave().catch(() => undefined);
       }
       if (client && onConnectionState) client.connection.off(onConnectionState);
       channelRef.current = null;

@@ -211,6 +211,7 @@ async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
     `SELECT instance.id,
             definition.slug,
             instance.status,
+            instance.expires_at,
             instance.runtime_provider,
             instance.runtime_external_id
      FROM lab_instances instance
@@ -221,6 +222,7 @@ async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
   );
   const instance = result.rows[0];
   if (!instance) return { error: 'Lab instance not found', status: 404 as const };
+  if (instance.expires_at && new Date(instance.expires_at).getTime() <= Date.now()) return { error: 'The Cyber Lab session has expired', status: 410 as const };
   if (instance.status !== 'running') return { error: 'AI Practitioner requires a running Cyber Lab machine for command execution', status: 409 as const };
 
   const lab = LAB_CATALOG.find((item) => item.slug === instance.slug);

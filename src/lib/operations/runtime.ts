@@ -481,6 +481,7 @@ async function launchNode(args: {
     ...(args.labInstanceId ? [{ Key: 'LabInstanceId', Value: args.labInstanceId }] : []),
   ];
   const response = await ec2.send(new RunInstancesCommand({
+    ClientToken: `oxsig-op-${args.nodeId}`,
     ImageId: args.imageId,
     InstanceType: args.instanceType as _InstanceType,
     MinCount: 1,

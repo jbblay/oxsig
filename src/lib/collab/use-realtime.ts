@@ -136,6 +136,7 @@ export function useCollaborationRealtime(
     let disposed = false;
     let client: RealtimeClient | null = null;
     let channel: RealtimeChannel | null = null;
+    let signalChannel: RealtimeChannel | null = null;
     let onConnectionState: (() => void) | null = null;
     let onPresence: ((message: RealtimePresenceMessage) => void) | null = null;
     let localTyping = false;
@@ -144,11 +145,11 @@ export function useCollaborationRealtime(
     const remoteTypingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     const publishTyping = async (typing: boolean) => {
-      if (!channel || disposed) return;
+      if (!signalChannel || disposed) return;
       if (typing === localTyping) return;
       localTyping = typing;
       try {
-        await channel.publish(typing ? 'typing.started' : 'typing.stopped', { surface: 'collaboration' });
+        await signalChannel.publish(typing ? 'typing.started' : 'typing.stopped', { surface: 'collaboration' });
       } catch {
         // Typing state is intentionally best effort and must never block composing.
       }
@@ -211,11 +212,12 @@ export function useCollaborationRealtime(
           echoMessages: false,
         });
         channel = client.channels.get(`oxsig:collaboration:${collaborationId}`);
+        signalChannel = client.channels.get(`oxsig:collaboration:${collaborationId}:signals`);
 
         const refreshPresence = async () => {
-          if (!channel) return;
+          if (!signalChannel) return;
           try {
-            const members = await channel.presence.get();
+            const members = await signalChannel.presence.get();
             const ids = [...new Set(
               members
                 .map((member) => member.clientId)
@@ -256,10 +258,10 @@ export function useCollaborationRealtime(
         await channel.subscribe('read.updated', onMessageChanged);
         await channel.subscribe('members.changed', onMembersChanged);
         await channel.subscribe('session.changed', onSessionChanged);
-        await channel.subscribe('typing.started', onTypingStarted);
-        await channel.subscribe('typing.stopped', onTypingStopped);
-        await channel.presence.subscribe(onPresence);
-        await channel.presence.enter({ surface: 'collaboration' });
+        await signalChannel.subscribe('typing.started', onTypingStarted);
+        await signalChannel.subscribe('typing.stopped', onTypingStopped);
+        await signalChannel.presence.subscribe(onPresence);
+        await signalChannel.presence.enter({ surface: 'collaboration' });
         document.addEventListener('input', onComposerInput);
         document.addEventListener('focusout', onComposerBlur);
         await refreshPresence();
@@ -284,11 +286,12 @@ export function useCollaborationRealtime(
       remoteTypingTimers.clear();
       remoteTyping.clear();
       emitTypingState(collaborationId, remoteTyping);
-      if (channel) {
-        if (localTyping) void channel.publish('typing.stopped', { surface: 'collaboration' }).catch(() => undefined);
-        channel.unsubscribe();
-        channel.presence.unsubscribe();
-        void channel.presence.leave().catch(() => undefined);
+      if (channel) channel.unsubscribe();
+      if (signalChannel) {
+        if (localTyping) void signalChannel.publish('typing.stopped', { surface: 'collaboration' }).catch(() => undefined);
+        signalChannel.unsubscribe();
+        signalChannel.presence.unsubscribe();
+        void signalChannel.presence.leave().catch(() => undefined);
       }
       if (client && onConnectionState) client.connection.off(onConnectionState);
       client?.close();

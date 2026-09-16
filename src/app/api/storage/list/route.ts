@@ -34,12 +34,23 @@ export async function GET(request: NextRequest) {
         ? toUserStorageKey(user.id, requestedPrefix)
         : getUserStoragePrefix(user.id);
 
-      const result = await getStorageClient().send(
-        new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, MaxKeys: maxKeys })
-      );
+      const contents = [];
+      let continuationToken: string | undefined;
+      do {
+        const remaining = maxKeys - contents.length;
+        const result = await getStorageClient().send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: prefix,
+            MaxKeys: remaining,
+            ContinuationToken: continuationToken,
+          })
+        );
+        contents.push(...(result.Contents || []));
+        continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+      } while (continuationToken && contents.length < maxKeys);
 
-      const objects =
-        result.Contents?.map((object) => ({
+      const objects = contents.map((object) => ({
           id: object.Key || '',
           key: object.Key || '',
           bucket,
@@ -55,7 +66,7 @@ export async function GET(request: NextRequest) {
           checksum: object.ETag || '',
           uploadedBy: user.id,
           createdAt: object.LastModified?.toISOString() || '',
-        })) || [];
+        }));
 
       return NextResponse.json(objects);
     } catch (error) {

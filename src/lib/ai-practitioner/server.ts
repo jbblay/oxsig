@@ -80,10 +80,23 @@ const destructivePatterns: Array<{ pattern: RegExp; reason: string }> = [
 ];
 
 const mutatingPattern = /(?:^|\s)(?:apt(?:-get)?|dnf|yum|rpm|dpkg|pip|pip3|npm|pnpm|systemctl|service|useradd|userdel|usermod|groupadd|groupdel|chmod|chown|setfacl|firewall-cmd|ufw|iptables|nft|mount|umount|mkdir|touch|cp|mv|tee|sed\s+-i)\b|(?:^|\s)(?:echo|printf)\b[^\n]*>/i;
+const readOnlyCommandPattern = /^(?:sudo\s+)?(?:ls|pwd|whoami|id|groups|uname|hostname|date|env|printenv|cat|head|tail|less|more|grep|egrep|fgrep|awk|cut|sort|uniq|wc|tr|stat|file|find|ps|pgrep|ss|netstat|ip|ifconfig|route|df|du|free|uptime|journalctl|dmesg|getent|dig|host|nslookup|ping|traceroute|tracepath|nmap)(?:\s|$)/i;
+const readOnlySystemctlPattern = /^(?:sudo\s+)?systemctl\s+(?:status|show|is-active|is-enabled|list-units|list-unit-files)(?:\s|$)/i;
+const readOnlyServicePattern = /^(?:sudo\s+)?service\s+[^\s]+\s+status(?:\s|$)/i;
+
+function isRestrictedReadOnlyCommand(command: string) {
+  if (/[><`]|\$\(|\r|\n/.test(command)) return false;
+  const segments = command.split(/\s*(?:&&|\|\||;|\|)\s*/).map((segment) => segment.trim()).filter(Boolean);
+  return segments.length > 0 && segments.every((segment) =>
+    readOnlyCommandPattern.test(segment) || readOnlySystemctlPattern.test(segment) || readOnlyServicePattern.test(segment)
+  );
+}
 
 export function classifyPractitionerCommand(command: string): AiPractitionerRisk {
-  return mutatingPattern.test(command) ? 'changes-system' : 'read-only';
+  if (mutatingPattern.test(command)) return 'changes-system';
+  return isRestrictedReadOnlyCommand(command) ? 'read-only' : 'changes-system';
 }
+
 
 export function validatePractitionerCommand(command: string): { ok: true; risk: AiPractitionerRisk } | { ok: false; error: string } {
   const value = command.trim();

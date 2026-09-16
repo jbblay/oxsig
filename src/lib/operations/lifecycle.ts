@@ -131,17 +131,34 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
     throw new OperationLifecycleError('All Operation machines must be running before the environment can be paused safely.', 409, 'OPERATION_NODES_NOT_RUNNING');
   }
 
-  await ec2.send(new StopInstancesCommand({ InstanceIds: runningIds }));
+  const claimed = await args.pool.query(
+    `UPDATE operation_runs
+        SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"pausing"'::jsonb, true),
+            updated_at=NOW()
+      WHERE id=$1 AND owner_id=$2 AND status='running'
+        AND COALESCE(metadata->>'lifecycleState', 'active')='active'
+      RETURNING id`,
+    [args.runId, args.ownerId]
+  );
+  if (!claimed.rowCount) {
+    throw new OperationLifecycleError('Another lifecycle change is already in progress for this Operation.', 409, 'OPERATION_LIFECYCLE_BUSY');
+  }
+
   try {
+    await ec2.send(new StopInstancesCommand({ InstanceIds: runningIds }));
     await inTransaction(args.pool, async (client) => {
-      await client.query(
+      const updated = await client.query(
         `UPDATE operation_runs
             SET status='provisioning',
-                metadata=jsonb_set(metadata, '{lifecycleState}', '"paused"'::jsonb, true),
+                metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"paused"'::jsonb, true),
                 updated_at=NOW()
-          WHERE id=$1 AND owner_id=$2`,
+          WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='pausing'
+          RETURNING id`,
         [args.runId, args.ownerId]
       );
+      if (!updated.rowCount) {
+        throw new OperationLifecycleError('The Operation lifecycle changed while pause was in progress.', 409, 'OPERATION_LIFECYCLE_CONFLICT');
+      }
       await client.query(
         `UPDATE operation_nodes
             SET status='provisioning', updated_at=NOW()
@@ -158,9 +175,13 @@ export async function pauseOperationRun(args: { pool: Pool; runId: string; owner
       }
     });
   } catch (error) {
-    // The provider action happened first. Best-effort compensation keeps AWS and
-    // database truth aligned if the durable state transition cannot commit.
     await ec2.send(new StartInstancesCommand({ InstanceIds: runningIds })).catch(() => undefined);
+    await args.pool.query(
+      `UPDATE operation_runs
+          SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"active"'::jsonb, true), updated_at=NOW()
+        WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='pausing'`,
+      [args.runId, args.ownerId]
+    ).catch(() => undefined);
     throw error;
   }
 
@@ -187,18 +208,36 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
     throw new OperationLifecycleError('The Operation is still stopping. Wait until all machines are stopped, then resume.', 409, 'OPERATION_NODES_NOT_STOPPED');
   }
 
-  await ec2.send(new StartInstancesCommand({ InstanceIds: stoppedIds }));
+  const claimed = await args.pool.query(
+    `UPDATE operation_runs
+        SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"resuming"'::jsonb, true),
+            updated_at=NOW()
+      WHERE id=$1 AND owner_id=$2
+        AND metadata->>'lifecycleState'='paused'
+        AND status NOT IN ('destroying','destroyed','failed')
+      RETURNING id`,
+    [args.runId, args.ownerId]
+  );
+  if (!claimed.rowCount) {
+    throw new OperationLifecycleError('Another lifecycle change is already in progress for this Operation.', 409, 'OPERATION_LIFECYCLE_BUSY');
+  }
+
   try {
+    await ec2.send(new StartInstancesCommand({ InstanceIds: stoppedIds }));
     await inTransaction(args.pool, async (client) => {
-      await client.query(
+      const updated = await client.query(
         `UPDATE operation_runs
             SET status='provisioning',
-                metadata=jsonb_set(metadata, '{lifecycleState}', '"active"'::jsonb, true),
+                metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"active"'::jsonb, true),
                 last_error=NULL,
                 updated_at=NOW()
-          WHERE id=$1 AND owner_id=$2`,
+          WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='resuming'
+          RETURNING id`,
         [args.runId, args.ownerId]
       );
+      if (!updated.rowCount) {
+        throw new OperationLifecycleError('The Operation lifecycle changed while resume was in progress.', 409, 'OPERATION_LIFECYCLE_CONFLICT');
+      }
       await client.query(
         `UPDATE operation_nodes
             SET status='provisioning',
@@ -219,6 +258,12 @@ export async function resumeOperationRun(args: { pool: Pool; runId: string; owne
     });
   } catch (error) {
     await ec2.send(new StopInstancesCommand({ InstanceIds: stoppedIds })).catch(() => undefined);
+    await args.pool.query(
+      `UPDATE operation_runs
+          SET metadata=jsonb_set(COALESCE(metadata, '{}'::jsonb), '{lifecycleState}', '"paused"'::jsonb, true), updated_at=NOW()
+        WHERE id=$1 AND owner_id=$2 AND metadata->>'lifecycleState'='resuming'`,
+      [args.runId, args.ownerId]
+    ).catch(() => undefined);
     throw error;
   }
 

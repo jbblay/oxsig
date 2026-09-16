@@ -93,6 +93,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!instance) {
       return failure(404, 'LAB_NOT_FOUND', 'No Oxsig lab record exists for this account and lab ID.', 'database');
     }
+    if (instance.expires_at && new Date(instance.expires_at).getTime() <= Date.now()) {
+      return failure(410, 'LAB_EXPIRED', 'The lab session has expired.', 'expiry', instance);
+    }
     if (instance.runtime_provider !== 'aws-ec2' || !instance.runtime_external_id) {
       return failure(409, 'LAB_RUNTIME_MISSING', 'The lab record does not have an AWS EC2 runtime attached.', 'database', instance);
     }
