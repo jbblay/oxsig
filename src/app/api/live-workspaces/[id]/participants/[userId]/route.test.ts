@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(), validateCsrfToken: vi.fn(), checkRateLimit: vi.fn(),
   getPool: vi.fn(), assignLiveWorkspaceRole: vi.fn(), revokeControlForParticipant: vi.fn(),
-  revokeControlForBinding: vi.fn(), publishCollaborationEvent: vi.fn(),
+  revokeControlForBinding: vi.fn(), recordLiveWorkspaceActivity: vi.fn(), publishCollaborationEvent: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
@@ -15,6 +15,7 @@ vi.mock('@/lib/live-workspace/control', () => ({
   revokeControlForParticipant: mocks.revokeControlForParticipant,
   revokeControlForBinding: mocks.revokeControlForBinding,
 }));
+vi.mock('@/lib/live-workspace/coordination', () => ({ recordLiveWorkspaceActivity: mocks.recordLiveWorkspaceActivity }));
 vi.mock('@/lib/live-workspace/server', () => ({
   assignLiveWorkspaceRole: mocks.assignLiveWorkspaceRole,
   LiveWorkspaceError: class LiveWorkspaceError extends Error {
@@ -58,6 +59,7 @@ describe('Live Workspace participant role API', () => {
     });
     mocks.revokeControlForParticipant.mockResolvedValue(undefined);
     mocks.revokeControlForBinding.mockResolvedValue(undefined);
+    mocks.recordLiveWorkspaceActivity.mockResolvedValue(undefined);
     mocks.publishCollaborationEvent.mockResolvedValue({ configured: true, published: true });
     clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT c.owner_id')) return { rows: [{ owner_id: ownerId }], rowCount: 1 };
