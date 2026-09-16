@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from 'pg';
 
 export type LiveWorkspaceRole = 'owner' | 'instructor' | 'learner' | 'observer';
 export type LiveWorkspaceResourceType = 'lab-instance' | 'academy-course' | 'infrastructure-design' | 'storyboard' | 'vault-item';
+export type LiveWorkspaceAvailability = 'available' | 'busy' | 'away' | 'focus';
 
 export type LiveWorkspaceCapabilities = {
   observe: boolean;
@@ -95,6 +96,11 @@ function normalizeRole(value: unknown, isOwner: boolean): LiveWorkspaceRole {
   return 'observer';
 }
 
+function normalizeAvailability(value: unknown): LiveWorkspaceAvailability {
+  if (value === 'busy' || value === 'away' || value === 'focus') return value;
+  return 'available';
+}
+
 export async function getLiveWorkspaceAccess(
   pool: Pool,
   collaborationId: string,
@@ -145,6 +151,8 @@ export async function listLiveWorkspaceParticipants(pool: Pool, collaborationId:
             participant.display_name,
             participant.email,
             participant.avatar_url,
+            participant.collaboration_status,
+            participant.collaboration_status_message,
             participant.owner_id,
             participant.live_role
      FROM (
@@ -152,6 +160,8 @@ export async function listLiveWorkspaceParticipants(pool: Pool, collaborationId:
               u.display_name,
               u.email,
               u.avatar_url,
+              u.collaboration_status,
+              u.collaboration_status_message,
               c.owner_id,
               'owner'::text AS live_role,
               0 AS sort_order
@@ -163,6 +173,8 @@ export async function listLiveWorkspaceParticipants(pool: Pool, collaborationId:
               u.display_name,
               u.email,
               u.avatar_url,
+              u.collaboration_status,
+              u.collaboration_status_message,
               c.owner_id,
               CASE
                 WHEN lwp.role IN ('instructor','learner','observer') THEN lwp.role
@@ -186,6 +198,8 @@ export async function listLiveWorkspaceParticipants(pool: Pool, collaborationId:
       displayName: row.display_name || String(row.email || '').split('@')[0] || 'Participant',
       email: row.email || null,
       avatarUrl: row.avatar_url || null,
+      collaborationStatus: normalizeAvailability(row.collaboration_status),
+      collaborationStatusMessage: row.collaboration_status_message || null,
       role,
       capabilities: capabilitiesForLiveWorkspaceRole(role),
     };
