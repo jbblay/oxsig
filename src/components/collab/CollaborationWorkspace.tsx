@@ -372,7 +372,7 @@ export default function CollaborationWorkspace() {
     return () => window.clearInterval(timer);
   }, [activeId, loadConversation, loadSessions, realtime.state]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!activeId) return;
     const newestMessage = messages.at(-1) || null;
     if (newestMessage && newestMessage.collaborationId !== activeId) return;
@@ -1107,7 +1107,7 @@ export default function CollaborationWorkspace() {
                     <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={startPractice} aria-label="Practice"><Box className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Practice</span></Button>
                     <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={() => void openBoardPicker()} aria-label="Board"><BookOpen className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Board</span></Button>
                   </div>
-                  <Button type="submit" size="sm" className="h-8 shrink-0" disabled={!draft.trim() || sending || uploading}>
+                  <Button type="submit" size="sm" className="h-8 shrink-0" disabled={!draft.trim() || sending || uploading} aria-label="Send">
                     {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin sm:mr-1.5" /> : <Send className="h-3.5 w-3.5 sm:mr-1.5" />}<span className="hidden sm:inline">Send</span><span className="sr-only sm:hidden">Send</span>
                   </Button>
                 </div>
