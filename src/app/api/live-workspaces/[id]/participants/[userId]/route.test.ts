@@ -49,6 +49,12 @@ describe('Live Workspace participant role API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pool.connect.mockResolvedValue({ query: clientQuery, release });
+    poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT COALESCE(display_name')) {
+        return { rows: [{ display_name: 'Target Participant' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
     mocks.requireAuth.mockImplementation(async (req: NextRequest, handler: any) => handler(req, user));
     mocks.validateCsrfToken.mockResolvedValue(true);
     mocks.checkRateLimit.mockResolvedValue(null);
