@@ -49,6 +49,9 @@ function mapMessage(row: Record<string, any>, userId: string) {
     editedAt: row.edited_at || null,
     deletedAt: row.deleted_at || null,
     deleted,
+    pinned: Boolean(row.pinned_at),
+    pinnedAt: row.pinned_at || null,
+    pinnedBy: row.pinned_by || null,
     senderId: row.user_id,
     senderName: row.sender_name || row.sender_email || 'Member',
     senderEmail: row.sender_email || null,
@@ -56,6 +59,7 @@ function mapMessage(row: Record<string, any>, userId: string) {
     isOwnMessage: row.user_id === userId,
     replyTo,
     reactions: Array.isArray(row.reactions) ? row.reactions : [],
+    seenBy: Array.isArray(row.seen_by) ? row.seen_by : [],
   };
 }
 
@@ -69,6 +73,8 @@ const MESSAGE_SELECT = `SELECT m.id,
                 m.deleted_at,
                 m.metadata,
                 m.reply_to_message_id,
+                m.pinned_at,
+                m.pinned_by,
                 u.display_name AS sender_name,
                 u.email AS sender_email,
                 u.avatar_url AS sender_avatar,
@@ -92,7 +98,29 @@ const MESSAGE_SELECT = `SELECT m.id,
                     WHERE r.message_id = m.id
                     GROUP BY r.emoji
                   ) grouped
-                ), '[]'::jsonb) AS reactions
+                ), '[]'::jsonb) AS reactions,
+                COALESCE((
+                  SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'userId', readers.user_id,
+                      'displayName', readers.display_name,
+                      'avatarUrl', readers.avatar_url,
+                      'readAt', readers.last_read_at
+                    ) ORDER BY readers.last_read_at DESC
+                  )
+                  FROM (
+                    SELECT cm.user_id,
+                           reader.display_name,
+                           reader.avatar_url,
+                           cm.last_read_at
+                    FROM collaboration_members cm
+                    JOIN users reader ON reader.id = cm.user_id
+                    WHERE cm.collaboration_id = m.collaboration_id
+                      AND cm.status = 'active'
+                      AND cm.user_id <> m.user_id
+                      AND cm.last_read_at >= m.created_at
+                  ) readers
+                ), '[]'::jsonb) AS seen_by
          FROM collaboration_messages m
          JOIN users u ON u.id = m.user_id
          LEFT JOIN collaboration_messages parent ON parent.id = m.reply_to_message_id
@@ -200,7 +228,7 @@ export async function POST(
            WHERE client_message_id IS NOT NULL
          DO UPDATE SET client_message_id = EXCLUDED.client_message_id
          RETURNING id, collaboration_id, user_id, content, message_type, created_at, edited_at,
-                   deleted_at, metadata, reply_to_message_id`,
+                   deleted_at, metadata, reply_to_message_id, pinned_at, pinned_by`,
         [
           id,
           user.id,
@@ -227,6 +255,7 @@ export async function POST(
         reply_sender_name: replyRow?.sender_name,
         reply_sender_email: replyRow?.sender_email,
         reactions: [],
+        seen_by: [],
       }, user.id);
 
       await publishCollaborationEvent({
