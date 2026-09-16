@@ -34,7 +34,7 @@ export async function issueCollaborationRealtimeToken(args: {
     clientId: args.clientId,
     ttl: TOKEN_TTL_MS,
     capability: {
-      [channelName]: ['subscribe', 'presence'],
+      [channelName]: ['subscribe', 'publish', 'presence'],
     },
   });
 }
@@ -71,6 +71,8 @@ type CollaborationEventName =
   | 'message.updated'
   | 'message.deleted'
   | 'message.reaction'
+  | 'message.pinned'
+  | 'read.updated'
   | 'members.changed'
   | 'session.changed';
 
