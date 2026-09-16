@@ -50,6 +50,13 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (!existing) return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
 
     const patch = parsed.data;
+    if (Number(existing.version || 1) !== patch.version) {
+      return NextResponse.json(
+        { error: 'Vault item changed since it was loaded. Refresh and try again.' },
+        { status: 409 }
+      );
+    }
+
     const title = patch.title ?? existing.title;
     const summary = patch.summary ?? existing.summary;
     const body = patch.body ?? existing.body;
@@ -60,23 +67,25 @@ export async function PATCH(request: NextRequest, context: Context) {
 
     const result = await getPool().query(
       `UPDATE vault_items
-       SET kind = $3,
-           title = $4,
-           summary = $5,
-           body = $6,
-           language = $7,
-           tags = $8,
-           pinned = $9,
-           archived = $10,
-           source_type = $11,
-           source_id = $12,
-           metadata = $13::jsonb,
+       SET kind = $4,
+           title = $5,
+           summary = $6,
+           body = $7,
+           language = $8,
+           tags = $9,
+           pinned = $10,
+           archived = $11,
+           source_type = $12,
+           source_id = $13,
+           metadata = $14::jsonb,
+           version = version + 1,
            updated_at = NOW()
-       WHERE id = $1 AND owner_id = $2
+       WHERE id = $1 AND owner_id = $2 AND version = $3
        RETURNING *`,
       [
         id,
         user.id,
+        patch.version,
         patch.kind ?? existing.kind,
         sanitizePostgresText(String(title ?? '')),
         sanitizePostgresText(String(summary ?? '')),
@@ -90,6 +99,15 @@ export async function PATCH(request: NextRequest, context: Context) {
         stringifyPostgresJson(patch.metadata ?? existing.metadata ?? {}),
       ]
     );
+
+    if (!result.rows[0]) {
+      const current = await ownedVaultItem(id, user.id);
+      if (!current) return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Vault item changed since it was loaded. Refresh and try again.' },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json({ item: mapVaultRow(result.rows[0]) });
   });

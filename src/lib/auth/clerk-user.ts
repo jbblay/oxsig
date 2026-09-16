@@ -21,7 +21,7 @@ export interface ClerkUserSnapshot {
   avatarUrl?: string | null;
 }
 
-const USER_COLUMNS = `id, public_key, email, display_name, role, clerk_user_id`;
+const USER_COLUMNS = `id, public_key, email, display_name, role, clerk_user_id, is_active`;
 
 function mapRow(row: Record<string, any>): ClerkMappedUser {
   return {
@@ -62,6 +62,10 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
   const email = snapshot.email?.trim().toLowerCase() || null;
   const avatarUrl = snapshot.avatarUrl?.trim() || null;
 
+  if (existing.rows[0] && existing.rows[0].is_active !== true) {
+    throw new Error('Clerk account is inactive.');
+  }
+
   if (existing.rows[0]) {
     const updated = await pool.query(
       `UPDATE users
@@ -73,12 +77,10 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
            display_name = COALESCE(display_name, $4),
            avatar_url = COALESCE(avatar_url, $5),
            auth_provider = 'clerk',
-           is_active = true,
-           clerk_deleted_at = NULL,
            clerk_synced_at = NOW(),
            last_seen_at = NOW(),
            updated_at = NOW()
-       WHERE clerk_user_id = $1
+       WHERE clerk_user_id = $1 AND is_active = true
        RETURNING ${USER_COLUMNS}`,
       [snapshot.clerkUserId, email, !!snapshot.emailVerified, displayName, avatarUrl]
     );
@@ -112,11 +114,11 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
              clerk_synced_at = NOW(),
              last_seen_at = NOW(),
              updated_at = NOW()
-         WHERE id = $5
+         WHERE id = $5 AND clerk_user_id IS NULL AND is_active = true
          RETURNING ${USER_COLUMNS}`,
         [snapshot.clerkUserId, email, displayName, avatarUrl, candidates.rows[0].id]
       );
-      return mapRow(linked.rows[0]);
+      if (linked.rows[0]) return mapRow(linked.rows[0]);
     }
   }
 
@@ -126,12 +128,21 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
        auth_provider, is_active, clerk_synced_at, last_login_at, last_seen_at
      )
      VALUES ($1, $2, $3, $4, $5, 'clerk', true, NOW(), NOW(), NOW())
+     ON CONFLICT (clerk_user_id) WHERE clerk_user_id IS NOT NULL DO NOTHING
      RETURNING ${USER_COLUMNS}`,
     [snapshot.clerkUserId, email, !!snapshot.emailVerified, displayName, avatarUrl]
   );
 
-  return mapRow(created.rows[0]);
+  if (created.rows[0]) return mapRow(created.rows[0]);
+
+  const raced = await pool.query(
+    `SELECT ${USER_COLUMNS} FROM users WHERE clerk_user_id=$1 AND is_active=true LIMIT 1`,
+    [snapshot.clerkUserId]
+  );
+  if (raced.rows[0]) return mapRow(raced.rows[0]);
+  throw new Error('Clerk account could not be linked safely.');
 }
+
 
 export async function deactivateClerkUser(clerkUserId: string): Promise<void> {
   await getPool().query(
@@ -171,6 +182,12 @@ export async function getClerkAuthenticatedUser(): Promise<ClerkMappedUser | nul
     ).catch((error) => console.error('Failed to update Clerk user activity:', error));
     return mapRow(mapped.rows[0]);
   }
+
+  const inactive = await getPool().query(
+    `SELECT 1 FROM users WHERE clerk_user_id=$1 AND is_active=false LIMIT 1`,
+    [session.userId]
+  );
+  if (inactive.rows[0]) return null;
 
   const clerkUser = await currentUser();
   if (!clerkUser || clerkUser.id !== session.userId) return null;

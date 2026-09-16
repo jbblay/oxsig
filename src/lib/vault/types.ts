@@ -23,6 +23,7 @@ export interface VaultItem {
   sourceType?: VaultSourceType | null;
   sourceId?: string | null;
   metadata: Record<string, unknown>;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }

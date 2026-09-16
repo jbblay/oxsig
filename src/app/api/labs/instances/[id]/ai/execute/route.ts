@@ -36,6 +36,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       `SELECT instance.id,
               definition.slug,
               instance.status,
+              instance.expires_at,
               instance.runtime_provider,
               instance.runtime_external_id
        FROM lab_instances instance
@@ -46,6 +47,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     );
     const instance = result.rows[0];
     if (!instance) return NextResponse.json({ error: 'Lab instance not found' }, { status: 404 });
+    if (instance.expires_at && new Date(instance.expires_at).getTime() <= Date.now()) {
+      return NextResponse.json({ error: 'The Cyber Lab session has expired' }, { status: 410 });
+    }
     if (instance.status !== 'running') {
       return NextResponse.json({ error: 'The Cyber Lab machine must be running before AI can execute a command' }, { status: 409 });
     }

@@ -282,6 +282,7 @@ export async function createLabVm(instanceId: string, ownerId: string, expiresAt
   ];
 
   const response = await ec2.send(new RunInstancesCommand({
+    ClientToken: `oxsig-lab-${instanceId}`,
     ImageId: imageId,
     InstanceType: instanceType as _InstanceType,
     MinCount: 1,

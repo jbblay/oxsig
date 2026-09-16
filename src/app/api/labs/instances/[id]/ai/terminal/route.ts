@@ -57,7 +57,7 @@ const terminalExecutionSchema = z.discriminatedUnion('action', [
 
 async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
   const result = await getPool().query(
-    `SELECT instance.id, instance.status, instance.runtime_provider, instance.runtime_external_id,
+    `SELECT instance.id, instance.status, instance.expires_at, instance.runtime_provider, instance.runtime_external_id,
             definition.slug
      FROM lab_instances instance
      JOIN lab_definitions definition ON definition.id = instance.definition_id
@@ -68,6 +68,9 @@ async function resolveOwnedRunningLab(ownerId: string, labInstanceId: string) {
 
   const instance = result.rows[0];
   if (!instance) return { error: 'Lab instance not found', status: 404 as const };
+  if (instance.expires_at && new Date(instance.expires_at).getTime() <= Date.now()) {
+    return { error: 'The Cyber Lab session has expired', status: 410 as const };
+  }
   if (instance.status !== 'running') {
     return { error: 'The Cyber Lab machine must be running before AI can execute a command', status: 409 as const };
   }

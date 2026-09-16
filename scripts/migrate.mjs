@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const { Client } = pg;
+const MIGRATION_LOCK_KEY = 'oxsig-schema-migrations';
 
 async function loadEnvValue(filename, key) {
   try {
@@ -53,25 +55,62 @@ if (orderedMigrations.length === 0) {
 
 const client = new Client({ connectionString });
 
+function checksumSql(sql) {
+  return createHash('sha256').update(sql, 'utf8').digest('hex');
+}
+
 async function main() {
   await client.connect();
-  await client.query(`CREATE TABLE IF NOT EXISTS oxisg_schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS oxisg_schema_migrations (
+       filename TEXT PRIMARY KEY,
+       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       checksum TEXT
+     )`
+  );
+  await client.query(`ALTER TABLE oxisg_schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT`);
+  await client.query(`SELECT pg_advisory_lock(hashtext($1))`, [MIGRATION_LOCK_KEY]);
 
-  for (const filename of orderedMigrations) {
-    const applied = await client.query('SELECT 1 FROM oxisg_schema_migrations WHERE filename=$1', [filename]);
-    if (applied.rowCount) continue;
-    const sql = await fs.readFile(path.join(migrationsDir, filename), 'utf8');
-    await client.query('BEGIN');
-    try {
-      await client.query(sql);
-      await client.query('INSERT INTO oxisg_schema_migrations(filename) VALUES($1)', [filename]);
-      await client.query('COMMIT');
-      console.log(`applied ${filename}`);
-    } catch (error) {
-      await client.query('ROLLBACK');
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`${filename}: ${message}`);
+  try {
+    for (const filename of orderedMigrations) {
+      const sql = await fs.readFile(path.join(migrationsDir, filename), 'utf8');
+      const checksum = checksumSql(sql);
+      const applied = await client.query(
+        'SELECT checksum FROM oxisg_schema_migrations WHERE filename=$1',
+        [filename]
+      );
+
+      if (applied.rowCount) {
+        const recordedChecksum = applied.rows[0]?.checksum;
+        if (recordedChecksum && recordedChecksum !== checksum) {
+          throw new Error(`${filename}: checksum mismatch for an already-applied migration`);
+        }
+        if (!recordedChecksum) {
+          await client.query(
+            'UPDATE oxisg_schema_migrations SET checksum=$2 WHERE filename=$1 AND checksum IS NULL',
+            [filename, checksum]
+          );
+        }
+        continue;
+      }
+
+      await client.query('BEGIN');
+      try {
+        await client.query(sql);
+        await client.query(
+          'INSERT INTO oxisg_schema_migrations(filename, checksum) VALUES($1, $2)',
+          [filename, checksum]
+        );
+        await client.query('COMMIT');
+        console.log(`applied ${filename}`);
+      } catch (error) {
+        await client.query('ROLLBACK');
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${filename}: ${message}`);
+      }
     }
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, [MIGRATION_LOCK_KEY]).catch(() => undefined);
   }
 }
 
