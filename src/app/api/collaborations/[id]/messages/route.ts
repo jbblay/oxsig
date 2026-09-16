@@ -16,6 +16,8 @@ const messageSchema = z.object({
   text: z.string().max(5000).default(''),
   type: messageTypeSchema.default('text'),
   metadata: z.record(z.string(), z.unknown()).default({}),
+  replyToId: z.string().uuid().nullable().optional(),
+  clientMessageId: z.string().uuid().optional(),
 }).strict().superRefine((value, ctx) => {
   if (!value.text.trim() && !['resource', 'audio', 'practice'].includes(value.type)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Message content is required', path: ['text'] });
@@ -27,21 +29,74 @@ const messageSchema = z.object({
 });
 
 function mapMessage(row: Record<string, any>, userId: string) {
+  const deleted = Boolean(row.deleted_at);
+  const replyTo = row.reply_to_message_id
+    ? {
+        id: row.reply_to_message_id,
+        text: row.reply_deleted_at ? 'Message deleted' : (row.reply_content || ''),
+        senderName: row.reply_sender_name || row.reply_sender_email || 'Member',
+        deleted: Boolean(row.reply_deleted_at),
+      }
+    : null;
+
   return {
     id: row.id,
     collaborationId: row.collaboration_id,
-    text: row.content || '',
+    text: deleted ? '' : (row.content || ''),
     type: row.message_type || 'text',
-    metadata: row.metadata || {},
+    metadata: deleted ? {} : (row.metadata || {}),
     createdAt: row.created_at,
     editedAt: row.edited_at || null,
+    deletedAt: row.deleted_at || null,
+    deleted,
     senderId: row.user_id,
     senderName: row.sender_name || row.sender_email || 'Member',
     senderEmail: row.sender_email || null,
     senderAvatar: row.sender_avatar || null,
     isOwnMessage: row.user_id === userId,
+    replyTo,
+    reactions: Array.isArray(row.reactions) ? row.reactions : [],
   };
 }
+
+const MESSAGE_SELECT = `SELECT m.id,
+                m.collaboration_id,
+                m.user_id,
+                m.content,
+                m.message_type,
+                m.created_at,
+                m.edited_at,
+                m.deleted_at,
+                m.metadata,
+                m.reply_to_message_id,
+                u.display_name AS sender_name,
+                u.email AS sender_email,
+                u.avatar_url AS sender_avatar,
+                parent.content AS reply_content,
+                parent.deleted_at AS reply_deleted_at,
+                parent_user.display_name AS reply_sender_name,
+                parent_user.email AS reply_sender_email,
+                COALESCE((
+                  SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'emoji', grouped.emoji,
+                      'count', grouped.reaction_count,
+                      'reactedByMe', grouped.reacted_by_me
+                    ) ORDER BY grouped.emoji
+                  )
+                  FROM (
+                    SELECT r.emoji,
+                           COUNT(*)::int AS reaction_count,
+                           BOOL_OR(r.user_id = $2) AS reacted_by_me
+                    FROM collaboration_message_reactions r
+                    WHERE r.message_id = m.id
+                    GROUP BY r.emoji
+                  ) grouped
+                ), '[]'::jsonb) AS reactions
+         FROM collaboration_messages m
+         JOIN users u ON u.id = m.user_id
+         LEFT JOIN collaboration_messages parent ON parent.id = m.reply_to_message_id
+         LEFT JOIN users parent_user ON parent_user.id = parent.user_id`;
 
 export async function GET(
   request: NextRequest,
@@ -65,23 +120,11 @@ export async function GET(
 
     try {
       const result = await pool.query(
-        `SELECT m.id,
-                m.collaboration_id,
-                m.user_id,
-                m.content,
-                m.message_type,
-                m.created_at,
-                m.edited_at,
-                m.metadata,
-                u.display_name AS sender_name,
-                u.email AS sender_email,
-                u.avatar_url AS sender_avatar
-         FROM collaboration_messages m
-         JOIN users u ON u.id = m.user_id
+        `${MESSAGE_SELECT}
          WHERE m.collaboration_id = $1
          ORDER BY m.created_at DESC
-         LIMIT $2`,
-        [id, limit]
+         LIMIT $3`,
+        [id, user.id, limit]
       );
 
       return NextResponse.json({
@@ -127,16 +170,45 @@ export async function POST(
     }
 
     try {
+      let replyRow: Record<string, any> | null = null;
+      if (parsed.data.replyToId) {
+        const reply = await pool.query(
+          `SELECT parent.id,
+                  parent.content,
+                  parent.deleted_at,
+                  sender.display_name AS sender_name,
+                  sender.email AS sender_email
+           FROM collaboration_messages parent
+           JOIN users sender ON sender.id = parent.user_id
+           WHERE parent.id = $1
+             AND parent.collaboration_id = $2
+           LIMIT 1`,
+          [parsed.data.replyToId, id]
+        );
+        replyRow = reply.rows[0] || null;
+        if (!replyRow) {
+          return NextResponse.json({ error: 'Reply target was not found in this collaboration' }, { status: 400 });
+        }
+      }
+
       const inserted = await pool.query(
-        `INSERT INTO collaboration_messages (collaboration_id, user_id, content, message_type, metadata)
-         VALUES ($1, $2, $3, $4, $5::jsonb)
-         RETURNING id, collaboration_id, user_id, content, message_type, created_at, edited_at, metadata`,
+        `INSERT INTO collaboration_messages (
+           collaboration_id, user_id, content, message_type, metadata, reply_to_message_id, client_message_id
+         )
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+         ON CONFLICT (collaboration_id, user_id, client_message_id)
+           WHERE client_message_id IS NOT NULL
+         DO UPDATE SET client_message_id = EXCLUDED.client_message_id
+         RETURNING id, collaboration_id, user_id, content, message_type, created_at, edited_at,
+                   deleted_at, metadata, reply_to_message_id`,
         [
           id,
           user.id,
           parsed.data.text.trim(),
           parsed.data.type,
           stringifyPostgresJson(parsed.data.metadata),
+          parsed.data.replyToId || null,
+          parsed.data.clientMessageId || null,
         ]
       );
 
@@ -150,6 +222,11 @@ export async function POST(
         sender_name: sender.rows[0]?.display_name,
         sender_email: sender.rows[0]?.email,
         sender_avatar: sender.rows[0]?.avatar_url,
+        reply_content: replyRow?.content,
+        reply_deleted_at: replyRow?.deleted_at,
+        reply_sender_name: replyRow?.sender_name,
+        reply_sender_email: replyRow?.sender_email,
+        reactions: [],
       }, user.id);
 
       await publishCollaborationEvent({
