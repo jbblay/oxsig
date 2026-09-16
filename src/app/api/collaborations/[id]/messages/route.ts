@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { getCollaborationAccess } from '@/lib/collab/server';
+import { createWorkspaceNotification } from '@/lib/notifications/server';
 import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
@@ -126,6 +127,73 @@ const MESSAGE_SELECT = `SELECT m.id,
          LEFT JOIN collaboration_messages parent ON parent.id = m.reply_to_message_id
          LEFT JOIN users parent_user ON parent_user.id = parent.user_id`;
 
+async function notifyRecipients(args: {
+  pool: ReturnType<typeof getPool>;
+  collaborationId: string;
+  senderId: string;
+  senderName: string;
+  messageId: string;
+  text: string;
+  type: string;
+}) {
+  const recipients = await args.pool.query(
+    `SELECT c.name AS collaboration_name,
+            owner.id AS user_id,
+            owner.display_name,
+            owner.email,
+            COALESCE(owner_cm.notification_mode, 'all') AS notification_mode
+       FROM collaborations c
+       JOIN users owner ON owner.id = c.owner_id
+       LEFT JOIN collaboration_members owner_cm
+         ON owner_cm.collaboration_id = c.id AND owner_cm.user_id = owner.id AND owner_cm.status = 'active'
+      WHERE c.id = $1 AND owner.id <> $2
+      UNION ALL
+     SELECT c.name AS collaboration_name,
+            member.id AS user_id,
+            member.display_name,
+            member.email,
+            COALESCE(cm.notification_mode, 'all') AS notification_mode
+       FROM collaboration_members cm
+       JOIN collaborations c ON c.id = cm.collaboration_id
+       JOIN users member ON member.id = cm.user_id
+      WHERE cm.collaboration_id = $1
+        AND cm.status = 'active'
+        AND cm.user_id <> c.owner_id
+        AND cm.user_id <> $2`,
+    [args.collaborationId, args.senderId]
+  );
+
+  const normalizedText = args.text.toLowerCase();
+  await Promise.all(recipients.rows.map(async (row) => {
+    const mode = String(row.notification_mode || 'all');
+    if (mode === 'muted') return;
+    const displayName = String(row.display_name || '').trim().toLowerCase();
+    const email = String(row.email || '').trim().toLowerCase();
+    const localPart = email.split('@')[0] || '';
+    const mentioned = Boolean(
+      (displayName && normalizedText.includes(`@${displayName}`))
+      || (localPart && normalizedText.includes(`@${localPart}`))
+      || (email && normalizedText.includes(email))
+    );
+    if (mode === 'mentions' && !mentioned) return;
+
+    const collaborationName = String(row.collaboration_name || 'Collaboration');
+    const preview = args.text.trim() || (args.type === 'audio' ? 'Voice message' : args.type === 'resource' ? 'Shared resource' : 'New message');
+    await createWorkspaceNotification({
+      ownerId: row.user_id,
+      type: mentioned ? 'collaboration.mention' : 'collaboration.message',
+      title: mentioned ? `${args.senderName} mentioned you in ${collaborationName}` : `${args.senderName} in ${collaborationName}`,
+      detail: preview.slice(0, 300),
+      href: '/collab',
+      severity: mentioned ? 'warning' : 'info',
+      sourceType: 'collaboration',
+      sourceId: args.collaborationId,
+      dedupeKey: `collaboration:${args.collaborationId}:message:${args.messageId}:user:${row.user_id}`,
+      queryable: args.pool,
+    });
+  }));
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -245,6 +313,7 @@ export async function POST(
         `SELECT display_name, email, avatar_url FROM users WHERE id = $1 LIMIT 1`,
         [user.id]
       );
+      const senderName = sender.rows[0]?.display_name || sender.rows[0]?.email || 'Member';
       const message = mapMessage({
         ...inserted.rows[0],
         sender_name: sender.rows[0]?.display_name,
@@ -268,6 +337,20 @@ export async function POST(
           createdAt: message.createdAt,
         },
       });
+
+      try {
+        await notifyRecipients({
+          pool,
+          collaborationId: id,
+          senderId: user.id,
+          senderName,
+          messageId: message.id,
+          text: message.text,
+          type: message.type,
+        });
+      } catch (notificationError) {
+        console.warn('Collaboration message notification failed:', notificationError);
+      }
 
       return NextResponse.json({ message }, { status: 201 });
     } catch (error) {
