@@ -1,13 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import {
   BookOpen,
   Bot,
   Box,
+  CheckCheck,
   ChevronDown,
-  FileText,
   Loader2,
   MessageCircle,
   Mic,
@@ -41,6 +40,9 @@ import { useCollaborationRealtime } from '@/lib/collab/use-realtime';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import { listServerStoryboards } from '@/lib/storyboards/api';
 import type { StoryboardServerSession } from '@/lib/storyboards/types';
+import CollaborationMessageItem, {
+  type CollaborationMessageView,
+} from '@/components/collab/CollaborationMessageItem';
 
 type Collaboration = {
   id: string;
@@ -49,6 +51,8 @@ type Collaboration = {
   ownerId: string;
   ownerName: string;
   memberCount: number;
+  unreadCount?: number;
+  lastReadAt?: string | null;
   lastMessage: string;
   lastMessageType: string | null;
   lastMessageAt: string | null;
@@ -73,19 +77,17 @@ type SharedBoard = {
   permission: 'viewer';
 };
 
-type CollaborationMessage = {
-  id: string;
-  collaborationId: string;
-  text: string;
-  type: 'text' | 'explain' | 'resource' | 'audio' | 'practice';
-  metadata: Record<string, unknown>;
-  createdAt: string;
-  editedAt?: string | null;
-  senderId: string;
-  senderName: string;
-  senderEmail?: string | null;
-  senderAvatar?: string | null;
-  isOwnMessage: boolean;
+type CollaborationMessage = CollaborationMessageView;
+
+type PendingMessage = CollaborationMessage & {
+  deliveryState: 'sending' | 'failed';
+  clientMessageId: string;
+  retryPayload: {
+    text: string;
+    type: CollaborationMessage['type'];
+    metadata: Record<string, unknown>;
+    replyToId: string | null;
+  };
 };
 
 type Member = {
@@ -97,13 +99,6 @@ type Member = {
   isOwner: boolean;
 };
 
-function formatTime(value?: string | null) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
 function formatDay(value?: string | null) {
   if (!value) return '';
   const date = new Date(value);
@@ -113,33 +108,10 @@ function formatDay(value?: string | null) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function formatBytes(value?: number) {
-  if (!value || value < 1) return '0 B';
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function initials(value?: string | null) {
   const text = value?.trim() || 'O';
   const parts = text.split(/\s+/).filter(Boolean);
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'O';
-}
-
-function attachmentFrom(metadata: Record<string, unknown>): Attachment | null {
-  const value = metadata.attachment;
-  if (!value || typeof value !== 'object') return null;
-  const candidate = value as Partial<Attachment>;
-  if (!candidate.key || !candidate.filename || !candidate.mimeType || typeof candidate.size !== 'number') return null;
-  return candidate as Attachment;
-}
-
-function boardFrom(metadata: Record<string, unknown>): SharedBoard | null {
-  const value = metadata.board;
-  if (!value || typeof value !== 'object') return null;
-  const candidate = value as Partial<SharedBoard>;
-  if (!candidate.id || !candidate.title || !candidate.href || candidate.permission !== 'viewer') return null;
-  return candidate as SharedBoard;
 }
 
 function lastMessagePreview(session: Collaboration) {
@@ -154,10 +126,21 @@ function lastMessagePreview(session: Collaboration) {
 function aiContext(messages: CollaborationMessage[]) {
   return messages
     .slice(-6)
-    .filter((message) => message.text.trim())
+    .filter((message) => !message.deleted && message.text.trim())
     .map((message) => `${message.senderName}: ${message.text.trim()}`)
     .join('\n')
     .slice(0, 2200);
+}
+
+function makeClientMessageId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function unreadLabel(count?: number) {
+  if (!count) return null;
+  return count > 99 ? '99+' : String(count);
 }
 
 export default function CollaborationWorkspace() {
@@ -165,6 +148,7 @@ export default function CollaborationWorkspace() {
   const [sessions, setSessions] = React.useState<Collaboration[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<CollaborationMessage[]>([]);
+  const [pendingMessages, setPendingMessages] = React.useState<PendingMessage[]>([]);
   const [members, setMembers] = React.useState<Member[]>([]);
   const [canInvite, setCanInvite] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -172,7 +156,9 @@ export default function CollaborationWorkspace() {
   const [conversationError, setConversationError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const [markingRead, setMarkingRead] = React.useState(false);
   const [draft, setDraft] = React.useState('');
+  const [replyingTo, setReplyingTo] = React.useState<CollaborationMessage | null>(null);
   const [hasNewMessages, setHasNewMessages] = React.useState(false);
   const [newSessionName, setNewSessionName] = React.useState('');
   const [showNewSession, setShowNewSession] = React.useState(false);
@@ -202,6 +188,10 @@ export default function CollaborationWorkspace() {
   const lastMessageIdRef = React.useRef<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
+  const visibleMessages = React.useMemo(
+    () => [...messages, ...pendingMessages.filter((message) => message.collaborationId === activeId)],
+    [activeId, messages, pendingMessages]
+  );
   const filteredSessions = React.useMemo(() => {
     const query = sessionQuery.trim().toLowerCase();
     if (!query) return sessions;
@@ -211,6 +201,34 @@ export default function CollaborationWorkspace() {
     const query = boardQuery.trim().toLowerCase();
     return boards.filter((board) => board.permission === 'owner' && (!query || board.title.toLowerCase().includes(query)));
   }, [boards, boardQuery]);
+
+  const markConversationRead = React.useCallback(async (
+    id: string,
+    messageId?: string | null,
+    silent = false
+  ) => {
+    if (!silent) setMarkingRead(true);
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/collaborations/${id}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ messageId: messageId || null }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not mark conversation as read');
+      setSessions((current) => current.map((session) => (
+        session.id === id
+          ? { ...session, unreadCount: 0, lastReadAt: body.lastReadAt || session.lastReadAt || null }
+          : session
+      )));
+    } catch (error) {
+      if (silent) console.warn('[oxsig] Mark-as-read reconciliation deferred:', error);
+      else toast.error(error instanceof Error ? error.message : 'Could not mark conversation as read');
+    } finally {
+      if (!silent) setMarkingRead(false);
+    }
+  }, []);
 
   const scrollToLatest = React.useCallback(() => {
     const prefersReducedMotion = typeof window !== 'undefined'
@@ -226,8 +244,14 @@ export default function CollaborationWorkspace() {
   const handleMessagesScroll = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const nearBottom = isNearConversationBottom(event.currentTarget);
     nearBottomRef.current = nearBottom;
-    if (nearBottom) setHasNewMessages(false);
-  }, []);
+    if (nearBottom) {
+      setHasNewMessages(false);
+      const current = sessions.find((session) => session.id === activeId);
+      if (activeId && current?.unreadCount && lastMessageIdRef.current) {
+        void markConversationRead(activeId, lastMessageIdRef.current, true);
+      }
+    }
+  }, [activeId, markConversationRead, sessions]);
 
   const loadSessions = React.useCallback(async (silent = false) => {
     try {
@@ -286,6 +310,11 @@ export default function CollaborationWorkspace() {
       void loadConversation(activeId, true);
       void loadSessions(true);
     },
+    onMessageChanged: () => {
+      if (!activeId) return;
+      void loadConversation(activeId, true);
+      void loadSessions(true);
+    },
     onMembersChanged: () => {
       if (!activeId) return;
       void loadConversation(activeId, true);
@@ -317,6 +346,7 @@ export default function CollaborationWorkspace() {
     setCanInvite(false);
     setConversationError(null);
     setHasNewMessages(false);
+    setReplyingTo(null);
     nearBottomRef.current = true;
     lastMessageIdRef.current = null;
     setShowPeople(false);
@@ -354,9 +384,15 @@ export default function CollaborationWorkspace() {
     );
     lastMessageIdRef.current = newestMessage?.id || null;
 
-    if (disposition === 'follow') scrollToLatest();
-    else if (disposition === 'announce') setHasNewMessages(true);
-  }, [activeId, messages, scrollToLatest]);
+    if (disposition === 'follow') {
+      scrollToLatest();
+      if (newestMessage && !newestMessage.isOwnMessage && activeSession?.unreadCount) {
+        void markConversationRead(activeId, newestMessage.id, true);
+      }
+    } else if (disposition === 'announce') {
+      setHasNewMessages(true);
+    }
+  }, [activeId, activeSession?.unreadCount, markConversationRead, messages, scrollToLatest]);
 
   React.useEffect(() => () => {
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
@@ -408,18 +444,24 @@ export default function CollaborationWorkspace() {
     }
   };
 
-  const sendMessage = React.useCallback(async (
+  const postMessage = React.useCallback(async (
+    targetId: string,
     text: string,
     type: CollaborationMessage['type'] = 'text',
-    metadata: Record<string, unknown> = {}
+    metadata: Record<string, unknown> = {},
+    options: { replyToId?: string | null; clientMessageId?: string } = {}
   ) => {
-    const targetId = activeId;
-    if (!targetId) throw new Error('Choose a collaboration session first');
     const csrf = await getCsrfToken();
     const response = await fetch(`/api/collaborations/${targetId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
-      body: JSON.stringify({ text, type, metadata }),
+      body: JSON.stringify({
+        text,
+        type,
+        metadata,
+        replyToId: options.replyToId || null,
+        clientMessageId: options.clientMessageId,
+      }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Could not send message');
@@ -429,23 +471,175 @@ export default function CollaborationWorkspace() {
     }
     void loadSessions(true);
     return message;
-  }, [activeId, loadSessions]);
+  }, [loadSessions]);
+
+  const sendMessage = React.useCallback(async (
+    text: string,
+    type: CollaborationMessage['type'] = 'text',
+    metadata: Record<string, unknown> = {}
+  ) => {
+    const targetId = activeId;
+    if (!targetId) throw new Error('Choose a collaboration session first');
+    return postMessage(targetId, text, type, metadata);
+  }, [activeId, postMessage]);
+
+  const retryPendingMessage = async (message: CollaborationMessage) => {
+    if (!message.clientMessageId) return;
+    const pending = pendingMessages.find((item) => item.clientMessageId === message.clientMessageId);
+    if (!pending) return;
+
+    setPendingMessages((current) => current.map((item) => (
+      item.clientMessageId === pending.clientMessageId ? { ...item, deliveryState: 'sending' } : item
+    )));
+
+    try {
+      await postMessage(
+        pending.collaborationId,
+        pending.retryPayload.text,
+        pending.retryPayload.type,
+        pending.retryPayload.metadata,
+        { replyToId: pending.retryPayload.replyToId, clientMessageId: pending.clientMessageId }
+      );
+      setPendingMessages((current) => current.filter((item) => item.clientMessageId !== pending.clientMessageId));
+
+      if (
+        activeIdRef.current === pending.collaborationId
+        && draft.trim() === pending.retryPayload.text
+        && (replyingTo?.id || null) === pending.retryPayload.replyToId
+      ) {
+        writeCollaborationDraft(sessionIdentityRef.current, pending.collaborationId, '');
+        setDraft('');
+        setReplyingTo(null);
+      }
+    } catch (error) {
+      setPendingMessages((current) => current.map((item) => (
+        item.clientMessageId === pending.clientMessageId ? { ...item, deliveryState: 'failed' } : item
+      )));
+      toast.error(error instanceof Error ? error.message : 'Could not resend message');
+    }
+  };
 
   const submitDraft = async (event?: React.FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
     const targetId = activeId;
     const targetIdentity = sessionIdentityId;
+    const replyToId = replyingTo?.id || null;
     if (!text || !targetId || sending) return;
+
+    const failed = pendingMessages.find((item) => (
+      item.collaborationId === targetId
+      && item.deliveryState === 'failed'
+      && item.retryPayload.text === text
+      && item.retryPayload.replyToId === replyToId
+    ));
+    if (failed) {
+      await retryPendingMessage(failed);
+      return;
+    }
+
+    const clientMessageId = makeClientMessageId();
+    const pending: PendingMessage = {
+      id: `pending:${clientMessageId}`,
+      collaborationId: targetId,
+      text,
+      type: 'text',
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      senderId: targetIdentity || 'current-user',
+      senderName: 'You',
+      isOwnMessage: true,
+      replyTo: replyingTo ? {
+        id: replyingTo.id,
+        text: replyingTo.deleted ? 'Message deleted' : replyingTo.text,
+        senderName: replyingTo.senderName,
+        deleted: Boolean(replyingTo.deleted),
+      } : null,
+      reactions: [],
+      deliveryState: 'sending',
+      clientMessageId,
+      retryPayload: { text, type: 'text', metadata: {}, replyToId },
+    };
+
+    setPendingMessages((current) => [...current, pending]);
     setSending(true);
     try {
-      await sendMessage(text);
+      await postMessage(targetId, text, 'text', {}, { replyToId, clientMessageId });
+      setPendingMessages((current) => current.filter((item) => item.clientMessageId !== clientMessageId));
       writeCollaborationDraft(targetIdentity, targetId, '');
-      if (activeIdRef.current === targetId && sessionIdentityRef.current === targetIdentity) setDraft('');
+      if (activeIdRef.current === targetId && sessionIdentityRef.current === targetIdentity) {
+        setDraft('');
+        setReplyingTo(null);
+      }
     } catch (error) {
+      setPendingMessages((current) => current.map((item) => (
+        item.clientMessageId === clientMessageId ? { ...item, deliveryState: 'failed' } : item
+      )));
       toast.error(error instanceof Error ? error.message : 'Could not send message');
     } finally {
       setSending(false);
+    }
+  };
+
+  const editMessage = async (message: CollaborationMessage, text: string) => {
+    if (!activeId) return;
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/collaborations/${activeId}/messages/${message.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ text }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not edit message');
+      setMessages((current) => current.map((item) => (
+        item.id === message.id ? { ...item, text, editedAt: body.editedAt || new Date().toISOString() } : item
+      )));
+      void loadSessions(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not edit message');
+      throw error;
+    }
+  };
+
+  const deleteMessage = async (message: CollaborationMessage) => {
+    if (!activeId) return;
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/collaborations/${activeId}/messages/${message.id}`, {
+        method: 'DELETE',
+        headers: { 'x-csrf-token': csrf },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not delete message');
+      setMessages((current) => current.map((item) => (
+        item.id === message.id
+          ? { ...item, text: '', metadata: {}, deleted: true, deletedAt: body.deletedAt || new Date().toISOString() }
+          : item
+      )));
+      if (replyingTo?.id === message.id) setReplyingTo(null);
+      void loadSessions(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not delete message');
+      throw error;
+    }
+  };
+
+  const reactToMessage = async (message: CollaborationMessage, emoji: string) => {
+    if (!activeId) return;
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/collaborations/${activeId}/messages/${message.id}/reactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ emoji }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Could not update reaction');
+      await loadConversation(activeId, true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not update reaction');
+      throw error;
     }
   };
 
@@ -456,7 +650,7 @@ export default function CollaborationWorkspace() {
   }, []);
 
   const explainCurrent = () => {
-    const source = draft.trim() || [...messages].reverse().find((message) => message.text.trim())?.text.trim();
+    const source = draft.trim() || [...messages].reverse().find((message) => !message.deleted && message.text.trim())?.text.trim();
     if (!source) {
       toast.error('Write something or add a message first, then Explain can work on real context.');
       return;
@@ -714,10 +908,13 @@ export default function CollaborationWorkspace() {
                     className="rounded-xl border bg-background p-4 text-left transition hover:border-primary/35 hover:bg-muted/20"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 truncate text-sm font-semibold">{session.name}</p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className={`min-w-0 truncate text-sm ${session.unreadCount ? 'font-bold' : 'font-semibold'}`}>{session.name}</p>
+                        {Boolean(session.unreadCount) && <Badge className="h-5 min-w-5 justify-center px-1.5 text-[9px]">{unreadLabel(session.unreadCount)}</Badge>}
+                      </div>
                       <span className="shrink-0 text-[10px] text-muted-foreground">{formatDay(session.lastMessageAt || session.updatedAt)}</span>
                     </div>
-                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{lastMessagePreview(session)}</p>
+                    <p className={`mt-1 line-clamp-1 text-xs ${session.unreadCount ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>{lastMessagePreview(session)}</p>
                     <div className="mt-3 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                       <Users className="h-3 w-3" />{session.memberCount}
                       {session.isOwner && <Badge variant="outline" className="h-4 px-1 text-[8px]">Owner</Badge>}
@@ -753,8 +950,14 @@ export default function CollaborationWorkspace() {
                 <button type="button" key={session.id} onClick={() => chooseSession(session.id)} className={`mb-1 flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition ${session.id === activeId ? 'bg-primary/10 text-foreground' : 'hover:bg-muted/60'}`} aria-current={session.id === activeId ? 'page' : undefined}>
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">{initials(session.name)}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold">{session.name}</span><span className="shrink-0 text-[9px] text-muted-foreground">{formatDay(session.lastMessageAt || session.updatedAt)}</span></span>
-                    <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{lastMessagePreview(session)}</span>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={`truncate text-xs ${session.unreadCount ? 'font-bold' : 'font-semibold'}`}>{session.name}</span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {Boolean(session.unreadCount) && <Badge className="h-4 min-w-4 justify-center px-1 text-[8px]">{unreadLabel(session.unreadCount)}</Badge>}
+                        <span className="text-[9px] text-muted-foreground">{formatDay(session.lastMessageAt || session.updatedAt)}</span>
+                      </span>
+                    </span>
+                    <span className={`mt-0.5 block truncate text-[10px] ${session.unreadCount ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>{lastMessagePreview(session)}</span>
                   </span>
                 </button>
               ))}
@@ -763,169 +966,154 @@ export default function CollaborationWorkspace() {
               <div className="flex items-center justify-between"><span>{sessions.length} conversation{sessions.length === 1 ? '' : 's'}</span><span className="flex items-center gap-1"><span className={`h-1.5 w-1.5 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />{realtime.state === 'connected' ? 'Live' : 'Reconnecting'}</span></div>
             </div>
           </aside>
-          <main className="flex min-w-0 min-h-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center gap-2 border-b bg-background/70 px-3 py-2.5 sm:px-4">
-            <Button type="button" size="sm" variant="ghost" className="h-8" onClick={showSessions}>
-              <MessageCircle className="mr-1.5 h-3.5 w-3.5" />Sessions
-            </Button>
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <h1 className="truncate text-sm font-semibold">{activeSession.name}</h1>
-                <Badge variant="secondary" className="text-[9px]">{activeSession.memberCount}</Badge>
-              </div>
-              {activeSession.description && <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{activeSession.description}</p>}
-            </div>
-            <button type="button" onClick={() => setShowPeople(true)} className="hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground transition hover:bg-muted sm:flex">
-              <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              {realtime.state === 'connected' ? `${realtime.onlineCount} online` : realtime.state === 'connecting' ? 'Connecting…' : 'Fallback'}
-            </button>
-            <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setShowPeople(true)}>
-              <Users className="mr-1.5 h-3.5 w-3.5" />People
-            </Button>
-            <Button type="button" size="sm" className="h-8" onClick={() => setShowNewSession(true)}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />New
-            </Button>
-          </header>
 
-          <div className="relative min-h-0 flex-1">
-            <div
-              className="h-full min-h-0 overflow-y-auto px-3 py-4 sm:px-5"
-              role="region"
-              aria-label="Conversation messages"
-              onScroll={handleMessagesScroll}
-            >
-              {messagesLoading ? (
-                <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
-              ) : conversationError ? (
-                <div className="flex min-h-full flex-col items-center justify-center p-6 text-center">
-                  <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
-                  <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
-                  <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
-                  <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <header className="flex items-center gap-1.5 border-b bg-background/70 px-2.5 py-2.5 sm:gap-2 sm:px-4">
+              <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={showSessions}>
+                <MessageCircle className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Sessions</span>
+              </Button>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <h1 className="truncate text-sm font-semibold">{activeSession.name}</h1>
+                  <Badge variant="secondary" className="hidden text-[9px] sm:inline-flex">{activeSession.memberCount}</Badge>
                 </div>
-              ) : messages.length === 0 ? (
-                <div className="flex min-h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
-                  <MessageCircle className="mb-2 h-8 w-8 opacity-40" />
-                  <p className="font-medium text-foreground">Start the conversation</p>
-                  <p className="mt-1 max-w-sm text-xs">Ask, explain, test an idea, attach evidence, or send a Board without leaving the session.</p>
-                </div>
-              ) : (
-                <div className="mx-auto w-full max-w-4xl space-y-3">
-                  {messages.map((message) => {
-                    const attachment = attachmentFrom(message.metadata);
-                    const sharedBoard = boardFrom(message.metadata);
-                    const attachmentUrl = attachment && activeId
-                      ? `/api/collaborations/${activeId}/attachments?key=${encodeURIComponent(attachment.key)}`
-                      : null;
-                    const practiceHref = typeof message.metadata.href === 'string' ? message.metadata.href : '/labs';
-                    return (
-                      <div key={message.id} className={`flex gap-2 ${message.isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-                        {!message.isOwnMessage && (
-                          <div className="relative mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
-                            {initials(message.senderName)}
-                            {realtime.onlineIds.includes(message.senderId) && <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />}
-                          </div>
-                        )}
-                        <div className={`flex max-w-[88%] flex-col sm:max-w-[76%] ${message.isOwnMessage ? 'items-end' : 'items-start'}`}>
-                          <div className="mb-1 flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
-                            {!message.isOwnMessage && <span className="font-medium text-foreground">{message.senderName}</span>}
-                            {message.type === 'explain' && <span className="flex items-center gap-1 text-primary"><Sparkles className="h-3 w-3" />Explain</span>}
-                            <span>{formatTime(message.createdAt)}</span>
-                          </div>
-                          <div className={`rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${message.isOwnMessage ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md border bg-card'}`}>
-                            {sharedBoard ? (
-                              <div className="min-w-[220px] space-y-2.5">
-                                <div className="flex items-start gap-2">
-                                  <BookOpen className="mt-0.5 h-4 w-4 shrink-0" />
-                                  <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide opacity-70">Shared Board</p><p className="truncate font-semibold">{sharedBoard.title}</p></div>
-                                </div>
-                                <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8 w-full"><Link href={sharedBoard.href}>Open Board</Link></Button>
-                              </div>
-                            ) : message.type === 'practice' ? (
-                              <div className="min-w-[200px] space-y-2">
-                                <div className="flex items-center gap-2 font-semibold"><Box className="h-4 w-4" />Practice</div>
-                                {message.text && <p className={`text-xs ${message.isOwnMessage ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{message.text}</p>}
-                                <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><Link href={practiceHref}>Open Cyber Lab</Link></Button>
-                              </div>
-                            ) : message.type === 'audio' && attachment && attachmentUrl ? (
-                              <div className="min-w-[210px] space-y-2">
-                                <div className="flex items-center gap-2 font-medium"><Mic className="h-4 w-4" />Voice message</div>
-                                <audio controls preload="none" className="h-9 max-w-full" src={attachmentUrl} />
-                                <p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)}</p>
-                              </div>
-                            ) : message.type === 'resource' && attachment && attachmentUrl ? (
-                              <div className="min-w-[200px] space-y-2">
-                                <div className="flex items-start gap-2">
-                                  <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-                                  <div className="min-w-0"><p className="truncate font-medium">{attachment.filename}</p><p className={`text-[10px] ${message.isOwnMessage ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{formatBytes(attachment.size)} · {attachment.mimeType}</p></div>
-                                </div>
-                                <Button asChild size="sm" variant={message.isOwnMessage ? 'secondary' : 'outline'} className="h-8"><a href={`${attachmentUrl}&download=1`}>Open</a></Button>
-                              </div>
-                            ) : (
-                              <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
-            </div>
-            {hasNewMessages && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+                {activeSession.description && <p className="mt-0.5 hidden truncate text-[10px] text-muted-foreground sm:block">{activeSession.description}</p>}
+              </div>
+              {Boolean(activeSession.unreadCount) && (
                 <Button
                   type="button"
                   size="sm"
                   variant="secondary"
-                  className="pointer-events-auto h-8 rounded-full border shadow-md"
-                  onClick={scrollToLatest}
+                  className="h-8 shrink-0 px-2 sm:px-3"
+                  onClick={() => void markConversationRead(activeSession.id, messages.at(-1)?.id || null)}
+                  disabled={markingRead}
+                  aria-label="Mark as read"
                 >
-                  <ChevronDown className="mr-1.5 h-3.5 w-3.5" />New messages
+                  {markingRead ? <Loader2 className="h-3.5 w-3.5 animate-spin sm:mr-1.5" /> : <CheckCheck className="h-3.5 w-3.5 sm:mr-1.5" />}
+                  <span className="hidden sm:inline">Mark read</span>
+                  <span className="ml-1 text-[9px] sm:hidden">{unreadLabel(activeSession.unreadCount)}</span>
                 </Button>
-              </div>
-            )}
-          </div>
+              )}
+              <button type="button" onClick={() => setShowPeople(true)} className="hidden items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] text-muted-foreground transition hover:bg-muted md:flex">
+                <span className={`h-2 w-2 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                {realtime.state === 'connected' ? `${realtime.onlineCount} online` : realtime.state === 'connecting' ? 'Connecting…' : 'Fallback'}
+              </button>
+              <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2 sm:px-3" onClick={() => setShowPeople(true)} aria-label="People">
+                <Users className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">People</span>
+              </Button>
+              <Button type="button" size="sm" className="h-8 shrink-0 px-2 sm:px-3" onClick={() => setShowNewSession(true)} aria-label="New session">
+                <Plus className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">New</span>
+              </Button>
+            </header>
 
-          <div className="border-t bg-background/90 p-2.5 backdrop-blur sm:p-3">
-            <form onSubmit={(event) => void submitDraft(event)} className="mx-auto w-full max-w-4xl space-y-2">
-              <Textarea
-                value={draft}
-                onChange={(event) => {
-                  const nextDraft = event.target.value;
-                  setDraft(nextDraft);
-                  writeCollaborationDraft(sessionIdentityId, activeId, nextDraft);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    void submitDraft();
-                  }
-                }}
-                placeholder={`Message ${activeSession.name}…`}
-                className="min-h-[64px] resize-none bg-background"
-                maxLength={5000}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1">
-                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={explainCurrent}><Sparkles className="mr-1.5 h-3.5 w-3.5" />Explain</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={askCurrent}><Bot className="mr-1.5 h-3.5 w-3.5" />Ask</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => fileInputRef.current?.click()} disabled={uploading}><Paperclip className="mr-1.5 h-3.5 w-3.5" />Attach</Button>
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void handleFile(event)} />
-                  <Button type="button" size="sm" variant={recording ? 'destructive' : 'ghost'} className="h-8" onClick={() => recording ? stopRecording() : void startRecording()} disabled={uploading}>
-                    {recording ? <Square className="mr-1.5 h-3.5 w-3.5" /> : <Mic className="mr-1.5 h-3.5 w-3.5" />}{recording ? `Stop ${recordSeconds}s` : 'Record'}
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={startPractice}><Box className="mr-1.5 h-3.5 w-3.5" />Practice</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => void openBoardPicker()}><BookOpen className="mr-1.5 h-3.5 w-3.5" />Board</Button>
-                </div>
-                <Button type="submit" size="sm" disabled={!draft.trim() || sending || uploading}>
-                  {sending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}Send
-                </Button>
+            <div className="relative min-h-0 flex-1">
+              <div
+                className="h-full min-h-0 overflow-y-auto px-2.5 py-4 sm:px-5"
+                role="region"
+                aria-label="Conversation messages"
+                onScroll={handleMessagesScroll}
+              >
+                {messagesLoading ? (
+                  <div className="flex min-h-full items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading…</div>
+                ) : conversationError ? (
+                  <div className="flex min-h-full flex-col items-center justify-center p-6 text-center">
+                    <MessageCircle className="h-8 w-8 text-muted-foreground/50" />
+                    <p className="mt-3 text-sm font-semibold">Could not load conversation</p>
+                    <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">{conversationError}</p>
+                    <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadConversation(activeSession.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Retry</Button>
+                  </div>
+                ) : visibleMessages.length === 0 ? (
+                  <div className="flex min-h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+                    <MessageCircle className="mb-2 h-8 w-8 opacity-40" />
+                    <p className="font-medium text-foreground">Start the conversation</p>
+                    <p className="mt-1 max-w-sm text-xs">Ask, explain, test an idea, attach evidence, or send a Board without leaving the session.</p>
+                  </div>
+                ) : (
+                  <div className="mx-auto w-full max-w-4xl space-y-2.5 sm:space-y-3">
+                    {visibleMessages.map((message) => (
+                      <CollaborationMessageItem
+                        key={message.id}
+                        message={message}
+                        activeId={activeSession.id}
+                        onlineIds={realtime.onlineIds}
+                        onReply={(target) => setReplyingTo(target)}
+                        onEdit={editMessage}
+                        onDelete={deleteMessage}
+                        onReaction={reactToMessage}
+                        onRetry={retryPendingMessage}
+                      />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
               </div>
-              {uploading && <p className="text-[10px] text-muted-foreground">Uploading and verifying attachment…</p>}
-            </form>
-          </div>
+              {hasNewMessages && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="pointer-events-auto h-8 rounded-full border shadow-md"
+                    onClick={() => {
+                      scrollToLatest();
+                      if (activeSession.unreadCount && lastMessageIdRef.current) {
+                        void markConversationRead(activeSession.id, lastMessageIdRef.current, true);
+                      }
+                    }}
+                  >
+                    <ChevronDown className="mr-1.5 h-3.5 w-3.5" />New messages
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t bg-background/90 p-2 backdrop-blur sm:p-3">
+              <form onSubmit={(event) => void submitDraft(event)} className="mx-auto w-full max-w-4xl space-y-2">
+                {replyingTo && (
+                  <div className="flex items-center gap-2 rounded-lg border bg-muted/35 px-2.5 py-2 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">Replying to {replyingTo.senderName}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">{replyingTo.deleted ? 'Message deleted' : replyingTo.text}</p>
+                    </div>
+                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><X className="h-3.5 w-3.5" /></Button>
+                  </div>
+                )}
+                <Textarea
+                  value={draft}
+                  onChange={(event) => {
+                    const nextDraft = event.target.value;
+                    setDraft(nextDraft);
+                    writeCollaborationDraft(sessionIdentityId, activeId, nextDraft);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      void submitDraft();
+                    }
+                  }}
+                  placeholder={`Message ${activeSession.name}…`}
+                  className="min-h-[52px] resize-none bg-background sm:min-h-[64px]"
+                  maxLength={5000}
+                />
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:gap-1 sm:overflow-visible sm:pb-0">
+                    <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={explainCurrent} aria-label="Explain"><Sparkles className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Explain</span></Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={askCurrent} aria-label="Ask"><Bot className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Ask</span></Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={() => fileInputRef.current?.click()} disabled={uploading} aria-label="Attach"><Paperclip className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Attach</span></Button>
+                    <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => void handleFile(event)} />
+                    <Button type="button" size="sm" variant={recording ? 'destructive' : 'ghost'} className="h-8 shrink-0 px-2 sm:px-3" onClick={() => recording ? stopRecording() : void startRecording()} disabled={uploading} aria-label={recording ? `Stop recording ${recordSeconds}s` : 'Record'}>
+                      {recording ? <Square className="h-3.5 w-3.5 sm:mr-1.5" /> : <Mic className="h-3.5 w-3.5 sm:mr-1.5" />}<span className={recording ? 'ml-1 sm:ml-0' : 'hidden sm:inline'}>{recording ? `Stop ${recordSeconds}s` : 'Record'}</span>
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={startPractice} aria-label="Practice"><Box className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Practice</span></Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 sm:px-3" onClick={() => void openBoardPicker()} aria-label="Board"><BookOpen className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Board</span></Button>
+                  </div>
+                  <Button type="submit" size="sm" className="h-8 shrink-0" disabled={!draft.trim() || sending || uploading}>
+                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin sm:mr-1.5" /> : <Send className="h-3.5 w-3.5 sm:mr-1.5" />}<span className="hidden sm:inline">Send</span><span className="sr-only sm:hidden">Send</span>
+                  </Button>
+                </div>
+                {uploading && <p className="text-[10px] text-muted-foreground">Uploading and verifying attachment…</p>}
+              </form>
+            </div>
           </main>
         </section>
       )}
