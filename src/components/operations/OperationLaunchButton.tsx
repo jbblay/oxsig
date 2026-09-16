@@ -24,12 +24,21 @@ type Props = {
   slug: string;
   mode: OperationMode;
   capabilityId?: string;
+  sourceWorkspaceId?: string;
   variant?: 'default' | 'outline';
   className?: string;
   label?: string;
 };
 
-export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'default', className, label }: Props) {
+export function OperationLaunchButton({
+  slug,
+  mode,
+  capabilityId,
+  sourceWorkspaceId,
+  variant = 'default',
+  className,
+  label,
+}: Props) {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [busy, setBusy] = React.useState(false);
@@ -37,8 +46,9 @@ export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'def
   const returnTo = React.useMemo(() => {
     const query = new URLSearchParams({ operation: slug });
     if (capabilityId) query.set('capability', capabilityId);
+    if (sourceWorkspaceId) query.set('workspace', sourceWorkspaceId);
     return `/operations?${query.toString()}`;
-  }, [capabilityId, slug]);
+  }, [capabilityId, slug, sourceWorkspaceId]);
 
   const launch = async () => {
     if (busy || authLoading) return;
@@ -68,14 +78,21 @@ export function OperationLaunchButton({ slug, mode, capabilityId, variant = 'def
           const workspaceResponse = await fetch(`/api/warroom/runs/${encodeURIComponent(runId)}/workspace`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+            body: JSON.stringify(sourceWorkspaceId ? { sourceWorkspaceId } : {}),
           });
           const workspaceBody = await workspaceResponse.json().catch(() => ({}));
           if (workspaceResponse.ok && typeof workspaceBody?.workspaceId === 'string') {
             workspaceId = workspaceBody.workspaceId;
+            if (workspaceBody?.reusedSource === true) {
+              toast.success('Live Workspace carried into Cyber Room.');
+            }
+          } else if (sourceWorkspaceId) {
+            throw new Error(workspaceBody?.error || 'Could not carry this Live Workspace into Cyber Room');
           } else {
             toast.warning('Operation started. WarRoom will finish linking the team workspace when it opens.');
           }
-        } catch {
+        } catch (error) {
+          if (sourceWorkspaceId) throw error;
           toast.warning('Operation started. WarRoom will finish linking the team workspace when it opens.');
         }
       }
