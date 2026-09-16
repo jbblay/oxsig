@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const contract = fileURLToPath(new URL('../production-check.mjs', import.meta.url));
 const routeCheck = fileURLToPath(new URL('../verify-built-routes.mjs', import.meta.url));
+const appRoot = fileURLToPath(new URL('../../src/app', import.meta.url));
 const baseEnv = {
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'test', CLERK_SECRET_KEY: 'test',
   DATABASE_URL: 'postgresql://localhost/test', CRON_SECRET: 'c'.repeat(24),
@@ -66,6 +67,18 @@ test('prepared Black Domain accepts a complete reusable slot contract without le
   const result = spawnSync(process.execPath, [contract], { env: preparedBlackDomainEnv, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!result.stderr.includes('LAB_AWS_OPERATION_SECURITY_GROUP_ID'));
+});
+
+test('App Router has no conflicting sibling dynamic segment names', () => {
+  const conflicts = [];
+  const visit = (directory) => {
+    const entries = readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+    const dynamic = entries.filter((entry) => /^\[{1,2}\.?.*\]{1,2}$/.test(entry.name));
+    if (dynamic.length > 1) conflicts.push(`${directory}: ${dynamic.map((entry) => entry.name).join(', ')}`);
+    for (const entry of entries) visit(join(directory, entry.name));
+  };
+  visit(appRoot);
+  assert.deepEqual(conflicts, [], `Conflicting Next.js dynamic route segments:\n${conflicts.join('\n')}`);
 });
 
 test('build gate requires the public bridge mapping and compiled handler', () => {
