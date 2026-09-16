@@ -12,6 +12,19 @@ import {
   toUserStorageKey,
 } from '@/lib/storage/server';
 
+type ListedStorageObject = {
+  Key?: string;
+  Size?: number;
+  ETag?: string;
+  LastModified?: Date;
+};
+
+type StorageListPage = {
+  Contents?: ListedStorageObject[];
+  IsTruncated?: boolean;
+  NextContinuationToken?: string;
+};
+
 export async function GET(request: NextRequest) {
   return requireAuth(request, async (req, user) => {
     const rateLimit = await checkRateLimit(
@@ -34,11 +47,11 @@ export async function GET(request: NextRequest) {
         ? toUserStorageKey(user.id, requestedPrefix)
         : getUserStoragePrefix(user.id);
 
-      const contents = [];
+      const contents: ListedStorageObject[] = [];
       let continuationToken: string | undefined;
       do {
-        const remaining = maxKeys - contents.length;
-        const result = await getStorageClient().send(
+        const remaining: number = maxKeys - contents.length;
+        const result: StorageListPage = await getStorageClient().send(
           new ListObjectsV2Command({
             Bucket: bucket,
             Prefix: prefix,
@@ -51,22 +64,22 @@ export async function GET(request: NextRequest) {
       } while (continuationToken && contents.length < maxKeys);
 
       const objects = contents.map((object) => ({
-          id: object.Key || '',
-          key: object.Key || '',
-          bucket,
-          filename: object.Key ? storageDisplayFilename(object.Key) : '',
-          size: object.Size || 0,
-          mimeType: 'application/octet-stream',
-          url: object.Key ? storageDownloadPath(object.Key) : '',
-          metadata: {},
-          // The Oxsig bucket enforces server-side encryption at rest. This is
-          // presentation metadata only; access control remains enforced by S3
-          // and by the authenticated user prefix above.
-          encrypted: true,
-          checksum: object.ETag || '',
-          uploadedBy: user.id,
-          createdAt: object.LastModified?.toISOString() || '',
-        }));
+        id: object.Key || '',
+        key: object.Key || '',
+        bucket,
+        filename: object.Key ? storageDisplayFilename(object.Key) : '',
+        size: object.Size || 0,
+        mimeType: 'application/octet-stream',
+        url: object.Key ? storageDownloadPath(object.Key) : '',
+        metadata: {},
+        // The Oxsig bucket enforces server-side encryption at rest. This is
+        // presentation metadata only; access control remains enforced by S3
+        // and by the authenticated user prefix above.
+        encrypted: true,
+        checksum: object.ETag || '',
+        uploadedBy: user.id,
+        createdAt: object.LastModified?.toISOString() || '',
+      }));
 
       return NextResponse.json(objects);
     } catch (error) {
