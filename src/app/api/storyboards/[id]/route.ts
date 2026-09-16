@@ -111,6 +111,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     }
 
     let materializedAudio: VerifiedStoryboardAudioReference | null = null;
+    let audioCreatedByRequest = false;
     let oldStorageKey: string | null = null;
     let committed = false;
     try {
@@ -143,6 +144,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
           parsed.legacyAudio,
           parsed.legacyAudio.name || 'storyboard-audio'
         );
+        audioCreatedByRequest = true;
       }
 
       const data = parsed.data;
@@ -229,7 +231,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       }
       return NextResponse.json({ session });
     } catch (error) {
-      if (!committed && materializedAudio?.key) {
+      // Referenced audio can be live on another successful save or this Board.
+      if (!committed && audioCreatedByRequest && materializedAudio?.key) {
         await deleteStoryboardAudioObject(materializedAudio.key).catch((cleanupError) => {
           console.warn('Failed to clean up uncommitted Storyboard audio:', cleanupError);
         });

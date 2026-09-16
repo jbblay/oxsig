@@ -46,12 +46,24 @@ export async function DELETE(request: NextRequest) {
       const keys = rawKeys.map((key) => assertUserStorageKey(user.id, key));
       const bucket = getStorageBucket();
 
-      await getStorageClient().send(
+      const result = await getStorageClient().send(
         new DeleteObjectsCommand({
           Bucket: bucket,
           Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
         })
       );
+
+      // S3 may return HTTP 200 while individual objects failed to delete.
+      if (result.Errors?.length) {
+        const failedKeys = result.Errors
+          .map((failure) => failure.Key)
+          .filter((key): key is string => typeof key === 'string' && keys.includes(key));
+        return NextResponse.json({
+          success: false,
+          error: 'Some files could not be deleted. Refresh the file list and retry the remaining files.',
+          failedKeys,
+        }, { status: 502 });
+      }
 
       return NextResponse.json({ success: true });
     } catch (error) {

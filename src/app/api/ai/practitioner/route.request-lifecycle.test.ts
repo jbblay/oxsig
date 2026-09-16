@@ -52,7 +52,7 @@ const plan = {
   nextConcept: 'Page faults',
 };
 
-function request() {
+function request(overrides: Record<string, unknown> = {}) {
   return new NextRequest('http://localhost/api/ai/practitioner', {
     method: 'POST',
     body: JSON.stringify({
@@ -60,6 +60,7 @@ function request() {
       requestId,
       prompt: 'Explain copy-on-write',
       history: [],
+      ...overrides,
     }),
     headers: { 'content-type': 'application/json' },
   });
@@ -142,6 +143,35 @@ describe('AI Practitioner request idempotency and failure mapping', () => {
     expect(body.replayed).toBe(true);
     expect(mocks.planPractitionerStep).toHaveBeenCalledTimes(1);
     expect(lookupCount).toBe(2);
+  });
+
+  it('rejects replaying the same request ID for a different lab', async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ ...persistedRow(), lab_instance_id: 'lab-original' }] });
+    const response = await POST(request({ labInstanceId: 'lab-other' }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('AI_REQUEST_ID_CONFLICT');
+    expect(mocks.planPractitionerStep).not.toHaveBeenCalled();
+  });
+
+  it('rejects replaying a lab-bound plan as an unbound chat request', async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ ...persistedRow(), lab_instance_id: 'lab-original' }] });
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(mocks.planPractitionerStep).not.toHaveBeenCalled();
+  });
+
+  it('rejects a race winner bound to a different lab instead of returning its plan', async () => {
+    let lookups = 0;
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("metadata->>'requestId'")) {
+        return { rows: ++lookups === 1 ? [] : [{ ...persistedRow(), lab_instance_id: 'lab-other' }] };
+      }
+      if (sql.includes('INSERT INTO ai_practitioner_events')) return { rows: [] };
+      throw new Error('Unexpected query');
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('AI_REQUEST_ID_CONFLICT');
   });
 
   it('maps provider deadline expiry to a retryable timeout without persisting a turn', async () => {
