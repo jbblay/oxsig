@@ -187,6 +187,7 @@ export default function CollaborationWorkspace() {
   const [boardsLoading, setBoardsLoading] = React.useState(false);
   const [boardQuery, setBoardQuery] = React.useState('');
   const [sharingBoardId, setSharingBoardId] = React.useState<string | null>(null);
+  const [sessionQuery, setSessionQuery] = React.useState('');
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
@@ -201,6 +202,11 @@ export default function CollaborationWorkspace() {
   const lastMessageIdRef = React.useRef<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
+  const filteredSessions = React.useMemo(() => {
+    const query = sessionQuery.trim().toLowerCase();
+    if (!query) return sessions;
+    return sessions.filter((session) => `${session.name} ${session.description}`.toLowerCase().includes(query));
+  }, [sessionQuery, sessions]);
   const ownerBoards = React.useMemo(() => {
     const query = boardQuery.trim().toLowerCase();
     return boards.filter((board) => board.permission === 'owner' && (!query || board.title.toLowerCase().includes(query)));
@@ -723,7 +729,41 @@ export default function CollaborationWorkspace() {
           </div>
         </section>
       ) : (
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
+        <section className="flex min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
+          <aside className="hidden w-72 shrink-0 flex-col border-r bg-muted/15 lg:flex" aria-label="Collaboration sessions">
+            <div className="flex items-center justify-between gap-2 border-b px-3 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Messages</p>
+                <p className="text-[10px] text-muted-foreground">Your collaboration spaces</p>
+              </div>
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowNewSession(true)} aria-label="New collaboration session">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="border-b p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={sessionQuery} onChange={(event) => setSessionQuery(event.target.value)} placeholder="Search conversations" aria-label="Search conversations" className="h-9 bg-background pl-8 text-xs" />
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {filteredSessions.length === 0 ? (
+                <p className="px-2 py-6 text-center text-xs text-muted-foreground">No conversations match.</p>
+              ) : filteredSessions.map((session) => (
+                <button type="button" key={session.id} onClick={() => chooseSession(session.id)} className={`mb-1 flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition ${session.id === activeId ? 'bg-primary/10 text-foreground' : 'hover:bg-muted/60'}`} aria-current={session.id === activeId ? 'page' : undefined}>
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">{initials(session.name)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold">{session.name}</span><span className="shrink-0 text-[9px] text-muted-foreground">{formatDay(session.lastMessageAt || session.updatedAt)}</span></span>
+                    <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{lastMessagePreview(session)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="border-t p-3 text-[10px] text-muted-foreground">
+              <div className="flex items-center justify-between"><span>{sessions.length} conversation{sessions.length === 1 ? '' : 's'}</span><span className="flex items-center gap-1"><span className={`h-1.5 w-1.5 rounded-full ${realtime.state === 'connected' ? 'bg-emerald-500' : 'bg-amber-500'}`} />{realtime.state === 'connected' ? 'Live' : 'Reconnecting'}</span></div>
+            </div>
+          </aside>
+          <main className="flex min-w-0 min-h-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center gap-2 border-b bg-background/70 px-3 py-2.5 sm:px-4">
             <Button type="button" size="sm" variant="ghost" className="h-8" onClick={showSessions}>
               <MessageCircle className="mr-1.5 h-3.5 w-3.5" />Sessions
@@ -886,6 +926,7 @@ export default function CollaborationWorkspace() {
               {uploading && <p className="text-[10px] text-muted-foreground">Uploading and verifying attachment…</p>}
             </form>
           </div>
+          </main>
         </section>
       )}
 
