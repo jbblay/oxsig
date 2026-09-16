@@ -1,9 +1,9 @@
 name: Reconstruct review stabilization
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/review-stabilization-reconstructed
+      - main
 
 permissions:
   contents: write
