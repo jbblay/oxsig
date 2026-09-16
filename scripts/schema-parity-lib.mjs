@@ -30,8 +30,10 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'learning_activity_days',
   'learning_capability_evidence',
   'learning_path_enrollments',
+  'live_workspace_activity_events',
   'live_workspace_control_leases',
   'live_workspace_control_requests',
+  'live_workspace_items',
   'live_workspace_participants',
   'live_workspace_resources',
   'live_workspaces',
@@ -180,12 +182,16 @@ export function describeSchemaParity(result) {
     const suffix = result.missingRuntimeRelations.length > 5
       ? ` (+${result.missingRuntimeRelations.length - 5} more)`
       : '';
-    return `Database migration history is current, but ${result.missingRuntimeRelations.length} required runtime relation(s) are missing: ${preview}${suffix}.`;
+    return `Database is missing required runtime relation(s): ${preview}${suffix}.`;
   }
 
-  const preview = result.unexpectedRetiredRelations.slice(0, 5).join(', ');
-  const suffix = result.unexpectedRetiredRelations.length > 5
-    ? ` (+${result.unexpectedRetiredRelations.length - 5} more)`
-    : '';
-  return `Database migration history is current, but ${result.unexpectedRetiredRelations.length} retired relation(s) are still present: ${preview}${suffix}.`;
+  if (result.unexpectedRetiredRelations.length > 0) {
+    const preview = result.unexpectedRetiredRelations.slice(0, 5).join(', ');
+    const suffix = result.unexpectedRetiredRelations.length > 5
+      ? ` (+${result.unexpectedRetiredRelations.length - 5} more)`
+      : '';
+    return `Database still contains retired runtime relation(s): ${preview}${suffix}.`;
+  }
+
+  return 'Database schema parity check failed for an unknown reason.';
 }

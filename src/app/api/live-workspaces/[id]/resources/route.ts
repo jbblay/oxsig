@@ -6,6 +6,7 @@ import { getPool } from '@/lib/db/pool';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { revokeControlForBinding } from '@/lib/live-workspace/control';
+import { recordLiveWorkspaceActivity } from '@/lib/live-workspace/coordination';
 import {
   assertOwnerResource,
   getLiveWorkspaceAccess,
@@ -55,6 +56,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         [id, parsed.data.resourceType, resource.id, resourceOwnerId, user.id, stringifyPostgresJson({ label: resource.label })]
       );
       const row = result.rows[0];
+      await recordLiveWorkspaceActivity({
+        queryable: pool,
+        collaborationId: id,
+        actorId: user.id,
+        eventType: 'resource.attached',
+        summary: `Attached ${resource.label}`,
+        metadata: { bindingId: row.id, resourceType: row.resource_type, resourceId: row.resource_id },
+      }).catch((error) => console.warn('Live Workspace resource activity could not be recorded:', error));
       await publishCollaborationEvent({
         collaborationId: id,
         name: 'session.changed',
@@ -95,7 +104,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       if (!access) throw new LiveWorkspaceError('Live Workspace not found or access denied.', 404, 'WORKSPACE_NOT_FOUND');
 
       const binding = await pool.query(
-        `SELECT resource_owner_id
+        `SELECT resource_owner_id, resource_type, resource_id,
+                COALESCE(metadata->>'label', resource_type) AS label
            FROM live_workspace_resources
           WHERE id=$1 AND collaboration_id=$2 AND status='attached'
           LIMIT 1`,
@@ -132,6 +142,15 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       } finally {
         client.release();
       }
+      const row = binding.rows[0];
+      await recordLiveWorkspaceActivity({
+        queryable: pool,
+        collaborationId: id,
+        actorId: user.id,
+        eventType: 'resource.detached',
+        summary: `Detached ${row.label}`,
+        metadata: { bindingId: parsed.data.bindingId, resourceType: row.resource_type, resourceId: row.resource_id },
+      }).catch((error) => console.warn('Live Workspace resource activity could not be recorded:', error));
       await publishCollaborationEvent({
         collaborationId: id,
         name: 'session.changed',

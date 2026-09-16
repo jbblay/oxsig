@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
 import { stringifyPostgresJson } from '@/lib/db/postgres-safe';
+import { recordLiveWorkspaceActivity } from '@/lib/live-workspace/coordination';
 import { getOperation } from '@/lib/operations/catalog';
 import { getLearnerOperationRun } from '@/lib/operations/run-view';
 import { validateCsrfToken } from '@/lib/security/csrf';
@@ -11,6 +12,7 @@ import { checkRateLimit } from '@/lib/security/rate-limit';
 export const runtime = 'nodejs';
 
 const idSchema = z.string().uuid();
+const linkSchema = z.object({ sourceWorkspaceId: z.string().uuid().optional() }).strict();
 const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Pragma: 'no-cache' };
 
 type LinkedRun = {
@@ -94,6 +96,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!idSchema.safeParse(id).success) {
       return NextResponse.json({ error: 'Invalid WarRoom Operation run' }, { status: 400, headers: PRIVATE_HEADERS });
     }
+    const parsed = linkSchema.safeParse(await req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid Live Workspace handoff' }, { status: 400, headers: PRIVATE_HEADERS });
+    }
 
     const pool = getPool();
     const client = await pool.connect();
@@ -142,6 +148,85 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           [workspaceId, resource.rows[0].id, user.id, stringifyPostgresJson({ label: `${resource.rows[0].label} · Operation operator` })]
         );
       };
+
+      if (parsed.data.sourceWorkspaceId) {
+        const source = await client.query(
+          `SELECT c.id, c.settings
+             FROM collaborations c
+             JOIN live_workspaces lw
+               ON lw.collaboration_id = c.id
+              AND lw.status = 'active'
+            WHERE c.id = $1
+              AND c.owner_id = $2
+              AND c.collaboration_type = 'live-workspace'
+              AND c.status = 'active'
+            FOR UPDATE OF c, lw`,
+          [parsed.data.sourceWorkspaceId, user.id]
+        );
+        const sourceWorkspace = source.rows[0];
+        if (!sourceWorkspace) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: 'The source Live Workspace is unavailable or owner access is required' }, { status: 404, headers: PRIVATE_HEADERS });
+        }
+        const linkedRunId = sourceWorkspace.settings?.operation?.runId;
+        if (linkedRunId && linkedRunId !== id) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: 'This Live Workspace is already linked to another Cyber Room operation' }, { status: 409, headers: PRIVATE_HEADERS });
+        }
+
+        // The operation row is already locked, so every linker for this run is serialized.
+        // Refuse to create a second active workspace link if this run was linked elsewhere.
+        const existingRunWorkspace = await client.query(
+          `SELECT c.id
+             FROM collaborations c
+             JOIN live_workspaces lw
+               ON lw.collaboration_id = c.id
+              AND lw.status = 'active'
+            WHERE c.owner_id = $1
+              AND c.collaboration_type = 'live-workspace'
+              AND c.status = 'active'
+              AND c.settings->'operation'->>'runId' = $2
+            ORDER BY c.updated_at DESC
+            LIMIT 1`,
+          [user.id, id]
+        );
+        if (existingRunWorkspace.rows[0] && existingRunWorkspace.rows[0].id !== sourceWorkspace.id) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({
+            error: 'This Cyber Room operation is already linked to another Live Workspace',
+          }, { status: 409, headers: PRIVATE_HEADERS });
+        }
+
+        await client.query(
+          `UPDATE collaborations
+              SET settings = COALESCE(settings, '{}'::jsonb) || $3::jsonb,
+                  updated_at = NOW()
+            WHERE id = $1 AND owner_id = $2`,
+          [
+            sourceWorkspace.id,
+            user.id,
+            stringifyPostgresJson({
+              warRoomVersion: 1,
+              operation: { runId: id, slug: run.operation_slug, mode: 'warroom' },
+            }),
+          ]
+        );
+        await client.query(
+          `UPDATE live_workspaces SET updated_at = NOW() WHERE collaboration_id = $1`,
+          [sourceWorkspace.id]
+        );
+        await attachOperatorLab(sourceWorkspace.id);
+        await recordLiveWorkspaceActivity({
+          queryable: client,
+          collaborationId: sourceWorkspace.id,
+          actorId: user.id,
+          eventType: 'warroom.linked',
+          summary: `Linked Cyber Room operation ${run.operation_slug}`,
+          metadata: { runId: id, operationSlug: run.operation_slug },
+        }).catch((error) => console.warn('Cyber Room handoff activity could not be recorded:', error));
+        await client.query('COMMIT');
+        return NextResponse.json({ workspaceId: sourceWorkspace.id, created: false, reusedSource: true }, { headers: PRIVATE_HEADERS });
+      }
 
       const existing = await client.query(
         `SELECT c.id

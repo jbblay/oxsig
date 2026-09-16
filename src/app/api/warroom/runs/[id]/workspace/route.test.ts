@@ -26,6 +26,7 @@ const user = { id: 'user-1', role: 'user' as const };
 const ownerId = 'user-1';
 const runId = '11111111-1111-4111-8111-111111111111';
 const workspaceId = '22222222-2222-4222-8222-222222222222';
+const otherWorkspaceId = '44444444-4444-4444-8444-444444444444';
 const labId = '33333333-3333-4333-8333-333333333333';
 const runRow = {
   id: runId,
@@ -43,9 +44,15 @@ const publicRun = {
   nodes: [],
 };
 
-function request(method: 'GET' | 'POST') {
+function request(method: 'GET' | 'POST', body?: unknown) {
   return {
-    request: new NextRequest(`http://localhost/api/warroom/runs/${runId}/workspace`, { method }),
+    request: new NextRequest(`http://localhost/api/warroom/runs/${runId}/workspace`, {
+      method,
+      ...(body === undefined ? {} : {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    }),
     context: { params: Promise.resolve({ id: runId }) },
   };
 }
@@ -106,6 +113,66 @@ describe('/api/warroom/runs/[id]/workspace', () => {
     expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO live_workspace_resources'), expect.arrayContaining([workspaceId, labId, user.id]));
     expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO collaborations'))).toBe(false);
     expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('reuses an explicitly handed-off Live Workspace instead of creating a parallel team workspace', async () => {
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM operation_runs') && sql.includes('FOR UPDATE')) return { rows: [runRow], rowCount: 1 };
+      if (sql.includes('WHERE c.id = $1') && sql.includes("c.collaboration_type = 'live-workspace'")) {
+        return { rows: [{ id: workspaceId, settings: { liveWorkspaceVersion: 1 } }], rowCount: 1 };
+      }
+      if (sql.includes("c.settings->'operation'->>'runId' = $2")) return { rows: [], rowCount: 0 };
+      if (sql.includes('FROM lab_instances li')) return { rows: [{ id: labId, label: 'Ubuntu operator' }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const args = request('POST', { sourceWorkspaceId: workspaceId });
+    const response = await POST(args.request, args.context);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ workspaceId, created: false, reusedSource: true });
+
+    const linkCall = clientQuery.mock.calls.find(([sql]) => String(sql).includes("settings = COALESCE(settings"));
+    expect(linkCall).toBeTruthy();
+    expect(String(linkCall?.[1]?.[2])).toContain(`\"runId\":\"${runId}\"`);
+    expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO live_workspace_resources'), expect.arrayContaining([workspaceId, labId, user.id]));
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO collaborations'))).toBe(false);
+    expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('rejects handing off a workspace that is already linked to another operation', async () => {
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM operation_runs') && sql.includes('FOR UPDATE')) return { rows: [runRow], rowCount: 1 };
+      if (sql.includes('WHERE c.id = $1') && sql.includes("c.collaboration_type = 'live-workspace'")) {
+        return { rows: [{ id: workspaceId, settings: { operation: { runId: '99999999-9999-4999-8999-999999999999' } } }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    });
+
+    const args = request('POST', { sourceWorkspaceId: workspaceId });
+    const response = await POST(args.request, args.context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/already linked/i);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO live_workspace_resources'))).toBe(false);
+  });
+
+  it('rejects a source handoff when the run is already linked to a different Live Workspace', async () => {
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM operation_runs') && sql.includes('FOR UPDATE')) return { rows: [runRow], rowCount: 1 };
+      if (sql.includes('WHERE c.id = $1') && sql.includes("c.collaboration_type = 'live-workspace'")) {
+        return { rows: [{ id: workspaceId, settings: { liveWorkspaceVersion: 1 } }], rowCount: 1 };
+      }
+      if (sql.includes("c.settings->'operation'->>'runId' = $2")) {
+        return { rows: [{ id: otherWorkspaceId }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    });
+
+    const args = request('POST', { sourceWorkspaceId: workspaceId });
+    const response = await POST(args.request, args.context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/already linked to another Live Workspace/i);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("settings = COALESCE(settings"))).toBe(false);
+    expect(clientQuery).toHaveBeenCalledWith('ROLLBACK');
   });
 
   it('creates one linked Live Workspace with Operation provenance and attaches the operator lab', async () => {

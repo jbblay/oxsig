@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getLiveWorkspaceAccess: vi.fn(),
   assertOwnerResource: vi.fn(),
   revokeControlForBinding: vi.fn(),
+  recordLiveWorkspaceActivity: vi.fn(),
   publishCollaborationEvent: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfTok
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock('@/lib/db/pool', () => ({ getPool: mocks.getPool }));
 vi.mock('@/lib/live-workspace/control', () => ({ revokeControlForBinding: mocks.revokeControlForBinding }));
+vi.mock('@/lib/live-workspace/coordination', () => ({ recordLiveWorkspaceActivity: mocks.recordLiveWorkspaceActivity }));
 vi.mock('@/lib/live-workspace/server', () => ({
   getLiveWorkspaceAccess: mocks.getLiveWorkspaceAccess,
   assertOwnerResource: mocks.assertOwnerResource,
@@ -79,6 +81,7 @@ describe('Live Workspace resource binding API', () => {
     mocks.getLiveWorkspaceAccess.mockResolvedValue(access());
     mocks.assertOwnerResource.mockResolvedValue({ id: labId, label: 'Ubuntu Lab' });
     mocks.revokeControlForBinding.mockResolvedValue(undefined);
+    mocks.recordLiveWorkspaceActivity.mockResolvedValue(undefined);
     mocks.publishCollaborationEvent.mockResolvedValue({ configured: true, published: true });
     query.mockResolvedValue({ rows: [{
       id: bindingId,
