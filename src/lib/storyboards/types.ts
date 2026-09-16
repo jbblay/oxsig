@@ -89,3 +89,18 @@ export type StoryboardShare = {
   expiresAt?: string | null;
   createdAt: string;
 };
+
+export type StoryboardComment = {
+  id: string;
+  sessionId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatarUrl?: string | null;
+  point: StoryboardPoint;
+  body: string;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolvedByName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
