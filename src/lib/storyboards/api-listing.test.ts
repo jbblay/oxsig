@@ -61,11 +61,29 @@ describe('Board client listing', () => {
     expect(sessions[0]).toMatchObject({ title: 'Updated title', version: 2 });
   });
 
-  it('fails closed on a repeated cursor instead of looping forever', async () => {
-    const board = session('123e4567-e89b-42d3-a456-426614174020', '2026-09-17T12:00:00.000Z');
+  it('keeps the newer Board if an older representation appears on a later page', async () => {
+    const newer = session('123e4567-e89b-42d3-a456-426614174011', '2026-09-17T12:05:00.000Z');
+    newer.version = 3;
+    newer.title = 'Newest title';
+    const older = { ...newer, title: 'Stale title', updatedAt: '2026-09-17T12:00:00.000Z', version: 2 };
+
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ sessions: [board], nextCursor: 'same-cursor' }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sessions: [newer], nextCursor: 'cursor-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sessions: [older], nextCursor: null }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const sessions = await listServerStoryboards();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({ title: 'Newest title', version: 3 });
+  });
+
+  it('fails closed on a repeated cursor instead of looping forever', async () => {
+    const board = session('123e4567-e89b-42d3-a456-426614174020', '2026-09-17T12:00:00.000Z');
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ sessions: [board], nextCursor: 'same-cursor' }), { status: 200 })
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(listServerStoryboards()).rejects.toThrow(/repeated cursor/i);
