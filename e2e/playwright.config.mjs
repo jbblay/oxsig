@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const port = Number(process.env.OXSIG_E2E_PORT || 3100);
+const port = 3100;
 const baseURL = `http://127.0.0.1:${port}`;
-const databaseUrl = process.env.OXSIG_E2E_DATABASE_URL || process.env.CI_DATABASE_URL || process.env.DATABASE_URL || '';
+const databaseUrl = process.env.DATABASE_URL || '';
 
 export default defineConfig({
   testDir: '.',
