@@ -83,4 +83,15 @@ jobs:
           STORAGE_REGION: eu-central-1
           LAB_AWS_ENABLED: 'false'
           OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
-
+      - name: Install Chromium for browser regressions
+        run: pnpm test:e2e:install
+      - name: Run critical browser regressions
+        run: pnpm test:e2e
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_dummy
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          STORAGE_BUCKET: oxsig-ci
+          STORAGE_REGION: eu-central-1
+          LAB_AWS_ENABLED: 'false'
+          OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
