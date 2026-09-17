@@ -1,8 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 const port = 3100;
 const baseURL = `http://127.0.0.1:${port}`;
 const databaseUrl = process.env.DATABASE_URL || '';
+const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 
 export default defineConfig({
   testDir: '.',
@@ -30,9 +32,12 @@ export default defineConfig({
   ],
   webServer: {
     command: 'pnpm dev',
+    cwd: repositoryRoot,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
     env: {
       ...process.env,
       PORT: String(port),
