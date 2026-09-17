@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const port = Number(process.env.OXSIG_E2E_PORT || 3100);
 const baseURL = process.env.OXSIG_E2E_BASE_URL || `http://127.0.0.1:${port}`;
+const webServerCommand = process.env.CI ? 'pnpm start' : 'pnpm dev';
 
 export default defineConfig({
   testDir: './e2e',
@@ -24,7 +25,7 @@ export default defineConfig({
   webServer: process.env.OXSIG_E2E_BASE_URL
     ? undefined
     : {
-        command: 'pnpm dev',
+        command: webServerCommand,
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
