@@ -7,13 +7,23 @@ describe('LAB_CATALOG', () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
-  it('keeps every VM profile explicit about its OS, shell, and instance size', () => {
+  it('keeps every VM profile explicit about its OS, shell, instance size, and launch surface', () => {
     for (const lab of LAB_CATALOG) {
       expect(lab.runtime).toBe('vm');
+      expect(['cyber-lab', 'operation']).toContain(lab.launchSurface);
       expect(lab.osFamily).toBeTruthy();
       expect(lab.recommendedInstanceType).toMatch(/^t3\./);
       expect(lab.defaultCommand.length).toBeGreaterThan(0);
       expect(lab.platform === 'windows' ? lab.shell : 'bash').toBe(lab.shell);
+    }
+  });
+
+  it('owns Black Domain from Operations while ordinary profiles belong to Cyber Lab', () => {
+    const blackDomain = LAB_CATALOG.find((lab) => lab.slug === 'operation-black-domain-operator');
+    expect(blackDomain?.launchSurface).toBe('operation');
+
+    for (const lab of LAB_CATALOG.filter((item) => item.slug !== 'operation-black-domain-operator')) {
+      expect(lab.launchSurface).toBe('cyber-lab');
     }
   });
 
