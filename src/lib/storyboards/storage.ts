@@ -1,6 +1,7 @@
 'use client';
 
 import { openDB, type DBSchema } from 'idb';
+import { clearStoryboardServerCommit, consumeStoryboardServerCommit } from './secure-save-state';
 import type { StoryboardDraft } from './types';
 
 const DB_NAME = 'oxsig-storyboards';
@@ -229,6 +230,7 @@ export async function saveStoryboardDraft(
     try {
       const db = await getDB();
       await db.put(SCOPED_STORE_NAME, toScopedDraft(namespace, draft));
+      clearStoryboardServerCommit(draft);
       lastFailedSave = null;
       const diagnostics = await getRecoveryDiagnostics(namespace);
       publishRecoveryStatus({
@@ -256,6 +258,7 @@ export async function saveStoryboardDraft(
           message,
           ...diagnostics,
         });
+        if (consumeStoryboardServerCommit(draft)) return;
         throw new StoryboardRecoveryError('quota', message, error);
       }
 
@@ -277,6 +280,7 @@ export async function saveStoryboardDraft(
     message,
     ...diagnostics,
   });
+  if (consumeStoryboardServerCommit(draft)) return;
   throw new StoryboardRecoveryError('storage', message, lastError);
 }
 
