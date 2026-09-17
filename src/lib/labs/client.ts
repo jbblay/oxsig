@@ -1,6 +1,10 @@
 'use client';
 
-import type { LabDefinition, LabInstanceStatus, LabRuntimeCapabilities } from './types';
+import type {
+  LabInstanceStatus,
+  LearnerLabDefinition,
+  LearnerLabRuntimeCapabilities,
+} from './types';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 const LABS_ENDPOINT = '/api/labs';
@@ -11,9 +15,6 @@ const TRANSITIONAL_LAB_STATUSES = new Set<LabInstanceStatus>([
   'stopping',
   'destroying',
   'resetting',
-]);
-const OPERATION_MANAGED_LAB_SLUGS = new Set([
-  'operation-black-domain-operator',
 ]);
 
 export type ClientLabInstance = {
@@ -32,8 +33,8 @@ export type ClientLabInstance = {
 };
 
 export type LabsSnapshot = {
-  catalog: LabDefinition[];
-  capabilities: LabRuntimeCapabilities & { reason?: string; region?: string };
+  catalog: LearnerLabDefinition[];
+  capabilities: LearnerLabRuntimeCapabilities;
   instances: ClientLabInstance[];
   reconciliationWarning?: string | null;
 };
@@ -62,7 +63,7 @@ function normalizeLabsSnapshotBody(data: LabsSnapshotBody): LabsSnapshotBody {
 
   const activeSlugs = new Set((data.instances || []).map((instance) => instance.slug));
   const catalog = data.catalog.filter(
-    (lab) => !OPERATION_MANAGED_LAB_SLUGS.has(lab.slug) || activeSlugs.has(lab.slug)
+    (lab) => lab.launchSurface === 'cyber-lab' || activeSlugs.has(lab.slug)
   );
 
   return { ...data, catalog };
