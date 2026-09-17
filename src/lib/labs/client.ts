@@ -12,9 +12,9 @@ const TRANSITIONAL_LAB_STATUSES = new Set<LabInstanceStatus>([
   'destroying',
   'resetting',
 ]);
-const OPERATION_MANAGED_LAB_NOTES: Readonly<Record<string, string>> = {
-  'operation-black-domain-operator': 'This managed profile is launched only from Operations > Black Domain.',
-};
+const OPERATION_MANAGED_LAB_SLUGS = new Set([
+  'operation-black-domain-operator',
+]);
 
 export type ClientLabInstance = {
   id: string;
@@ -61,12 +61,9 @@ function normalizeLabsSnapshotBody(data: LabsSnapshotBody): LabsSnapshotBody {
   if (!data.catalog?.length) return data;
 
   const activeSlugs = new Set((data.instances || []).map((instance) => instance.slug));
-  const catalog = data.catalog
-    .filter((lab) => !OPERATION_MANAGED_LAB_NOTES[lab.slug] || activeSlugs.has(lab.slug))
-    .map((lab) => {
-      const operationNote = OPERATION_MANAGED_LAB_NOTES[lab.slug];
-      return operationNote ? { ...lab, availabilityNote: operationNote } : lab;
-    });
+  const catalog = data.catalog.filter(
+    (lab) => !OPERATION_MANAGED_LAB_SLUGS.has(lab.slug) || activeSlugs.has(lab.slug)
+  );
 
   return { ...data, catalog };
 }
