@@ -20,6 +20,7 @@ const createSchema = z.object({
 const configuredTtl = Number.parseInt(process.env.LAB_AWS_TTL_MINUTES || '60', 10);
 const LAB_TTL_MINUTES = Number.isFinite(configuredTtl) ? Math.min(120, Math.max(15, configuredTtl)) : 60;
 const ONE_LAB_INDEX = 'idx_lab_instances_one_nonterminal_per_owner';
+const DEFAULT_UNAVAILABLE_NOTE = 'This lab profile is not activated on this deployment yet.';
 
 function mapLearnerDefinition(lab: LabDefinition): LearnerLabDefinition {
   return {
@@ -40,7 +41,7 @@ function mapLearnerDefinition(lab: LabDefinition): LearnerLabDefinition {
     estimatedCpu: lab.estimatedCpu,
     objectives: lab.objectives,
     available: lab.available,
-    availabilityNote: lab.available ? lab.availabilityNote : 'This lab profile is not activated on this deployment yet.',
+    availabilityNote: lab.availabilityNote || (!lab.available ? DEFAULT_UNAVAILABLE_NOTE : undefined),
   };
 }
 
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     if (!lab.available) {
       return NextResponse.json(
         {
-          error: 'This lab profile is not activated on this deployment yet.',
+          error: lab.availabilityNote || DEFAULT_UNAVAILABLE_NOTE,
           code: 'LAB_PROFILE_UNAVAILABLE',
         },
         { status: 409 }

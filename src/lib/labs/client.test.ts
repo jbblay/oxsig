@@ -28,6 +28,61 @@ function labsResponse(id: string, status = 200, instanceStatus = 'running') {
   }), { status, headers: { 'content-type': 'application/json' } });
 }
 
+function managedProfileResponse(active: boolean) {
+  return new Response(JSON.stringify({
+    catalog: [
+      {
+        slug: 'ubuntu-security-lab',
+        name: 'Ubuntu Security Lab',
+        shortName: 'Ubuntu 24.04',
+        category: 'Linux Security',
+        description: 'Ubuntu lab',
+        difficulty: 'beginner',
+        runtime: 'vm',
+        osFamily: 'ubuntu',
+        platform: 'linux',
+        shell: 'bash',
+        accessModes: ['terminal'],
+        defaultAccessMode: 'terminal',
+        defaultCommand: 'whoami',
+        estimatedMemoryMb: 1024,
+        estimatedCpu: 2,
+        objectives: [],
+        available: true,
+      },
+      {
+        slug: 'operation-black-domain-operator',
+        name: 'Black Domain Operator',
+        shortName: 'Black Domain',
+        category: 'Active Directory',
+        description: 'Operation-managed lab',
+        difficulty: 'advanced',
+        runtime: 'vm',
+        osFamily: 'ubuntu',
+        platform: 'linux',
+        shell: 'bash',
+        accessModes: ['terminal'],
+        defaultAccessMode: 'terminal',
+        defaultCommand: 'cat /opt/oxsig/operation.env',
+        estimatedMemoryMb: 2048,
+        estimatedCpu: 2,
+        objectives: [],
+        available: false,
+        availabilityNote: 'This managed profile is launched only from Operations > Black Domain.',
+      },
+    ],
+    capabilities: { provider: 'unconfigured', configured: false, supportsContainers: false, supportsVMs: false, supportsTerminal: false, supportsReset: false },
+    instances: active ? [{
+      id: 'black-domain-lab',
+      slug: 'operation-black-domain-operator',
+      name: 'Black Domain Operator',
+      status: 'running',
+      createdAt: '2026-09-17T00:00:00.000Z',
+      expiresAt: '2026-09-17T02:00:00.000Z',
+    }] : [],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
 function reconciliationResponse(status = 200) {
   return new Response(JSON.stringify({
     ok: true,
@@ -139,6 +194,26 @@ describe('labs client cache', () => {
     await expect(getLabsSnapshot()).resolves.toMatchObject({ ok: false, status: 503 });
     await expect(getLabsSnapshot()).resolves.toMatchObject({ ok: true, data: { instances: [{ id: 'lab-3' }] } });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides operation-managed profiles from the normal Cyber Lab catalog until they are active', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(managedProfileResponse(false));
+
+    const result = await getLabsSnapshot();
+
+    expect(result.data.catalog?.map((lab) => lab.slug)).toEqual(['ubuntu-security-lab']);
+  });
+
+  it('exposes an active Black Domain operator with its Operations-specific explanation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(managedProfileResponse(true));
+
+    const result = await getLabsSnapshot();
+    const blackDomain = result.data.catalog?.find((lab) => lab.slug === 'operation-black-domain-operator');
+
+    expect(blackDomain).toMatchObject({
+      available: false,
+      availabilityNote: 'This managed profile is launched only from Operations > Black Domain.',
+    });
   });
 
   it('force performs an explicit reconciliation before returning the persisted snapshot', async () => {

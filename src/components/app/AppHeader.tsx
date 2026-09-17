@@ -10,6 +10,10 @@ import WorkspaceWalkthrough from './WorkspaceWalkthrough';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 import {
+  contextualAiOpenEvent,
+  contextualAiSurfaceForPathname,
+} from '@/lib/ai/context-surface';
+import {
   productNavigationLabelForPath,
   resolveProductNavigationHref,
 } from '@/lib/navigation/product-navigation';
@@ -37,7 +41,7 @@ export default function AppHeader({
   const pathname = usePathname();
   const { user, isAuthenticated } = useAuth();
   const [commandOpen, setCommandOpen] = React.useState(false);
-  const practitionerSurface = pathname.startsWith('/labs');
+  const practitionerSurface = contextualAiSurfaceForPathname(pathname) === 'practitioner';
   const accountHref = resolveProductNavigationHref('account', isAuthenticated) ?? '/sign-up';
 
   React.useEffect(() => {
@@ -52,7 +56,7 @@ export default function AppHeader({
   }, []);
 
   function openAi() {
-    window.dispatchEvent(new CustomEvent(practitionerSurface ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+    window.dispatchEvent(new CustomEvent(contextualAiOpenEvent(pathname)));
   }
 
   return (
