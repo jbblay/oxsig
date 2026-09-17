@@ -5,6 +5,7 @@ import { getPool } from '@/lib/db/pool';
 import { logAudit, getRequestMetadata, AUDIT_ACTIONS } from '@/lib/audit/logger';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { validateCsrfToken } from '@/lib/security/csrf';
+import { parseStoryboardListParams } from '@/lib/storyboards/listing';
 import { listStoryboardsForUser, mapStoryboardRow } from '@/lib/storyboards/server';
 import {
   deleteStoryboardAudioObject,
@@ -80,8 +81,13 @@ export async function GET(request: NextRequest) {
     const rateLimit = await checkRateLimit(req, { maxRequests: 100, windowMs: 60_000 }, user.id);
     if (rateLimit) return rateLimit;
 
+    const parsed = parseStoryboardListParams(req.nextUrl.searchParams);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+
     try {
-      return NextResponse.json({ sessions: await listStoryboardsForUser(user.id) });
+      return NextResponse.json(await listStoryboardsForUser(user.id, parsed.options));
     } catch (error) {
       console.error('Failed to list storyboards:', error);
       return NextResponse.json({ error: 'Failed to list storyboards' }, { status: 500 });

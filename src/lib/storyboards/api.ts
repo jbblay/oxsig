@@ -24,6 +24,11 @@ type PresignedStoryboardAudio = {
   object: StoryboardAudioObject;
 };
 
+type StoryboardListResponse = {
+  sessions?: StoryboardServerSession[];
+  nextCursor?: string | null;
+};
+
 const serverAudioBlobs = new WeakSet<Blob>();
 const knownServerVersions = new Map<string, number>();
 
@@ -134,10 +139,48 @@ async function sendStoryboardSave(args: {
   });
 }
 
+function preferNewestStoryboard(
+  current: StoryboardServerSession | undefined,
+  incoming: StoryboardServerSession
+): StoryboardServerSession {
+  if (!current) return incoming;
+  if (incoming.version !== current.version) {
+    return incoming.version > current.version ? incoming : current;
+  }
+  const incomingUpdated = Date.parse(incoming.updatedAt);
+  const currentUpdated = Date.parse(current.updatedAt);
+  return incomingUpdated > currentUpdated ? incoming : current;
+}
+
 export async function listServerStoryboards(): Promise<StoryboardServerSession[]> {
-  const response = await fetch('/api/storyboards', { cache: 'no-store' });
-  if (!response.ok) throw new Error(await readError(response));
-  const sessions = (await response.json()).sessions as StoryboardServerSession[];
+  const sessionsById = new Map<string, StoryboardServerSession>();
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  do {
+    const params = new URLSearchParams({ limit: '100' });
+    if (cursor) params.set('cursor', cursor);
+
+    const response = await fetch(`/api/storyboards?${params.toString()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(await readError(response));
+    const body = (await response.json()) as StoryboardListResponse;
+    const page = Array.isArray(body.sessions) ? body.sessions : [];
+    page.forEach((session) => {
+      sessionsById.set(session.id, preferNewestStoryboard(sessionsById.get(session.id), session));
+    });
+
+    const nextCursor = typeof body.nextCursor === 'string' && body.nextCursor ? body.nextCursor : null;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new Error('Board pagination returned a repeated cursor');
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  const sessions = [...sessionsById.values()].sort((a, b) => {
+    const updated = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    return updated || b.id.localeCompare(a.id);
+  });
   sessions.forEach(rememberVersion);
   return sessions;
 }
