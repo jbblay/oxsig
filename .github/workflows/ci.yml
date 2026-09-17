@@ -68,6 +68,7 @@ jobs:
           OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
       - run: pnpm typecheck
       - run: pnpm audit:reachability
+      - run: pnpm persistence:check
       - run: pnpm test:run
       - name: Verify PostgreSQL parameter boundary
         run: pnpm exec vitest run src/lib/db/pool.integration.test.ts
