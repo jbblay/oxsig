@@ -5,6 +5,7 @@ export type LabOsFamily = 'ubuntu' | 'amazon-linux' | 'rocky' | 'kali' | 'window
 export type LabPlatform = 'linux' | 'windows';
 export type LabShell = 'bash' | 'powershell';
 export type LabAccessMode = 'terminal' | 'desktop';
+export type LabLaunchSurface = 'cyber-lab' | 'operation';
 
 export type LabInstanceStatus =
   | 'created'
@@ -25,6 +26,7 @@ export type LabDefinition = {
   description: string;
   difficulty: LabDifficulty;
   runtime: LabRuntimeKind;
+  launchSurface: LabLaunchSurface;
   osFamily: LabOsFamily;
   platform: LabPlatform;
   shell: LabShell;
