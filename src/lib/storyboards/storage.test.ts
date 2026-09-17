@@ -13,6 +13,7 @@ const fakeIdb = vi.hoisted(() => {
   };
 
   const databases = new Map<string, DatabaseState>();
+  const putFailures: unknown[] = [];
   const encodeKey = (key: unknown) => JSON.stringify(key);
 
   const recordKey = (store: StoreState, value: Record<string, unknown>) => {
@@ -51,6 +52,7 @@ const fakeIdb = vi.hoisted(() => {
       };
     },
     async put(storeName: string, value: Record<string, unknown>) {
+      if (putFailures.length > 0) throw putFailures.shift();
       const store = database.stores.get(storeName);
       if (!store) throw new Error(`Unknown fake IndexedDB store: ${storeName}`);
       store.records.set(recordKey(store, value), value);
@@ -98,6 +100,10 @@ const fakeIdb = vi.hoisted(() => {
     },
     reset() {
       databases.clear();
+      putFailures.length = 0;
+    },
+    failNextPuts(...errors: unknown[]) {
+      putFailures.push(...errors);
     },
     seed(
       databaseName: string,
@@ -125,8 +131,11 @@ vi.mock('idb', () => ({ openDB: fakeIdb.openDB }));
 
 import {
   GUEST_STORYBOARD_DRAFT_NAMESPACE,
+  STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD,
+  StoryboardRecoveryError,
   deleteStoryboardDraft,
   getStoryboardDraft,
+  getStoryboardRecoveryStatus,
   listStoryboardDrafts,
   saveStoryboardDraft,
   storyboardDraftNamespaceForAccount,
@@ -246,5 +255,68 @@ describe('Board recovery draft account isolation', () => {
 
   it('rejects empty account identifiers instead of falling back to guest', () => {
     expect(() => storyboardDraftNamespaceForAccount('   ')).toThrow(/stable account id/i);
+  });
+});
+
+describe('Board recovery reliability', () => {
+  it('retries a transient IndexedDB write before reporting success', async () => {
+    const namespace = storyboardDraftNamespaceForAccount('retry-user');
+    const draft = makeDraft('retry-draft', 'Retry me');
+    fakeIdb.failNextPuts(new Error('temporary IndexedDB failure'));
+
+    await saveStoryboardDraft(namespace, draft);
+
+    expect((await getStoryboardDraft(namespace, draft.id))?.title).toBe('Retry me');
+    expect(getStoryboardRecoveryStatus()).toMatchObject({
+      phase: 'saved',
+      namespace,
+      attempt: 2,
+    });
+  });
+
+  it('warns about recovery growth without auto-deleting any local data', async () => {
+    const namespace = storyboardDraftNamespaceForAccount('retention-user');
+    const drafts: StoryboardDraft[] = [];
+
+    for (let index = 0; index < STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD + 3; index += 1) {
+      const draft = makeDraft(`recovery-${index}`, `Recovery ${index}`, {
+        updatedAt: 100 + index,
+        serverId: index % 2 === 0 ? `server-${index}` : undefined,
+        serverPermission: index % 2 === 0 ? 'owner' : undefined,
+      });
+      drafts.push(draft);
+      await saveStoryboardDraft(namespace, draft);
+    }
+
+    const stored = await listStoryboardDrafts(namespace);
+    expect(stored).toHaveLength(drafts.length);
+    expect(stored.map((draft) => draft.id)).toEqual(
+      expect.arrayContaining(drafts.map((draft) => draft.id))
+    );
+    expect(getStoryboardRecoveryStatus()).toMatchObject({
+      phase: 'saved',
+      namespace,
+      draftCount: drafts.length,
+    });
+  });
+
+  it('classifies quota exhaustion and keeps a retryable failure instead of pretending the save is idle', async () => {
+    const namespace = storyboardDraftNamespaceForAccount('quota-user');
+    const quotaError = Object.assign(new Error('browser quota full'), {
+      name: 'QuotaExceededError',
+    });
+    fakeIdb.failNextPuts(quotaError);
+
+    await expect(saveStoryboardDraft(namespace, makeDraft('quota-draft', 'Quota draft'))).rejects.toEqual(
+      expect.objectContaining({
+        name: 'StoryboardRecoveryError',
+        kind: 'quota',
+      } satisfies Partial<StoryboardRecoveryError>)
+    );
+    expect(getStoryboardRecoveryStatus()).toMatchObject({
+      phase: 'error',
+      namespace,
+      errorKind: 'quota',
+    });
   });
 });

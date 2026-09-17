@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
 import AiPractitionerDock from '@/components/labs/AiPractitionerDock';
+import BoardRecoveryMonitor from '@/components/storyboards/BoardRecoveryMonitor';
 import { useAuth } from '@/lib/auth/use-auth';
 import { invalidateLabsSnapshot } from '@/lib/labs/client';
 import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
@@ -112,6 +113,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${standardCanvas ? 'mx-auto max-w-7xl' : 'max-w-none'} ${boundedWorkspace ? 'overflow-hidden' : 'overflow-y-auto'}`
               : 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
+            {workspaceKind === 'boards' ? <BoardRecoveryMonitor /> : null}
             {isAuthenticated && workspaceKind ? <WorkspaceEnhancements kind={workspaceKind} /> : null}
             {children}
           </main>
