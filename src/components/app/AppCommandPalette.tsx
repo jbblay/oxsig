@@ -23,6 +23,11 @@ import {
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth/use-auth';
+import {
+  contextualAiOpenEvent,
+  contextualAiSurfaceForPathname,
+  contextualAiSurfaceLabel,
+} from '@/lib/ai/context-surface';
 import { resolveProductPathHref } from '@/lib/navigation/product-navigation';
 import {
   getWorkspaceRecents,
@@ -68,8 +73,8 @@ export default function AppCommandPalette({
   const [query, setQuery] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
   const signedInForNavigation = !authLoading && isAuthenticated;
-  const practitionerSurface = pathname.startsWith('/labs');
-  const aiSurfaceLabel = practitionerSurface ? 'AI Practitioner' : 'AI Helper';
+  const practitionerSurface = contextualAiSurfaceForPathname(pathname) === 'practitioner';
+  const aiSurfaceLabel = contextualAiSurfaceLabel(pathname);
 
   React.useEffect(() => {
     if (!open) {
@@ -99,7 +104,7 @@ export default function AppCommandPalette({
       color: practitionerSurface ? 'labs' : 'home',
       kind: 'action',
     });
-    window.dispatchEvent(new CustomEvent(practitionerSurface ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
+    window.dispatchEvent(new CustomEvent(contextualAiOpenEvent(pathname)));
   }
 
   const recent = getWorkspaceRecents().find((item) => item.href !== '/home');
