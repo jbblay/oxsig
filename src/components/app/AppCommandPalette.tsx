@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   BookOpen,
   Box,
@@ -63,10 +63,13 @@ export default function AppCommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [query, setQuery] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
   const signedInForNavigation = !authLoading && isAuthenticated;
+  const practitionerSurface = pathname.startsWith('/labs');
+  const aiSurfaceLabel = practitionerSurface ? 'AI Practitioner' : 'AI Helper';
 
   React.useEffect(() => {
     if (!open) {
@@ -90,8 +93,13 @@ export default function AppCommandPalette({
   function openAi() {
     if (!signedInForNavigation) return;
     onOpenChange(false);
-    recordWorkspaceActivity({ label: 'Opened AI Helper', detail: 'Global command', color: 'home', kind: 'action' });
-    window.dispatchEvent(new CustomEvent('oxsig:ai-helper:open'));
+    recordWorkspaceActivity({
+      label: `Opened ${aiSurfaceLabel}`,
+      detail: 'Global command',
+      color: practitionerSurface ? 'labs' : 'home',
+      kind: 'action',
+    });
+    window.dispatchEvent(new CustomEvent(practitionerSurface ? 'oxsig:ai-practitioner:open' : 'oxsig:ai-helper:open'));
   }
 
   const recent = getWorkspaceRecents().find((item) => item.href !== '/home');
@@ -101,12 +109,12 @@ export default function AppCommandPalette({
     {
       id: 'action-ai',
       label: 'Ask AI in current context',
-      hint: 'Open AI Helper without leaving your workspace',
+      hint: `Open ${aiSurfaceLabel} without leaving your workspace`,
       icon: Sparkles,
-      color: 'home',
+      color: practitionerSurface ? 'labs' : 'home',
       type: 'action',
       run: openAi,
-      keywords: 'ask ai helper explain diagnose fix summarize operator',
+      keywords: 'ask ai helper practitioner explain diagnose fix summarize operator',
     },
     {
       id: 'action-warroom',
