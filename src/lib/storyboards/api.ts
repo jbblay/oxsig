@@ -1,6 +1,7 @@
 'use client';
 
 import { getCsrfToken } from '@/lib/security/csrf-client';
+import { markStoryboardServerCommit } from './secure-save-state';
 import type {
   StoryboardComment,
   StoryboardDraft,
@@ -244,6 +245,7 @@ export async function saveServerStoryboard(
     const body = await response.json();
     const session = body.session as StoryboardServerSession;
     rememberVersion(session);
+    markStoryboardServerCommit(draft.id, session.id);
     emitActiveBoard(session);
     if (draft.audio) serverAudioBlobs.add(draft.audio);
     return session;
