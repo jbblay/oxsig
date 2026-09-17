@@ -12,6 +12,9 @@ const TRANSITIONAL_LAB_STATUSES = new Set<LabInstanceStatus>([
   'destroying',
   'resetting',
 ]);
+const OPERATION_MANAGED_LAB_NOTES: Readonly<Record<string, string>> = {
+  'operation-black-domain-operator': 'This managed profile is launched only from Operations > Black Domain.',
+};
 
 export type ClientLabInstance = {
   id: string;
@@ -54,6 +57,20 @@ let inFlight: Promise<LabsSnapshotResult> | null = null;
 let reconciliationInFlight: Promise<LabsReconciliationResult> | null = null;
 let generation = 0;
 
+function normalizeLabsSnapshotBody(data: LabsSnapshotBody): LabsSnapshotBody {
+  if (!data.catalog?.length) return data;
+
+  const activeSlugs = new Set((data.instances || []).map((instance) => instance.slug));
+  const catalog = data.catalog
+    .filter((lab) => !OPERATION_MANAGED_LAB_NOTES[lab.slug] || activeSlugs.has(lab.slug))
+    .map((lab) => {
+      const operationNote = OPERATION_MANAGED_LAB_NOTES[lab.slug];
+      return operationNote ? { ...lab, availabilityNote: operationNote } : lab;
+    });
+
+  return { ...data, catalog };
+}
+
 function snapshotNeedsProgressRefresh(result: LabsSnapshotResult | null): boolean {
   if (!result?.ok) return false;
   return (result.data.instances || []).some((instance) => TRANSITIONAL_LAB_STATUSES.has(instance.status));
@@ -68,7 +85,8 @@ async function requestLabsSnapshot(requestGeneration: number): Promise<LabsSnaps
     cache: 'no-store',
     credentials: 'same-origin',
   });
-  const data = await response.json().catch(() => ({})) as LabsSnapshotBody;
+  const rawData = await response.json().catch(() => ({})) as LabsSnapshotBody;
+  const data = response.ok ? normalizeLabsSnapshotBody(rawData) : rawData;
   const result = { ok: response.ok, status: response.status, data };
 
   if (response.ok && requestGeneration === generation) {
