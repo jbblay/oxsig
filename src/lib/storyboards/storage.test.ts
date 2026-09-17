@@ -129,6 +129,7 @@ const fakeIdb = vi.hoisted(() => {
 
 vi.mock('idb', () => ({ openDB: fakeIdb.openDB }));
 
+import { markStoryboardServerCommit } from './secure-save-state';
 import {
   GUEST_STORYBOARD_DRAFT_NAMESPACE,
   STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD,
@@ -137,6 +138,7 @@ import {
   getStoryboardDraft,
   getStoryboardRecoveryStatus,
   listStoryboardDrafts,
+  retryLastStoryboardRecoverySave,
   saveStoryboardDraft,
   storyboardDraftNamespaceForAccount,
 } from './storage';
@@ -317,6 +319,38 @@ describe('Board recovery reliability', () => {
       phase: 'error',
       namespace,
       errorKind: 'quota',
+    });
+  });
+
+  it('keeps a committed server save authoritative when the local recovery metadata update fails', async () => {
+    const namespace = storyboardDraftNamespaceForAccount('partial-success-user');
+    const localDraft = makeDraft('partial-success-draft', 'Before secure save');
+    await saveStoryboardDraft(namespace, localDraft);
+
+    const securedDraft = makeDraft(localDraft.id, 'Before secure save', {
+      createdAt: localDraft.createdAt,
+      updatedAt: localDraft.updatedAt + 100,
+      serverId: 'server-session-1',
+      serverPermission: 'owner',
+    });
+    markStoryboardServerCommit(securedDraft.id, securedDraft.serverId!);
+    const quotaError = Object.assign(new Error('browser quota full'), {
+      name: 'QuotaExceededError',
+    });
+    fakeIdb.failNextPuts(quotaError);
+
+    await expect(saveStoryboardDraft(namespace, securedDraft)).resolves.toBeUndefined();
+    expect(getStoryboardRecoveryStatus()).toMatchObject({
+      phase: 'error',
+      namespace,
+      errorKind: 'quota',
+    });
+    expect((await getStoryboardDraft(namespace, localDraft.id))?.serverId).toBeUndefined();
+
+    await expect(retryLastStoryboardRecoverySave(namespace)).resolves.toBe(true);
+    expect(await getStoryboardDraft(namespace, localDraft.id)).toMatchObject({
+      serverId: 'server-session-1',
+      serverPermission: 'owner',
     });
   });
 });
