@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClerkAuthenticatedUser } from './clerk-user';
+import { getE2EAuthenticatedUser, isE2EAuthEnabled } from './e2e-auth';
 
 export interface AuthenticatedUser {
   id: string;
@@ -10,7 +11,9 @@ export interface AuthenticatedUser {
   role: 'user' | 'admin';
 }
 
-export async function getUserFromRequest(_request: NextRequest): Promise<AuthenticatedUser | null> {
+export async function getUserFromRequest(request: NextRequest): Promise<AuthenticatedUser | null> {
+  if (isE2EAuthEnabled()) return getE2EAuthenticatedUser(request);
+
   const clerkUser = await getClerkAuthenticatedUser();
   if (!clerkUser) return null;
   return {
