@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const baseURL = process.env.OXSIG_E2E_BASE_URL || 'http://127.0.0.1:3100';
+const baseURL = 'http://127.0.0.1:3100';
 const authCookie = 'oxsig-e2e-user';
 
 async function useAccount(context, key) {
@@ -31,9 +31,13 @@ test('Cyber Lab opens AI Practitioner from the command palette and hides Operati
   });
 
   expect(labsSnapshot.status).toBe(200);
-  expect(
-    (labsSnapshot.body.labs || []).some((lab) => lab.slug === 'operation-black-domain-operator')
-  ).toBe(false);
+  const managedProfile = (labsSnapshot.body.catalog || []).find(
+    (lab) => lab.slug === 'operation-black-domain-operator'
+  );
+  expect(managedProfile).toMatchObject({
+    slug: 'operation-black-domain-operator',
+    launchSurface: 'operation',
+  });
   await expect(page.getByText('Black Domain Operator', { exact: true })).toHaveCount(0);
 
   await page.keyboard.press('Control+K');
