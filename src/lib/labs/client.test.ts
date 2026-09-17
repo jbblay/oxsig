@@ -39,6 +39,7 @@ function managedProfileResponse(active: boolean) {
         description: 'Ubuntu lab',
         difficulty: 'beginner',
         runtime: 'vm',
+        launchSurface: 'cyber-lab',
         osFamily: 'ubuntu',
         platform: 'linux',
         shell: 'bash',
@@ -58,6 +59,7 @@ function managedProfileResponse(active: boolean) {
         description: 'Operation-managed lab',
         difficulty: 'advanced',
         runtime: 'vm',
+        launchSurface: 'operation',
         osFamily: 'ubuntu',
         platform: 'linux',
         shell: 'bash',
@@ -211,6 +213,7 @@ describe('labs client cache', () => {
     const blackDomain = result.data.catalog?.find((lab) => lab.slug === 'operation-black-domain-operator');
 
     expect(blackDomain).toMatchObject({
+      launchSurface: 'operation',
       available: false,
       availabilityNote: 'This managed profile is launched only from Operations > Black Domain.',
     });
