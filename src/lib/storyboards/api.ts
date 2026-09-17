@@ -139,6 +139,19 @@ async function sendStoryboardSave(args: {
   });
 }
 
+function preferNewestStoryboard(
+  current: StoryboardServerSession | undefined,
+  incoming: StoryboardServerSession
+): StoryboardServerSession {
+  if (!current) return incoming;
+  if (incoming.version !== current.version) {
+    return incoming.version > current.version ? incoming : current;
+  }
+  const incomingUpdated = Date.parse(incoming.updatedAt);
+  const currentUpdated = Date.parse(current.updatedAt);
+  return incomingUpdated > currentUpdated ? incoming : current;
+}
+
 export async function listServerStoryboards(): Promise<StoryboardServerSession[]> {
   const sessionsById = new Map<string, StoryboardServerSession>();
   const seenCursors = new Set<string>();
@@ -152,7 +165,9 @@ export async function listServerStoryboards(): Promise<StoryboardServerSession[]
     if (!response.ok) throw new Error(await readError(response));
     const body = (await response.json()) as StoryboardListResponse;
     const page = Array.isArray(body.sessions) ? body.sessions : [];
-    page.forEach((session) => sessionsById.set(session.id, session));
+    page.forEach((session) => {
+      sessionsById.set(session.id, preferNewestStoryboard(sessionsById.get(session.id), session));
+    });
 
     const nextCursor = typeof body.nextCursor === 'string' && body.nextCursor ? body.nextCursor : null;
     if (nextCursor && seenCursors.has(nextCursor)) {
