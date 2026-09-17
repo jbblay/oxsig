@@ -20,6 +20,7 @@
     "elevenlabs:voices": "node scripts/elevenlabs-voices.mjs",
     "typecheck": "tsc --noEmit",
     "audit:reachability": "node scripts/source-reachability-audit.mjs",
+    "persistence:check": "node scripts/persistence-policy-check.mjs",
     "test": "vitest",
     "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs",
     "test:operation-access": "node --experimental-vm-modules --test scripts/check-operation-access.mjs",
@@ -82,5 +83,4 @@
     "vitest": "4.0.4"
   }
 }
-
 
