@@ -21,8 +21,8 @@
     "persistence:check": "node scripts/persistence-policy-check.mjs",
     "test": "vitest",
     "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs",
-    "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install chromium",
+    "test:e2e": "pnpm dlx @playwright/test@1.55.0 test",
+    "test:e2e:install": "pnpm dlx @playwright/test@1.55.0 install chromium",
     "test:operation-access": "node --experimental-vm-modules --test scripts/check-operation-access.mjs",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "node scripts/migrate.mjs",
@@ -67,7 +67,6 @@
     "zod": "^3.25.28"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.0",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.20.1",
