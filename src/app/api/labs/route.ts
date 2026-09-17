@@ -31,6 +31,7 @@ function mapLearnerDefinition(lab: LabDefinition): LearnerLabDefinition {
     description: lab.description,
     difficulty: lab.difficulty,
     runtime: lab.runtime,
+    launchSurface: lab.launchSurface,
     osFamily: lab.osFamily,
     platform: lab.platform,
     shell: lab.shell,
@@ -121,6 +122,15 @@ export async function POST(request: NextRequest) {
 
     const lab = LAB_CATALOG.find((item) => item.slug === parsed.data.slug && item.runtime === 'vm');
     if (!lab) return NextResponse.json({ error: 'This lab runtime is not available' }, { status: 400 });
+    if (lab.launchSurface !== 'cyber-lab') {
+      return NextResponse.json(
+        {
+          error: lab.availabilityNote || 'This lab profile must be launched from its owning product surface.',
+          code: 'LAB_LAUNCH_SURFACE_RESTRICTED',
+        },
+        { status: 409 }
+      );
+    }
     if (!lab.available) {
       return NextResponse.json(
         {
@@ -206,6 +216,7 @@ export async function POST(request: NextRequest) {
         lab.runtime,
         stringifyPostgresJson({
           objectives: lab.objectives,
+          launchSurface: lab.launchSurface,
           osFamily: lab.osFamily,
           platform: lab.platform,
           shell: lab.shell,
