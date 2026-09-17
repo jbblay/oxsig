@@ -32,7 +32,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      CI_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oxisg
+      CI_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/oxsig
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6.1.0
@@ -83,4 +83,27 @@ jobs:
           STORAGE_REGION: eu-central-1
           LAB_AWS_ENABLED: 'false'
           OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
-
+      - name: Install critical browser E2E runtime
+        run: |
+          npm install --prefix e2e --no-package-lock
+          ./e2e/node_modules/.bin/playwright install --with-deps chromium
+      - name: Run critical browser E2E
+        run: pnpm test:e2e
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_dummy
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          STORAGE_BUCKET: oxsig-ci
+          STORAGE_REGION: eu-central-1
+          LAB_AWS_ENABLED: 'false'
+          CRON_SECRET: ci-cron-secret-0123456789abcdef
+          OXSIG_TERMINAL_BRIDGE_SECRET: ci-terminal-bridge-secret-0123456789abcdef0123456789abcdef
+      - name: Upload browser E2E artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-browser-e2e
+          path: |
+            playwright-report
+            test-results/e2e
+          if-no-files-found: ignore
