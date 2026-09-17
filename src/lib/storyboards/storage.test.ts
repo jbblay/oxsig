@@ -131,7 +131,7 @@ vi.mock('idb', () => ({ openDB: fakeIdb.openDB }));
 
 import {
   GUEST_STORYBOARD_DRAFT_NAMESPACE,
-  MAX_SERVER_BACKED_RECOVERY_DRAFTS,
+  STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD,
   StoryboardRecoveryError,
   deleteStoryboardDraft,
   getStoryboardDraft,
@@ -274,31 +274,30 @@ describe('Board recovery reliability', () => {
     });
   });
 
-  it('bounds automatic pruning to server-backed recovery copies and preserves local-only work', async () => {
+  it('warns about recovery growth without auto-deleting any local data', async () => {
     const namespace = storyboardDraftNamespaceForAccount('retention-user');
-    const localOnly = [
-      makeDraft('local-only-a', 'Only local A', { updatedAt: 1 }),
-      makeDraft('local-only-b', 'Only local B', { updatedAt: 2 }),
-    ];
-    for (const draft of localOnly) await saveStoryboardDraft(namespace, draft);
+    const drafts: StoryboardDraft[] = [];
 
-    for (let index = 0; index < MAX_SERVER_BACKED_RECOVERY_DRAFTS + 3; index += 1) {
-      await saveStoryboardDraft(
-        namespace,
-        makeDraft(`secured-${index}`, `Secured ${index}`, {
-          updatedAt: 100 + index,
-          serverId: `server-${index}`,
-          serverPermission: 'owner',
-        })
-      );
+    for (let index = 0; index < STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD + 3; index += 1) {
+      const draft = makeDraft(`recovery-${index}`, `Recovery ${index}`, {
+        updatedAt: 100 + index,
+        serverId: index % 2 === 0 ? `server-${index}` : undefined,
+        serverPermission: index % 2 === 0 ? 'owner' : undefined,
+      });
+      drafts.push(draft);
+      await saveStoryboardDraft(namespace, draft);
     }
 
     const stored = await listStoryboardDrafts(namespace);
-    const secured = stored.filter((draft) => draft.serverId);
-    expect(secured).toHaveLength(MAX_SERVER_BACKED_RECOVERY_DRAFTS);
+    expect(stored).toHaveLength(drafts.length);
     expect(stored.map((draft) => draft.id)).toEqual(
-      expect.arrayContaining(localOnly.map((draft) => draft.id))
+      expect.arrayContaining(drafts.map((draft) => draft.id))
     );
+    expect(getStoryboardRecoveryStatus()).toMatchObject({
+      phase: 'saved',
+      namespace,
+      draftCount: drafts.length,
+    });
   });
 
   it('classifies quota exhaustion and keeps a retryable failure instead of pretending the save is idle', async () => {
