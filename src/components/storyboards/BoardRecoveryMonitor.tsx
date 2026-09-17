@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth/use-auth';
 import {
   GUEST_STORYBOARD_DRAFT_NAMESPACE,
+  STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD,
   getStoryboardRecoveryStatus,
   hasRetryableStoryboardRecoverySave,
   retryLastStoryboardRecoverySave,
@@ -49,11 +50,15 @@ export default function BoardRecoveryMonitor() {
   const isError = status.phase === 'error';
   const usage = formatBytes(status.storage?.usage);
   const quota = formatBytes(status.storage?.quota);
-  const percent = status.storage?.ratio !== null && status.storage?.ratio !== undefined
-    ? Math.round(status.storage.ratio * 100)
+  const ratio = status.storage?.ratio;
+  const percent = typeof ratio === 'number' && Number.isFinite(ratio)
+    ? Math.round(ratio * 100)
     : null;
   const lastSaved = savedTime(status.lastSavedAt);
   const canRetry = isError && hasRetryableStoryboardRecoverySave(namespace);
+  const retentionWarning =
+    typeof status.draftCount === 'number' &&
+    status.draftCount >= STORYBOARD_RECOVERY_DRAFT_WARNING_THRESHOLD;
 
   const retry = async () => {
     setRetrying(true);
@@ -94,17 +99,21 @@ export default function BoardRecoveryMonitor() {
           <p className="text-xs text-muted-foreground">
             {isError
               ? status.message
-              : status.prunedDrafts
-                ? `${status.prunedDrafts} older server-backed recovery ${status.prunedDrafts === 1 ? 'copy was' : 'copies were'} pruned safely.`
+              : retentionWarning
+                ? `${status.draftCount} recovery drafts are stored for this account on this device. OXSIG will not auto-delete them; secure or remove older drafts explicitly when convenient.`
                 : 'Recovery stays on this device until you secure the board on the server.'}
           </p>
-          {(usage || quota || percent !== null) && (
-            <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+          {(usage || quota || percent !== null || status.draftCount !== undefined) && (
+            <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
               <HardDrive className="h-3 w-3" />
               Browser storage
               {usage ? ` ${usage}` : ''}
               {quota ? ` / ${quota}` : ''}
               {percent !== null ? ` (${percent}%)` : ''}
+              {typeof status.draftCount === 'number' ? ` · ${status.draftCount} recovery drafts` : ''}
+              {typeof status.serverLinkedDraftCount === 'number' && status.serverLinkedDraftCount > 0
+                ? ` · ${status.serverLinkedDraftCount} linked to server sessions`
+                : ''}
             </p>
           )}
         </div>
