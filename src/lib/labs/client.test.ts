@@ -68,7 +68,7 @@ function managedProfileResponse(active: boolean) {
         estimatedCpu: 2,
         objectives: [],
         available: false,
-        availabilityNote: 'This lab profile is not activated on this deployment yet.',
+        availabilityNote: 'This managed profile is launched only from Operations > Black Domain.',
       },
     ],
     capabilities: { provider: 'unconfigured', configured: false, supportsContainers: false, supportsVMs: false, supportsTerminal: false, supportsReset: false },
