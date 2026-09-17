@@ -31,7 +31,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm dev',
+    command: `pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
     cwd: repositoryRoot,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
