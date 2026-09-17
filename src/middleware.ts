@@ -1,8 +1,8 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 import { applySecurityHeaders } from '@/lib/security/headers';
 
-export default clerkMiddleware(
+const withClerk = clerkMiddleware(
   async (_auth, request) => {
     const legacyBoardInvite = request.nextUrl.pathname.match(/^\/collab\/storyboards\/invite\/([^/]+)$/);
     if (legacyBoardInvite) {
@@ -26,6 +26,21 @@ export default clerkMiddleware(
     },
   })
 );
+
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  if (process.env.OXSIG_E2E_AUTH_ENABLED === 'true') {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+      throw new Error('OXSIG_E2E_AUTH_ENABLED is forbidden in production.');
+    }
+
+    // Browser regressions use the deterministic E2E identity cookie in API auth.
+    // Bypass Clerk only in this explicitly non-production mode so dummy Clerk
+    // credentials cannot trigger Clerk's development proxy during test startup.
+    return applySecurityHeaders(NextResponse.next(), undefined, false);
+  }
+
+  return withClerk(request, event);
+}
 
 export const config = {
   matcher: [
