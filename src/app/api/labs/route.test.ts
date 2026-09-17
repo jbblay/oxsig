@@ -192,6 +192,24 @@ describe('POST /api/labs provisioning cost boundary', () => {
     expect(mocks.query).not.toHaveBeenCalled();
   });
 
+  it('rejects an Operations-owned profile before provider or database provisioning', async () => {
+    const response = await POST(request({
+      slug: 'operation-black-domain-operator',
+      accessMode: 'terminal',
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({
+      code: 'LAB_LAUNCH_SURFACE_RESTRICTED',
+      error: 'This managed profile is launched only from Operations > Black Domain.',
+    });
+    expect(mocks.checkRateLimit).toHaveBeenCalledTimes(1);
+    expect(mocks.labCapabilities).not.toHaveBeenCalled();
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.createLabVm).not.toHaveBeenCalled();
+  });
+
   it('shares the tight named provisioning bucket only after the request is provisionable', async () => {
     const limited = NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
     mocks.checkRateLimit
