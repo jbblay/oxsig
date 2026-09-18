@@ -1,6 +1,6 @@
-import { auth } from '@clerk/nextjs/server';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { getServerAuthState } from '@/lib/auth/server-auth';
 import AcademyDurableStateProvider from '@/components/academy/AcademyDurableStateProvider';
 import GuestProductSurface from '@/components/auth/GuestProductSurface';
 import { getAcademyState } from '@/lib/academy/persistence';
@@ -9,7 +9,7 @@ import { getClerkAuthenticatedUser } from '@/lib/auth/clerk-user';
 export const dynamic = 'force-dynamic';
 
 export default async function AcademyLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = await auth();
+  const { isAuthenticated } = await getServerAuthState();
   if (!isAuthenticated) return <GuestProductSurface surface="academy" />;
 
   let initialState = null;
