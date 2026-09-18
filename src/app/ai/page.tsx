@@ -1,14 +1,14 @@
-import { auth } from '@clerk/nextjs/server';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowRight, Bot, Check, FileCheck2, ShieldCheck, Sparkles, Terminal } from 'lucide-react';
+import { getServerAuthState } from '@/lib/auth/server-auth';
 import { Button } from '@/components/ui/button';
 import { authPathWithReturnTo } from '@/lib/auth-return';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AiPreviewPage() {
-  const { isAuthenticated } = await auth();
+  const { isAuthenticated } = await getServerAuthState();
   if (isAuthenticated) redirect('/home');
 
   return (
