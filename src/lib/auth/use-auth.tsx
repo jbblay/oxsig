@@ -2,6 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useClerk, useUser as useClerkUser } from '@clerk/nextjs';
+import {
+  E2E_AUTH_ACCOUNTS,
+  readE2EAuthAccountKey,
+  type E2EAuthAccountKey,
+} from './e2e-auth-contract';
 
 export interface User {
   id: string;
@@ -97,6 +102,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     refresh: fetchUserProfile,
     fetchUserProfile,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function E2EAuthProvider({ children }: { children: ReactNode }) {
+  const [accountKey, setAccountKey] = useState<E2EAuthAccountKey | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const next = typeof document === 'undefined' ? null : readE2EAuthAccountKey(document.cookie);
+    setAccountKey(next);
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const account = accountKey ? E2E_AUTH_ACCOUNTS[accountKey] : null;
+  const user = useMemo<User | null>(() => account ? {
+    id: account.userId,
+    email: account.email,
+    displayName: account.name,
+    role: 'user',
+  } : null, [account]);
+
+  const logout = useCallback(async () => {
+    setAccountKey(null);
+  }, []);
+
+  const value: AuthContextType = {
+    user,
+    sessionIdentityId: account?.identityId ?? null,
+    isAuthenticated: !!account,
+    isLoading: !loaded,
+    profileError: null,
+    logout,
+    refresh,
+    fetchUserProfile: refresh,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

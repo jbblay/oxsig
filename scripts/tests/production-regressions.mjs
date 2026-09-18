@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 const contract = fileURLToPath(new URL('../production-check.mjs', import.meta.url));
 const routeCheck = fileURLToPath(new URL('../verify-built-routes.mjs', import.meta.url));
 const appRoot = fileURLToPath(new URL('../../src/app', import.meta.url));
+const ciWorkflow = fileURLToPath(new URL('../../.github/workflows/ci.yml', import.meta.url));
 const baseEnv = {
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'test', CLERK_SECRET_KEY: 'test',
   DATABASE_URL: 'postgresql://localhost/test', CRON_SECRET: 'c'.repeat(24),
@@ -67,6 +68,15 @@ test('prepared Black Domain accepts a complete reusable slot contract without le
   const result = spawnSync(process.execPath, [contract], { env: preparedBlackDomainEnv, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!result.stderr.includes('LAB_AWS_OPERATION_SECURITY_GROUP_ID'));
+});
+
+test('CI PostgreSQL service and connection URL target the same database', () => {
+  const workflow = readFileSync(ciWorkflow, 'utf8');
+  const serviceDatabase = workflow.match(/^\s*POSTGRES_DB:\s*([^\s#]+)\s*$/m)?.[1];
+  const connectionDatabase = workflow.match(/^\s*CI_DATABASE_URL:\s*\S+\/([^\s/?#]+)(?:[?#]\S*)?\s*$/m)?.[1];
+  assert.ok(serviceDatabase, 'CI workflow must declare POSTGRES_DB');
+  assert.ok(connectionDatabase, 'CI workflow must declare a database in CI_DATABASE_URL');
+  assert.equal(connectionDatabase, serviceDatabase, 'CI_DATABASE_URL must target the PostgreSQL service database');
 });
 
 test('App Router has no conflicting sibling dynamic segment names', () => {

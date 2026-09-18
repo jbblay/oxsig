@@ -1,12 +1,12 @@
-import { auth } from '@clerk/nextjs/server';
 import type { ReactNode } from 'react';
 import { Activity, Link2, RadioTower, UsersRound } from 'lucide-react';
+import { getServerAuthState } from '@/lib/auth/server-auth';
 import GuestProductSurface from '@/components/auth/GuestProductSurface';
 
 export const dynamic = 'force-dynamic';
 
 export default async function LiveWorkspaceLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = await auth();
+  const { isAuthenticated } = await getServerAuthState();
   if (!isAuthenticated) return <GuestProductSurface surface="live" />;
 
   return (

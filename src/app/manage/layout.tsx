@@ -1,12 +1,12 @@
-import { auth } from '@clerk/nextjs/server';
 import type { ReactNode } from 'react';
 import { Boxes, Database, Network, Settings2 } from 'lucide-react';
+import { getServerAuthState } from '@/lib/auth/server-auth';
 import GuestProductSurface from '@/components/auth/GuestProductSurface';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ResourceControlLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = await auth();
+  const { isAuthenticated } = await getServerAuthState();
   if (!isAuthenticated) return <GuestProductSurface surface="resources" />;
 
   return (

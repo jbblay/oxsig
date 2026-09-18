@@ -21,6 +21,8 @@
     "typecheck": "tsc --noEmit",
     "audit:reachability": "node scripts/source-reachability-audit.mjs",
     "persistence:check": "node scripts/persistence-policy-check.mjs",
+    "e2e:install": "npm install --prefix e2e --no-package-lock && ./e2e/node_modules/.bin/playwright install chromium",
+    "test:e2e": "./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs",
     "test": "vitest",
     "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs",
     "test:operation-access": "node --experimental-vm-modules --test scripts/check-operation-access.mjs",
@@ -83,4 +85,3 @@
     "vitest": "4.0.4"
   }
 }
-

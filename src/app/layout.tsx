@@ -15,7 +15,8 @@ import AppShell from '@/components/app/AppShell';
 import GuestAuthGate from '@/components/auth/guest-auth-gate';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
-import { AuthProvider } from '@/lib/auth/use-auth';
+import { isE2EAuthEnabled } from '@/lib/auth/e2e-auth';
+import { AuthProvider, E2EAuthProvider } from '@/lib/auth/use-auth';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -31,21 +32,34 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
+function AppDocument({ children, e2eAuth }: { children: React.ReactNode; e2eAuth: boolean }) {
+  const content = (
+    <GuestAuthGate>
+      <AppShell>{children}</AppShell>
+      <Toaster richColors />
+    </GuestAuthGate>
+  );
+
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen`}>
+        <ThemeProvider>
+          {e2eAuth ? <E2EAuthProvider>{content}</E2EAuthProvider> : <AuthProvider>{content}</AuthProvider>}
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const e2eAuth = isE2EAuthEnabled();
+  const document = <AppDocument e2eAuth={e2eAuth}>{children}</AppDocument>;
+
+  if (e2eAuth) return document;
+
   return (
     <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} dynamic>
-      <html lang="en" suppressHydrationWarning>
-        <body className={`${inter.className} min-h-screen`}>
-          <ThemeProvider>
-            <AuthProvider>
-              <GuestAuthGate>
-                <AppShell>{children}</AppShell>
-                <Toaster richColors />
-              </GuestAuthGate>
-            </AuthProvider>
-          </ThemeProvider>
-        </body>
-      </html>
+      {document}
     </ClerkProvider>
   );
 }
