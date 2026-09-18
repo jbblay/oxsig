@@ -3,6 +3,7 @@ import 'server-only';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getPool } from '@/lib/db/pool';
 import { isClerkConfigured } from './clerk-config';
+import { getE2EAuthenticatedUserFromCookies, isE2EAuthEnabled } from './e2e-auth';
 
 export interface ClerkMappedUser {
   id: string;
@@ -162,6 +163,7 @@ export async function deactivateClerkUser(clerkUserId: string): Promise<void> {
  * mapped (for example before the first webhook delivery).
  */
 export async function getClerkAuthenticatedUser(): Promise<ClerkMappedUser | null> {
+  if (isE2EAuthEnabled()) return getE2EAuthenticatedUserFromCookies();
   if (!isClerkConfigured()) return null;
 
   const session = await auth();
