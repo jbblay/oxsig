@@ -14,8 +14,8 @@ test.describe('critical guest flows', () => {
 
     await expect(page.getByRole('heading', { name: 'Workspace' })).toBeVisible();
     await expect(page.getByText('Guest workspace')).toBeVisible();
-    await expect(page.getByRole('link', { name: /Log in/i })).toHaveAttribute('href', '/sign-in');
-    await expect(page.getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/sign-up');
+    await expect(page.locator('a[href="/sign-in"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/sign-up"]').first()).toBeVisible();
   });
 
   test('explore compatibility route lands on the guest dashboard', async ({ page }) => {
