@@ -23,16 +23,22 @@ async function resolveE2EUser(key: E2EAuthAccountKey | null) {
   const account = E2E_AUTH_ACCOUNTS[key];
 
   await getPool().query(
-    `INSERT INTO users (id, public_key, display_name, email, is_active, role)
-     VALUES ($1, $2, $3, $4, true, 'user')
+    `INSERT INTO users (
+       id, public_key, display_name, email, is_active, role,
+       auth_provider, clerk_user_id, email_verified
+     )
+     VALUES ($1, $2, $3, $4, true, 'user', 'clerk', $5, true)
      ON CONFLICT (id) DO UPDATE
      SET public_key = EXCLUDED.public_key,
          display_name = EXCLUDED.display_name,
          email = EXCLUDED.email,
          is_active = true,
          role = 'user',
+         auth_provider = 'clerk',
+         clerk_user_id = EXCLUDED.clerk_user_id,
+         email_verified = true,
          updated_at = NOW()`,
-    [account.userId, `e2e:${key}`, account.name, account.email]
+    [account.userId, `e2e:${key}`, account.name, account.email, account.identityId]
   );
 
   return {
