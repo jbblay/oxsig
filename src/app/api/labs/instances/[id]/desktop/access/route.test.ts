@@ -8,8 +8,15 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   executeLabCommand: vi.fn(),
   logAudit: vi.fn(),
+  ssmSend: vi.fn(),
 }));
 
+vi.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: class { send = mocks.ssmSend; },
+  PutParameterCommand: class { constructor(readonly input: unknown) {} },
+  DeleteParameterCommand: class { constructor(readonly input: unknown) {} },
+}));
+vi.mock('@/lib/aws/client-config', () => ({ awsClientConfig: () => ({}) }));
 vi.mock('@/lib/auth/middleware', () => ({ requireAuth: mocks.requireAuth }));
 vi.mock('@/lib/security/csrf', () => ({ validateCsrfToken: mocks.validateCsrfToken }));
 vi.mock('@/lib/security/rate-limit', () => ({ checkRateLimit: mocks.checkRateLimit }));
@@ -37,6 +44,7 @@ describe('Windows desktop login issuance', () => {
       metadata: { platform: 'windows', accessMode: 'desktop' },
     }] });
     mocks.executeLabCommand.mockResolvedValue({ exitCode: 0, stdout: 'OXSIG_USER=Administrator\n', stderr: '' });
+    mocks.ssmSend.mockResolvedValue({});
   });
 
   it('issues a fresh password through SSM only for an owned running Windows desktop', async () => {
@@ -47,11 +55,19 @@ describe('Windows desktop login issuance', () => {
     expect(body.username).toBe('Administrator');
     expect(body.password).toMatch(/^Ox!7[0-9a-f]{40}$/);
     expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining('owner_id=$2'), [id, user.id]);
+    expect(mocks.ssmSend).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({ Value: body.password, Type: 'SecureString' }),
+    }));
     expect(mocks.executeLabCommand).toHaveBeenCalledWith(
       'i-0123456789abcdef0',
-      expect.stringContaining(body.password),
-      'windows'
+      expect.stringContaining('Get-SSMParameter'),
+      'windows',
+      { maxAttempts: 50 }
     );
+    expect(mocks.executeLabCommand.mock.calls[0][1]).not.toContain(body.password);
+    expect(mocks.ssmSend.mock.calls[1][0].input).toEqual({
+      Name: mocks.ssmSend.mock.calls[0][0].input.Name,
+    });
     expect(mocks.logAudit).toHaveBeenCalledWith(expect.not.objectContaining({ password: body.password }));
   });
 
@@ -63,6 +79,7 @@ describe('Windows desktop login issuance', () => {
     expect((await POST(request(), context)).status).toBe(404);
     expect((await POST(request(), context)).status).toBe(409);
     expect(mocks.executeLabCommand).not.toHaveBeenCalled();
+    expect(mocks.ssmSend).not.toHaveBeenCalled();
   });
 
   it('does not return a password if the guest command fails', async () => {

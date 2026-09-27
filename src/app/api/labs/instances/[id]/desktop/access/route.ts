@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { DeleteParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { awsClientConfig } from '@/lib/aws/client-config';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
@@ -9,6 +11,10 @@ import { executeLabCommand } from '@/lib/labs/aws-runtime';
 import { getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
+const ssm = new SSMClient(awsClientConfig(REGION));
 
 const idSchema = z.string().uuid();
 const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Pragma: 'no-cache' };
@@ -51,10 +57,21 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     // The fixed prefix satisfies Windows complexity requirements; the random
     // suffix makes the password unique to this issuance.
     const password = `Ox!7${randomBytes(20).toString('hex')}`;
-    const command = `$ErrorActionPreference='Stop';$account=Get-LocalUser|Where-Object {$_.SID.Value -like '*-500'}|Select-Object -First 1;if(-not $account){throw 'Local administrator missing'};Set-LocalUser -Name $account.Name -Password (ConvertTo-SecureString '${password}' -AsPlainText -Force);Enable-LocalUser -Name $account.Name;Write-Output ('OXSIG_USER='+$account.Name)`;
+    // Run Command inputs are logged by AWS. Send only an unpredictable
+    // Parameter Store name; the instance retrieves the encrypted value itself.
+    const parameterName = `/oxsig/desktop-access/${randomBytes(20).toString('hex')}`;
+    const command = `$ErrorActionPreference='Stop';$secret=(Get-SSMParameter -Name '${parameterName}' -WithDecryption -Region '${REGION}').Value;if(-not $secret){throw 'Desktop secret unavailable'};$account=Get-LocalUser|Where-Object {$_.SID.Value -like '*-500'}|Select-Object -First 1;if(-not $account){throw 'Local administrator missing'};Set-LocalUser -Name $account.Name -Password (ConvertTo-SecureString $secret -AsPlainText -Force);Enable-LocalUser -Name $account.Name;Write-Output ('OXSIG_USER='+$account.Name)`;
 
+    let parameterCreated = false;
     try {
-      const invocation = await executeLabCommand(lab.runtime_external_id, command, 'windows');
+      await ssm.send(new PutParameterCommand({
+        Name: parameterName,
+        Value: password,
+        Type: 'SecureString',
+        Overwrite: false,
+      }));
+      parameterCreated = true;
+      const invocation = await executeLabCommand(lab.runtime_external_id, command, 'windows', { maxAttempts: 50 });
       const username = invocation.stdout.split(/\r?\n/).find((line) => line.startsWith('OXSIG_USER='))?.slice('OXSIG_USER='.length).trim();
       if (invocation.exitCode !== 0 || !username) {
         // Never return SSM stdout/stderr, which may contain guest details.
@@ -75,6 +92,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         reason: error instanceof Error ? error.name : 'unknown',
       });
       return reply({ error: 'Windows login could not be prepared. Try again shortly.' }, 503);
+    } finally {
+      if (parameterCreated) {
+        await ssm.send(new DeleteParameterCommand({ Name: parameterName })).catch((error) => {
+          console.error('Windows desktop secret cleanup failed', {
+            labInstanceId: id,
+            reason: error instanceof Error ? error.name : 'unknown',
+          });
+        });
+      }
     }
   });
 }
