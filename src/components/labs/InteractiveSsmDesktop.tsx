@@ -91,6 +91,15 @@ export default function InteractiveSsmDesktop({
   const [platform, setPlatform] = React.useState<"linux" | "windows" | null>(null);
   const [desktopSize, setDesktopSize] = React.useState<string | null>(null);
   const [accessEvidenceState, setAccessEvidenceState] = React.useState<AccessEvidenceState>("pending");
+  const [windowsAccess, setWindowsAccess] = React.useState<{ username: string; password: string } | null>(null);
+  const [accessBusy, setAccessBusy] = React.useState(false);
+  const [accessError, setAccessError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!windowsAccess) return;
+    const timer = window.setTimeout(() => setWindowsAccess(null), 120_000);
+    return () => window.clearTimeout(timer);
+  }, [windowsAccess]);
 
   const desktopSessionEndpoint = sessionEndpoint || `/api/labs/instances/${labInstanceId}/desktop/session`;
 
@@ -295,6 +304,7 @@ export default function InteractiveSsmDesktop({
   }, [connect]);
 
   const disconnect = React.useCallback(async () => {
+    setWindowsAccess(null);
     generationRef.current += 1;
     intentionalCloseRef.current = true;
     clearRetryTimer();
@@ -368,6 +378,35 @@ export default function InteractiveSsmDesktop({
     }
   }, [sendKeyStroke]);
 
+  const getWindowsAccess = async () => {
+    if (accessBusy || sessionEndpoint || platform !== "windows" || state !== "connected") return;
+    setAccessBusy(true);
+    setAccessError(null);
+    setWindowsAccess(null);
+    try {
+      const csrf = await getCsrfToken();
+      const response = await fetch(`/api/labs/instances/${labInstanceId}/desktop/access`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "x-csrf-token": csrf },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || typeof body.username !== "string" || typeof body.password !== "string") {
+        throw new Error(body.error || "Windows login could not be prepared.");
+      }
+      setWindowsAccess({ username: body.username, password: body.password });
+    } catch (error) {
+      setAccessError(error instanceof Error ? error.message : "Windows login could not be prepared.");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const typeWindowsPassword = () => {
+    if (!windowsAccess || state !== "connected") return;
+    for (const character of windowsAccess.password) sendKeyStroke(character);
+  };
+
   const statusLabel = state === "connected" ? "Connected" : state === "connecting" ? "Connecting" : state === "error" ? "Error" : "Disconnected";
 
   return (
@@ -415,6 +454,26 @@ export default function InteractiveSsmDesktop({
           {(state === "connected" || state === "connecting") && <Button size="sm" variant="outline" onClick={() => void disconnect()}><Unplug className="mr-1.5 h-3.5 w-3.5" />Disconnect</Button>}
         </div>
       </div>
+
+      {platform === "windows" && !sessionEndpoint && state === "connected" && (
+        <div className="space-y-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-xs">
+          <div className="font-semibold">Windows login</div>
+          <p className="text-muted-foreground">OXSIG sign-in opens the private desktop. Windows also needs its own lab password.</p>
+          <Button size="sm" variant="outline" onClick={() => void getWindowsAccess()} disabled={accessBusy}>
+            {accessBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+            {windowsAccess ? "Rotate Windows password" : "Get Windows login"}
+          </Button>
+          {accessError && <p role="alert" className="text-destructive">{accessError}</p>}
+          {windowsAccess && (
+            <div className="space-y-2">
+              <p>Username: <code>{windowsAccess.username}</code></p>
+              <p>Password: <code className="break-all">{windowsAccess.password}</code></p>
+              <p className="text-muted-foreground">Tap the password box in Windows, then type it or use the button below. The password disappears here after two minutes. Getting it again rotates the old password.</p>
+              <Button size="sm" onClick={typeWindowsPassword}>Type password into desktop</Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {(statusDetail || error) && <div className={`rounded-lg border px-3 py-2 text-[11px] ${error ? "border-destructive/30 bg-destructive/5 text-destructive" : "bg-muted/20 text-muted-foreground"}`}>{error || statusDetail}</div>}
 

@@ -438,7 +438,12 @@ export async function terminateInteractiveLabSession(instanceId: string, session
   return { terminated: true, alreadyEnded: false };
 }
 
-export async function executeLabCommand(instanceId: string, command: string, platform: 'linux' | 'windows' = 'linux') {
+export async function executeLabCommand(
+  instanceId: string,
+  command: string,
+  platform: 'linux' | 'windows' = 'linux',
+  options: { maxAttempts?: number } = {}
+) {
   assertAwsInstanceId(instanceId);
   if (!INSTANCE_PROFILE) throw new Error('SSM terminal support is not configured for this deployment');
   if (!command.trim() || command.length > 1000 || command.includes('\0')) throw new Error('Command must contain 1 to 1000 characters');
@@ -452,7 +457,7 @@ export async function executeLabCommand(instanceId: string, command: string, pla
   const commandId = sent.Command?.CommandId;
   if (!commandId) throw new Error('SSM did not return a command identifier');
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < (options.maxAttempts ?? 20); attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 750));
     try {
       const result = await ssm.send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }));
