@@ -68,6 +68,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         Name: parameterName,
         Value: password,
         Type: 'SecureString',
+        Tier: 'Advanced',
+        Policies: JSON.stringify([{
+          Type: 'Expiration',
+          Version: '1.0',
+          Attributes: { Timestamp: new Date(Date.now() + 15 * 60_000).toISOString() },
+        }]),
         Overwrite: false,
       }));
       parameterCreated = true;
