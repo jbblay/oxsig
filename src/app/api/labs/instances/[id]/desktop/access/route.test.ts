@@ -62,9 +62,10 @@ describe('Windows desktop login issuance', () => {
       'i-0123456789abcdef0',
       expect.stringContaining('Get-SSMParameter'),
       'windows',
-      { maxAttempts: 50 }
+      { maxAttempts: 115 }
     );
     expect(mocks.executeLabCommand.mock.calls[0][1]).not.toContain(body.password);
+    expect(mocks.executeLabCommand.mock.calls[0][1]).toContain("throw 'Desktop request expired'");
     expect(mocks.ssmSend.mock.calls[1][0].input).toEqual({
       Name: mocks.ssmSend.mock.calls[0][0].input.Name,
     });
@@ -87,5 +88,15 @@ describe('Windows desktop login issuance', () => {
     const response = await POST(request(), context);
     expect(response.status).toBe(503);
     expect(JSON.stringify(await response.json())).not.toContain('sensitive guest detail');
+  });
+
+  it('keeps the temporary parameter until expiration if SSM polling times out', async () => {
+    mocks.executeLabCommand.mockRejectedValueOnce(new Error('The lab command did not finish before the request timeout'));
+    const response = await POST(request(), context);
+    expect(response.status).toBe(503);
+    expect(mocks.ssmSend).toHaveBeenCalledTimes(1);
+    expect(mocks.ssmSend.mock.calls[0][0].input).toEqual(expect.objectContaining({
+      Type: 'SecureString', Tier: 'Advanced',
+    }));
   });
 });
