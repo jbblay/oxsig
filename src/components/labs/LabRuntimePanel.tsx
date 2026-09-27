@@ -207,7 +207,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const [compactPanel, setCompactPanel] = React.useState<"machines" | "topology" | "inspector">("topology");
   const [layoutReady, setLayoutReady] = React.useState(false);
 
-  const instance = instances[0];
+  const instance = instances.find((item) => item.status !== "failed") || instances[0];
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
   const liveNode = nodes.find((node) => node.id === liveNodeId) || null;
   const selectedLab = selectedNode ? catalog.find((item) => item.slug === selectedNode.data.slug) || null : null;
@@ -234,7 +234,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       setInstances(nextInstances);
       setReconciliationWarning(body.reconciliationWarning || null);
 
-      const current = nextInstances[0];
+      const current = nextInstances.find((item) => item.status !== "failed") || nextInstances[0];
       if (current && typeof window !== "undefined") {
         try {
           const saved = JSON.parse(window.localStorage.getItem(RUNTIME_NODE_KEY) || "null") as { instanceId?: string; nodeId?: string } | null;
@@ -350,7 +350,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       const lab = catalog.find((item) => item.slug === instance.slug);
       if (lab) {
         const id = uniqueNodeId();
-        restoredNodes.push({ id, type: "machine", position: { x: 160, y: 120 }, data: nodeData(lab, `${lab.shortName}-01`, instance.status, true) });
+        restoredNodes.push({ id, type: "machine", position: { x: 160, y: 120 }, data: nodeData(lab, `${lab.shortName}-01`, instance.status, instance.status !== "failed") });
         setLiveNodeId(id);
         setSelectedNodeId(id);
       }
@@ -382,7 +382,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         const lab = catalog.find((item) => item.slug === node.data.slug);
         if (!lab) return node;
         const isLive = Boolean(instance && node.id === resolvedLiveNodeId && node.data.slug === instance.slug);
-        return { ...node, data: nodeData(lab, node.data.label, isLive ? instance!.status : "planned", isLive) };
+        return { ...node, data: nodeData(lab, node.data.label, isLive ? instance!.status : "planned", isLive && instance!.status !== "failed") };
       });
       if (instance && !resolvedLiveNodeId) {
         const lab = catalog.find((item) => item.slug === instance.slug);
@@ -678,7 +678,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                   <div className="space-y-2 rounded-xl border p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</p>
                     {!instance && <Button className={ACTION_BUTTON} onClick={() => void createLab()} disabled={!capabilities?.configured || !selectedLab.available || busy === "create"}>{busy === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : selectedAccessMode === "desktop" ? <Monitor className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{selectedLab.available ? `Start ${selectedAccessMode} lab` : "Activation required"}</Button>}
-                    {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">{liveNodeLabel} is running.</div>}
+                    {instance && !selectedIsLive && <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">{instance.status === "failed" ? `${liveNodeLabel} failed to start. Remove the failed allocation to try again.` : `${liveNodeLabel} is running.`}</div>}
                     {selectedIsLive && instance?.status === "stopped" && <Button className={ACTION_BUTTON} onClick={() => void act(instance.id, "start")} disabled={Boolean(busy)}>{busy === "start" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Start {selectedNode.data.label}</Button>}
                     {selectedIsLive && instance?.status === "running" && <>{liveAccessMode === "desktop" && <Button className={ACTION_BUTTON} onClick={openDesktop}><Monitor className="mr-2 h-4 w-4" />Open desktop</Button>}{capabilities?.supportsTerminal && <Button className={ACTION_BUTTON} variant={liveAccessMode === "desktop" ? "outline" : "default"} onClick={() => void openTerminal()}><Terminal className="mr-2 h-4 w-4" />Open terminal</Button>}<Button className={ACTION_BUTTON} variant="outline" onClick={() => void act(instance.id, "stop")} disabled={Boolean(busy)}><CircleStop className="mr-2 h-4 w-4" />Stop {selectedNode.data.label}</Button></>}
                     {selectedIsLive && instance && !["destroying", "destroyed"].includes(instance.status) && <Button className={ACTION_BUTTON} variant="destructive" onClick={() => void act(instance.id, "destroy")} disabled={Boolean(busy)}><Trash2 className="mr-2 h-4 w-4" />Destroy {selectedNode.data.label}</Button>}
