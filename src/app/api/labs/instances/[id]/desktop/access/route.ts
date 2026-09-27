@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     // Run Command inputs are logged by AWS. Send only an unpredictable
     // Parameter Store name; the instance retrieves the encrypted value itself.
     const parameterName = `/oxsig/desktop-access/${randomBytes(20).toString('hex')}`;
-    const command = `$ErrorActionPreference='Stop';$secret=(Get-SSMParameter -Name '${parameterName}' -WithDecryption -Region '${REGION}').Value;if(-not $secret){throw 'Desktop secret unavailable'};$account=Get-LocalUser|Where-Object {$_.SID.Value -like '*-500'}|Select-Object -First 1;if(-not $account){throw 'Local administrator missing'};Set-LocalUser -Name $account.Name -Password (ConvertTo-SecureString $secret -AsPlainText -Force);Enable-LocalUser -Name $account.Name;Write-Output ('OXSIG_USER='+$account.Name)`;
+    const command = `$ErrorActionPreference='Stop';$secret=(Get-SSMParameter -Name '${parameterName}' -WithDecryption $true -Region '${REGION}').Value;if(-not $secret){throw 'Desktop secret unavailable'};$account=Get-LocalUser|Where-Object {$_.SID.Value -like '*-500'}|Select-Object -First 1;if(-not $account){throw 'Local administrator missing'};Set-LocalUser -Name $account.Name -Password (ConvertTo-SecureString $secret -AsPlainText -Force);Enable-LocalUser -Name $account.Name;Write-Output ('OXSIG_USER='+$account.Name)`;
 
     let parameterCreated = false;
     try {
