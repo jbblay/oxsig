@@ -24,12 +24,19 @@ export const metadata: Metadata = {
   title: 'OXSIG — Launch. Operate. Prove.',
   description: 'Learn infrastructure by operating real technical environments with AI assistance, team collaboration and evidence-backed progress.',
   applicationName: 'OXSIG',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [{ url: '/icons/oxsig-192.png', sizes: '192x192', type: 'image/png' }],
+    apple: [{ url: '/icons/oxsig-192.png', sizes: '192x192', type: 'image/png' }],
+  },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'OXSIG' },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: '#0c5261',
 };
 
 function AppDocument({ children, e2eAuth }: { children: React.ReactNode; e2eAuth: boolean }) {

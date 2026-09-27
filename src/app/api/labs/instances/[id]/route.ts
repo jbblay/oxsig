@@ -47,14 +47,43 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     );
     const instance = owned.rows[0];
     if (!instance) return NextResponse.json({ error: 'Lab instance not found' }, { status: 404 });
-    if (instance.runtime_provider !== 'aws-ec2' || !instance.runtime_external_id) {
-      return NextResponse.json({ error: 'This lab is not backed by an AWS EC2 instance' }, { status: 409 });
-    }
-
     const action = parsed.data.action;
-    const externalId = instance.runtime_external_id as string;
+    // A failed allocation can exist before EC2 returns an instance ID. It has
+    // no provider resource to terminate, but must still be removable by its owner.
+    if (
+      action === 'destroy' &&
+      instance.status === 'failed' &&
+      instance.runtime_provider === 'aws-ec2' &&
+      !instance.runtime_external_id &&
+      !instance.metadata?.operationRunId
+    ) {
+      const cleaned = await pool.query(
+        `UPDATE lab_instances
+            SET status='destroyed', last_error=NULL, reconciliation_warning=NULL, updated_at=NOW()
+          WHERE id=$1 AND owner_id=$2 AND status='failed' AND runtime_external_id IS NULL
+          RETURNING id,status`,
+        [id, user.id]
+      );
+      if (!cleaned.rows[0]) return NextResponse.json({ error: 'Lab state changed. Refresh and try again.' }, { status: 409 });
+      await logAudit({
+        userId: user.id,
+        action: AUDIT_ACTIONS.LAB_DESTROY,
+        resourceType: 'lab',
+        resourceId: id,
+        ...getRequestMetadata(req),
+        metadata: { provider: 'aws-ec2', failedAllocationCleanup: true },
+      });
+      return NextResponse.json({ instance: cleaned.rows[0] });
+    }
     const operationRunId = typeof instance.metadata?.operationRunId === 'string' ? instance.metadata.operationRunId : null;
     const operationManaged = Boolean(operationRunId && uuidSchema.safeParse(operationRunId).success);
+    if (instance.runtime_provider !== 'aws-ec2' || (!instance.runtime_external_id && !operationManaged)) {
+      return NextResponse.json({ error: 'This lab has no active AWS instance. Refresh its status or contact support.' }, { status: 409 });
+    }
+    const externalId = instance.runtime_external_id as string | null;
+    if (operationManaged && !externalId && action !== 'destroy') {
+      return NextResponse.json({ error: 'This Operation has no operator instance. Destroy it to release the failed allocation.' }, { status: 409 });
+    }
 
     try {
       if (operationManaged) {
@@ -66,8 +95,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
             ? await pauseOperationRun({ pool, runId: operationRunId!, ownerId: user.id })
             : await resumeOperationRun({ pool, runId: operationRunId!, ownerId: user.id });
 
+        if (action === 'destroy' && !externalId) {
+          await pool.query(
+            `UPDATE lab_instances SET status='destroyed', last_error=NULL,
+                reconciliation_warning=NULL, updated_at=NOW()
+              WHERE id=$1 AND owner_id=$2 AND runtime_external_id IS NULL`,
+            [id, user.id]
+          );
+        }
         const nextStatus: LabInstanceStatus = action === 'destroy'
-          ? 'destroying'
+          ? externalId ? 'destroying' : 'destroyed'
           : action === 'stop'
             ? 'stopping'
             : 'provisioning';
@@ -96,8 +133,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
       // EC2 is the runtime source of truth. Reconcile the stored state before
       // deciding whether start/stop/destroy is a valid transition.
-      const states = await describeLabVmStates([externalId]);
-      const awsStatus = states.get(externalId) || (instance.status as LabInstanceStatus);
+      const states = await describeLabVmStates([externalId!]);
+      const awsStatus = states.get(externalId!) || (instance.status as LabInstanceStatus);
 
       if (awsStatus !== instance.status) {
         await pool.query(
@@ -119,9 +156,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         return NextResponse.json({ error: validation.error }, { status: validation.status });
       }
 
-      if (action === 'start') await startLabVm(externalId);
-      if (action === 'stop') await stopLabVm(externalId);
-      if (action === 'destroy') await destroyLabVm(externalId);
+      if (action === 'start') await startLabVm(externalId!);
+      if (action === 'stop') await stopLabVm(externalId!);
+      if (action === 'destroy') await destroyLabVm(externalId!);
 
       const status: LabInstanceStatus = action === 'start'
         ? 'provisioning'

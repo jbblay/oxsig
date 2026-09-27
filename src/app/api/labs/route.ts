@@ -57,6 +57,7 @@ function mapLearnerCapabilities(
 
 function mapInstance(row: Record<string, any>) {
   const freshness = labStatusFreshness(row);
+  const hasNoProviderRuntime = row.status === 'failed' && !row.runtime_external_id;
   return {
     id: row.id,
     slug: row.slug,
@@ -66,8 +67,8 @@ function mapInstance(row: Record<string, any>) {
     startedAt: row.started_at,
     expiresAt: row.expires_at,
     observedAt: freshness.observedAt,
-    stale: freshness.stale,
-    reconciliationWarning: freshness.reconciliationWarning,
+    stale: hasNoProviderRuntime ? false : freshness.stale,
+    reconciliationWarning: hasNoProviderRuntime ? null : freshness.reconciliationWarning,
     metadata: {
       accessMode: row.metadata?.accessMode === 'desktop' ? 'desktop' : 'terminal',
     },

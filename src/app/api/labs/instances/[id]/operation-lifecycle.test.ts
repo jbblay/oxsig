@@ -108,4 +108,48 @@ describe('Operation-managed lab lifecycle', () => {
     expect(mocks.destroyLabVm).not.toHaveBeenCalled();
     expect(mocks.describeLabVmStates).not.toHaveBeenCalled();
   });
+  it('releases a failed Operation allocation without an operator EC2 id', async () => {
+    query.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id,status,runtime_provider')) return { rows: [{
+        id: labId,
+        status: 'failed',
+        runtime_provider: 'aws-ec2',
+        runtime_external_id: null,
+        expires_at: '2026-09-15T11:46:49.000Z',
+        metadata: { operationRunId: runId },
+      }] };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const response = await PATCH(request('destroy'), { params: Promise.resolve({ id: labId }) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).instance.status).toBe('destroyed');
+    expect(mocks.destroyOperationRun).toHaveBeenCalledWith({ pool, runId, ownerId: user.id });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("SET status='destroyed', last_error=NULL"),
+      [labId, user.id]
+    );
+    expect(mocks.destroyLabVm).not.toHaveBeenCalled();
+  });
+
+  it('releases a failed ordinary allocation without calling EC2', async () => {
+    query.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id,status,runtime_provider')) return { rows: [{
+        id: labId,
+        status: 'failed',
+        runtime_provider: 'aws-ec2',
+        runtime_external_id: null,
+        metadata: {},
+      }] };
+      if (sql.includes("SET status='destroyed'")) return { rows: [{ id: labId, status: 'destroyed' }] };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const response = await PATCH(request('destroy'), { params: Promise.resolve({ id: labId }) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).instance.status).toBe('destroyed');
+    expect(mocks.destroyOperationRun).not.toHaveBeenCalled();
+    expect(mocks.destroyLabVm).not.toHaveBeenCalled();
+  });
+
 });
