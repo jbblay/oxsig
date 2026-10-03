@@ -32,6 +32,9 @@ const footerGroups = [
     title: 'Account',
     links: [
       ['Create account', '/sign-up'],
+      ['Privacy', 'https://clinode.com/privacy'],
+      ['Terms', 'https://clinode.com/terms'],
+      ['Support & security', 'https://clinode.com/support'],
     ],
   },
 ] as const;
@@ -78,7 +81,7 @@ export function PublicSiteFooter({ authReturnTo = '/home' }: { authReturnTo?: st
             <span>OXSIG</span>
           </Link>
           <p>Browse the public dashboard, Operations catalogue and mission dossiers without an account.</p>
-          <span className={styles.trustLine}><ShieldCheck className="h-3.5 w-3.5" /> Protected workspaces require authentication.</span>
+          <span className={styles.trustLine}><ShieldCheck className="h-3.5 w-3.5" /> Protected workspaces require authentication. Services are for adults aged 18+.</span>
         </div>
 
         {footerGroups.map((group) => (
