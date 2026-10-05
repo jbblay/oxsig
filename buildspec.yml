@@ -1,0 +1,23 @@
+version: 0.2
+
+env:
+  git-credential-helper: yes
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - node --version
+      - corepack enable
+      - corepack prepare pnpm@10.28.0 --activate
+      - pnpm --version
+      - pnpm install --frozen-lockfile
+  build:
+    commands:
+      - pnpm server:check
+      - pnpm typecheck
+      - pnpm audit:reachability
+      - pnpm persistence:check
+      - pnpm test:run
+      - pnpm build
