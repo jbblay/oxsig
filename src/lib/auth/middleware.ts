@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClerkAuthenticatedUser } from './clerk-user';
 import { getE2EAuthenticatedUser, isE2EAuthEnabled } from './e2e-auth';
+import { ACCOUNT_SUSPENDED_CODE, isAccountSuspendedError } from './account-status';
 
 export interface AuthenticatedUser {
   id: string;
@@ -9,6 +10,7 @@ export interface AuthenticatedUser {
   email?: string;
   name?: string;
   role: 'user' | 'admin';
+  isFounder?: boolean;
 }
 
 export async function getUserFromRequest(request: NextRequest): Promise<AuthenticatedUser | null> {
@@ -23,6 +25,7 @@ export async function getUserFromRequest(request: NextRequest): Promise<Authenti
     email: clerkUser.email,
     name: clerkUser.name,
     role: clerkUser.role,
+    isFounder: clerkUser.isFounder,
   };
 }
 
@@ -30,6 +33,19 @@ async function resolveUser(request: NextRequest): Promise<{ user: AuthenticatedU
   try {
     return { user: await getUserFromRequest(request) };
   } catch (error) {
+    if (isAccountSuspendedError(error)) {
+      return {
+        user: null,
+        error: NextResponse.json(
+          {
+            error: 'Account suspended',
+            code: ACCOUNT_SUSPENDED_CODE,
+            message: 'This OXSIG account is paused by the platform team. Contact support to restore access.',
+          },
+          { status: 403, headers: { 'Cache-Control': 'no-store' } }
+        ),
+      };
+    }
     console.error('Authenticated user resolution failed:', error);
     return { user: null, error: NextResponse.json({ error: 'Account service unavailable' }, { status: 503 }) };
   }

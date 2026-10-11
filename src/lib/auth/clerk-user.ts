@@ -3,6 +3,8 @@ import 'server-only';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { getPool } from '@/lib/db/pool';
 import { isClerkConfigured } from './clerk-config';
+import { AccountSuspendedError } from './account-status';
+import { isFounderIdentity, resolvePlatformRole } from './platform-role';
 import { getE2EAuthenticatedUserFromCookies, isE2EAuthEnabled } from './e2e-auth';
 
 export interface ClerkMappedUser {
@@ -11,7 +13,10 @@ export interface ClerkMappedUser {
   email?: string;
   name?: string;
   role: 'user' | 'admin';
+  isFounder: boolean;
   clerkUserId: string;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
 }
 
 export interface ClerkUserSnapshot {
@@ -22,7 +27,11 @@ export interface ClerkUserSnapshot {
   avatarUrl?: string | null;
 }
 
-const USER_COLUMNS = `id, public_key, email, display_name, role, clerk_user_id, is_active`;
+// Suspension columns are read through to_jsonb so identity resolution keeps
+// working during the window between a deploy and `pnpm db:migrate`.
+const USER_COLUMNS = `id, public_key, email, email_verified, display_name, role, clerk_user_id, is_active,
+  to_jsonb(users) ->> 'suspended_at' AS suspended_at,
+  to_jsonb(users) ->> 'suspended_reason' AS suspended_reason`;
 
 function mapRow(row: Record<string, any>): ClerkMappedUser {
   return {
@@ -30,9 +39,17 @@ function mapRow(row: Record<string, any>): ClerkMappedUser {
     did: row.public_key || undefined,
     email: row.email || undefined,
     name: row.display_name || row.email?.split('@')[0] || undefined,
-    role: row.role === 'admin' ? 'admin' : 'user',
+    role: resolvePlatformRole(row),
+    isFounder: isFounderIdentity(row),
     clerkUserId: row.clerk_user_id,
+    suspendedAt: row.suspended_at || null,
+    suspendedReason: row.suspended_reason || null,
   };
+}
+
+function assertNotSuspended(user: ClerkMappedUser): ClerkMappedUser {
+  if (user.suspendedAt) throw new AccountSuspendedError(user.suspendedReason);
+  return user;
 }
 
 function normalizeDisplayName(snapshot: ClerkUserSnapshot): string | null {
@@ -182,7 +199,7 @@ export async function getClerkAuthenticatedUser(): Promise<ClerkMappedUser | nul
       `UPDATE users SET last_seen_at = NOW(), last_login_at = NOW() WHERE id = $1`,
       [mapped.rows[0].id]
     ).catch((error) => console.error('Failed to update Clerk user activity:', error));
-    return mapRow(mapped.rows[0]);
+    return assertNotSuspended(mapRow(mapped.rows[0]));
   }
 
   const inactive = await getPool().query(
@@ -203,11 +220,12 @@ export async function getClerkAuthenticatedUser(): Promise<ClerkMappedUser | nul
     clerkUser.username ||
     null;
 
-  return upsertClerkUser({
+  const synced = await upsertClerkUser({
     clerkUserId: clerkUser.id,
     email: primaryEmail?.emailAddress || null,
     emailVerified: primaryEmail?.verification?.status === 'verified',
     displayName,
     avatarUrl: clerkUser.imageUrl || null,
   });
+  return assertNotSuspended(synced);
 }
