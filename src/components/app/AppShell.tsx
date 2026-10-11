@@ -7,10 +7,12 @@ import BoardRecoveryMonitor from '@/components/storyboards/BoardRecoveryMonitor'
 import { useAuth } from '@/lib/auth/use-auth';
 import { invalidateLabsSnapshot } from '@/lib/labs/client';
 import { recordWorkspaceVisit } from '@/lib/persistence/workspace-activity';
+import AccountSuspendedScreen from './AccountSuspendedScreen';
 import AiHelperDock from './AiHelperDock';
 import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
 import WorkspaceActivitySync from './WorkspaceActivitySync';
+import WelcomeOnboarding from './WelcomeOnboarding';
 import WorkspaceEnhancements, { type WorkspaceKind } from './WorkspaceEnhancements';
 
 const SIDEBAR_KEY = 'oxsig:app-sidebar:v1';
@@ -34,7 +36,9 @@ function contentModeFor(workspaceKind: WorkspaceKind | null): ContentMode {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isAuthenticated, sessionIdentityId } = useAuth();
+  const { isAuthenticated, sessionIdentityId, accountStatus, user } = useAuth();
+  const suspended = isAuthenticated && accountStatus === 'suspended';
+  const showOnboarding = isAuthenticated && !suspended && pathname === '/home' && user?.needsOnboarding === true;
   const bare = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up') || pathname.startsWith('/explore');
   const workspaceKind = workspaceKindFor(pathname);
   const contentMode = contentModeFor(workspaceKind);
@@ -113,13 +117,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ? `min-h-0 w-full min-w-0 flex-1 px-2 py-2 sm:px-3 sm:py-3 ${standardCanvas ? 'mx-auto max-w-7xl' : 'max-w-none'} ${boundedWorkspace ? 'overflow-hidden' : 'overflow-y-auto'}`
               : 'mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8'}
           >
-            {workspaceKind === 'boards' ? <BoardRecoveryMonitor /> : null}
-            {isAuthenticated && workspaceKind ? <WorkspaceEnhancements kind={workspaceKind} /> : null}
-            {children}
+            {suspended ? (
+              <AccountSuspendedScreen />
+            ) : (
+              <>
+                {workspaceKind === 'boards' ? <BoardRecoveryMonitor /> : null}
+                {isAuthenticated && workspaceKind ? <WorkspaceEnhancements kind={workspaceKind} /> : null}
+                {children}
+              </>
+            )}
           </main>
         </div>
       </div>
-      {isAuthenticated ? (immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />) : null}
+      {showOnboarding ? <WelcomeOnboarding /> : null}
+      {isAuthenticated && !suspended ? (immersiveWorkspace ? <AiPractitionerDock /> : <AiHelperDock />) : null}
     </div>
   );
 }

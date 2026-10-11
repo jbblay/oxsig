@@ -15,10 +15,20 @@ export interface User {
   displayName?: string;
   avatarUrl?: string;
   role?: string;
+  isFounder?: boolean;
+  /** Server explicitly reported that this account has not completed onboarding. */
+  needsOnboarding?: boolean;
+  experienceLevel?: string | null;
 }
+
+export type AccountStatus = 'active' | 'suspended';
 
 interface AuthContextType {
   user: User | null;
+  /** True once the server-confirmed profile says this user is a platform admin. */
+  isPlatformAdmin: boolean;
+  accountStatus: AccountStatus;
+  accountStatusMessage: string | null;
   sessionIdentityId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -38,6 +48,10 @@ function normalizeProfile(data: any): User {
     displayName: data.displayName ?? data.display_name ?? data.email ?? undefined,
     avatarUrl: data.avatarUrl ?? data.avatar_url ?? undefined,
     role: data.role ?? 'user',
+    isFounder: Boolean(data.isFounder),
+    // Only an explicit null means "not onboarded"; older payloads never nag the user.
+    needsOnboarding: Object.hasOwn(data, 'onboardedAt') && data.onboardedAt === null,
+    experienceLevel: data.experienceLevel ?? null,
   };
 }
 
@@ -47,21 +61,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<User | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [accountStatus, setAccountStatus] = useState<AccountStatus>('active');
+  const [accountStatusMessage, setAccountStatusMessage] = useState<string | null>(null);
 
   const fetchUserProfile = useCallback(async () => {
     if (!isSignedIn) {
       setProfile(null);
       setProfileError(null);
+      setAccountStatus('active');
+      setAccountStatusMessage(null);
       return;
     }
 
     setProfileLoading(true);
     try {
       const response = await fetch('/api/users/me', { credentials: 'include', cache: 'no-store' });
+      if (response.status === 403) {
+        const body = await response.clone().json().catch(() => null);
+        if (body?.code === 'ACCOUNT_SUSPENDED') {
+          setProfile(null);
+          setProfileError(null);
+          setAccountStatus('suspended');
+          setAccountStatusMessage(typeof body.message === 'string' ? body.message : null);
+          return;
+        }
+      }
       if (!response.ok) throw new Error(`Profile request failed (${response.status})`);
       const payload = await response.json();
       setProfile(normalizeProfile(payload.user ?? payload));
       setProfileError(null);
+      setAccountStatus('active');
+      setAccountStatusMessage(null);
     } catch (error) {
       setProfile(null);
       setProfileError(error instanceof Error ? error.message : 'Could not load profile');
@@ -95,6 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthContextType = {
     user: profile ?? fallbackUser,
+    isPlatformAdmin: profile?.role === 'admin',
+    accountStatus,
+    accountStatusMessage,
     sessionIdentityId: clerkUser?.id ?? null,
     isAuthenticated: Boolean(isSignedIn),
     isLoading: !isLoaded || profileLoading,
@@ -135,6 +168,9 @@ export function E2EAuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthContextType = {
     user,
+    isPlatformAdmin: false,
+    accountStatus: 'active',
+    accountStatusMessage: null,
     sessionIdentityId: account?.identityId ?? null,
     isAuthenticated: !!account,
     isLoading: !loaded,
