@@ -278,12 +278,12 @@ export async function getAdminUserDetail(pool: Pool, userId: string): Promise<Ad
   if (!user.rows[0]) return null;
 
   const [vault, collaborations, storyboards, activeDays, usage, resources, events] = await Promise.all([
-    relationExists(pool, 'vault_items').then((exists) => exists ? pool.query(`SELECT COUNT(*)::int AS count FROM vault_items WHERE owner_id=$1`, [userId]) : { rows: [{ count: 0 }] }),
+    relationExists(pool, 'vault_items').then(async (exists) => ({ rows: exists ? (await pool.query(`SELECT COUNT(*)::int AS count FROM vault_items WHERE owner_id=$1`, [userId])).rows : [{ count: 0 }] })),
     pool.query(`SELECT COUNT(*)::int AS count FROM collaboration_members WHERE user_id=$1`, [userId]),
     pool.query(`SELECT COUNT(*)::int AS count FROM storyboard_sessions WHERE owner_id=$1 AND deleted_at IS NULL`, [userId]),
-    relationExists(pool, 'learning_activity_days').then((exists) => exists
-      ? pool.query(`SELECT COUNT(*)::int AS count FROM learning_activity_days WHERE owner_id=$1 AND activity_date > CURRENT_DATE - 30`, [userId])
-      : { rows: [{ count: 0 }] }),
+    relationExists(pool, 'learning_activity_days').then(async (exists) => ({ rows: exists
+      ? (await pool.query(`SELECT COUNT(*)::int AS count FROM learning_activity_days WHERE owner_id=$1 AND activity_date > CURRENT_DATE - 30`, [userId])).rows
+      : [{ count: 0 }] })),
     pool.query(
       `SELECT
          (SELECT COUNT(*) FROM lab_instances WHERE owner_id=$1)::int AS labs,
