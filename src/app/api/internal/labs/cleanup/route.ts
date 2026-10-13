@@ -14,6 +14,12 @@ import { destroyOperationRun } from '@/lib/operations/runtime';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Accounts deactivated through Clerk (user.deleted webhook) or suspension must
+// not keep billable lab compute running until its TTL. The daily sweep treats
+// their resources as expired. Kept as a SQL fragment so every selector agrees.
+const OWNER_DEACTIVATED_SQL = (ownerColumn: string) =>
+  `EXISTS (SELECT 1 FROM users owner WHERE owner.id=${ownerColumn} AND owner.is_active=false)`;
+
 const CLEANUP_LOCK_NAMESPACE = 'oxsig';
 const CLEANUP_LOCK_NAME = 'labs-expiry-cleanup';
 
@@ -54,7 +60,7 @@ async function reconcileDisposableOperationRuns(client: { query: (sql: string, p
               ELSE 'destroying'
             END,
             updated_at=NOW()
-      WHERE run.expires_at <= NOW()
+      WHERE (run.expires_at <= NOW() OR ${OWNER_DEACTIVATED_SQL('run.owner_id')})
         AND run.environment_id IS NULL
         AND run.status NOT IN ('destroyed','failed')
         AND EXISTS (SELECT 1 FROM operation_nodes node WHERE node.run_id=run.id)
@@ -104,11 +110,13 @@ export async function GET(request: NextRequest) {
         `SELECT id::text AS id, runtime_external_id
            FROM lab_instances
           WHERE runtime_provider='aws-ec2'
-            AND expires_at IS NOT NULL
-            AND expires_at <= NOW()
+            AND (
+              (expires_at IS NOT NULL AND expires_at <= NOW())
+              OR ${OWNER_DEACTIVATED_SQL('lab_instances.owner_id')}
+            )
             AND status NOT IN ('destroyed','failed')
             AND NOT (metadata ? 'environmentId')
-          ORDER BY expires_at ASC`
+          ORDER BY expires_at ASC NULLS LAST`
       ),
       listExpiredTaggedLabVms(now),
       client.query(
@@ -117,7 +125,7 @@ export async function GET(request: NextRequest) {
                 node.runtime_external_id
            FROM operation_nodes node
            JOIN operation_runs run ON run.id=node.run_id
-          WHERE run.expires_at <= NOW()
+          WHERE (run.expires_at <= NOW() OR ${OWNER_DEACTIVATED_SQL('run.owner_id')})
             AND run.environment_id IS NULL
             AND node.status NOT IN ('destroyed','failed')
           ORDER BY run.expires_at ASC,node.created_at ASC`
@@ -307,7 +315,7 @@ export async function GET(request: NextRequest) {
     const expiredPreparedRuns = await client.query(
       `SELECT id::text AS id,owner_id::text AS owner_id
          FROM operation_runs
-        WHERE expires_at <= NOW()
+        WHERE (expires_at <= NOW() OR ${OWNER_DEACTIVATED_SQL('operation_runs.owner_id')})
           AND environment_id IS NOT NULL
           AND status NOT IN ('destroyed','failed')
         ORDER BY expires_at ASC
