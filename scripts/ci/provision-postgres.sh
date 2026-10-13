@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Provision a disposable PostgreSQL 16 server for CI schema verification.
 #
-# Works on the AWS CodeBuild standard images without requiring privileged
-# mode: uses Docker when a daemon is reachable, otherwise installs PostgreSQL
-# from the image's package manager (apt on Ubuntu images, dnf on Amazon Linux).
+# Works on the AWS CodeBuild standard images: installs PostgreSQL from the
+# image's package manager (apt on Ubuntu, dnf on Amazon Linux) and falls back to
+# a host-networked Docker container only when no package manager is available.
 #
 # Connection contract (must match OXSIG_CI_DATABASE_URL in buildspec.yml):
 #   postgresql://oxsig_ci:oxsig_ci@127.0.0.1:5432/oxsig_ci
@@ -35,15 +35,6 @@ SQL
   chmod 644 "$init_sql"
   su postgres -s /bin/bash -c "psql ${connection} -v ON_ERROR_STOP=1 -f ${init_sql} postgres"
 }
-
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  log "Using Docker image ${IMAGE}"
-  docker run -d --name oxsig-ci-postgres -p "${PORT}:5432" \
-    -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB="$DB_NAME" \
-    "$IMAGE" >/dev/null
-  wait_ready
-  exit 0
-fi
 
 if command -v apt-get >/dev/null 2>&1; then
   log "Installing PostgreSQL via apt"
@@ -77,6 +68,17 @@ if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
   su postgres -s /bin/bash -c "$INITDB -D $DATA_DIR -A trust -U postgres >/dev/null"
   su postgres -s /bin/bash -c "$PG_CTL -D $DATA_DIR -o '-p ${PORT} -k /tmp' -l /tmp/oxsig-ci-postgres.log -w start"
   create_role_and_db "-h /tmp -p ${PORT}"
+  wait_ready
+  exit 0
+fi
+
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  # Fallback only: on CodeBuild the published port of a bridge-networked
+  # container was not reachable over TCP, so share the build's network instead.
+  log "Using Docker image ${IMAGE} (host network)"
+  docker run -d --name oxsig-ci-postgres --network host \
+    -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB="$DB_NAME" \
+    -e PGPORT="$PORT" "$IMAGE" >/dev/null
   wait_ready
   exit 0
 fi
