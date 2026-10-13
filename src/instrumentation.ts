@@ -6,7 +6,7 @@ function sentryDsn() {
 }
 
 function environmentName() {
-  return String(process.env.VERCEL_ENV || process.env.NODE_ENV || 'development').trim();
+  return String(process.env.OXSIG_DEPLOY_ENV || process.env.VERCEL_ENV || process.env.NODE_ENV || 'development').trim();
 }
 
 export async function register() {
