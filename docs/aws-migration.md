@@ -19,7 +19,7 @@ Nothing in this document has been **deployed** yet: there were no AWS, Vercel, N
 | Identity | Clerk | `src/middleware.ts`, `src/lib/auth/*` (≈100 routes go through `requireAuth`), Svix webhook | `lib/auth/middleware.ts` wrapper | Session JWT `azp` must match the public origin |
 | Transactional email | Resend | 4 call sites (collaboration and storyboard invitations) | **New:** `lib/email/server.ts` with Resend and SES adapters | — |
 | Generative AI | OpenAI Responses API | `lib/ai/providers/*`, used by the AI Practitioner and lab AI routes | `StructuredAiProvider` interface. **New:** Bedrock adapter and fallback chain | Strict JSON-schema output; results are re-validated with zod |
-| Voice (TTS/STT) | ElevenLabs | `lib/voice/*`, `/api/voice/{tts,stt}` | Thin facade | Streams TTS responses |
+| Voice (TTS/STT) | ElevenLabs today; AWS Polly TTS optionally prepared on this branch | `lib/voice/*`, `/api/voice/{tts,stt}` | Selectable TTS provider with optional fallback; STT remains ElevenLabs | Polly synchronous TTS supports up to 3,000 billed characters/request; long voice narration requires ElevenLabs fallback or future chunking |
 | Realtime | Ably (REST token auth, browser SDK) | ≈19 server modules and 3 client hooks | `lib/realtime/ably.ts` plus channel-name module | Works on any host |
 | Error tracking | Sentry | `instrumentation*.ts`, `server.mjs` | — | — |
 | Product analytics | PostHog (server-side only) | 7 call sites | `lib/analytics/posthog.ts` | — |
@@ -69,7 +69,7 @@ aws ce get-cost-and-usage --time-period Start=2026-09-01,End=2026-10-01 --granul
 | Observability | CloudWatch Logs + alarms (5xx, unhealthy targets, p95 latency, RDS CPU/storage/connections) | **Add. Keep Sentry.** | Sentry gives stack traces and source maps; CloudWatch gives infrastructure signals. They complement each other. |
 | Identity | Cognito | **Retain Clerk** | Migrating would break ~100 routes and the session model. Passwords can't be re-hashed into Cognito without a migration Lambda or forced resets. Credit value is low. |
 | Realtime | AppSync Events / API Gateway WebSocket | **Retain Ably for now** | It is host-independent and touches about 22 files. Move only if the Ably bill justifies it. |
-| Voice | Polly / Transcribe | **Retain ElevenLabs** | Voice quality is the product experience. Transcribe streaming needs an HTTP/2 event-stream client. Revisit once Polly generative voices are evaluated with users. |
+| Voice | Polly / Transcribe | **Enable Polly TTS as an optional AWS provider; retain ElevenLabs for STT and as an optional TTS fallback.** | Polly can replace paid TTS calls after a real audio quality/integration test. The existing voice recording upload remains ElevenLabs-only; Amazon Transcribe integration still requires implementation. |
 | Analytics | — | **Retain PostHog** | There is no equivalent AWS product analytics service. |
 | Storage, labs, CI | Already AWS | Retain | Move the lab IAM permissions from the Vercel OIDC role to the ECS task role (`LabRuntimePolicyArn`). |
 
@@ -126,6 +126,7 @@ Every step is reversible by an environment-variable or DNS change. None of them 
 | 0 | Merge #219 (platform remediation) and run `pnpm db:migrate` on Neon (applies 058) | — | 058 is additive. Code works with or without it | CodeBuild green; `pnpm db:parity` passes on Neon |
 | 1 | Verify the account's credits and enable the Bedrock model; create a budget | — | — | Credit balance and applicable products confirmed |
 | 2 | **AI**: on Vercel, set `OXSIG_BEDROCK_MODEL_ID`, `OXSIG_BEDROCK_REGION` (explicitly: Vercel sets `AWS_REGION` to the function region), `OXSIG_AI_PROVIDER=bedrock`, `OXSIG_AI_FALLBACK_PROVIDER=openai`, and grant `bedrock:InvokeModel` to the Vercel OIDC role | Env var | `OXSIG_AI_PROVIDER=openai` | Fallback rate and latency from `oxsig.ai.request` logs within target; AI Practitioner flows pass manual QA |
+| 2a | **Voice playback**: grant `polly:SynthesizeSpeech` to the current runtime role and set `OXSIG_VOICE_TTS_PROVIDER=polly` with `OXSIG_POLLY_REGION=eu-central-1`, `OXSIG_POLLY_VOICE_ID=Joanna`, `OXSIG_POLLY_ENGINE=neural`. Leave `OXSIG_VOICE_TTS_FALLBACK_PROVIDER=elevenlabs` only if the ElevenLabs balance makes that fallback usable. | Env var | `OXSIG_VOICE_TTS_PROVIDER=elevenlabs` | Authorized user hears MP3 from Polly and the UI can handle failure; test text below and above 3,000 characters. Speech-to-text is NOT migrated. |
 | 3 | **Email**: verify the SES domain (DKIM CNAMEs from the stack output) and request production access. Then set `SES_REGION`, `OXSIG_EMAIL_PROVIDER=ses` and grant `ses:SendEmail` | Env var | `OXSIG_EMAIL_PROVIDER=resend` | Invitation emails delivered; `collaboration_invitations.provider='ses'` with message ids |
 | 4 | Deploy the stack (`staging`, `DesiredCount=0`), push the image, populate the app secret, scale to 1 | — | Delete the stack (the DB is snapshotted on delete) | `/api/health` 200 through the ALB; terminal bridge works through the ALB |
 | 5 | **Data rehearsal**: `pg_dump` Neon → `pg_restore` RDS, then `scripts/aws/db-compare.mjs` and `pnpm db:parity` against RDS | — | Drop the RDS DB | db-compare `ok: true` on every table |
@@ -133,7 +134,7 @@ Every step is reversible by an environment-variable or DNS change. None of them 
 | 7 | **Production cutover** in a maintenance window. In order: (1) put Neon read-only (revoke writes on the app role); (2) take the final `pg_dump` and restore it; (3) run db-compare; (4) switch `DATABASE_URL` to RDS on ECS; (5) switch public DNS to the ALB; (6) disable the Vercel cron and enable `EnableCleanupSchedule` | DNS (low TTL set 48h before) | DNS back to Vercel; Neon writable again (no writes were lost because it was read-only during the window) | Error and latency SLOs hold for 7 days |
 | 8 | Decommission: keep Neon and Vercel for 30 days, then remove them | — | — | Final Neon backup archived to S3 |
 
-**Database copy runbook (step 5 and step 7).** Use Neon's direct, non-pooled endpoint. Use the PostgreSQL 16 client tools, matching the server major version.
+**Database copy runbook (step 5 and step 7).** Use Neon's direct, non-pooled endpoint. Use PostgreSQL 18 client tools, matching the live Neon PostgreSQL 18 server major version.
 
 ```bash
 pg_dump --format=custom --no-owner --no-acl "$NEON_DIRECT_URL" -f oxsig.dump
@@ -142,8 +143,10 @@ SOURCE_DATABASE_URL="$NEON_DIRECT_URL" TARGET_DATABASE_URL="$RDS_URL" node scrip
 DATABASE_URL="$RDS_URL" pnpm db:parity
 ```
 
-- **Rehearsed locally against PostgreSQL 16.15:** dump → restore → `db-compare` reported `ok: true` across 53 tables. After a row was deleted and another edited on the target, `db-compare` reported both differences and exited 1.
-- **For near-zero downtime:** use Neon logical replication into an RDS subscription instead of dump/restore, then run the same `db-compare` once lag reaches zero.
+- **Rehearsed locally against PostgreSQL 16.15 only:** dump → restore → `db-compare` reported `ok: true` across 53 tables. After a row was deleted and another edited on the target, `db-compare` reported both differences and exited 1.
+- **For near-zero downtime:** consider Neon logical replication into an RDS subscription instead of dump/restore, then run the same `db-compare` once lag reaches zero. Validate extension, publication, permission, and replication-lag compatibility before proposing it as a safe cutover.
+- **PostgreSQL version:** the *live Neon production source is PostgreSQL 18.6*, not 16. The CloudFormation template now defaults to `DbEngineVersion=18.6` and `DbParameterFamily=postgres18`. Use PostgreSQL **18 client tools** for `pg_dump` and `pg_restore` when migrating, and verify the selected RDS engine version and extensions. PostgreSQL 16 clients cannot dump a PostgreSQL 18 server.
+- **Rollback:** before opening RDS to writes, document the reverse replication or planned write-freeze needed to return to Neon without losing writes after cutover. DNS reversal alone is not a data-safe rollback after RDS has accepted writes.
 
 ## 7. Disaster recovery
 
@@ -160,3 +163,11 @@ DATABASE_URL="$RDS_URL" pnpm db:parity
 2. **No Vercel, Neon or SaaS billing access.** Current per-provider costs and the production data volume are unknown.
 3. **DNS and Clerk dashboard changes** (allowed origins, webhook endpoint, SES DKIM) need the account owner.
 4. **The container image has not been built.** The sandbox has no npm registry access, and CodeBuild runs without a Docker build step. The first image build should run in CodeBuild with privileged mode, or locally.
+
+## Targeted voice functionality gap and readiness
+
+The existing `/api/voice/tts` endpoint returned MP3 from ElevenLabs only, even if AWS credits were available. This branch adds an AWS Polly TTS adapter using the same signed AWS credential chain as the Bedrock adapter. **The default remains ElevenLabs**, so existing production traffic is unchanged until configured. The optional fallback is attempted only if the primary TTS provider fails.
+
+Configuration: `OXSIG_VOICE_TTS_PROVIDER=polly`, `OXSIG_POLLY_REGION=eu-central-1`, `OXSIG_POLLY_VOICE_ID=Joanna`, `OXSIG_POLLY_ENGINE=neural`. Optionally choose `OXSIG_VOICE_TTS_FALLBACK_PROVIDER=elevenlabs`. ECS task permissions include `polly:SynthesizeSpeech`. If Vercel is used as the runtime during the staged cutover, its AWS OIDC IAM role also requires that permission before switching the environment variable.
+
+**Honest status:** text-to-speech AWS support is implemented but not production-deployed or end-to-end verified. Amazon Polly synchronous synthesis accepts up to 3,000 billed characters; longer narration requires a separately configured fallback provider or a future long-form speech solution. The voice recording/transcription endpoint still relies on ElevenLabs and needs its own AWS migration. Ably realtime, Sentry and PostHog are not replaced by this voice change.
