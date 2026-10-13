@@ -18,15 +18,9 @@ IMAGE="public.ecr.aws/docker/library/postgres:16"
 log() { printf '[provision-postgres] %s\n' "$*"; }
 
 wait_ready() {
-  for _ in $(seq 1 60); do
-    if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -p "$PORT" -U "$DB_USER" -d "$DB_NAME" -c 'SELECT 1' >/dev/null 2>&1; then
-      log "PostgreSQL is ready"
-      return 0
-    fi
-    sleep 1
-  done
-  log "PostgreSQL did not become ready in time"
-  return 1
+  # Authenticated TCP check with the same driver the CI tools use.
+  OXSIG_CI_DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@127.0.0.1:${PORT}/${DB_NAME}" \
+    node "$(dirname "$0")/wait-for-postgres.mjs"
 }
 
 create_role_and_db() {
@@ -47,14 +41,6 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   docker run -d --name oxsig-ci-postgres -p "${PORT}:5432" \
     -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB="$DB_NAME" \
     "$IMAGE" >/dev/null
-  if ! command -v psql >/dev/null 2>&1; then
-    # Readiness probe through the container when no host client exists.
-    for _ in $(seq 1 60); do
-      docker exec oxsig-ci-postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1 && { log "PostgreSQL is ready"; exit 0; }
-      sleep 1
-    done
-    log "PostgreSQL container did not become ready"; exit 1
-  fi
   wait_ready
   exit 0
 fi
