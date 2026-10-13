@@ -1,0 +1,1892 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "OXSIG AWS platform: ECS Fargate (ARM64) + ALB, RDS PostgreSQL, Secrets Manager, ECR, CloudWatch alarms, gross-cost budget, optional SES and EventBridge cleanup schedule.",
+  "Parameters": {
+    "Environment": {
+      "Type": "String",
+      "AllowedValues": [
+        "staging",
+        "production"
+      ],
+      "Default": "staging"
+    },
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "VPC for the platform (the default VPC is acceptable)."
+    },
+    "PublicSubnetIds": {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Description": "At least two public subnets in different AZs (ALB + Fargate)."
+    },
+    "DatabaseSubnetIds": {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Description": "At least two subnets in different AZs for RDS (private preferred)."
+    },
+    "ContainerImage": {
+      "Type": "String",
+      "Default": "",
+      "Description": "ECR image URI. Leave empty until the first image is pushed (service stays at 0 tasks)."
+    },
+    "DesiredCount": {
+      "Type": "Number",
+      "Default": 0,
+      "MinValue": 0,
+      "MaxValue": 10,
+      "Description": "Keep 0 until secrets are populated and the image is verified."
+    },
+    "TaskCpu": {
+      "Type": "String",
+      "Default": "512",
+      "AllowedValues": [
+        "256",
+        "512",
+        "1024",
+        "2048"
+      ]
+    },
+    "TaskMemory": {
+      "Type": "String",
+      "Default": "1024",
+      "AllowedValues": [
+        "512",
+        "1024",
+        "2048",
+        "3072",
+        "4096"
+      ]
+    },
+    "CertificateArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "ACM certificate for the public hostname (same region). Empty = HTTP-only listener for internal testing."
+    },
+    "PublicAppUrl": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Public origin, e.g. https://staging.oxsig.example (OXSIG_APP_URL)."
+    },
+    "DbInstanceClass": {
+      "Type": "String",
+      "Default": "db.t4g.micro"
+    },
+    "DbAllocatedStorage": {
+      "Type": "Number",
+      "Default": 20,
+      "MinValue": 20,
+      "MaxValue": 1000
+    },
+    "DbMultiAz": {
+      "Type": "String",
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
+      "Default": "false"
+    },
+    "DbEngineVersion": {
+      "Type": "String",
+      "Default": "16",
+      "Description": "PostgreSQL major version; match the Neon source major version."
+    },
+    "StorageBucketName": {
+      "Type": "String",
+      "Description": "Existing OXSIG uploads bucket (STORAGE_BUCKET)."
+    },
+    "StorageRegion": {
+      "Type": "String",
+      "Default": "eu-central-1"
+    },
+    "LabRuntimePolicyArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Existing managed policy with the EC2/SSM lab permissions currently granted to the Vercel OIDC role."
+    },
+    "LabAwsEnabled": {
+      "Type": "String",
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
+      "Default": "false"
+    },
+    "AiProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "openai",
+        "bedrock"
+      ],
+      "Default": "openai"
+    },
+    "AiFallbackProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "",
+        "openai",
+        "bedrock"
+      ],
+      "Default": "openai"
+    },
+    "BedrockModelId": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Bedrock model or inference profile id enabled in this account."
+    },
+    "EmailProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "resend",
+        "ses"
+      ],
+      "Default": "resend"
+    },
+    "EmailFrom": {
+      "Type": "String",
+      "Default": ""
+    },
+    "SesIdentityDomain": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional domain to create as an SES identity (DKIM records are output; DNS is not changed)."
+    },
+    "EnableCleanupSchedule": {
+      "Type": "String",
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
+      "Default": "false",
+      "Description": "Enable only after CRON_SECRET is stored and Vercel cron is disabled."
+    },
+    "AlarmEmail": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Receives alarms and budget alerts."
+    },
+    "MonthlyBudgetUsd": {
+      "Type": "Number",
+      "Default": 150,
+      "MinValue": 1
+    },
+    "LogRetentionDays": {
+      "Type": "Number",
+      "Default": 30,
+      "AllowedValues": [
+        7,
+        14,
+        30,
+        60,
+        90,
+        180,
+        365
+      ]
+    }
+  },
+  "Conditions": {
+    "IsProduction": {
+      "Fn::Equals": [
+        {
+          "Ref": "Environment"
+        },
+        "production"
+      ]
+    },
+    "HasImage": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "ContainerImage"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "HasCertificate": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "CertificateArn"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "HasLabPolicy": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "LabRuntimePolicyArn"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "HasSesDomain": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "SesIdentityDomain"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "HasAlarmEmail": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "AlarmEmail"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "MultiAzDb": {
+      "Fn::Equals": [
+        {
+          "Ref": "DbMultiAz"
+        },
+        "true"
+      ]
+    },
+    "CleanupScheduleEnabled": {
+      "Fn::And": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "EnableCleanupSchedule"
+            },
+            "true"
+          ]
+        },
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "PublicAppUrl"
+                },
+                ""
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "AlbSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "OXSIG ALB: public HTTPS/HTTP",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-alb"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "AppSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "OXSIG app tasks: only reachable from the ALB",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3000,
+            "ToPort": 3000,
+            "SourceSecurityGroupId": {
+              "Ref": "AlbSecurityGroup"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-app"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "DatabaseSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "OXSIG PostgreSQL: only reachable from app tasks and migration tasks",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": {
+              "Ref": "AppSecurityGroup"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-db"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "AppSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "oxsig/${Environment}/app"
+        },
+        "Description": "OXSIG runtime secrets (JSON). Required keys: DATABASE_URL, CLERK_SECRET_KEY, CLERK_WEBHOOK_SIGNING_SECRET, CRON_SECRET, OXSIG_TERMINAL_BRIDGE_SECRET, ABLY_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY, RESEND_API_KEY, SENTRY_DSN, POSTHOG_PROJECT_TOKEN, LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD. Populate before raising DesiredCount.",
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"DATABASE_URL\":\"\",\"CLERK_SECRET_KEY\":\"\",\"CLERK_WEBHOOK_SIGNING_SECRET\":\"\",\"CRON_SECRET\":\"\",\"ABLY_API_KEY\":\"\",\"OPENAI_API_KEY\":\"\",\"ELEVENLABS_API_KEY\":\"\",\"RESEND_API_KEY\":\"\",\"SENTRY_DSN\":\"\",\"POSTHOG_PROJECT_TOKEN\":\"\",\"LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD\":\"\"}",
+          "GenerateStringKey": "OXSIG_TERMINAL_BRIDGE_SECRET",
+          "PasswordLength": 48,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-app-secret"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "DatabaseSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "OXSIG PostgreSQL subnets",
+        "SubnetIds": {
+          "Ref": "DatabaseSubnetIds"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-db-subnets"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "DatabaseParameterGroup": {
+      "Type": "AWS::RDS::DBParameterGroup",
+      "Properties": {
+        "Description": "OXSIG PostgreSQL parameters",
+        "Family": {
+          "Fn::Sub": "postgres${DbEngineVersion}"
+        },
+        "Parameters": {
+          "rds.force_ssl": "1",
+          "log_min_duration_statement": "1000"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-db-params"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "Database": {
+      "Type": "AWS::RDS::DBInstance",
+      "DeletionPolicy": "Snapshot",
+      "UpdateReplacePolicy": "Snapshot",
+      "Properties": {
+        "DBInstanceIdentifier": {
+          "Fn::Sub": "oxsig-${Environment}"
+        },
+        "Engine": "postgres",
+        "EngineVersion": {
+          "Ref": "DbEngineVersion"
+        },
+        "DBInstanceClass": {
+          "Ref": "DbInstanceClass"
+        },
+        "AllocatedStorage": {
+          "Ref": "DbAllocatedStorage"
+        },
+        "MaxAllocatedStorage": 200,
+        "StorageType": "gp3",
+        "StorageEncrypted": true,
+        "MultiAZ": {
+          "Fn::If": [
+            "MultiAzDb",
+            true,
+            false
+          ]
+        },
+        "DBName": "oxsig",
+        "MasterUsername": "oxsig_admin",
+        "ManageMasterUserPassword": true,
+        "DBSubnetGroupName": {
+          "Ref": "DatabaseSubnetGroup"
+        },
+        "DBParameterGroupName": {
+          "Ref": "DatabaseParameterGroup"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "DatabaseSecurityGroup"
+          }
+        ],
+        "PubliclyAccessible": false,
+        "BackupRetentionPeriod": {
+          "Fn::If": [
+            "IsProduction",
+            14,
+            7
+          ]
+        },
+        "PreferredBackupWindow": "01:00-01:30",
+        "PreferredMaintenanceWindow": "sun:03:00-sun:03:30",
+        "DeletionProtection": {
+          "Fn::If": [
+            "IsProduction",
+            true,
+            false
+          ]
+        },
+        "CopyTagsToSnapshot": true,
+        "AutoMinorVersionUpgrade": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-db"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "Repository": {
+      "Type": "AWS::ECR::Repository",
+      "Properties": {
+        "RepositoryName": {
+          "Fn::Sub": "oxsig-${Environment}"
+        },
+        "ImageTagMutability": "IMMUTABLE",
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true
+        },
+        "EncryptionConfiguration": {
+          "EncryptionType": "AES256"
+        },
+        "LifecyclePolicy": {
+          "LifecyclePolicyText": "{\"rules\":[{\"rulePriority\":1,\"description\":\"Keep the 20 most recent images\",\"selection\":{\"tagStatus\":\"any\",\"countType\":\"imageCountMoreThan\",\"countNumber\":20},\"action\":{\"type\":\"expire\"}}]}"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-ecr"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "LogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/oxsig/${Environment}/app"
+        },
+        "RetentionInDays": {
+          "Ref": "LogRetentionDays"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-logs"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "AlarmTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": {
+          "Fn::Sub": "oxsig-${Environment}-alarms"
+        },
+        "KmsMasterKeyId": "alias/aws/sns",
+        "Subscription": {
+          "Fn::If": [
+            "HasAlarmEmail",
+            [
+              {
+                "Protocol": "email",
+                "Endpoint": {
+                  "Ref": "AlarmEmail"
+                }
+              }
+            ],
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-alarms"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "TaskExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "read-app-secret",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "AppSecret"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-task-execution-role"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "TaskRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": {
+          "Fn::If": [
+            "HasLabPolicy",
+            [
+              {
+                "Ref": "LabRuntimePolicyArn"
+              }
+            ],
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "oxsig-app",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "UserStorage",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::${StorageBucketName}/*"
+                  }
+                },
+                {
+                  "Sid": "UserStorageList",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:ListBucket"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::${StorageBucketName}"
+                  }
+                },
+                {
+                  "Sid": "GenerativeAi",
+                  "Effect": "Allow",
+                  "Action": [
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "TransactionalEmail",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ses:SendEmail"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "ses:ApiVersion": "2"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-task-role"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "Cluster": {
+      "Type": "AWS::ECS::Cluster",
+      "Properties": {
+        "ClusterName": {
+          "Fn::Sub": "oxsig-${Environment}"
+        },
+        "ClusterSettings": [
+          {
+            "Name": "containerInsights",
+            "Value": "disabled"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-cluster"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "TaskDefinition": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": {
+          "Fn::Sub": "oxsig-${Environment}-app"
+        },
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "NetworkMode": "awsvpc",
+        "Cpu": {
+          "Ref": "TaskCpu"
+        },
+        "Memory": {
+          "Ref": "TaskMemory"
+        },
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "TaskExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "TaskRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "app",
+            "Image": {
+              "Fn::If": [
+                "HasImage",
+                {
+                  "Ref": "ContainerImage"
+                },
+                "public.ecr.aws/docker/library/node:22-bookworm-slim"
+              ]
+            },
+            "Essential": true,
+            "PortMappings": [
+              {
+                "ContainerPort": 3000,
+                "Protocol": "tcp"
+              }
+            ],
+            "StopTimeout": 60,
+            "Environment": [
+              {
+                "Name": "NODE_ENV",
+                "Value": "production"
+              },
+              {
+                "Name": "OXSIG_DEPLOY_ENV",
+                "Value": {
+                  "Ref": "Environment"
+                }
+              },
+              {
+                "Name": "OXSIG_APP_URL",
+                "Value": {
+                  "Ref": "PublicAppUrl"
+                }
+              },
+              {
+                "Name": "ALLOWED_ORIGINS",
+                "Value": {
+                  "Ref": "PublicAppUrl"
+                }
+              },
+              {
+                "Name": "AWS_REGION",
+                "Value": {
+                  "Ref": "AWS::Region"
+                }
+              },
+              {
+                "Name": "STORAGE_BUCKET",
+                "Value": {
+                  "Ref": "StorageBucketName"
+                }
+              },
+              {
+                "Name": "STORAGE_REGION",
+                "Value": {
+                  "Ref": "StorageRegion"
+                }
+              },
+              {
+                "Name": "LAB_AWS_ENABLED",
+                "Value": {
+                  "Ref": "LabAwsEnabled"
+                }
+              },
+              {
+                "Name": "OXSIG_AI_PROVIDER",
+                "Value": {
+                  "Ref": "AiProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_AI_FALLBACK_PROVIDER",
+                "Value": {
+                  "Ref": "AiFallbackProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_BEDROCK_MODEL_ID",
+                "Value": {
+                  "Ref": "BedrockModelId"
+                }
+              },
+              {
+                "Name": "OXSIG_EMAIL_PROVIDER",
+                "Value": {
+                  "Ref": "EmailProvider"
+                }
+              },
+              {
+                "Name": "EMAIL_FROM",
+                "Value": {
+                  "Ref": "EmailFrom"
+                }
+              },
+              {
+                "Name": "SES_CONFIGURATION_SET",
+                "Value": {
+                  "Fn::If": [
+                    "HasSesDomain",
+                    {
+                      "Ref": "SesConfigurationSet"
+                    },
+                    ""
+                  ]
+                }
+              }
+            ],
+            "Secrets": [
+              {
+                "Name": "DATABASE_URL",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:DATABASE_URL::"
+                }
+              },
+              {
+                "Name": "CLERK_SECRET_KEY",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:CLERK_SECRET_KEY::"
+                }
+              },
+              {
+                "Name": "CLERK_WEBHOOK_SIGNING_SECRET",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:CLERK_WEBHOOK_SIGNING_SECRET::"
+                }
+              },
+              {
+                "Name": "CRON_SECRET",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:CRON_SECRET::"
+                }
+              },
+              {
+                "Name": "OXSIG_TERMINAL_BRIDGE_SECRET",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:OXSIG_TERMINAL_BRIDGE_SECRET::"
+                }
+              },
+              {
+                "Name": "ABLY_API_KEY",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:ABLY_API_KEY::"
+                }
+              },
+              {
+                "Name": "OPENAI_API_KEY",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:OPENAI_API_KEY::"
+                }
+              },
+              {
+                "Name": "ELEVENLABS_API_KEY",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:ELEVENLABS_API_KEY::"
+                }
+              },
+              {
+                "Name": "RESEND_API_KEY",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:RESEND_API_KEY::"
+                }
+              },
+              {
+                "Name": "SENTRY_DSN",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:SENTRY_DSN::"
+                }
+              },
+              {
+                "Name": "POSTHOG_PROJECT_TOKEN",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:POSTHOG_PROJECT_TOKEN::"
+                }
+              },
+              {
+                "Name": "LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD",
+                "ValueFrom": {
+                  "Fn::Sub": "${AppSecret}:LAB_AWS_BLACK_DOMAIN_INITIAL_PASSWORD::"
+                }
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "LogGroup"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "app"
+              }
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-task"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "LoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "oxsig-${Environment}"
+        },
+        "Scheme": "internet-facing",
+        "Type": "application",
+        "Subnets": {
+          "Ref": "PublicSubnetIds"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "AlbSecurityGroup"
+          }
+        ],
+        "LoadBalancerAttributes": [
+          {
+            "Key": "idle_timeout.timeout_seconds",
+            "Value": "3600"
+          },
+          {
+            "Key": "routing.http.drop_invalid_header_fields.enabled",
+            "Value": "true"
+          },
+          {
+            "Key": "deletion_protection.enabled",
+            "Value": {
+              "Fn::If": [
+                "IsProduction",
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-alb"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "TargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "oxsig-${Environment}-app"
+        },
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "TargetType": "ip",
+        "Protocol": "HTTP",
+        "Port": 3000,
+        "HealthCheckPath": "/api/health",
+        "HealthCheckIntervalSeconds": 15,
+        "HealthyThresholdCount": 2,
+        "UnhealthyThresholdCount": 3,
+        "Matcher": {
+          "HttpCode": "200"
+        },
+        "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "120"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-tg"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "ListenerReady": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle",
+      "Metadata": {
+        "Listener": {
+          "Fn::If": [
+            "HasCertificate",
+            {
+              "Ref": "HttpsListener"
+            },
+            {
+              "Ref": "HttpListener"
+            }
+          ]
+        }
+      }
+    },
+    "HttpsListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Condition": "HasCertificate",
+      "Properties": {
+        "LoadBalancerArn": {
+          "Ref": "LoadBalancer"
+        },
+        "Port": 443,
+        "Protocol": "HTTPS",
+        "SslPolicy": "ELBSecurityPolicy-TLS13-1-2-2021-06",
+        "Certificates": [
+          {
+            "CertificateArn": {
+              "Ref": "CertificateArn"
+            }
+          }
+        ],
+        "DefaultActions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "TargetGroup"
+            }
+          }
+        ]
+      }
+    },
+    "HttpListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "LoadBalancerArn": {
+          "Ref": "LoadBalancer"
+        },
+        "Port": 80,
+        "Protocol": "HTTP",
+        "DefaultActions": {
+          "Fn::If": [
+            "HasCertificate",
+            [
+              {
+                "Type": "redirect",
+                "RedirectConfig": {
+                  "Protocol": "HTTPS",
+                  "Port": "443",
+                  "StatusCode": "HTTP_301"
+                }
+              }
+            ],
+            [
+              {
+                "Type": "forward",
+                "TargetGroupArn": {
+                  "Ref": "TargetGroup"
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "Service": {
+      "Type": "AWS::ECS::Service",
+      "DependsOn": [
+        "ListenerReady"
+      ],
+      "Properties": {
+        "ServiceName": "app",
+        "Cluster": {
+          "Ref": "Cluster"
+        },
+        "LaunchType": "FARGATE",
+        "TaskDefinition": {
+          "Ref": "TaskDefinition"
+        },
+        "DesiredCount": {
+          "Fn::If": [
+            "HasImage",
+            {
+              "Ref": "DesiredCount"
+            },
+            0
+          ]
+        },
+        "HealthCheckGracePeriodSeconds": 90,
+        "DeploymentConfiguration": {
+          "MinimumHealthyPercent": 100,
+          "MaximumPercent": 200,
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true
+          }
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "Subnets": {
+              "Ref": "PublicSubnetIds"
+            },
+            "SecurityGroups": [
+              {
+                "Ref": "AppSecurityGroup"
+              }
+            ]
+          }
+        },
+        "LoadBalancers": [
+          {
+            "ContainerName": "app",
+            "ContainerPort": 3000,
+            "TargetGroupArn": {
+              "Ref": "TargetGroup"
+            }
+          }
+        ],
+        "PropagateTags": "SERVICE",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "oxsig-${Environment}-service"
+            }
+          },
+          {
+            "Key": "oxsig:environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "oxsig:managed-by",
+            "Value": "cloudformation"
+          }
+        ]
+      }
+    },
+    "AlbServerErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "OXSIG: elevated 5xx responses from app targets",
+        "Namespace": "AWS/ApplicationELB",
+        "MetricName": "HTTPCode_Target_5XX_Count",
+        "Dimensions": [
+          {
+            "Name": "LoadBalancer",
+            "Value": {
+              "Fn::GetAtt": [
+                "LoadBalancer",
+                "LoadBalancerFullName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 10,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "UnhealthyTargetsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "OXSIG: app targets failing /api/health",
+        "Namespace": "AWS/ApplicationELB",
+        "MetricName": "UnHealthyHostCount",
+        "Dimensions": [
+          {
+            "Name": "LoadBalancer",
+            "Value": {
+              "Fn::GetAtt": [
+                "LoadBalancer",
+                "LoadBalancerFullName"
+              ]
+            }
+          },
+          {
+            "Name": "TargetGroup",
+            "Value": {
+              "Fn::GetAtt": [
+                "TargetGroup",
+                "TargetGroupFullName"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "LatencyAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "OXSIG: p95 target response time above 2s",
+        "Namespace": "AWS/ApplicationELB",
+        "MetricName": "TargetResponseTime",
+        "Dimensions": [
+          {
+            "Name": "LoadBalancer",
+            "Value": {
+              "Fn::GetAtt": [
+                "LoadBalancer",
+                "LoadBalancerFullName"
+              ]
+            }
+          }
+        ],
+        "ExtendedStatistic": "p95",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 2,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "DatabaseCpuAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "OXSIG: database CPU above 80%",
+        "Namespace": "AWS/RDS",
+        "MetricName": "CPUUtilization",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "Database"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 3,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "DatabaseStorageAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "OXSIG: database free storage below 2 GiB",
+        "Namespace": "AWS/RDS",
+        "MetricName": "FreeStorageSpace",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "Database"
+            }
+          }
+        ],
+        "Statistic": "Minimum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 2147483648,
+        "ComparisonOperator": "LessThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "DatabaseConnectionsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "OXSIG: database connections above 70 (pool max is 12 per task)",
+        "Namespace": "AWS/RDS",
+        "MetricName": "DatabaseConnections",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "Database"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 70,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "MonthlyBudget": {
+      "Type": "AWS::Budgets::Budget",
+      "Properties": {
+        "Budget": {
+          "BudgetName": {
+            "Fn::Sub": "oxsig-${Environment}-account-monthly-gross"
+          },
+          "BudgetType": "COST",
+          "TimeUnit": "MONTHLY",
+          "BudgetLimit": {
+            "Amount": {
+              "Ref": "MonthlyBudgetUsd"
+            },
+            "Unit": "USD"
+          },
+          "CostTypes": {
+            "IncludeCredit": false,
+            "IncludeRefund": false,
+            "IncludeTax": true,
+            "IncludeSupport": false
+          }
+        },
+        "NotificationsWithSubscribers": {
+          "Fn::If": [
+            "HasAlarmEmail",
+            [
+              {
+                "Notification": {
+                  "NotificationType": "ACTUAL",
+                  "ComparisonOperator": "GREATER_THAN",
+                  "Threshold": 50,
+                  "ThresholdType": "PERCENTAGE"
+                },
+                "Subscribers": [
+                  {
+                    "SubscriptionType": "EMAIL",
+                    "Address": {
+                      "Ref": "AlarmEmail"
+                    }
+                  }
+                ]
+              },
+              {
+                "Notification": {
+                  "NotificationType": "ACTUAL",
+                  "ComparisonOperator": "GREATER_THAN",
+                  "Threshold": 80,
+                  "ThresholdType": "PERCENTAGE"
+                },
+                "Subscribers": [
+                  {
+                    "SubscriptionType": "EMAIL",
+                    "Address": {
+                      "Ref": "AlarmEmail"
+                    }
+                  }
+                ]
+              },
+              {
+                "Notification": {
+                  "NotificationType": "FORECASTED",
+                  "ComparisonOperator": "GREATER_THAN",
+                  "Threshold": 100,
+                  "ThresholdType": "PERCENTAGE"
+                },
+                "Subscribers": [
+                  {
+                    "SubscriptionType": "EMAIL",
+                    "Address": {
+                      "Ref": "AlarmEmail"
+                    }
+                  }
+                ]
+              }
+            ],
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        }
+      }
+    },
+    "SesConfigurationSet": {
+      "Type": "AWS::SES::ConfigurationSet",
+      "Condition": "HasSesDomain",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "oxsig-${Environment}"
+        },
+        "ReputationOptions": {
+          "ReputationMetricsEnabled": true
+        },
+        "SendingOptions": {
+          "SendingEnabled": true
+        },
+        "SuppressionOptions": {
+          "SuppressedReasons": [
+            "BOUNCE",
+            "COMPLAINT"
+          ]
+        }
+      }
+    },
+    "SesIdentity": {
+      "Type": "AWS::SES::EmailIdentity",
+      "Condition": "HasSesDomain",
+      "Properties": {
+        "EmailIdentity": {
+          "Ref": "SesIdentityDomain"
+        },
+        "ConfigurationSetAttributes": {
+          "ConfigurationSetName": {
+            "Ref": "SesConfigurationSet"
+          }
+        },
+        "DkimSigningAttributes": {
+          "NextSigningKeyLength": "RSA_2048_BIT"
+        }
+      }
+    },
+    "CleanupConnection": {
+      "Type": "AWS::Events::Connection",
+      "Condition": "CleanupScheduleEnabled",
+      "Properties": {
+        "Description": "Bearer CRON_SECRET for /api/internal/labs/cleanup",
+        "AuthorizationType": "API_KEY",
+        "AuthParameters": {
+          "ApiKeyAuthParameters": {
+            "ApiKeyName": "Authorization",
+            "ApiKeyValue": {
+              "Fn::Sub": "Bearer {{resolve:secretsmanager:${AppSecret}:SecretString:CRON_SECRET}}"
+            }
+          }
+        }
+      }
+    },
+    "CleanupDestination": {
+      "Type": "AWS::Events::ApiDestination",
+      "Condition": "CleanupScheduleEnabled",
+      "Properties": {
+        "ConnectionArn": {
+          "Fn::GetAtt": [
+            "CleanupConnection",
+            "Arn"
+          ]
+        },
+        "InvocationEndpoint": {
+          "Fn::Sub": "${PublicAppUrl}/api/internal/labs/cleanup"
+        },
+        "HttpMethod": "GET",
+        "InvocationRateLimitPerSecond": 1
+      }
+    },
+    "CleanupInvokeRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "CleanupScheduleEnabled",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "invoke-cleanup",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "events:InvokeApiDestination",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "CleanupDestination",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CleanupRule": {
+      "Type": "AWS::Events::Rule",
+      "Condition": "CleanupScheduleEnabled",
+      "Properties": {
+        "Description": "Daily lab expiry cleanup (replaces the vercel.json cron 17 2 * * *)",
+        "ScheduleExpression": "cron(17 2 * * ? *)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Id": "cleanup",
+            "Arn": {
+              "Fn::GetAtt": [
+                "CleanupDestination",
+                "Arn"
+              ]
+            },
+            "RoleArn": {
+              "Fn::GetAtt": [
+                "CleanupInvokeRole",
+                "Arn"
+              ]
+            },
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 3,
+              "MaximumEventAgeInSeconds": 3600
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "LoadBalancerDnsName": {
+      "Description": "Point a staging hostname here (DNS is not changed by this stack).",
+      "Value": {
+        "Fn::GetAtt": [
+          "LoadBalancer",
+          "DNSName"
+        ]
+      }
+    },
+    "DatabaseEndpoint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Database",
+          "Endpoint.Address"
+        ]
+      }
+    },
+    "DatabaseMasterSecretArn": {
+      "Description": "RDS-managed master credentials (rotate-able). Build DATABASE_URL from it.",
+      "Value": {
+        "Fn::GetAtt": [
+          "Database",
+          "MasterUserSecret.SecretArn"
+        ]
+      }
+    },
+    "AppSecretArn": {
+      "Value": {
+        "Ref": "AppSecret"
+      }
+    },
+    "RepositoryUri": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Repository",
+          "RepositoryUri"
+        ]
+      }
+    },
+    "ClusterName": {
+      "Value": {
+        "Ref": "Cluster"
+      }
+    },
+    "ServiceName": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Service",
+          "Name"
+        ]
+      }
+    },
+    "TaskDefinitionArn": {
+      "Value": {
+        "Ref": "TaskDefinition"
+      }
+    },
+    "AppSecurityGroupId": {
+      "Description": "Use for one-off migration tasks (ecs run-task).",
+      "Value": {
+        "Ref": "AppSecurityGroup"
+      }
+    },
+    "LogGroupName": {
+      "Value": {
+        "Ref": "LogGroup"
+      }
+    },
+    "SesDkimRecords": {
+      "Condition": "HasSesDomain",
+      "Description": "Add these three CNAMEs at your DNS provider to verify the SES domain.",
+      "Value": {
+        "Fn::Join": [
+          ", ",
+          [
+            {
+              "Fn::GetAtt": [
+                "SesIdentity",
+                "DkimDNSTokenName1"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SesIdentity",
+                "DkimDNSTokenName2"
+              ]
+            },
+            {
+              "Fn::GetAtt": [
+                "SesIdentity",
+                "DkimDNSTokenName3"
+              ]
+            }
+          ]
+        ]
+      }
+    }
+  }
+}
