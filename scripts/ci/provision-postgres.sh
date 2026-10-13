@@ -62,10 +62,16 @@ fi
 if command -v apt-get >/dev/null 2>&1; then
   log "Installing PostgreSQL via apt"
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq postgresql postgresql-contrib >/dev/null
-  CLUSTER_VERSION="$(ls /etc/postgresql | sort -V | tail -1)"
-  pg_ctlcluster "$CLUSTER_VERSION" main start
+  # Third-party apt sources on CI images sometimes have stale keys; the
+  # distribution repositories are what matter here.
+  apt-get update -qq || log "apt-get update reported errors; continuing with available indexes"
+  apt-get install -y -qq --no-install-recommends postgresql postgresql-contrib >/dev/null
+  CLUSTER_VERSION="$(ls /usr/lib/postgresql | sort -V | tail -1)"
+  if ! pg_lsclusters -h 2>/dev/null | awk '{print $1" "$2}' | grep -q "^${CLUSTER_VERSION} main$"; then
+    pg_createcluster "$CLUSTER_VERSION" main >/dev/null
+  fi
+  pg_ctlcluster "$CLUSTER_VERSION" main start || service postgresql start
+  log "PostgreSQL ${CLUSTER_VERSION} started"
   create_role_and_db
   wait_ready
   exit 0
@@ -74,13 +80,13 @@ fi
 if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
   PKG="$(command -v dnf || command -v yum)"
   log "Installing PostgreSQL via $(basename "$PKG")"
-  "$PKG" install -y -q postgresql16-server postgresql16 >/dev/null 2>&1 \
-    || "$PKG" install -y -q postgresql15-server postgresql15 >/dev/null 2>&1 \
-    || "$PKG" install -y -q postgresql-server postgresql >/dev/null
+  "$PKG" install -y -q postgresql16-server postgresql16 \
+    || "$PKG" install -y -q postgresql15-server postgresql15 \
+    || "$PKG" install -y -q postgresql-server postgresql
   DATA_DIR="/tmp/oxsig-ci-pgdata"
   INITDB="$(command -v initdb || ls /usr/bin/initdb /usr/pgsql-*/bin/initdb 2>/dev/null | head -1)"
   PG_CTL="$(command -v pg_ctl || ls /usr/bin/pg_ctl /usr/pgsql-*/bin/pg_ctl 2>/dev/null | head -1)"
-  id postgres >/dev/null 2>&1 || useradd -r postgres
+  id postgres >/dev/null 2>&1 || useradd -r -m postgres
   rm -rf "$DATA_DIR" && mkdir -p "$DATA_DIR" && chown postgres "$DATA_DIR"
   su postgres -s /bin/bash -c "$INITDB -D $DATA_DIR -A trust -U postgres >/dev/null"
   su postgres -s /bin/bash -c "$PG_CTL -D $DATA_DIR -o '-p ${PORT} -k /tmp' -l /tmp/oxsig-ci-postgres.log -w start"
