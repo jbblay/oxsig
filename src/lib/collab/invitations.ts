@@ -8,7 +8,7 @@ import {
   publicAppUrl,
   sendTransactionalEmail,
   type EmailDeliveryResult,
-} from '@/lib/email/resend';
+} from '@/lib/email/server';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
