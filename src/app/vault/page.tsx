@@ -36,6 +36,7 @@ import {
   deleteVaultItem,
   listVaultItems,
   updateVaultItem,
+  VaultConflictError,
 } from '@/lib/vault/api';
 import { optimisticTogglePinned, replaceVaultItem } from '@/lib/vault/optimistic';
 import {
@@ -95,6 +96,9 @@ function itemEditor(item: VaultItem): EditorState {
   };
 }
 
+const MAX_VAULT_TAGS = 12;
+const MAX_VAULT_TAG_LENGTH = 40;
+
 function parseTags(value: string) {
   return Array.from(
     new Set(
@@ -103,7 +107,20 @@ function parseTags(value: string) {
         .map((tag) => tag.trim().toLowerCase())
         .filter(Boolean)
     )
-  ).slice(0, 12);
+  ).slice(0, MAX_VAULT_TAGS);
+}
+
+/** Client-side mirror of the server tag contract so users see which tag is invalid before saving. */
+function vaultTagProblem(value: string): string | null {
+  const tooLong = parseTags(value).find((tag) => tag.length > MAX_VAULT_TAG_LENGTH);
+  return tooLong ? `Tag “${tooLong.slice(0, 24)}…” is longer than ${MAX_VAULT_TAG_LENGTH} characters.` : null;
+}
+
+function sortVaultItems(items: VaultItem[]) {
+  return [...items].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+  });
 }
 
 function relativeDate(value: string) {
@@ -139,6 +156,9 @@ export default function VaultPage() {
   const [editor, setEditor] = React.useState<EditorState>(() => blankEditor());
   const [baselineEditor, setBaselineEditor] = React.useState<EditorState>(() => blankEditor());
   const [baselineUpdatedAt, setBaselineUpdatedAt] = React.useState<string | null>(null);
+  // The server version the editor content was derived from. Sent with every
+  // update so the server can reject saves made against a stale copy.
+  const [baselineVersion, setBaselineVersion] = React.useState<number | null>(null);
   const [editorAccountId, setEditorAccountId] = React.useState<string | null>(null);
   const identityRef = React.useRef<string | null>(sessionIdentityId);
   const previousIdentityRef = React.useRef<string | null>(null);
@@ -178,6 +198,7 @@ export default function VaultPage() {
     setEditor(next);
     setBaselineEditor(next);
     setBaselineUpdatedAt(null);
+    setBaselineVersion(null);
     setEditorAccountId(null);
   }, [authLoading, sessionIdentityId]);
 
@@ -195,6 +216,7 @@ export default function VaultPage() {
     () => JSON.stringify(editor) !== JSON.stringify(baselineEditor),
     [baselineEditor, editor]
   );
+  const tagProblem = React.useMemo(() => vaultTagProblem(editor.tags), [editor.tags]);
 
   React.useEffect(() => {
     if (!sessionIdentityId || loading || loadError) return;
@@ -215,7 +237,10 @@ export default function VaultPage() {
       return;
     }
 
-    if (recovery.baseUpdatedAt !== item.updatedAt) {
+    const serverChanged = typeof recovery.baseVersion === 'number'
+      ? recovery.baseVersion !== item.version
+      : recovery.baseUpdatedAt !== item.updatedAt;
+    if (serverChanged) {
       const restore = window.confirm(
         'This Vault item has a newer saved version than your recovery draft. Restore your unsaved draft anyway?'
       );
@@ -230,6 +255,7 @@ export default function VaultPage() {
     setEditor(recovery.editor);
     setBaselineEditor(serverEditor);
     setBaselineUpdatedAt(item.updatedAt);
+    setBaselineVersion(item.version);
     setEditorAccountId(sessionIdentityId);
     toast.success('Recovered unsaved Vault changes.');
   }, [items, loadError, loading, sessionIdentityId]);
@@ -249,9 +275,10 @@ export default function VaultPage() {
     writeVaultEditRecovery(sessionIdentityId, {
       itemId: active.id,
       baseUpdatedAt: baselineUpdatedAt,
+      baseVersion: baselineVersion ?? undefined,
       editor,
     });
-  }, [active, baselineUpdatedAt, creating, dirty, editor, editorAccountId, sessionIdentityId]);
+  }, [active, baselineUpdatedAt, baselineVersion, creating, dirty, editor, editorAccountId, sessionIdentityId]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -296,6 +323,7 @@ export default function VaultPage() {
     setEditor(next);
     setBaselineEditor(next);
     setBaselineUpdatedAt(item.updatedAt);
+    setBaselineVersion(item.version);
     setEditorAccountId(sessionIdentityId);
   }
 
@@ -307,12 +335,18 @@ export default function VaultPage() {
     setEditor(next);
     setBaselineEditor(next);
     setBaselineUpdatedAt(null);
+    setBaselineVersion(null);
     setEditorAccountId(sessionIdentityId);
   }
 
   async function createItem() {
     if (!editor.title.trim()) {
       toast.error('Add a title.');
+      return;
+    }
+    const tagProblem = vaultTagProblem(editor.tags);
+    if (tagProblem) {
+      toast.error(tagProblem);
       return;
     }
     setSaving(true);
@@ -334,6 +368,7 @@ export default function VaultPage() {
       setEditor(next);
       setBaselineEditor(next);
       setBaselineUpdatedAt(created.updatedAt);
+      setBaselineVersion(created.version);
       setEditorAccountId(sessionIdentityId);
       toast.success('Saved to Vault.');
     } catch (error) {
@@ -344,8 +379,41 @@ export default function VaultPage() {
     }
   }
 
+  /**
+   * Rebase the editor on the latest server copy after a version conflict.
+   * The user's unsaved text is kept (still marked Unsaved) so nothing is lost;
+   * saving again is an explicit decision to overwrite the newer server copy,
+   * and Discard restores the server copy.
+   */
+  function rebaseOnServerCopy(current: VaultItem) {
+    setItems((items) => sortVaultItems(replaceVaultItem(items, current)));
+    if (activeId === current.id) {
+      setBaselineEditor(itemEditor(current));
+      setBaselineUpdatedAt(current.updatedAt);
+      setBaselineVersion(current.version);
+    }
+  }
+
+  function reportUpdateFailure(error: unknown, fallback: string) {
+    if (error instanceof VaultConflictError) {
+      if (error.current) {
+        rebaseOnServerCopy(error.current);
+        toast.error('This item was changed elsewhere. Your edits are kept — Save again to overwrite, or Discard to load the latest copy.');
+      } else {
+        toast.error(error.message);
+      }
+      return;
+    }
+    toast.error(error instanceof Error ? error.message : fallback);
+  }
+
   async function saveActive() {
     if (!active || !editor.title.trim()) return;
+    const tagProblem = vaultTagProblem(editor.tags);
+    if (tagProblem) {
+      toast.error(tagProblem);
+      return;
+    }
     setSaving(true);
     try {
       const updated = await updateVaultItem(active.id, {
@@ -355,18 +423,19 @@ export default function VaultPage() {
         body: editor.body,
         language: editor.language.trim() || null,
         tags: parseTags(editor.tags),
-      });
+      }, baselineVersion ?? active.version);
       const next = itemEditor(updated);
       clearRecoveryForCurrentAccount();
-      setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setItems((current) => sortVaultItems(replaceVaultItem(current, updated)));
       setEditor(next);
       setBaselineEditor(next);
       setBaselineUpdatedAt(updated.updatedAt);
+      setBaselineVersion(updated.version);
       setEditorAccountId(sessionIdentityId);
       toast.success('Saved.');
     } catch (error) {
       console.error('Failed to update Vault item:', error);
-      toast.error(error instanceof Error ? error.message : 'Could not update Vault item');
+      reportUpdateFailure(error, 'Could not update Vault item');
     } finally {
       setSaving(false);
     }
@@ -378,12 +447,18 @@ export default function VaultPage() {
     setSaving(true);
     setItems((current) => replaceVaultItem(current, optimistic));
     try {
-      const updated = await updateVaultItem(item.id, { pinned: optimistic.pinned });
-      setItems((current) => replaceVaultItem(current, updated));
-      if (activeId === updated.id) setBaselineUpdatedAt(updated.updatedAt);
+      // The pin toggle only changes `pinned`, so when the editor is based on the
+      // same version its content stays valid and its base version advances.
+      const editorBasedOnItem = activeId === item.id && baselineVersion === item.version;
+      const updated = await updateVaultItem(item.id, { pinned: optimistic.pinned }, item.version);
+      setItems((current) => sortVaultItems(replaceVaultItem(current, updated)));
+      if (editorBasedOnItem) {
+        setBaselineUpdatedAt(updated.updatedAt);
+        setBaselineVersion(updated.version);
+      }
     } catch (error) {
       setItems((current) => replaceVaultItem(current, previous));
-      toast.error(error instanceof Error ? error.message : 'Could not update pin');
+      reportUpdateFailure(error, 'Could not update pin');
     } finally {
       setSaving(false);
     }
@@ -393,7 +468,7 @@ export default function VaultPage() {
     if (!active) return;
     setSaving(true);
     try {
-      await updateVaultItem(active.id, { archived: true });
+      await updateVaultItem(active.id, { archived: true }, baselineVersion ?? active.version);
       const next = blankEditor();
       clearRecoveryForCurrentAccount();
       setItems((current) => current.filter((item) => item.id !== active.id));
@@ -402,10 +477,11 @@ export default function VaultPage() {
       setEditor(next);
       setBaselineEditor(next);
       setBaselineUpdatedAt(null);
+      setBaselineVersion(null);
       setEditorAccountId(null);
       toast.success('Archived.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not archive Vault item');
+      reportUpdateFailure(error, 'Could not archive Vault item');
     } finally {
       setSaving(false);
     }
@@ -424,6 +500,7 @@ export default function VaultPage() {
       setEditor(next);
       setBaselineEditor(next);
       setBaselineUpdatedAt(null);
+      setBaselineVersion(null);
       setEditorAccountId(null);
       toast.success('Deleted.');
     } catch (error) {
@@ -491,6 +568,7 @@ export default function VaultPage() {
       setEditor(next);
       setBaselineEditor(next);
       setBaselineUpdatedAt(null);
+      setBaselineVersion(null);
       setEditorAccountId(null);
       return;
     }
@@ -499,6 +577,7 @@ export default function VaultPage() {
       setEditor(next);
       setBaselineEditor(next);
       setBaselineUpdatedAt(active.updatedAt);
+      setBaselineVersion(active.version);
       setEditorAccountId(sessionIdentityId);
     }
   }
@@ -512,6 +591,7 @@ export default function VaultPage() {
     setEditor(next);
     setBaselineEditor(next);
     setBaselineUpdatedAt(null);
+    setBaselineVersion(null);
     setEditorAccountId(null);
   };
 
@@ -609,7 +689,8 @@ export default function VaultPage() {
                 <label className="block space-y-1.5 text-xs font-medium">Title<Input value={editor.title} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} placeholder="Nmap service enumeration" maxLength={160} disabled={saving} /></label>
                 <label className="block space-y-1.5 text-xs font-medium">Summary<Textarea value={editor.summary} onChange={(event) => setEditor((current) => ({ ...current, summary: event.target.value }))} placeholder="Optional summary" className="min-h-[76px]" maxLength={500} disabled={saving} /></label>
                 <label className="block space-y-1.5 text-xs font-medium">{BODY_LABELS[editor.kind]}<Textarea value={editor.body} onChange={(event) => setEditor((current) => ({ ...current, body: event.target.value }))} placeholder={BODY_PLACEHOLDERS[editor.kind]} className="min-h-[260px] font-mono text-xs leading-5" maxLength={100000} disabled={saving} /></label>
-                <label className="block space-y-1.5 text-xs font-medium">Tags<Input value={editor.tags} onChange={(event) => setEditor((current) => ({ ...current, tags: event.target.value }))} placeholder="nmap, enumeration, networking" disabled={saving} /></label>
+                <label className="block space-y-1.5 text-xs font-medium">Tags<Input value={editor.tags} onChange={(event) => setEditor((current) => ({ ...current, tags: event.target.value }))} placeholder="nmap, enumeration, networking" disabled={saving} aria-invalid={tagProblem ? true : undefined} aria-describedby={tagProblem ? 'vault-tag-problem' : undefined} /></label>
+                {tagProblem && <p id="vault-tag-problem" role="alert" className="text-xs text-destructive">{tagProblem}</p>}
 
                 <div className="flex flex-wrap gap-2 border-t pt-4">
                   {creating ? <Button onClick={() => void createItem()} disabled={saving || !editor.title.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button> : <Button onClick={() => void saveActive()} disabled={saving || !editor.title.trim() || !dirty}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save</Button>}
