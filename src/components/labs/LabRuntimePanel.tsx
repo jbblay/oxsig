@@ -647,7 +647,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
               ))}
             </aside>
 
-            <section aria-label="Lab topology" className={`oxsig-lab-canvas relative overflow-hidden rounded-xl border bg-muted/10 ${nodes.length === 0 ? "hidden" : ""}`}>
+            <section aria-label="Lab topology" data-topology-visible={nodes.length > 0} className="oxsig-lab-canvas relative overflow-hidden rounded-xl border bg-muted/10">
               <ReactFlow<LabMachineFlowNode, Edge>
                 nodes={nodes}
                 edges={edges}
