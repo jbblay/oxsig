@@ -166,3 +166,21 @@ test('Polly TTS is available with explicit opt-in and least required task permis
   assert.deepEqual(vars.OXSIG_VOICE_TTS_PROVIDER, { Ref: 'VoiceTtsProvider' });
   assert.deepEqual(vars.OXSIG_POLLY_REGION, { Ref: 'VoicePollyRegion' });
 });
+
+test('AWS Transcribe STT is opt-in and has narrowly scoped transcription-job permissions', () => {
+  assert.equal(Parameters.VoiceSttProvider.Default, 'elevenlabs');
+  assert.equal(Parameters.VoiceSttFallbackProvider.Default, '');
+  const statements = Resources.TaskRole.Properties.Policies[0].PolicyDocument.Statement;
+  const transcribe = statements.find((s) => s.Sid === 'VoiceTranscription');
+  assert.ok(transcribe);
+  assert.deepEqual(transcribe.Action, [
+    'transcribe:StartTranscriptionJob',
+    'transcribe:GetTranscriptionJob',
+    'transcribe:DeleteTranscriptionJob',
+  ]);
+  const vars = Object.fromEntries(
+    Resources.TaskDefinition.Properties.ContainerDefinitions[0].Environment.map((v) => [v.Name, v.Value])
+  );
+  assert.deepEqual(vars.OXSIG_VOICE_STT_PROVIDER, { Ref: 'VoiceSttProvider' });
+  assert.deepEqual(vars.OXSIG_TRANSCRIBE_REGION, { Ref: 'VoiceTranscribeRegion' });
+});
