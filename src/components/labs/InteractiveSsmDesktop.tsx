@@ -455,6 +455,12 @@ export default function InteractiveSsmDesktop({
         </div>
       </div>
 
+      {platform === "linux" && !sessionEndpoint && state === "connected" && (
+        <p className="text-xs text-muted-foreground" role="status">
+          Linux uses a dedicated <code>oxsig-desktop</code> session already signed in through the private OXSIG browser tunnel. No separate desktop password is required.
+        </p>
+      )}
+
       {platform === "windows" && !sessionEndpoint && state === "connected" && (
         <div className="space-y-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-xs">
           <div className="font-semibold">Windows login</div>
