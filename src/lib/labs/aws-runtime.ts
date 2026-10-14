@@ -466,6 +466,11 @@ export async function executeLabCommand(
         stdout: result.StandardOutputContent || '',
         stderr: result.StandardErrorContent || '',
         exitCode: result.ResponseCode ?? (result.Status === 'Success' ? 0 : 1),
+        // StatusDetails distinguishes undelivered commands (SSM agent offline)
+        // from a guest script that actually ran and failed. Never log stdout/stderr
+        // from credential-handling commands because they may contain guest data.
+        status: result.Status || 'Unknown',
+        statusDetails: result.StatusDetails || result.Status || 'Unknown',
       };
     } catch (error: any) {
       if (error?.name === 'InvocationDoesNotExist') continue;
