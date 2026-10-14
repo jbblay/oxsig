@@ -86,6 +86,10 @@ async function main() {
           throw new Error(`${filename}: checksum mismatch for an already-applied migration`);
         }
         if (!recordedChecksum) {
+          // Ledger rows written before checksums existed (pre-9739a6e) are
+          // adopted with the file's current hash. This cannot prove the file
+          // is unchanged since it was applied, so make every adoption visible.
+          console.warn(`adopting checksum for pre-checksum ledger entry ${filename} (cannot verify historical edits)`);
           await client.query(
             'UPDATE oxisg_schema_migrations SET checksum=$2 WHERE filename=$1 AND checksum IS NULL',
             [filename, checksum]

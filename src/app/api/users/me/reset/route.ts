@@ -10,14 +10,11 @@ import { collaborationObjectPrefix } from '@/lib/collab/server';
 import { getUserStoragePrefix } from '@/lib/storage/server';
 import { deleteStorageKeys, deleteStoragePrefix } from '@/lib/storage/cleanup';
 import { storyboardAudioPrefix } from '@/lib/storyboards/audio-storage';
+import { resetEnabled } from '@/lib/account/test-reset-policy';
 
 export const runtime = 'nodejs';
 
 const bodySchema = z.object({ confirmation: z.literal('RESET MY OXSIG DATA') }).strict();
-
-function resetEnabled() {
-  return process.env.OXSIG_TEST_RESET_ENABLED === 'true' || process.env.VERCEL_ENV === 'preview' || process.env.NODE_ENV !== 'production';
-}
 
 function isMissingAwsInstance(error: unknown) {
   return typeof error === 'object' && error !== null && 'name' in error &&
@@ -55,7 +52,7 @@ export async function POST(request: NextRequest) {
       }
 
       const labs = await pool.query(
-        `SELECT runtime_external_id, metadata
+        `SELECT id, runtime_external_id, metadata
            FROM lab_instances
           WHERE owner_id=$1
             AND runtime_provider='aws-ec2'
@@ -70,9 +67,17 @@ export async function POST(request: NextRequest) {
         } catch (error) {
           if (!isMissingAwsInstance(error)) throw error;
         }
+        // Record the teardown so a retry after a later failure does not re-run it
+        // and the cleanup sweep does not treat the lab as live.
+        await pool.query(
+          `UPDATE lab_instances SET status='destroyed', updated_at=NOW() WHERE id=$1 AND owner_id=$2`,
+          [lab.id, user.id]
+        );
       }
 
-      const [ownedCollaborations, storyboardAudio, contributedAttachments, legacyDocuments] = await Promise.all([
+      // The legacy `documents` table was retired by migration 045. Querying it
+      // made every reset fail with 500 *after* cloud resources were destroyed.
+      const [ownedCollaborations, storyboardAudio, contributedAttachments] = await Promise.all([
         pool.query(`SELECT id FROM collaborations WHERE owner_id=$1`, [user.id]),
         pool.query(`SELECT audio_storage_key FROM storyboard_sessions WHERE owner_id=$1 AND audio_storage_key IS NOT NULL`, [user.id]),
         pool.query(
@@ -81,7 +86,6 @@ export async function POST(request: NextRequest) {
             WHERE user_id=$1 AND metadata ? 'attachment'`,
           [user.id]
         ),
-        pool.query(`SELECT storage_key FROM documents WHERE owner_id=$1 AND storage_key IS NOT NULL`, [user.id]),
       ]);
 
       await deleteStoragePrefix(getUserStoragePrefix(user.id));
@@ -92,7 +96,6 @@ export async function POST(request: NextRequest) {
       await deleteStorageKeys([
         ...storyboardAudio.rows.map((row) => row.audio_storage_key as string),
         ...contributedAttachments.rows.map((row) => row.object_key as string).filter(Boolean),
-        ...legacyDocuments.rows.map((row) => row.storage_key as string),
       ]);
 
       const client = await pool.connect();

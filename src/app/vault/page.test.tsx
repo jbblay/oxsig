@@ -27,13 +27,23 @@ vi.mock('@/lib/auth/use-auth', () => ({
     isLoading: authState.isLoading,
   }),
 }));
-vi.mock('@/lib/vault/api', () => ({
-  listVaultItems: mocks.listVaultItems,
-  createVaultItem: mocks.createVaultItem,
-  updateVaultItem: mocks.updateVaultItem,
-  deleteVaultItem: mocks.deleteVaultItem,
-}));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/vault/api', () => {
+  class VaultConflictError extends Error {
+    readonly code = 'VAULT_VERSION_CONFLICT';
+    constructor(message: string, readonly current: unknown) {
+      super(message);
+    }
+  }
+  return {
+    listVaultItems: mocks.listVaultItems,
+    createVaultItem: mocks.createVaultItem,
+    updateVaultItem: mocks.updateVaultItem,
+    deleteVaultItem: mocks.deleteVaultItem,
+    VaultConflictError,
+  };
+});
+const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock('sonner', () => ({ toast: toastMocks }));
 
 import VaultPage from './page';
 
@@ -51,6 +61,7 @@ function vaultItem(id: string, title: string): VaultItem {
     sourceType: 'manual',
     sourceId: null,
     metadata: {},
+    version: 1,
     createdAt: '2026-09-06T10:00:00.000Z',
     updatedAt: '2026-09-06T10:00:00.000Z',
   };
@@ -254,5 +265,80 @@ describe('VaultPage usability guards and edit recovery', () => {
     expect(screen.getByRole('button', { name: /newer server title/i })).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Older recovered title')).not.toBeInTheDocument();
     expect(readVaultEditRecovery('account-a')).toBeNull();
+  });
+
+  it('saves against the version the editor was loaded from', async () => {
+    const item = { ...vaultItem('11111111-1111-4111-8111-111111111111', 'Alpha command'), version: 7 };
+    mocks.listVaultItems.mockResolvedValue([item]);
+    mocks.updateVaultItem.mockResolvedValue({ ...item, title: 'Edited', version: 8, updatedAt: '2026-09-06T11:00:00.000Z' });
+
+    render(<VaultPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /alpha command/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /alpha command/i }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Edited' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(mocks.updateVaultItem).toHaveBeenCalledTimes(1));
+    expect(mocks.updateVaultItem.mock.calls[0]?.[0]).toBe(item.id);
+    expect(mocks.updateVaultItem.mock.calls[0]?.[1]).toMatchObject({ title: 'Edited' });
+    expect(mocks.updateVaultItem.mock.calls[0]?.[2]).toBe(7);
+    await waitFor(() => expect(screen.queryByText(/^unsaved$/i)).not.toBeInTheDocument());
+  });
+
+  it('keeps the user edit after a version conflict and lets the next save overwrite deliberately', async () => {
+    const { VaultConflictError } = await import('@/lib/vault/api');
+    const item = vaultItem('11111111-1111-4111-8111-111111111111', 'Alpha command');
+    const serverCopy = { ...item, title: 'Changed in another tab', version: 2, updatedAt: '2026-09-06T12:00:00.000Z' };
+    mocks.listVaultItems.mockResolvedValue([item]);
+    mocks.updateVaultItem
+      .mockRejectedValueOnce(new VaultConflictError('changed elsewhere', serverCopy))
+      .mockResolvedValueOnce({ ...serverCopy, title: 'My edit', version: 3, updatedAt: '2026-09-06T12:05:00.000Z' });
+
+    render(<VaultPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /alpha command/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /alpha command/i }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My edit' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(mocks.updateVaultItem).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith(expect.stringMatching(/changed elsewhere/i)));
+    expect(screen.getByLabelText('Title')).toHaveValue('My edit');
+    expect(screen.getByText(/^unsaved$/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(mocks.updateVaultItem).toHaveBeenCalledTimes(2));
+    expect(mocks.updateVaultItem.mock.calls[1]?.[2]).toBe(2);
+  });
+
+  it('discarding after a conflict loads the newer server copy', async () => {
+    const { VaultConflictError } = await import('@/lib/vault/api');
+    const item = vaultItem('11111111-1111-4111-8111-111111111111', 'Alpha command');
+    const serverCopy = { ...item, title: 'Changed in another tab', version: 2, updatedAt: '2026-09-06T12:00:00.000Z' };
+    mocks.listVaultItems.mockResolvedValue([item]);
+    mocks.updateVaultItem.mockRejectedValueOnce(new VaultConflictError('changed elsewhere', serverCopy));
+
+    render(<VaultPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /alpha command/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /alpha command/i }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My edit' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    expect(screen.getByLabelText('Title')).toHaveValue('Changed in another tab');
+  });
+
+  it('flags tags longer than the server limit before saving', async () => {
+    const item = vaultItem('11111111-1111-4111-8111-111111111111', 'Alpha command');
+    mocks.listVaultItems.mockResolvedValue([item]);
+
+    render(<VaultPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /alpha command/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /alpha command/i }));
+    fireEvent.change(screen.getByLabelText('Tags'), { target: { value: `linux, ${'x'.repeat(41)}` } });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/longer than 40 characters/i);
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(mocks.updateVaultItem).not.toHaveBeenCalled();
   });
 });

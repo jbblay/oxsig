@@ -16,11 +16,13 @@ export type VaultEditRecoveryDraft = {
   accountId: string;
   itemId: string;
   baseUpdatedAt: string;
+  /** Server version the draft was based on. Absent in drafts written before versions were tracked. */
+  baseVersion?: number;
   editor: VaultEditRecoveryEditor;
   savedAt: number;
 };
 
-type RecoveryInput = Pick<VaultEditRecoveryDraft, 'itemId' | 'baseUpdatedAt' | 'editor'>;
+type RecoveryInput = Pick<VaultEditRecoveryDraft, 'itemId' | 'baseUpdatedAt' | 'baseVersion' | 'editor'>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -64,6 +66,8 @@ export function readVaultEditRecovery(accountId: string, storage?: Storage): Vau
       !parsed.itemId ||
       typeof parsed.baseUpdatedAt !== 'string' ||
       !parsed.baseUpdatedAt ||
+      (parsed.baseVersion !== undefined &&
+        (typeof parsed.baseVersion !== 'number' || !Number.isInteger(parsed.baseVersion) || parsed.baseVersion < 1)) ||
       typeof parsed.savedAt !== 'number' ||
       !Number.isFinite(parsed.savedAt) ||
       !isEditor(parsed.editor)
@@ -85,6 +89,7 @@ export function writeVaultEditRecovery(accountId: string, input: RecoveryInput, 
     accountId,
     itemId: input.itemId,
     baseUpdatedAt: input.baseUpdatedAt,
+    ...(typeof input.baseVersion === 'number' ? { baseVersion: input.baseVersion } : {}),
     editor: input.editor,
     savedAt: Date.now(),
   };

@@ -11,6 +11,16 @@ export const runtime = 'nodejs';
 
 type Context = { params: Promise<{ id: string }> };
 
+const VERSION_CONFLICT_MESSAGE = 'This Vault item was changed elsewhere since you opened it.';
+
+/** 409 responses carry the latest server copy so the editor can rebase without reloading. */
+function versionConflict(current: Record<string, any>) {
+  return NextResponse.json(
+    { error: VERSION_CONFLICT_MESSAGE, code: 'VAULT_VERSION_CONFLICT', current: mapVaultRow(current) },
+    { status: 409, headers: { 'Cache-Control': 'no-store' } }
+  );
+}
+
 async function ownedVaultItem(id: string, ownerId: string) {
   const result = await getPool().query(
     `SELECT * FROM vault_items WHERE id = $1 AND owner_id = $2 LIMIT 1`,
@@ -50,12 +60,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (!existing) return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
 
     const patch = parsed.data;
-    if (Number(existing.version || 1) !== patch.version) {
-      return NextResponse.json(
-        { error: 'Vault item changed since it was loaded. Refresh and try again.' },
-        { status: 409 }
-      );
-    }
+    if (Number(existing.version || 1) !== patch.version) return versionConflict(existing);
 
     const title = patch.title ?? existing.title;
     const summary = patch.summary ?? existing.summary;
@@ -103,10 +108,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (!result.rows[0]) {
       const current = await ownedVaultItem(id, user.id);
       if (!current) return NextResponse.json({ error: 'Vault item not found' }, { status: 404 });
-      return NextResponse.json(
-        { error: 'Vault item changed since it was loaded. Refresh and try again.' },
-        { status: 409 }
-      );
+      return versionConflict(current);
     }
 
     return NextResponse.json({ item: mapVaultRow(result.rows[0]) });

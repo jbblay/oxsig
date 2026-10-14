@@ -24,7 +24,7 @@ if (serverSentryDsn) {
     serverSentry = await import('@sentry/node');
     serverSentry.init({
       dsn: serverSentryDsn,
-      environment: String(process.env.VERCEL_ENV || process.env.NODE_ENV || 'development').trim(),
+      environment: String(process.env.OXSIG_DEPLOY_ENV || process.env.VERCEL_ENV || process.env.NODE_ENV || 'development').trim(),
       tracesSampleRate: dev ? 1 : 0.1,
       enabled: true,
     });

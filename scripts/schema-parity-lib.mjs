@@ -16,8 +16,12 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'academy_sessions',
   'ai_practitioner_events',
   'audit_logs',
+  'clerk_identity_tombstones',
+  'clerk_webhook_deliveries',
+  'collaboration_action_items',
   'collaboration_invitations',
   'collaboration_members',
+  'collaboration_message_reactions',
   'collaboration_messages',
   'collaborations',
   'deployment_authorizations',
@@ -37,16 +41,37 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'live_workspace_participants',
   'live_workspace_resources',
   'live_workspaces',
+  'operation_environments',
   'operation_nodes',
   'operation_runs',
   'oxisg_schema_migrations',
   'rate_limit_buckets',
+  'storyboard_comments',
   'storyboard_invitations',
   'storyboard_sessions',
   'storyboard_shares',
   'terminal_bridge_ticket_uses',
   'vault_items',
+  'workspace_activity_events',
+  'workspace_notifications',
+  'workspace_recent_workspaces',
 ];
+
+/**
+ * Migration files that were applied on some long-lived databases and later
+ * deleted from the repository. Their ledger rows are expected history, not
+ * drift. 003 duplicated 004 and was removed in b394189.
+ */
+export const RETIRED_MIGRATION_FILENAMES = [
+  '003_collaboration_system.sql',
+];
+
+/**
+ * Pre-existing duplicate numeric prefixes. Both files are applied on live
+ * databases, so renaming them would re-execute one; new duplicates are
+ * rejected by scripts/migrations-integrity.test.mjs.
+ */
+export const ALLOWED_DUPLICATE_MIGRATION_PREFIXES = ['049'];
 
 export const RETIRED_RUNTIME_RELATIONS = [
   'collaboration_activity',
@@ -110,7 +135,10 @@ export async function inspectSchemaParity(database, { rootDir = process.cwd() } 
   const repositorySet = new Set(repositoryMigrations);
   const appliedSet = new Set(appliedMigrations);
   const pendingMigrations = repositoryMigrations.filter((filename) => !appliedSet.has(filename));
-  const unknownAppliedMigrations = appliedMigrations.filter((filename) => !repositorySet.has(filename));
+  const retiredSet = new Set(RETIRED_MIGRATION_FILENAMES);
+  const unknownAppliedMigrations = appliedMigrations.filter(
+    (filename) => !repositorySet.has(filename) && !retiredSet.has(filename)
+  );
 
   const relationNames = [...new Set([...REQUIRED_RUNTIME_RELATIONS, ...RETIRED_RUNTIME_RELATIONS])];
   const relations = await database.query(
