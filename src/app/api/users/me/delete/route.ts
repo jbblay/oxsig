@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { countOtherPlatformAdmins, purgeUserAccount } from '@/lib/account/lifecycle';
 import { getRequestMetadata, logAudit } from '@/lib/audit/logger';
 import { isClerkConfigured } from '@/lib/auth/clerk-config';
+import { deactivateClerkUser } from '@/lib/auth/clerk-user';
 import { isE2EAuthEnabled } from '@/lib/auth/e2e-auth';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
@@ -43,6 +44,10 @@ export async function POST(request: NextRequest) {
     const metadata = getRequestMetadata(req);
     try {
       await purgeUserAccount(pool, user.id);
+      // Keep a deleted identity from being re-created by a delayed webhook or session.
+      if (user.clerkUserId && !isE2EAuthEnabled()) {
+        await deactivateClerkUser(user.clerkUserId, 'self_service');
+      }
     } catch (error) {
       console.error('Account deletion failed during purge:', error);
       return NextResponse.json(

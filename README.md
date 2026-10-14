@@ -24,7 +24,9 @@ pnpm server:check
 pnpm typecheck
 pnpm audit:reachability
 pnpm persistence:check
+pnpm env:contract
 pnpm test:run
+OXSIG_CI_DATABASE_URL=postgresql://... pnpm db:verify   # disposable, empty database
 pnpm build
 ```
 

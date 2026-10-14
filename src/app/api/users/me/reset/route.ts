@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
+import { resetEnabled } from '@/lib/account/test-reset-policy';
 import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { purgeUserAccount } from '@/lib/account/lifecycle';
@@ -10,9 +11,6 @@ export const runtime = 'nodejs';
 
 const bodySchema = z.object({ confirmation: z.literal('RESET MY OXSIG DATA') }).strict();
 
-function resetEnabled() {
-  return process.env.OXSIG_TEST_RESET_ENABLED === 'true' || process.env.VERCEL_ENV === 'preview' || process.env.NODE_ENV !== 'production';
-}
 
 export async function GET(request: NextRequest) {
   return requireAuth(request, async () => NextResponse.json({ enabled: resetEnabled() }, { headers: { 'Cache-Control': 'no-store' } }));

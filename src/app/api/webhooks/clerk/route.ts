@@ -1,37 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhook } from '@clerk/nextjs/webhooks';
-import { deactivateClerkUser, upsertClerkUser } from '@/lib/auth/clerk-user';
+import { processClerkWebhookEvent, type ClerkWebhookEvent } from '@/lib/auth/clerk-webhook';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
+  let event: ClerkWebhookEvent;
   try {
-    const event = await verifyWebhook(request);
-
-    if (event.type === 'user.created' || event.type === 'user.updated') {
-      const user = event.data;
-      const primaryEmail =
-        user.email_addresses.find((address) => address.id === user.primary_email_address_id) ||
-        user.email_addresses[0];
-      const displayName =
-        [user.first_name, user.last_name].filter(Boolean).join(' ').trim() ||
-        user.username ||
-        null;
-
-      await upsertClerkUser({
-        clerkUserId: user.id,
-        email: primaryEmail?.email_address || null,
-        emailVerified: primaryEmail?.verification?.status === 'verified',
-        displayName,
-        avatarUrl: user.image_url || null,
-      });
-    } else if (event.type === 'user.deleted' && event.data.id) {
-      await deactivateClerkUser(event.data.id);
-    }
-
-    return NextResponse.json({ received: true });
+    event = (await verifyWebhook(request)) as unknown as ClerkWebhookEvent;
   } catch (error) {
-    console.error('Clerk webhook verification/sync failed:', error);
+    // Signature/format failures are permanent: 400 tells Svix not to retry.
+    console.error('Clerk webhook verification failed:', error);
     return NextResponse.json({ error: 'Invalid webhook' }, { status: 400 });
+  }
+
+  try {
+    const outcome = await processClerkWebhookEvent(event, request.headers.get('svix-id'));
+    return NextResponse.json({ received: true, outcome });
+  } catch (error) {
+    // Processing failures (e.g. database unavailable) are transient: 500 lets
+    // Svix retry with backoff instead of silently dropping the event.
+    console.error('Clerk webhook processing failed:', error);
+    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 }

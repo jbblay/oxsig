@@ -4,16 +4,26 @@
 
 OXSIG uses AWS CodeBuild project `oxsig-ci`. The repository-owned source of truth is the root `buildspec.yml`; GitHub is the source and pull-request host, not the build runner.
 
-CodeBuild uses Node.js 22 and pnpm 10.28.0, installs the frozen lockfile, and runs:
+CodeBuild uses Node.js 22 and pnpm 10.28.0, installs the frozen lockfile, provisions a disposable PostgreSQL 16 (`scripts/ci/provision-postgres.sh`: Docker if available, otherwise apt/dnf), and runs:
 
-1. `pnpm server:check`
+1. `pnpm server:check` — `node --check` on every `scripts/**/*.mjs` and `server.mjs`, `bash -n` on shell scripts
 2. `pnpm typecheck`
 3. `pnpm audit:reachability`
 4. `pnpm persistence:check`
-5. `pnpm test:run`
-6. `pnpm build`
+5. `pnpm env:contract`
+6. `pnpm test:run` — vitest plus the `node:test` suites in `scripts/tests/` (production regressions, migration integrity)
+7. `pnpm db:verify` — replays every migration on the empty database, re-runs the migrator (must be a no-op), runs schema parity, compares ledger checksums with `migrations/checksums.json`, rejects `users` foreign keys without an `ON DELETE` action, exercises real application SQL (Clerk provisioning, Vault optimistic concurrency, account deletion) in a rolled-back transaction, and runs `src/lib/db/pool.integration.test.ts`
+8. `pnpm build`
 
-Database migration/parity and browser E2E checks require additional runtime services or dependencies and are not part of this core CodeBuild gate. Run those intentionally when the change requires them.
+Browser E2E checks need Clerk-free E2E mode and Playwright browsers and are not part of this gate. Run them intentionally when the change requires them.
+
+## Migration rules
+
+- Merged migrations are immutable. `migrations/checksums.json` records each file's SHA-256 and `scripts/tests/migrations-integrity.mjs` fails on edits, deletions, renames and unlisted new files. Fix schema with a new forward migration.
+- After adding a migration, print the updated manifest with `node scripts/tests/migrations-integrity.mjs --print-manifest`.
+- New numeric prefixes must be unique (the historical `049` pair is grandfathered).
+- Every new foreign key to `users(id)` must declare `ON DELETE`.
+- Application SQL may not reference tables retired by migrations, and every table it uses must be listed in `REQUIRED_RUNTIME_RELATIONS` (`scripts/schema-parity-lib.mjs`).
 
 ## Trigger contract
 
@@ -34,7 +44,9 @@ pnpm server:check
 pnpm typecheck
 pnpm audit:reachability
 pnpm persistence:check
+pnpm env:contract
 pnpm test:run
+OXSIG_CI_DATABASE_URL=postgresql://... pnpm db:verify   # disposable, empty database only
 pnpm build
 ```
 

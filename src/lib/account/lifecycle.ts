@@ -121,23 +121,16 @@ export async function purgeUserAccount(pool: Pool, userId: string) {
     }
   }
 
+  // Reuse idempotent teardown so subsequent purge retries do not destroy the VM twice.
   const labs = await pool.query(
-    `SELECT runtime_external_id, metadata
-       FROM lab_instances
-      WHERE owner_id=$1
-        AND runtime_provider='aws-ec2'
-        AND runtime_external_id IS NOT NULL
-        AND status NOT IN ('destroyed','failed')`,
+    `SELECT id FROM lab_instances
+       WHERE owner_id=$1
+         AND runtime_provider='aws-ec2'
+         AND runtime_external_id IS NOT NULL
+         AND status NOT IN ('destroyed','failed')`,
     [userId]
   );
-  for (const lab of labs.rows) {
-    if (typeof lab.metadata?.operationRunId === 'string') continue;
-    try {
-      await destroyLabVm(lab.runtime_external_id);
-    } catch (error) {
-      if (!isMissingAwsInstance(error)) throw error;
-    }
-  }
+  for (const lab of labs.rows) await destroyStandaloneLab(pool, lab.id);
 
   const hasLegacyDocuments = await relationExists(pool, 'documents');
   const [ownedCollaborations, storyboardAudio, contributedAttachments, legacyDocuments] = await Promise.all([

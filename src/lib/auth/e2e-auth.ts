@@ -3,6 +3,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { getPool } from '@/lib/db/pool';
+import { isProductionDeployment } from '@/lib/runtime/deployment-environment';
 import {
   E2E_AUTH_ACCOUNTS,
   E2E_AUTH_COOKIE,
@@ -12,7 +13,7 @@ import {
 
 export function isE2EAuthEnabled(): boolean {
   if (process.env.OXSIG_E2E_AUTH_ENABLED !== 'true') return false;
-  if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' || isProductionDeployment()) {
     throw new Error('OXSIG_E2E_AUTH_ENABLED is forbidden in production.');
   }
   return true;

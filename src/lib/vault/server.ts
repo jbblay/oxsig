@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { z } from 'zod';
-import { InvalidPostgresJsonKeyError, sanitizePostgresJsonValue } from '@/lib/db/postgres-safe';
+import { InvalidPostgresJsonKeyError, sanitizePostgresJsonValue, sanitizePostgresText } from '@/lib/db/postgres-safe';
 import { VAULT_KINDS, type VaultItem } from './types';
 
 const sourceTypes = ['manual', 'collaboration', 'board', 'lab'] as const;
@@ -15,31 +15,51 @@ const metadataSchema = z.record(z.string(), z.unknown()).superRefine((value, con
   }
 });
 
+/**
+ * Text is NUL-sanitized *before* length validation. Sanitizing expands each
+ * NUL into two characters, so validating first could accept input that the
+ * VARCHAR columns then reject with a 500 (Postgres 22001) instead of a 400.
+ */
+function storedText(options: { min?: number; max: number; trim?: boolean }) {
+  let target = z.string();
+  if (options.trim !== false) target = target.trim();
+  if (options.min !== undefined) target = target.min(options.min);
+  target = target.max(options.max);
+  return z.string().transform(sanitizePostgresText).pipe(target);
+}
+
+const titleText = () => storedText({ min: 1, max: 160 });
+const summaryText = () => storedText({ max: 500 });
+const bodyText = () => storedText({ max: 100_000, trim: false });
+const languageText = () => storedText({ max: 64 });
+const tagText = () => storedText({ min: 1, max: 40 });
+const sourceIdText = () => storedText({ max: 255 });
+
 export const vaultCreateSchema = z.object({
   kind: z.enum(VAULT_KINDS),
-  title: z.string().trim().min(1).max(160),
-  summary: z.string().trim().max(500).optional().default(''),
-  body: z.string().max(100_000).optional().default(''),
-  language: z.string().trim().max(64).nullable().optional(),
-  tags: z.array(z.string().trim().min(1).max(40)).max(12).optional().default([]),
+  title: titleText(),
+  summary: summaryText().optional().default(''),
+  body: bodyText().optional().default(''),
+  language: languageText().nullable().optional(),
+  tags: z.array(tagText()).max(12).optional().default([]),
   pinned: z.boolean().optional().default(false),
   sourceType: z.enum(sourceTypes).nullable().optional().default('manual'),
-  sourceId: z.string().trim().max(255).nullable().optional(),
+  sourceId: sourceIdText().nullable().optional(),
   metadata: metadataSchema.optional().default({}),
 }).strict();
 
 export const vaultUpdateSchema = z.object({
   version: z.number().int().positive(),
   kind: z.enum(VAULT_KINDS).optional(),
-  title: z.string().trim().min(1).max(160).optional(),
-  summary: z.string().trim().max(500).optional(),
-  body: z.string().max(100_000).optional(),
-  language: z.string().trim().max(64).nullable().optional(),
-  tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+  title: titleText().optional(),
+  summary: summaryText().optional(),
+  body: bodyText().optional(),
+  language: languageText().nullable().optional(),
+  tags: z.array(tagText()).max(12).optional(),
   pinned: z.boolean().optional(),
   archived: z.boolean().optional(),
   sourceType: z.enum(sourceTypes).nullable().optional(),
-  sourceId: z.string().trim().max(255).nullable().optional(),
+  sourceId: sourceIdText().nullable().optional(),
   metadata: metadataSchema.optional(),
 }).strict();
 

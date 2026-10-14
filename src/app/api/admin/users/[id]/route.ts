@@ -6,6 +6,7 @@ import { UUID_PATTERN, withPlatformAdmin } from '@/lib/admin/http';
 import { getAdminUserDetail } from '@/lib/admin/queries';
 import { getRequestMetadata, logAudit } from '@/lib/audit/logger';
 import { isClerkConfigured } from '@/lib/auth/clerk-config';
+import { deactivateClerkUser } from '@/lib/auth/clerk-user';
 import { isE2EAuthEnabled } from '@/lib/auth/e2e-auth';
 import { isFounderIdentity } from '@/lib/auth/platform-role';
 import { getPool } from '@/lib/db/pool';
@@ -113,6 +114,10 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     await purgeUserAccount(getPool(), target.id);
+    // Keep a deleted identity from being re-created by a delayed webhook or session.
+    if (target.clerk_user_id && !isE2EAuthEnabled()) {
+      await deactivateClerkUser(target.clerk_user_id, 'admin');
+    }
 
     let identityRemoved = false;
     if (target.clerk_user_id && !isE2EAuthEnabled() && isClerkConfigured()) {

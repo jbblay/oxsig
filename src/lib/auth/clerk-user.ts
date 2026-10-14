@@ -25,13 +25,85 @@ export interface ClerkUserSnapshot {
   emailVerified?: boolean;
   displayName?: string | null;
   avatarUrl?: string | null;
+  /** Clerk's `updated_at` for this snapshot. Older snapshots never overwrite newer ones. */
+  sourceUpdatedAt?: Date | null;
 }
 
-// Suspension columns are read through to_jsonb so identity resolution keeps
-// working during the window between a deploy and `pnpm db:migrate`.
+export type ClerkIdentityRetirementSource = 'clerk_webhook' | 'self_service' | 'admin' | 'test_reset';
+
+/**
+ * The Clerk identity was deleted or its OXSIG account deactivated. Callers must
+ * treat the identity as signed out; it is never re-provisioned automatically.
+ */
+export class ClerkIdentityRetiredError extends Error {
+  readonly code = 'CLERK_IDENTITY_RETIRED';
+
+  constructor(readonly clerkUserId: string) {
+    super('Clerk account is inactive.');
+    this.name = 'ClerkIdentityRetiredError';
+  }
+}
+
+// Read suspension fields defensively so sign-in works before migration 057.
 const USER_COLUMNS = `id, public_key, email, email_verified, display_name, role, clerk_user_id, is_active,
   to_jsonb(users) ->> 'suspended_at' AS suspended_at,
   to_jsonb(users) ->> 'suspended_reason' AS suspended_reason`;
+
+/**
+ * Feature detection for migration 058. Deploys may reach production before
+ * `pnpm db:migrate` runs, so identity paths must keep working without the new
+ * tables. A positive result is cached for the process lifetime; a negative
+ * result is re-checked after a minute so the features switch on once migrated.
+ */
+type LifecycleSchema = { tombstones: boolean; deliveries: boolean; sourceUpdatedAt: boolean };
+let lifecycleSchemaCache: { value: LifecycleSchema; checkedAt: number } | null = null;
+const LIFECYCLE_SCHEMA_RECHECK_MS = 60_000;
+
+export async function identityLifecycleSchema(): Promise<LifecycleSchema> {
+  const cached = lifecycleSchemaCache;
+  const complete = cached && cached.value.tombstones && cached.value.deliveries && cached.value.sourceUpdatedAt;
+  if (cached && (complete || Date.now() - cached.checkedAt < LIFECYCLE_SCHEMA_RECHECK_MS)) return cached.value;
+
+  try {
+    const result = await getPool().query(
+      `SELECT to_regclass('public.clerk_identity_tombstones') IS NOT NULL AS tombstones,
+              to_regclass('public.clerk_webhook_deliveries') IS NOT NULL AS deliveries,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'clerk_source_updated_at'
+              ) AS source_updated_at`
+    );
+    const row = result.rows[0] || {};
+    const value = {
+      tombstones: row.tombstones === true,
+      deliveries: row.deliveries === true,
+      sourceUpdatedAt: row.source_updated_at === true,
+    };
+    lifecycleSchemaCache = { value, checkedAt: Date.now() };
+    return value;
+  } catch (error) {
+    console.error('Identity lifecycle schema detection failed:', error);
+    return { tombstones: false, deliveries: false, sourceUpdatedAt: false };
+  }
+}
+
+/** Test hook: forget cached schema detection. */
+export function resetIdentityLifecycleSchemaCache() {
+  lifecycleSchemaCache = null;
+}
+
+async function isClerkIdentityTombstoned(clerkUserId: string, schema: LifecycleSchema): Promise<boolean> {
+  if (!schema.tombstones) return false;
+  const result = await getPool().query(
+    `SELECT 1 FROM clerk_identity_tombstones WHERE clerk_user_id = $1 LIMIT 1`,
+    [clerkUserId]
+  );
+  return Boolean(result.rows[0]);
+}
+
+function validSourceUpdatedAt(value: Date | null | undefined): Date | null {
+  return value instanceof Date && Number.isFinite(value.getTime()) ? value : null;
+}
 
 function mapRow(row: Record<string, any>): ClerkMappedUser {
   return {
@@ -68,6 +140,12 @@ function normalizeDisplayName(snapshot: ClerkUserSnapshot): string | null {
  */
 export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<ClerkMappedUser> {
   const pool = getPool();
+  const schema = await identityLifecycleSchema();
+  if (await isClerkIdentityTombstoned(snapshot.clerkUserId, schema)) {
+    throw new ClerkIdentityRetiredError(snapshot.clerkUserId);
+  }
+  const sourceUpdatedAt = schema.sourceUpdatedAt ? validSourceUpdatedAt(snapshot.sourceUpdatedAt) : null;
+
   const existing = await pool.query(
     `SELECT ${USER_COLUMNS}
      FROM users
@@ -81,10 +159,19 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
   const avatarUrl = snapshot.avatarUrl?.trim() || null;
 
   if (existing.rows[0] && existing.rows[0].is_active !== true) {
-    throw new Error('Clerk account is inactive.');
+    throw new ClerkIdentityRetiredError(snapshot.clerkUserId);
   }
 
   if (existing.rows[0]) {
+    // Webhooks can arrive out of order. When the snapshot carries Clerk's
+    // updated_at, an older snapshot must not overwrite a newer one.
+    const orderingGuard = sourceUpdatedAt
+      ? `AND (clerk_source_updated_at IS NULL OR clerk_source_updated_at <= $6)`
+      : '';
+    const orderingSet = sourceUpdatedAt ? `clerk_source_updated_at = $6,` : '';
+    const params: unknown[] = [snapshot.clerkUserId, email, !!snapshot.emailVerified, displayName, avatarUrl];
+    if (sourceUpdatedAt) params.push(sourceUpdatedAt);
+
     const updated = await pool.query(
       `UPDATE users
        SET email = COALESCE($2, email),
@@ -95,14 +182,25 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
            display_name = COALESCE(display_name, $4),
            avatar_url = COALESCE(avatar_url, $5),
            auth_provider = 'clerk',
+           ${orderingSet}
            clerk_synced_at = NOW(),
            last_seen_at = NOW(),
            updated_at = NOW()
        WHERE clerk_user_id = $1 AND is_active = true
+       ${orderingGuard}
        RETURNING ${USER_COLUMNS}`,
-      [snapshot.clerkUserId, email, !!snapshot.emailVerified, displayName, avatarUrl]
+      params
     );
-    return mapRow(updated.rows[0]);
+    if (updated.rows[0]) return mapRow(updated.rows[0]);
+
+    // Either the snapshot was stale (row unchanged) or the account was
+    // deactivated between the SELECT and the UPDATE.
+    const current = await pool.query(
+      `SELECT ${USER_COLUMNS} FROM users WHERE clerk_user_id = $1 AND is_active = true LIMIT 1`,
+      [snapshot.clerkUserId]
+    );
+    if (current.rows[0]) return mapRow(current.rows[0]);
+    throw new ClerkIdentityRetiredError(snapshot.clerkUserId);
   }
 
   // Link a legacy account only when Clerk has verified the email and the match
@@ -151,7 +249,18 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
     [snapshot.clerkUserId, email, !!snapshot.emailVerified, displayName, avatarUrl]
   );
 
-  if (created.rows[0]) return mapRow(created.rows[0]);
+  if (created.rows[0]) {
+    // Close the race with a concurrent user.deleted: if the identity was
+    // tombstoned while this row was being inserted, retire the new row.
+    if (await isClerkIdentityTombstoned(snapshot.clerkUserId, schema)) {
+      await deactivateUserRowsForClerkIdentity(snapshot.clerkUserId);
+      throw new ClerkIdentityRetiredError(snapshot.clerkUserId);
+    }
+    if (sourceUpdatedAt) {
+      await pool.query(`UPDATE users SET clerk_source_updated_at = $2 WHERE id = $1`, [created.rows[0].id, sourceUpdatedAt]);
+    }
+    return mapRow(created.rows[0]);
+  }
 
   const raced = await pool.query(
     `SELECT ${USER_COLUMNS} FROM users WHERE clerk_user_id=$1 AND is_active=true LIMIT 1`,
@@ -162,8 +271,8 @@ export async function upsertClerkUser(snapshot: ClerkUserSnapshot): Promise<Cler
 }
 
 
-export async function deactivateClerkUser(clerkUserId: string): Promise<void> {
-  await getPool().query(
+async function deactivateUserRowsForClerkIdentity(clerkUserId: string): Promise<number> {
+  const result = await getPool().query(
     `UPDATE users
      SET is_active = false,
          clerk_deleted_at = NOW(),
@@ -172,6 +281,29 @@ export async function deactivateClerkUser(clerkUserId: string): Promise<void> {
      WHERE clerk_user_id = $1`,
     [clerkUserId]
   );
+  return result.rowCount || 0;
+}
+
+/**
+ * Retire a Clerk identity: record a tombstone (even when no OXSIG row exists
+ * yet, e.g. user.deleted delivered before user.created) and deactivate the
+ * account. Billable lab resources of deactivated accounts are reclaimed by the
+ * scheduled cleanup sweep.
+ */
+export async function deactivateClerkUser(
+  clerkUserId: string,
+  source: ClerkIdentityRetirementSource = 'clerk_webhook'
+): Promise<void> {
+  const schema = await identityLifecycleSchema();
+  if (schema.tombstones) {
+    await getPool().query(
+      `INSERT INTO clerk_identity_tombstones (clerk_user_id, source)
+       VALUES ($1, $2)
+       ON CONFLICT (clerk_user_id) DO NOTHING`,
+      [clerkUserId, source]
+    );
+  }
+  await deactivateUserRowsForClerkIdentity(clerkUserId);
 }
 
 /**
@@ -220,12 +352,18 @@ export async function getClerkAuthenticatedUser(): Promise<ClerkMappedUser | nul
     clerkUser.username ||
     null;
 
-  const synced = await upsertClerkUser({
-    clerkUserId: clerkUser.id,
-    email: primaryEmail?.emailAddress || null,
-    emailVerified: primaryEmail?.verification?.status === 'verified',
-    displayName,
-    avatarUrl: clerkUser.imageUrl || null,
-  });
-  return assertNotSuspended(synced);
+  try {
+    return assertNotSuspended(await upsertClerkUser({
+      clerkUserId: clerkUser.id,
+      email: primaryEmail?.emailAddress || null,
+      emailVerified: primaryEmail?.verification?.status === 'verified',
+      displayName,
+      avatarUrl: clerkUser.imageUrl || null,
+      sourceUpdatedAt: typeof clerkUser.updatedAt === 'number' ? new Date(clerkUser.updatedAt) : null,
+    }));
+  } catch (error) {
+    // A retired identity with a still-valid session is signed out, not 503.
+    if (error instanceof ClerkIdentityRetiredError) return null;
+    throw error;
+  }
 }

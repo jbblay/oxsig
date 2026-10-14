@@ -11,7 +11,7 @@
     "dev:up": "bash scripts/dev-up.sh",
     "build": "next build && node scripts/verify-built-routes.mjs && node scripts/verify-built-websocket.mjs",
     "start": "node scripts/start-production.mjs --prod",
-    "server:check": "node --check server.mjs && node --check scripts/start-production.mjs && node --check scripts/env-loader.mjs && node --check scripts/env-reconcile-lib.mjs && node --check scripts/env-reconcile.mjs && node --check scripts/env-contract-check.mjs && node --check scripts/elevenlabs-voices-lib.mjs && node --check scripts/elevenlabs-voices.mjs && node --check scripts/schema-parity-lib.mjs && node --check scripts/schema-parity-check.mjs",
+    "server:check": "node scripts/check-syntax.mjs",
     "env:reconcile": "node scripts/env-reconcile.mjs",
     "env:check": "node scripts/env-reconcile.mjs --check",
     "env:contract": "node scripts/env-contract-check.mjs",
@@ -24,11 +24,12 @@
     "e2e:install": "npm install --prefix e2e --no-package-lock && ./e2e/node_modules/.bin/playwright install chromium",
     "test:e2e": "./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs",
     "test": "vitest",
-    "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs",
+    "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs scripts/tests/*.mjs",
     "test:operation-access": "node --experimental-vm-modules --test scripts/check-operation-access.mjs",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "node scripts/migrate.mjs",
     "db:parity": "node scripts/schema-parity-check.mjs",
+    "db:verify": "node scripts/ci/verify-schema.mjs && OXSIG_TEST_DATABASE_URL=\"$OXSIG_CI_DATABASE_URL\" vitest run src/lib/db/pool.integration.test.ts",
     "storyboards:migrate-audio": "node scripts/migrate-storyboard-audio.mjs"
   },
   "dependencies": {

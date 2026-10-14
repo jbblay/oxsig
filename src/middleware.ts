@@ -1,6 +1,26 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 import { applySecurityHeaders } from '@/lib/security/headers';
+import { isProductionDeployment } from '@/lib/runtime/deployment-environment';
+
+/**
+ * Clerk rejects session tokens whose `azp` claim is not an authorized party.
+ * Behind a TLS-terminating load balancer (AWS ALB/CloudFront) the request URL
+ * seen by the app can differ from the public origin (scheme or host), so the
+ * configured public URL is always authorized in addition to the request origin.
+ */
+function authorizedParties(request: NextRequest): string[] {
+  const parties = new Set<string>([new URL(request.url).origin]);
+  for (const candidate of [process.env.OXSIG_APP_URL]) {
+    if (!candidate) continue;
+    try {
+      parties.add(new URL(candidate).origin);
+    } catch {
+      // Ignore malformed configuration; the env contract check reports it.
+    }
+  }
+  return [...parties];
+}
 
 const withClerk = clerkMiddleware(
   async (_auth, request) => {
@@ -13,7 +33,7 @@ const withClerk = clerkMiddleware(
     return applySecurityHeaders(NextResponse.next(), undefined, false);
   },
   (request) => ({
-    authorizedParties: [new URL(request.url).origin],
+    authorizedParties: authorizedParties(request as NextRequest),
     contentSecurityPolicy: {
       strict: true,
       directives: {
@@ -29,7 +49,7 @@ const withClerk = clerkMiddleware(
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
   if (process.env.OXSIG_E2E_AUTH_ENABLED === 'true') {
-    if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' || isProductionDeployment()) {
       throw new Error('OXSIG_E2E_AUTH_ENABLED is forbidden in production.');
     }
 

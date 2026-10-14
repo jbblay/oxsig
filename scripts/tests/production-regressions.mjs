@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 const contract = fileURLToPath(new URL('../production-check.mjs', import.meta.url));
 const routeCheck = fileURLToPath(new URL('../verify-built-routes.mjs', import.meta.url));
 const appRoot = fileURLToPath(new URL('../../src/app', import.meta.url));
-const ciWorkflow = fileURLToPath(new URL('../../.github/workflows/ci.yml', import.meta.url));
+const buildspec = fileURLToPath(new URL('../../buildspec.yml', import.meta.url));
+const provisionPostgres = fileURLToPath(new URL('../ci/provision-postgres.sh', import.meta.url));
+const packageJson = fileURLToPath(new URL('../../package.json', import.meta.url));
 const baseEnv = {
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'test', CLERK_SECRET_KEY: 'test',
   DATABASE_URL: 'postgresql://localhost/test', CRON_SECRET: 'c'.repeat(24),
@@ -70,13 +72,27 @@ test('prepared Black Domain accepts a complete reusable slot contract without le
   assert.ok(!result.stderr.includes('LAB_AWS_OPERATION_SECURITY_GROUP_ID'));
 });
 
-test('CI PostgreSQL service and connection URL target the same database', () => {
-  const workflow = readFileSync(ciWorkflow, 'utf8');
-  const serviceDatabase = workflow.match(/^\s*POSTGRES_DB:\s*([^\s#]+)\s*$/m)?.[1];
-  const connectionDatabase = workflow.match(/^\s*CI_DATABASE_URL:\s*\S+\/([^\s/?#]+)(?:[?#]\S*)?\s*$/m)?.[1];
-  assert.ok(serviceDatabase, 'CI workflow must declare POSTGRES_DB');
-  assert.ok(connectionDatabase, 'CI workflow must declare a database in CI_DATABASE_URL');
-  assert.equal(connectionDatabase, serviceDatabase, 'CI_DATABASE_URL must target the PostgreSQL service database');
+test('CodeBuild PostgreSQL provisioning and connection URL target the same database', () => {
+  const spec = readFileSync(buildspec, 'utf8');
+  const script = readFileSync(provisionPostgres, 'utf8');
+  const url = spec.match(/^\s*OXSIG_CI_DATABASE_URL:\s*(\S+)\s*$/m)?.[1];
+  assert.ok(url, 'buildspec.yml must declare OXSIG_CI_DATABASE_URL');
+  const parsed = new URL(url);
+  assert.equal(parsed.pathname.slice(1), script.match(/^DB_NAME="([^"]+)"/m)?.[1], 'database name must match provision-postgres.sh');
+  assert.equal(parsed.username, script.match(/^DB_USER="([^"]+)"/m)?.[1], 'database user must match provision-postgres.sh');
+  assert.equal(parsed.password, script.match(/^DB_PASSWORD="([^"]+)"/m)?.[1], 'database password must match provision-postgres.sh');
+  assert.equal(parsed.port || '5432', script.match(/^PORT="([^"]+)"/m)?.[1], 'port must match provision-postgres.sh');
+});
+
+test('CodeBuild runs every verification gate, including schema verification against PostgreSQL', () => {
+  const spec = readFileSync(buildspec, 'utf8');
+  const scripts = JSON.parse(readFileSync(packageJson, 'utf8')).scripts;
+  for (const gate of ['server:check', 'typecheck', 'audit:reachability', 'persistence:check', 'env:contract', 'test:run', 'db:verify', 'build']) {
+    assert.ok(new RegExp(`^\\s*-\\s*pnpm ${gate}\\s*$`, 'm').test(spec), `buildspec.yml must run pnpm ${gate}`);
+    assert.ok(scripts[gate], `package.json must define ${gate}`);
+  }
+  assert.ok(/provision-postgres\.sh/.test(spec), 'buildspec.yml must provision PostgreSQL before db:verify');
+  assert.ok(scripts['test:run'].includes('scripts/tests/'), 'test:run must execute the node:test regression suites');
 });
 
 test('App Router has no conflicting sibling dynamic segment names', () => {
