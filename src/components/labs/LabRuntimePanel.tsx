@@ -591,7 +591,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       )}
 
 
-      <div className="oxsig-lab-combined-workspace">
+      <div className="oxsig-lab-combined-workspace" data-testid="inspector-first-lab-workflow">
         <div className="min-h-0 overflow-hidden">
           <div className="oxsig-lab-grid" style={{ "--lab-columns": labColumns } as React.CSSProperties}>
             <aside aria-label="Machine catalog" className="oxsig-lab-machines overflow-hidden rounded-xl border bg-card">
@@ -616,32 +616,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 <div className="oxsig-machine-rail flex w-full flex-col items-center gap-2 py-4">{catalog.map((lab) => <button key={lab.slug} type="button" onClick={() => { addMachine(lab.slug); setCompactPanel("topology"); }} className="flex h-9 w-9 items-center justify-center rounded-lg border bg-background" title={`Add ${lab.shortName}`}><LabOsIcon osFamily={lab.osFamily} className="h-5 w-5" /></button>)}</div>
               )}
             </aside>
-
-            <section aria-label="Lab topology" className="oxsig-lab-canvas relative overflow-hidden rounded-xl border bg-muted/10">
-              <ReactFlow<LabMachineFlowNode, Edge>
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={NODE_TYPES}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onInit={setFlow}
-                onNodeClick={(_event, node) => { setSelectedNodeId(node.id); setInspectorOpen(true); setCompactPanel("inspector"); }}
-                onPaneClick={() => setSelectedNodeId(null)}
-                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
-                onDrop={(event) => { event.preventDefault(); const slug = event.dataTransfer.getData("application/x-oxsig-lab"); if (!slug) return; addMachine(slug, flow?.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}
-                fitView
-                fitViewOptions={{ padding: 0.2 }}
-                minZoom={0.35}
-                maxZoom={1.7}
-                defaultEdgeOptions={{ type: "smoothstep" }}
-              >
-                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} /><Controls position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" className="oxsig-lab-minimap !bg-background/90" />
-                {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Add a machine</div>}
-              </ReactFlow>
-              <div className="pointer-events-none absolute bottom-14 left-3 right-3 rounded-lg border bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">Design-only links · 1 running machine max</div>
-              
-            </section>
 
             <aside aria-label="Machine inspector" className="oxsig-lab-inspector overflow-hidden rounded-xl border bg-card">
               <div className={`flex items-center border-b ${inspectorOpen ? "justify-between p-3" : "justify-center p-2"}`}>
@@ -672,6 +646,32 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 </div>
               ))}
             </aside>
+
+            <section aria-label="Lab topology" className={`oxsig-lab-canvas relative overflow-hidden rounded-xl border bg-muted/10 ${nodes.length === 0 ? "hidden" : ""}`}>
+              <ReactFlow<LabMachineFlowNode, Edge>
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={NODE_TYPES}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onInit={setFlow}
+                onNodeClick={(_event, node) => { setSelectedNodeId(node.id); setInspectorOpen(true); setCompactPanel("inspector"); }}
+                onPaneClick={() => setSelectedNodeId(null)}
+                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
+                onDrop={(event) => { event.preventDefault(); const slug = event.dataTransfer.getData("application/x-oxsig-lab"); if (!slug) return; addMachine(slug, flow?.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}
+                fitView
+                fitViewOptions={{ padding: 0.2 }}
+                minZoom={0.35}
+                maxZoom={1.7}
+                defaultEdgeOptions={{ type: "smoothstep" }}
+              >
+                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} /><Controls position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" className="oxsig-lab-minimap !bg-background/90" />
+                {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Add a machine</div>}
+              </ReactFlow>
+              <div className="pointer-events-none absolute bottom-14 left-3 right-3 rounded-lg border bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">Design-only links · 1 running machine max</div>
+              
+            </section>
           </div>
         </div>
       </div>
