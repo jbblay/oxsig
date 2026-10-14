@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   elevenLabsTts: vi.fn(),
   elevenLabsStt: vi.fn(),
   pollyTts: vi.fn(),
+  awsStt: vi.fn(),
 }));
 
 vi.mock('./elevenlabs', () => ({
@@ -12,6 +13,7 @@ vi.mock('./elevenlabs', () => ({
   transcribeElevenLabsSpeech: mocks.elevenLabsStt,
 }));
 vi.mock('./polly', () => ({ streamPollyTextToSpeech: mocks.pollyTts }));
+vi.mock('./transcribe', () => ({ transcribeAwsSpeech: mocks.awsStt }));
 
 import { createOxsigVoiceStream, transcribeOxsigVoice } from './server';
 
@@ -27,10 +29,17 @@ describe('OXSIG voice provider routing', () => {
     vi.stubEnv('OXSIG_POLLY_REGION', '');
     vi.stubEnv('OXSIG_POLLY_VOICE_ID', '');
     vi.stubEnv('OXSIG_POLLY_ENGINE', '');
+    vi.stubEnv('OXSIG_VOICE_STT_PROVIDER', '');
+    vi.stubEnv('OXSIG_VOICE_STT_FALLBACK_PROVIDER', '');
+    vi.stubEnv('OXSIG_TRANSCRIBE_REGION', '');
+    vi.stubEnv('OXSIG_TRANSCRIBE_STORAGE_BUCKET', '');
+    vi.stubEnv('OXSIG_TRANSCRIBE_LANGUAGE_CODE', '');
+    vi.stubEnv('STORAGE_BUCKET', '');
     vi.stubEnv('ELEVENLABS_API_KEY', 'test-key');
     vi.stubEnv('ELEVENLABS_VOICE_ID', 'test-voice');
     mocks.elevenLabsTts.mockResolvedValue(audio);
     mocks.pollyTts.mockResolvedValue(audio);
+    mocks.awsStt.mockResolvedValue({ text: 'AWS transcript', languageCode: 'en-US' });
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -80,10 +89,47 @@ describe('OXSIG voice provider routing', () => {
     await expect(createOxsigVoiceStream('hello')).rejects.toThrow('Invalid voice TTS provider');
   });
 
-  it('keeps the speech-to-text route unchanged until a tested AWS STT adapter exists', async () => {
+  it('keeps ElevenLabs STT as the default', async () => {
     const blob = new Blob([new Uint8Array([1])], { type: 'audio/webm' });
     mocks.elevenLabsStt.mockResolvedValue({ text: 'hello', languageCode: 'en' });
     expect(await transcribeOxsigVoice(blob, 'sample.webm')).toEqual({ text: 'hello', languageCode: 'en' });
     expect(mocks.elevenLabsStt).toHaveBeenCalledTimes(1);
   });
+  it('routes STT to AWS Transcribe only on explicit opt-in', async () => {
+    vi.stubEnv('OXSIG_VOICE_STT_PROVIDER', 'transcribe');
+    vi.stubEnv('OXSIG_TRANSCRIBE_STORAGE_BUCKET', 'private-bucket');
+    const blob = new Blob([new Uint8Array([1])], { type: 'audio/webm' });
+    expect(await transcribeOxsigVoice(blob, 'sample.webm')).toEqual({
+      text: 'AWS transcript', languageCode: 'en-US',
+    });
+    expect(mocks.awsStt).toHaveBeenCalledWith({
+      audio: blob,
+      region: 'eu-central-1',
+      bucket: 'private-bucket',
+      languageCode: '',
+    });
+    expect(mocks.elevenLabsStt).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Transcribe when ElevenLabs STT is exhausted', async () => {
+    vi.stubEnv('OXSIG_VOICE_STT_FALLBACK_PROVIDER', 'transcribe');
+    vi.stubEnv('STORAGE_BUCKET', 'existing-storage');
+    mocks.elevenLabsStt.mockRejectedValue(new Error('Quota exceeded'));
+    const blob = new Blob([new Uint8Array([1])], { type: 'audio/webm' });
+    expect(await transcribeOxsigVoice(blob)).toEqual({ text: 'AWS transcript', languageCode: 'en-US' });
+    expect(mocks.elevenLabsStt).toHaveBeenCalledTimes(1);
+    expect(mocks.awsStt).toHaveBeenCalledTimes(1);
+  });
+
+  it('can fall back from AWS to ElevenLabs and never retries the same provider', async () => {
+    vi.stubEnv('OXSIG_VOICE_STT_PROVIDER', 'transcribe');
+    vi.stubEnv('OXSIG_VOICE_STT_FALLBACK_PROVIDER', 'elevenlabs');
+    mocks.awsStt.mockRejectedValue(new Error('AWS disabled'));
+    mocks.elevenLabsStt.mockResolvedValue({ text: 'Fallback text', languageCode: 'en' });
+    const blob = new Blob([new Uint8Array([1])], { type: 'audio/webm' });
+    expect(await transcribeOxsigVoice(blob)).toEqual({ text: 'Fallback text', languageCode: 'en' });
+    vi.stubEnv('OXSIG_VOICE_STT_FALLBACK_PROVIDER', 'transcribe');
+    await expect(transcribeOxsigVoice(blob)).rejects.toThrow('AWS disabled');
+  });
+
 });
