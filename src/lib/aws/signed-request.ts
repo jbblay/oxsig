@@ -55,6 +55,13 @@ export async function signedAwsJsonRequest(request: SignedAwsRequest): Promise<R
   const method = request.method ?? 'POST';
   const body = request.body === undefined ? undefined : JSON.stringify(request.body);
   const credentials = request.credentials ?? defaultAwsCredentials(request.region);
+  // Amazon Transcribe's JSON-over-HTTP API requires an explicit payload hash.
+  let payloadHash: string | undefined;
+  if (request.service === 'transcribe' && body !== undefined) {
+    const sha = new Sha256();
+    sha.update(body);
+    payloadHash = Array.from(await sha.digest(), (v) => v.toString(16).padStart(2, '0')).join('');
+  }
 
   const signer = new SignatureV4({
     credentials,
@@ -72,6 +79,7 @@ export async function signedAwsJsonRequest(request: SignedAwsRequest): Promise<R
       host: request.hostname,
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       accept: 'application/json',
+      ...(payloadHash ? { 'x-amz-content-sha256': payloadHash } : {}),
       ...request.headers,
     },
     body,
@@ -109,6 +117,9 @@ export async function signedAwsBinaryRequest(
 ): Promise<Response> {
   const method = request.method ?? 'GET';
   const credentials = request.credentials ?? defaultAwsCredentials(request.region);
+  const sha = new Sha256();
+  sha.update(request.body ?? new Uint8Array(0));
+  const payloadHash = Array.from(await sha.digest(), (v) => v.toString(16).padStart(2, '0')).join('');
   const signer = new SignatureV4({
     credentials,
     region: request.region,
@@ -123,6 +134,7 @@ export async function signedAwsBinaryRequest(
     headers: {
       host: request.hostname,
       ...(request.body ? { 'content-type': 'application/octet-stream' } : {}),
+      'x-amz-content-sha256': payloadHash,
       ...request.headers,
     },
     body: request.body,
