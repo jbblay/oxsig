@@ -2,8 +2,10 @@ import 'server-only';
 
 import { streamElevenLabsTextToSpeech, transcribeElevenLabsSpeech } from './elevenlabs';
 import { streamPollyTextToSpeech } from './polly';
+import { transcribeAwsSpeech } from './transcribe';
 
 type VoiceTtsProvider = 'elevenlabs' | 'polly';
+type VoiceSttProvider = 'elevenlabs' | 'transcribe';
 type PollyEngine = 'standard' | 'neural' | 'generative';
 
 function voiceProvider(value: string, field: string): VoiceTtsProvider {
@@ -70,11 +72,49 @@ export async function createOxsigVoiceStream(text: string): Promise<Response> {
   }
 }
 
-export async function transcribeOxsigVoice(audio: Blob, filename?: string) {
+function sttProvider(value: string, field: string): VoiceSttProvider {
+  if (value === 'elevenlabs' || value === 'transcribe') return value;
+  throw new Error(`Invalid speech-to-text provider in ${field}.`);
+}
+
+async function recognizeWithProvider(provider: VoiceSttProvider, audio: Blob, filename?: string) {
+  if (provider === 'transcribe') {
+    return transcribeAwsSpeech({
+      audio,
+      region: process.env.OXSIG_TRANSCRIBE_REGION?.trim() || 'eu-central-1',
+      bucket: process.env.OXSIG_TRANSCRIBE_STORAGE_BUCKET?.trim()
+        || process.env.STORAGE_BUCKET?.trim() || '',
+      languageCode: process.env.OXSIG_TRANSCRIBE_LANGUAGE_CODE || '',
+    });
+  }
   return transcribeElevenLabsSpeech({
     apiKey: process.env.ELEVENLABS_API_KEY || '',
     modelId: process.env.ELEVENLABS_STT_MODEL?.trim() || 'scribe_v2',
     audio,
     filename,
   });
+}
+
+/** Preserve ElevenLabs STT by default; AWS Transcribe opt-in and fallback are explicit. */
+export async function transcribeOxsigVoice(audio: Blob, filename?: string) {
+  const primary = sttProvider(
+    process.env.OXSIG_VOICE_STT_PROVIDER?.trim().toLowerCase() || 'elevenlabs',
+    'OXSIG_VOICE_STT_PROVIDER'
+  );
+  const fallbackValue = process.env.OXSIG_VOICE_STT_FALLBACK_PROVIDER?.trim().toLowerCase() || '';
+  const fallback = fallbackValue
+    ? sttProvider(fallbackValue, 'OXSIG_VOICE_STT_FALLBACK_PROVIDER')
+    : null;
+
+  try {
+    return await recognizeWithProvider(primary, audio, filename);
+  } catch (error) {
+    if (!fallback || fallback === primary) throw error;
+    console.warn(`[oxsig] Speech-to-text provider ${primary} failed; attempting configured fallback ${fallback}.`);
+    try {
+      return await recognizeWithProvider(fallback, audio, filename);
+    } catch {
+      throw new Error('Voice transcription is temporarily unavailable. Please try again.');
+    }
+  }
 }
