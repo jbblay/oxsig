@@ -33,3 +33,5 @@ pnpm build
 AWS CodeBuild is the authoritative CI provider. GitHub hosts source and pull requests; GitHub Actions is not used for CI.
 
 See [CI and release security](docs/ci-release-security.md) for the build contract, triggers, failure triage, and deployment boundary.
+
+See [Platform admin and account lifecycle](docs/platform-admin.md) for founder access, the admin console, onboarding, export and deletion.

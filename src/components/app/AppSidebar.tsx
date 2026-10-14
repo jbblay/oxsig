@@ -20,6 +20,7 @@ import {
   PanelLeftOpen,
   RadioTower,
   Settings2,
+  ShieldCheck,
   Sun,
   Swords,
   X,
@@ -56,6 +57,13 @@ const groups = [
   },
 ];
 
+// Rendered only for server-confirmed platform admins. It is intentionally not
+// part of PRODUCT_NAVIGATION, which describes guest-browseable product surfaces.
+const platformGroup = {
+  label: 'Platform',
+  items: [{ href: '/admin', label: 'Admin Console', icon: ShieldCheck }],
+};
+
 function initials(value?: string | null) {
   const text = value?.trim() || 'O';
   return text.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'O';
@@ -71,6 +79,7 @@ function workspaceColor(href: string) {
   if (href === '/collab/storyboards') return 'boards';
   if (href === '/operations') return 'labs';
   if (href === '/warroom') return 'live';
+  if (href === '/admin') return 'account';
   return href.slice(1);
 }
 
@@ -87,7 +96,8 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, isPlatformAdmin } = useAuth();
+  const visibleGroups = isPlatformAdmin ? [...groups, platformGroup] : groups;
   const compact = collapsed && !mobile;
   const accountHref = resolveProductNavigationHref('account', isAuthenticated) ?? '/sign-up';
 
@@ -115,7 +125,7 @@ function SidebarContent({
         )}
 
         <nav className="space-y-4">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.label}>
               {!compact && <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>}
               <div className="space-y-0.5">
@@ -123,7 +133,9 @@ function SidebarContent({
                   const active = isItemActive(pathname, item.href);
                   const Icon = item.icon;
                   const contract = getProductNavigationItemByHref(item.href);
-                  const destination = contract ? resolveProductNavigationHref(contract, isAuthenticated) : null;
+                  const destination = contract
+                    ? resolveProductNavigationHref(contract, isAuthenticated)
+                    : item.href === '/admin' && isPlatformAdmin ? '/admin' : null;
                   const className = cn(
                     'oxsig-nav-item group relative flex min-h-9 items-center text-[13px] font-medium transition-colors duration-150',
                     compact ? 'justify-center px-1' : 'gap-2 px-2',

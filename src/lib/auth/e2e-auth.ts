@@ -48,6 +48,9 @@ async function resolveE2EUser(key: E2EAuthAccountKey | null) {
     email: account.email,
     name: account.name,
     role: 'user' as const,
+    isFounder: false,
+    suspendedAt: null,
+    suspendedReason: null,
   };
 }
 

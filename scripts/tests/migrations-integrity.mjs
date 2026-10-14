@@ -152,16 +152,22 @@ test('every table application SQL touches is created by a migration and checked 
   const live = liveTablesFromMigrations();
   const references = sqlTableReferences();
   const required = new Set(REQUIRED_RUNTIME_RELATIONS);
+  // Created by scripts/migrate.mjs at bootstrap, not by numbered SQL migrations.
+  // Keep checking its existence through REQUIRED_RUNTIME_RELATIONS and schema parity.
+  const bootstrapTables = new Set(['oxisg_schema_migrations']);
   // Catalog, CTE and set-returning-function names that legitimately follow FROM/JOIN.
   const nonTables = new Set([
     'information_schema', 'pg_class', 'pg_namespace', 'pg_constraint', 'pg_indexes', 'pg_attribute',
     'unnest', 'jsonb_array_elements', 'jsonb_array_elements_text', 'jsonb_each', 'jsonb_object_keys',
     'generate_series', 'json_array_elements', 'lateral', 'only', 'set',
   ]);
+  assert.match(readFileSync(join(root, 'scripts/migrate.mjs'), 'utf8'),
+    /CREATE TABLE IF NOT EXISTS oxisg_schema_migrations/,
+    'Migration runner must create its bootstrap ledger');
   const unknown = [];
   const unchecked = [];
   for (const [name, files] of references) {
-    if (nonTables.has(name)) continue;
+    if (nonTables.has(name) || bootstrapTables.has(name)) continue;
     if (live.has(name)) {
       if (!required.has(name)) unchecked.push(name);
     } else if (/^[a-z]+_[a-z0-9_]+$/.test(name) || ['users', 'sessions', 'collaborations'].includes(name)) {
