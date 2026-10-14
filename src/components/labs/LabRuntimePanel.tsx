@@ -551,10 +551,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         {!embedded && <h1 className="mr-auto text-2xl font-bold md:text-3xl">Cyber Lab</h1>}
         <Badge variant="outline"><Network className="mr-1 h-3.5 w-3.5" />{nodes.length} nodes · {edges.length} links</Badge>
         <Badge variant={capabilities?.configured ? "default" : "outline"}><Server className="mr-1 h-3.5 w-3.5" />{capabilities?.configured ? "Ready" : "Unavailable"}</Badge>
-        <Button size="sm" variant="outline" className="h-8" onClick={() => setTopologyOpen((open) => !open)} aria-expanded={topologyOpen}>
-          {topologyOpen ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
-          {topologyOpen ? "Hide topology" : "Show topology"}
-        </Button>
       </div>
 
       {capabilities && !capabilities.configured && (
@@ -596,19 +592,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
       )}
 
 
-      {topologyVisible && (
-        <div className="oxsig-lab-panel-switcher" role="group" aria-label="Lab panels">
-          {([['machines', 'Machines', Server], ['topology', 'Topology', Network], ['inspector', 'Inspector', Info]] as const).map(([panel, label, Icon]) => (
-            <Button key={panel} size="sm" variant={compactPanel === panel ? 'secondary' : 'ghost'} aria-pressed={compactPanel === panel} className="min-h-11 flex-1" onClick={() => {
-              setCompactPanel(panel);
-              if (panel === 'machines') setMachinesOpen(true);
-              if (panel === 'inspector') setInspectorOpen(true);
-            }}><Icon className="mr-1.5 h-4 w-4" />{label}</Button>
-          ))}
-        </div>
-      )}
-
-      <div className={topologyVisible ? "block" : "hidden"}>
+      <div className="oxsig-lab-combined-workspace">
         <div className="min-h-0 overflow-hidden">
           <div className="oxsig-lab-grid" style={{ "--lab-columns": labColumns } as React.CSSProperties}>
             <aside aria-label="Machine catalog" className="oxsig-lab-machines overflow-hidden rounded-xl border bg-card">
@@ -657,7 +641,7 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
                 {nodes.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">Add a machine</div>}
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-14 left-3 right-3 rounded-lg border bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">Design-only links · 1 running machine max</div>
-              <Button size="sm" variant="secondary" className="absolute right-3 top-3 z-10 h-8 bg-background/90" onClick={() => setTopologyOpen(false)}><ChevronUp className="mr-1.5 h-3.5 w-3.5" />Collapse</Button>
+              
             </section>
 
             <aside aria-label="Machine inspector" className="oxsig-lab-inspector overflow-hidden rounded-xl border bg-card">
@@ -693,7 +677,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
         </div>
       </div>
 
-      {!topologyVisible && !dockFocus && <button type="button" onClick={() => setTopologyOpen(true)} className="flex w-full items-center justify-between rounded-xl border bg-card px-4 py-3 text-left shadow-sm"><p className="text-sm font-semibold">Lab topology</p><ChevronDown className="h-4 w-4 text-muted-foreground" /></button>}
 
 
       {!dockOpen && instance && <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setDockOpen(true); setDockCollapsed(false); setDockTab(liveAccessMode === "desktop" && desktopId ? "desktop" : "terminal"); if (!terminalId) void refreshTerminal(instance.id); }}><PanelBottom className="mr-2 h-4 w-4" />Open lab dock</Button>}
