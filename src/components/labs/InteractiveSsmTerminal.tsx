@@ -533,7 +533,7 @@ export default function InteractiveSsmTerminal({
       terminalRef.current = terminal;
       fitRef.current = fit;
       fit.fit();
-      terminal.writeln(`OXSIG interactive terminal — ${machineLabel}`);
+      terminal.writeln(`OXSIG Lab Terminal — ${machineLabel}`);
       terminal.writeln("Persistent managed shell. No inbound SSH port is exposed to the learner.\r\n");
 
       dataDisposable = terminal.onData((data) => {
@@ -585,7 +585,7 @@ export default function InteractiveSsmTerminal({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold">Interactive terminal — {machineLabel}</span>
+          <span className="font-semibold">OXSIG Lab Terminal — {machineLabel}</span>
           <Badge variant={state === "connected" ? "default" : "outline"} className="text-[9px]">{state === "connecting" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CircleDot className="mr-1 h-3 w-3" />}{statusLabel}</Badge>
           {sessionId && <span className="text-[10px] text-muted-foreground">Active session</span>}
         </div>
