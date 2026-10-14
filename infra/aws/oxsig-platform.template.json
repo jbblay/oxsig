@@ -85,8 +85,13 @@
     },
     "DbEngineVersion": {
       "Type": "String",
-      "Default": "16",
-      "Description": "PostgreSQL major version; match the Neon source major version."
+      "Default": "18.6",
+      "Description": "Full RDS PostgreSQL version; match Neon 18.6 for forward-compatible migration."
+    },
+    "DbParameterFamily": {
+      "Type": "String",
+      "Default": "postgres18",
+      "Description": "RDS DB parameter group family corresponding to DbEngineVersion."
     },
     "StorageBucketName": {
       "Type": "String",
@@ -140,6 +145,65 @@
       "Default": "resend"
     },
     "EmailFrom": {
+      "Type": "String",
+      "Default": ""
+    },
+    "VoiceTtsProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "elevenlabs",
+        "polly"
+      ],
+      "Default": "elevenlabs"
+    },
+    "VoiceTtsFallbackProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "",
+        "elevenlabs",
+        "polly"
+      ],
+      "Default": ""
+    },
+    "VoicePollyRegion": {
+      "Type": "String",
+      "Default": "eu-central-1"
+    },
+    "VoicePollyVoiceId": {
+      "Type": "String",
+      "Default": "Joanna"
+    },
+    "VoicePollyEngine": {
+      "Type": "String",
+      "AllowedValues": [
+        "standard",
+        "neural",
+        "generative"
+      ],
+      "Default": "neural"
+    },
+    "VoiceSttProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "elevenlabs",
+        "transcribe"
+      ],
+      "Default": "elevenlabs"
+    },
+    "VoiceSttFallbackProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "",
+        "elevenlabs",
+        "transcribe"
+      ],
+      "Default": ""
+    },
+    "VoiceTranscribeRegion": {
+      "Type": "String",
+      "Default": "eu-central-1"
+    },
+    "VoiceTranscribeLanguageCode": {
       "Type": "String",
       "Default": ""
     },
@@ -466,7 +530,7 @@
       "Properties": {
         "Description": "OXSIG PostgreSQL parameters",
         "Family": {
-          "Fn::Sub": "postgres${DbEngineVersion}"
+          "Ref": "DbParameterFamily"
         },
         "Parameters": {
           "rds.force_ssl": "1",
@@ -811,6 +875,26 @@
                   ]
                 },
                 {
+                  "Sid": "VoiceSynthesis",
+                  "Effect": "Allow",
+                  "Action": [
+                    "polly:SynthesizeSpeech"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "VoiceTranscription",
+                  "Effect": "Allow",
+                  "Action": [
+                    "transcribe:StartTranscriptionJob",
+                    "transcribe:GetTranscriptionJob",
+                    "transcribe:DeleteTranscriptionJob"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/oxsig-voice-*"
+                  }
+                },
+                {
                   "Sid": "TransactionalEmail",
                   "Effect": "Allow",
                   "Action": [
@@ -1006,6 +1090,60 @@
                 "Name": "EMAIL_FROM",
                 "Value": {
                   "Ref": "EmailFrom"
+                }
+              },
+              {
+                "Name": "OXSIG_VOICE_TTS_PROVIDER",
+                "Value": {
+                  "Ref": "VoiceTtsProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_VOICE_TTS_FALLBACK_PROVIDER",
+                "Value": {
+                  "Ref": "VoiceTtsFallbackProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_POLLY_REGION",
+                "Value": {
+                  "Ref": "VoicePollyRegion"
+                }
+              },
+              {
+                "Name": "OXSIG_POLLY_VOICE_ID",
+                "Value": {
+                  "Ref": "VoicePollyVoiceId"
+                }
+              },
+              {
+                "Name": "OXSIG_POLLY_ENGINE",
+                "Value": {
+                  "Ref": "VoicePollyEngine"
+                }
+              },
+              {
+                "Name": "OXSIG_VOICE_STT_PROVIDER",
+                "Value": {
+                  "Ref": "VoiceSttProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_VOICE_STT_FALLBACK_PROVIDER",
+                "Value": {
+                  "Ref": "VoiceSttFallbackProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_TRANSCRIBE_REGION",
+                "Value": {
+                  "Ref": "VoiceTranscribeRegion"
+                }
+              },
+              {
+                "Name": "OXSIG_TRANSCRIBE_LANGUAGE_CODE",
+                "Value": {
+                  "Ref": "VoiceTranscribeLanguageCode"
                 }
               },
               {

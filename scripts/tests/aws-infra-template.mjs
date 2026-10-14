@@ -145,3 +145,42 @@ test('the stack can be created without serving traffic or incurring task cost', 
 test('cost budget tracks gross usage (credits excluded)', () => {
   assert.equal(Resources.MonthlyBudget.Properties.Budget.CostTypes.IncludeCredit, false);
 });
+
+test('PostgreSQL destination matches the production Neon major version', () => {
+  assert.equal(Parameters.DbEngineVersion.Default, '18.6');
+  assert.equal(Parameters.DbParameterFamily.Default, 'postgres18');
+  assert.deepEqual(Resources.DatabaseParameterGroup.Properties.Family, { Ref: 'DbParameterFamily' });
+});
+
+test('Polly TTS is available with explicit opt-in and least required task permission', () => {
+  assert.equal(Parameters.VoiceTtsProvider.Default, 'elevenlabs');
+  assert.equal(Parameters.VoiceTtsFallbackProvider.Default, '');
+  const statements = Resources.TaskRole.Properties.Policies[0].PolicyDocument.Statement;
+  assert.ok(statements.some((s) => s.Sid === 'VoiceSynthesis'
+    && s.Effect === 'Allow'
+    && s.Action.includes('polly:SynthesizeSpeech')));
+  const vars = Object.fromEntries(
+    Resources.TaskDefinition.Properties.ContainerDefinitions[0].Environment
+      .map((v) => [v.Name, v.Value])
+  );
+  assert.deepEqual(vars.OXSIG_VOICE_TTS_PROVIDER, { Ref: 'VoiceTtsProvider' });
+  assert.deepEqual(vars.OXSIG_POLLY_REGION, { Ref: 'VoicePollyRegion' });
+});
+
+test('AWS Transcribe STT is opt-in and has narrowly scoped transcription-job permissions', () => {
+  assert.equal(Parameters.VoiceSttProvider.Default, 'elevenlabs');
+  assert.equal(Parameters.VoiceSttFallbackProvider.Default, '');
+  const statements = Resources.TaskRole.Properties.Policies[0].PolicyDocument.Statement;
+  const transcribe = statements.find((s) => s.Sid === 'VoiceTranscription');
+  assert.ok(transcribe);
+  assert.deepEqual(transcribe.Action, [
+    'transcribe:StartTranscriptionJob',
+    'transcribe:GetTranscriptionJob',
+    'transcribe:DeleteTranscriptionJob',
+  ]);
+  const vars = Object.fromEntries(
+    Resources.TaskDefinition.Properties.ContainerDefinitions[0].Environment.map((v) => [v.Name, v.Value])
+  );
+  assert.deepEqual(vars.OXSIG_VOICE_STT_PROVIDER, { Ref: 'VoiceSttProvider' });
+  assert.deepEqual(vars.OXSIG_TRANSCRIBE_REGION, { Ref: 'VoiceTranscribeRegion' });
+});
