@@ -218,7 +218,6 @@ export default function LabRuntimePanel({ embedded = false }: { embedded?: boole
   const liveExpiringSoon = liveMinutesLeft !== null && liveMinutesLeft > 0 && liveMinutesLeft <= 10;
   const liveExpired = liveMinutesLeft !== null && liveMinutesLeft <= 0;
   const lifecycleBusy = busy === "start" || busy === "stop" || busy === "destroy";
-  const topologyVisible = topologyOpen && !dockFocus;
   const labColumns = `${machinesOpen ? "232px" : "52px"} minmax(0,1fr) ${inspectorOpen ? "280px" : "52px"}`;
 
   const load = React.useCallback(async (silent = false, force = false) => {
