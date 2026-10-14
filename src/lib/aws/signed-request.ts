@@ -98,3 +98,41 @@ export async function awsErrorMessage(response: Response, fallback: string): Pro
   const text = typeof message === 'string' && message ? message : fallback;
   return `${type ? `${type}: ` : ''}${text} (${response.status})`.slice(0, 500);
 }
+
+/**
+ * Signed binary S3 requests for the voice transcription pipeline. Callers must
+ * construct the AWS endpoint and encoded path from trusted configuration.
+ * Unlike signedAwsJsonRequest, this keeps audio bytes and JSON results intact.
+ */
+export async function signedAwsBinaryRequest(
+  request: Omit<SignedAwsRequest, 'body'> & { body?: Uint8Array }
+): Promise<Response> {
+  const method = request.method ?? 'GET';
+  const credentials = request.credentials ?? defaultAwsCredentials(request.region);
+  const signer = new SignatureV4({
+    credentials,
+    region: request.region,
+    service: request.service,
+    sha256: Sha256,
+  });
+  const signed = await signer.sign(new HttpRequest({
+    protocol: 'https:',
+    hostname: request.hostname,
+    method,
+    path: request.path,
+    headers: {
+      host: request.hostname,
+      ...(request.body ? { 'content-type': 'application/octet-stream' } : {}),
+      ...request.headers,
+    },
+    body: request.body,
+  }));
+  const headers = { ...(signed.headers as Record<string, string>) };
+  delete headers.host;
+  return (request.fetchImpl ?? fetch)(`https://${request.hostname}${request.path}`, {
+    method,
+    headers,
+    ...(request.body ? { body: request.body } : {}),
+    signal: request.signal,
+  });
+}
