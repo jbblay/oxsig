@@ -41,3 +41,56 @@ With these parameters, `DesiredCount` stays 0, `ContainerImage` is empty, and th
    - Add `CertificateArn` and `PublicAppUrl` (an ACM certificate in the same region).
    - Point the hostname at the ALB, and add it to Clerk's allowed origins.
    - Set `EnableCleanupSchedule=true` only after Vercel Cron is disabled.
+
+## Windows desktop guest credentials
+
+OXSIG's Windows **Get Windows login** button rotates the built-in guest
+Administrator password for the authenticated owner of a running, desktop-mode
+lab. The application writes a randomly named, 15-minute-expiring SSM
+`SecureString` parameter and passes **only its name** in SSM Run Command.
+The Windows VM reads the secret itself over its instance role; only after the
+guest command succeeds does the app return the credentials to the owner.
+
+The EC2 instance profile role must have **only** the parameter read permission
+in [`desktop-guest-parameter-read.policy.json`](./desktop-guest-parameter-read.policy.json).
+This is separate from the Vercel app role, which owns `PutParameter` and
+`DeleteParameter`. The policy must not grant `ssm:GetParametersByPath` or
+`ssm:DescribeParameters`. Parameter names are unguessable (160 random bits);
+they are deleted after a settled command and expire after 15 minutes as a
+fallback. This shared guest role is a transitional architecture: for stronger
+tenant isolation, move to per-instance role restrictions or a dedicated
+credential broker before enabling untrusted customer desktop workloads.
+
+Apply the versioned role policy **only after reviewing it**:
+
+```bash
+aws iam put-role-policy \
+  --role-name oxsig-lab-ssm-role \
+  --policy-name OxsigGuestDesktopCredentialRead \
+  --policy-document file://infra/aws/desktop-guest-parameter-read.policy.json
+
+aws iam get-role-policy \
+  --role-name oxsig-lab-ssm-role \
+  --policy-name OxsigGuestDesktopCredentialRead
+```
+
+Verify each test lab is `running`, that SSM `DescribeInstanceInformation`
+reports `PingStatus=Online`, and that the PowerShell AWS Tools
+`Get-SSMParameter` command is available on the Windows AMI. The app refuses
+to create a credential before these AWS checks pass; a later SSM command
+reported as `Undeliverable` also refuses to return a password. Do not
+log guest secrets, try to recover expired passwords, or return credentials
+until actual guest application has been confirmed. Verify username/password
+inside the browser desktop in a controlled disposable Windows VM; stop or
+terminate test machines after recording evidence.
+
+**Ubuntu, Rocky, Kali**: The current OXSIG Linux desktop uses a non-root
+`oxsig-desktop` user running XFCE + TigerVNC bound to loopback on port 5901.
+The graphical desktop is already signed in, reached exclusively over the
+authenticated private OXSIG SSM tunnel. It requires **no Windows-style guest
+login credential**. Don't enable direct VNC network ingress or install a
+blanket/root guest password to imitate Windows; separately plan a per-user
+credential flow only if a future Linux login manager actually requires it.
+Note: this bootstrap currently requires apt (Debian-compatible images);
+Rocky Linux desktop bootstrap needs distribution support and must be tested
+separately before treating it as functional.

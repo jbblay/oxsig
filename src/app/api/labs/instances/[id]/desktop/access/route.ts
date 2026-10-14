@@ -8,6 +8,7 @@ import { validateCsrfToken } from '@/lib/security/csrf';
 import { checkRateLimit } from '@/lib/security/rate-limit';
 import { getPool } from '@/lib/db/pool';
 import { executeLabCommand } from '@/lib/labs/aws-runtime';
+import { getLabTerminalDiagnostics } from '@/lib/labs/terminal-observability';
 import { getRequestMetadata, logAudit } from '@/lib/audit/logger';
 
 export const runtime = 'nodejs';
@@ -18,6 +19,7 @@ const ssm = new SSMClient(awsClientConfig(REGION));
 
 const idSchema = z.string().uuid();
 const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Pragma: 'no-cache' };
+const UNDELIVERABLE = new Set(['Undeliverable', 'DeliveryTimedOut', 'Delivery Timed Out', 'Delivery Failed']);
 
 function reply(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
@@ -53,6 +55,24 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return reply({ error: 'This lab has expired' }, 410);
     }
 
+    // SSM Run Command can accept a command even when the guest is offline.
+    // Fail before generating/storing any secret unless the owned EC2 instance
+    // is running and the agent is registered and reporting Online.
+    try {
+      const diagnostics = await getLabTerminalDiagnostics(lab.runtime_external_id);
+      if (diagnostics.ec2State !== 'running') {
+        return reply({ code: 'EC2_NOT_RUNNING', error: 'The Windows lab machine is not running. Start the lab and retry.' }, 409);
+      }
+      if (!diagnostics.instanceProfileConfigured || !diagnostics.ssmRegistered || diagnostics.ssmPingStatus !== 'Online') {
+        return reply({ code: 'SSM_NOT_READY', error: 'Windows is starting or its SSM agent is offline. Wait for SSM Online in Diagnostics, then retry.' }, 503);
+      }
+      if (diagnostics.platformType && diagnostics.platformType !== 'Windows') {
+        return reply({ code: 'DESKTOP_PLATFORM_MISMATCH', error: 'The machine does not match the selected Windows desktop.' }, 409);
+      }
+    } catch {
+      return reply({ code: 'DESKTOP_DIAGNOSTICS_FAILED', error: 'Could not verify machine readiness. Please retry shortly.' }, 503);
+    }
+
     // ASCII keys work reliably through the browser's RFB keyboard bridge.
     // The fixed prefix satisfies Windows complexity requirements; the random
     // suffix makes the password unique to this issuance.
@@ -83,9 +103,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       const invocation = await executeLabCommand(lab.runtime_external_id, command, 'windows', { maxAttempts: 115 });
       commandSettled = true;
       const username = invocation.stdout.split(/\r?\n/).find((line) => line.startsWith('OXSIG_USER='))?.slice('OXSIG_USER='.length).trim();
-      if (invocation.exitCode !== 0 || !username) {
+      if (UNDELIVERABLE.has(invocation.statusDetails)) {
+        return reply({ code: 'SSM_NOT_READY', error: 'The Windows machine did not receive the login command. Wait for SSM Online in Diagnostics, then retry.' }, 503);
+      }
+      if (invocation.status !== 'Success' || invocation.exitCode !== 0 || !username) {
         // Never return SSM stdout/stderr, which may contain guest details.
-        return reply({ error: 'Windows login could not be prepared. Try again shortly.' }, 503);
+        return reply({ code: 'DESKTOP_LOGIN_GUEST_FAILED', error: 'Windows could not set the login password. Check guest readiness and try again.' }, 503);
       }
       await logAudit({
         userId: user.id,
@@ -101,7 +124,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         labInstanceId: id,
         reason: error instanceof Error ? error.name : 'unknown',
       });
-      return reply({ error: 'Windows login could not be prepared. Try again shortly.' }, 503);
+      return reply({
+        code: 'DESKTOP_LOGIN_FAILED',
+        error: 'Windows login could not be prepared. Check SSM readiness in Diagnostics and try again.',
+      }, 503);
     } finally {
       // When polling times out, SSM may still be reading the parameter. Let the
       // 15-minute Parameter Store expiration clean it up instead of racing the VM.
