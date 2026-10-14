@@ -157,7 +157,7 @@ export async function transcribeAwsSpeech({
         };
         const text = data.results?.transcripts?.[0]?.transcript?.trim() || '';
         if (!text) throw new Error('Amazon Transcribe returned an empty transcript.');
-        return { text, languageCode: job.LanguageCode || language || null };
+        return { text, languageCode: job?.LanguageCode || language || null };
       }
       if (status !== 'QUEUED' && status !== 'IN_PROGRESS') {
         throw new Error('Amazon Transcribe returned an unexpected job state.');
