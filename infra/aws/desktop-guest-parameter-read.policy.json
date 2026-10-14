@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyShortLivedOxsigDesktopCredential",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter"
+      ],
+      "Resource": "arn:aws:ssm:eu-central-1:094525993701:parameter/oxsig/desktop-access/*",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "true"
+        },
+        "StringEquals": {
+          "aws:RequestedRegion": "eu-central-1"
+        }
+      }
+    }
+  ]
+}
