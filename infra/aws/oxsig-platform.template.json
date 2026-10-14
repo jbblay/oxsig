@@ -182,6 +182,31 @@
       ],
       "Default": "neural"
     },
+    "VoiceSttProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "elevenlabs",
+        "transcribe"
+      ],
+      "Default": "elevenlabs"
+    },
+    "VoiceSttFallbackProvider": {
+      "Type": "String",
+      "AllowedValues": [
+        "",
+        "elevenlabs",
+        "transcribe"
+      ],
+      "Default": ""
+    },
+    "VoiceTranscribeRegion": {
+      "Type": "String",
+      "Default": "eu-central-1"
+    },
+    "VoiceTranscribeLanguageCode": {
+      "Type": "String",
+      "Default": ""
+    },
     "SesIdentityDomain": {
       "Type": "String",
       "Default": "",
@@ -858,6 +883,18 @@
                   "Resource": "*"
                 },
                 {
+                  "Sid": "VoiceTranscription",
+                  "Effect": "Allow",
+                  "Action": [
+                    "transcribe:StartTranscriptionJob",
+                    "transcribe:GetTranscriptionJob",
+                    "transcribe:DeleteTranscriptionJob"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/oxsig-voice-*"
+                  }
+                },
+                {
                   "Sid": "TransactionalEmail",
                   "Effect": "Allow",
                   "Action": [
@@ -1083,6 +1120,30 @@
                 "Name": "OXSIG_POLLY_ENGINE",
                 "Value": {
                   "Ref": "VoicePollyEngine"
+                }
+              },
+              {
+                "Name": "OXSIG_VOICE_STT_PROVIDER",
+                "Value": {
+                  "Ref": "VoiceSttProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_VOICE_STT_FALLBACK_PROVIDER",
+                "Value": {
+                  "Ref": "VoiceSttFallbackProvider"
+                }
+              },
+              {
+                "Name": "OXSIG_TRANSCRIBE_REGION",
+                "Value": {
+                  "Ref": "VoiceTranscribeRegion"
+                }
+              },
+              {
+                "Name": "OXSIG_TRANSCRIBE_LANGUAGE_CODE",
+                "Value": {
+                  "Ref": "VoiceTranscribeLanguageCode"
                 }
               },
               {
