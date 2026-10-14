@@ -132,8 +132,8 @@ export async function purgeUserAccount(pool: Pool, userId: string) {
   );
   for (const lab of labs.rows) await destroyStandaloneLab(pool, lab.id);
 
-  const hasLegacyDocuments = await relationExists(pool, 'documents');
-  const [ownedCollaborations, storyboardAudio, contributedAttachments, legacyDocuments] = await Promise.all([
+  // The legacy documents table was retired by migration 045.
+  const [ownedCollaborations, storyboardAudio, contributedAttachments] = await Promise.all([
     pool.query(`SELECT id FROM collaborations WHERE owner_id=$1`, [userId]),
     pool.query(`SELECT audio_storage_key FROM storyboard_sessions WHERE owner_id=$1 AND audio_storage_key IS NOT NULL`, [userId]),
     pool.query(
@@ -142,9 +142,6 @@ export async function purgeUserAccount(pool: Pool, userId: string) {
         WHERE user_id=$1 AND metadata ? 'attachment'`,
       [userId]
     ),
-    hasLegacyDocuments
-      ? pool.query(`SELECT storage_key FROM documents WHERE owner_id=$1 AND storage_key IS NOT NULL`, [userId])
-      : Promise.resolve({ rows: [] as Array<{ storage_key: string }> }),
   ]);
 
   await deleteStoragePrefix(getUserStoragePrefix(userId));
@@ -155,7 +152,6 @@ export async function purgeUserAccount(pool: Pool, userId: string) {
   await deleteStorageKeys([
     ...storyboardAudio.rows.map((row) => row.audio_storage_key as string),
     ...contributedAttachments.rows.map((row) => row.object_key as string).filter(Boolean),
-    ...legacyDocuments.rows.map((row) => row.storage_key as string),
   ]);
 
   const client = await pool.connect();
