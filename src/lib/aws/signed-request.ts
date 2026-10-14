@@ -144,7 +144,7 @@ export async function signedAwsBinaryRequest(
   return (request.fetchImpl ?? fetch)(`https://${request.hostname}${request.path}`, {
     method,
     headers,
-    ...(request.body ? { body: request.body } : {}),
+    ...(request.body ? { body: Buffer.from(request.body) } : {}),
     signal: request.signal,
   });
 }
