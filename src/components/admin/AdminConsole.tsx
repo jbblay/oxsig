@@ -54,7 +54,7 @@ export default function AdminConsole() {
   }), [updateParams]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5" data-testid="admin-console">
+    <div className="mx-auto min-w-0 max-w-7xl space-y-5" data-testid="admin-console">
       <header className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.09] via-card to-card px-5 py-5 sm:px-6">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" aria-hidden="true" />
         <div className="relative flex flex-wrap items-center gap-4">
@@ -95,7 +95,7 @@ export default function AdminConsole() {
         </nav>
       </header>
 
-      <section key={`${tab}-${dataVersion}`} aria-label={TABS.find((item) => item.id === tab)?.label}>
+      <section key={`${tab}-${dataVersion}`} className="min-w-0" aria-label={TABS.find((item) => item.id === tab)?.label}>
         {tab === 'overview' && <AdminOverviewPanel navigation={navigation} />}
         {tab === 'users' && <AdminUsers navigation={navigation} />}
         {tab === 'resources' && <AdminResources navigation={navigation} />}
