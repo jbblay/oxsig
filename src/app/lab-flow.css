@@ -436,3 +436,32 @@
     pointer-events: auto;
   }
 }
+
+
+/* Inspector-first selection flow: select from the machine palette, inspect and
+   choose access, then show the topology only after at least one machine is
+   added. Retain every topology node/edge control and keep sessions below. */
+.oxsig-lab-runtime .oxsig-lab-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+.oxsig-lab-runtime .oxsig-lab-machines,
+.oxsig-lab-runtime .oxsig-lab-inspector {
+  width: 100% !important;
+  min-width: 0;
+}
+.oxsig-lab-runtime .oxsig-inspector-content {
+  max-height: none;
+  overflow-y: visible;
+}
+.oxsig-lab-runtime .oxsig-lab-canvas[data-topology-visible="false"] {
+  display: none !important;
+}
+@media (min-width: 1200px) {
+  .oxsig-lab-runtime .oxsig-machine-list {
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+  }
+}
