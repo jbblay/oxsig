@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/middleware';
 import { getPool } from '@/lib/db/pool';
-import { emailProviderConfigured } from '@/lib/email/resend';
+import { emailProviderConfigured } from '@/lib/email/server';
 import { logAudit, getRequestMetadata, AUDIT_ACTIONS } from '@/lib/audit/logger';
 import { publishStoryboardEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';

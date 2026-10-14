@@ -9,7 +9,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/db/pool', () => ({
   getPool: () => ({ query: mocks.query, connect: mocks.connect }),
 }));
-vi.mock('@/lib/email/resend', () => ({
+vi.mock('@/lib/email/server', () => ({
   escapeEmailHtml: (value: string) => value,
   publicAppUrl: (value: string) => value,
   sendTransactionalEmail: vi.fn(),

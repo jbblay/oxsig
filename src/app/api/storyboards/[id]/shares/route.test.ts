@@ -22,7 +22,7 @@ vi.mock('@/lib/storyboards/invitations', () => ({
   createStoryboardInvitation: mocks.createInvitation,
   sendStoryboardInvitationEmail: mocks.sendInvitation,
 }));
-vi.mock('@/lib/email/resend', () => ({ emailProviderConfigured: mocks.emailProviderConfigured }));
+vi.mock('@/lib/email/server', () => ({ emailProviderConfigured: mocks.emailProviderConfigured }));
 vi.mock('@/lib/realtime/ably', () => ({ publishStoryboardEvent: mocks.publishStoryboardEvent }));
 vi.mock('@/lib/audit/logger', () => ({
   AUDIT_ACTIONS: { STORYBOARD_SHARE: 'storyboard.share' },

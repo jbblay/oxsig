@@ -1,10 +1,12 @@
 import 'server-only';
 
+import { bedrockProvider } from './bedrock';
 import { openAiProvider } from './openai';
 import type { StructuredAiProvider, StructuredAiRequest } from './types';
 
 const PROVIDERS: Record<string, StructuredAiProvider> = {
   openai: openAiProvider,
+  bedrock: bedrockProvider,
 };
 
 export const DEFAULT_AI_REQUEST_TIMEOUT_MS = 45_000;
@@ -52,9 +54,62 @@ export function getStructuredAiProvider(): StructuredAiProvider {
   return provider;
 }
 
+/**
+ * Optional secondary provider used when the primary fails (not on timeout or
+ * cancellation). Enables incremental cutover, e.g. OXSIG_AI_PROVIDER=bedrock
+ * with OXSIG_AI_FALLBACK_PROVIDER=openai, and instant rollback by env change.
+ */
+export function fallbackAiProviderId() {
+  const id = process.env.OXSIG_AI_FALLBACK_PROVIDER?.trim().toLowerCase();
+  return id && id !== activeAiProviderId() && PROVIDERS[id] ? id : null;
+}
+
+function providerChain(): StructuredAiProvider[] {
+  const primary = getStructuredAiProvider();
+  const fallbackId = fallbackAiProviderId();
+  const fallback = fallbackId ? PROVIDERS[fallbackId] : null;
+  const usable = [primary, fallback].filter(
+    (provider): provider is StructuredAiProvider => Boolean(provider && provider.configured())
+  );
+  // Nothing configured: call the primary so it reports its own configuration error.
+  return usable.length ? usable : [primary];
+}
+
+function logAiAttempt(entry: { provider: string; model: string; ms: number; ok: boolean; fallback: boolean; error?: string }) {
+  // One structured line per attempt (CloudWatch Logs Insights / Vercel logs friendly).
+  console.warn(JSON.stringify({ event: 'oxsig.ai.request', ...entry }));
+}
+
+async function generateWithProviders<T>(request: StructuredAiRequest, signal: AbortSignal): Promise<T> {
+  const chain = providerChain();
+  let lastError: unknown;
+  for (const [index, provider] of chain.entries()) {
+    const started = Date.now();
+    try {
+      const result = await provider.generateStructured<T>({ ...request, signal });
+      if (chain.length > 1) logAiAttempt({ provider: provider.id, model: provider.model(), ms: Date.now() - started, ok: true, fallback: index > 0 });
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (signal.aborted || index === chain.length - 1) throw error;
+      logAiAttempt({
+        provider: provider.id,
+        model: provider.model(),
+        ms: Date.now() - started,
+        ok: false,
+        fallback: index > 0,
+        error: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+      });
+    }
+  }
+  throw lastError;
+}
+
 export function aiProviderConfigured() {
   try {
-    return getStructuredAiProvider().configured();
+    if (getStructuredAiProvider().configured()) return true;
+    const fallbackId = fallbackAiProviderId();
+    return Boolean(fallbackId && PROVIDERS[fallbackId].configured());
   } catch {
     return false;
   }
@@ -100,7 +155,7 @@ export async function generateStructuredAi<T>(
 
   try {
     return await Promise.race([
-      getStructuredAiProvider().generateStructured<T>({ ...request, signal: controller.signal }),
+      generateWithProviders<T>(request, controller.signal),
       lifecycleFailure,
     ]);
   } catch (error) {

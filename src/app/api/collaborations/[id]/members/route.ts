@@ -8,7 +8,7 @@ import {
   createCollaborationInvitation,
   sendCollaborationInvitationEmail,
 } from '@/lib/collab/invitations';
-import { emailProviderConfigured } from '@/lib/email/resend';
+import { emailProviderConfigured } from '@/lib/email/server';
 import { createWorkspaceNotification } from '@/lib/notifications/server';
 import { publishCollaborationEvent } from '@/lib/realtime/ably';
 import { validateCsrfToken } from '@/lib/security/csrf';

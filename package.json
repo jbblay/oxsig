@@ -24,7 +24,7 @@
     "e2e:install": "npm install --prefix e2e --no-package-lock && ./e2e/node_modules/.bin/playwright install chromium",
     "test:e2e": "./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs",
     "test": "vitest",
-    "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs scripts/tests/production-regressions.mjs scripts/tests/migrations-integrity.mjs",
+    "test:run": "vitest run && node --experimental-vm-modules --test scripts/check-operation-access.mjs scripts/tests/*.mjs",
     "test:operation-access": "node --experimental-vm-modules --test scripts/check-operation-access.mjs",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "node scripts/migrate.mjs",

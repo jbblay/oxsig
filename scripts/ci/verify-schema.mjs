@@ -15,6 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { compareSnapshots, snapshotDatabase } from '../aws/db-compare-lib.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const url = process.env.OXSIG_CI_DATABASE_URL;
@@ -89,6 +90,13 @@ try {
     `SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_live_workspace_control_leases_one_active_controller'`
   );
   if (!index.rows[0]) fail('single-active-controller lease index is missing');
+
+  step('exercising the Neon -> RDS copy verifier against real PostgreSQL');
+  const snapshotA = await snapshotDatabase(client);
+  const snapshotB = await snapshotDatabase(client);
+  const selfCompare = compareSnapshots(snapshotA, snapshotB);
+  if (!selfCompare.ok || selfCompare.tablesCompared === 0) fail(`db-compare self-check failed: ${selfCompare.problems.join('; ')}`);
+  if (Object.keys(snapshotA.ledger).length !== expectedCount) fail('db-compare did not read the full migration ledger');
 
   step('exercising application SQL paths (rolled back)');
   await client.query('BEGIN');
