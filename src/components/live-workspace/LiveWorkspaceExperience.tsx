@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Link2, ListChecks, Loader2, Plus, RadioTower, RefreshCw, UsersRound, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, Link2, Loader2, Plus, RadioTower, RefreshCw, UsersRound, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
