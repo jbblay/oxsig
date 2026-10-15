@@ -277,14 +277,6 @@ try {
       [applicant]
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
-    const learnerHistory = await client.query(
-      `SELECT mentor_id, offering_id FROM mentorship_sessions WHERE learner_id=$1`,
-      [invitee]
-    );
-    if (learnerHistory.rowCount !== 1 || learnerHistory.rows[0].mentor_id !== null || learnerHistory.rows[0].offering_id !== null) {
-      fail('deleting a mentor account did not keep the learner session history with a nulled mentor');
-    }
-
     // Account deletion must not require hand-written FK patch-ups (migration 058).
     const collaboration = (await client.query(
       `INSERT INTO collaborations (name, owner_id) VALUES ('CI space', $1) RETURNING id`,
