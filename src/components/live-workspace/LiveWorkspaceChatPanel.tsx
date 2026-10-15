@@ -31,7 +31,7 @@ export default function LiveWorkspaceChatPanel({
   const [loading, setLoading] = React.useState(true);
   const [sending, setSending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const bottomRef = React.useRef<HTMLDivElement | null>(null);
+  const messagesRef = React.useRef<HTMLDivElement | null>(null);
   const load = React.useCallback(async () => {
     const response = await fetch(`/api/collaborations/${workspaceId}/messages?limit=100`, { cache: 'no-store' });
     if (!response.ok) throw new Error('Could not load workspace chat');
@@ -66,7 +66,8 @@ export default function LiveWorkspaceChatPanel({
   }, [load]);
 
   React.useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'nearest' });
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [messages.length]);
 
   async function sendMessage(event: React.FormEvent) {
@@ -101,7 +102,7 @@ export default function LiveWorkspaceChatPanel({
         <CardDescription className="text-xs">Questions and messages stay with this workspace.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div aria-label="Workspace messages" role="log" aria-live="polite" className="max-h-[360px] min-h-[220px] space-y-3 overflow-y-auto rounded-lg border bg-muted/10 p-3">
+        <div ref={messagesRef} aria-label="Workspace messages" role="log" aria-live="polite" className="max-h-[360px] min-h-[220px] space-y-3 overflow-y-auto rounded-lg border bg-muted/10 p-3">
           {loading && <p className="text-xs text-muted-foreground"><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> Loading messages…</p>}
           {!loading && messages.length === 0 && <p className="text-xs text-muted-foreground">No messages yet. Ask a question or say hello.</p>}
           {messages.filter((message) => !message.deleted).map((message) => (
@@ -110,7 +111,6 @@ export default function LiveWorkspaceChatPanel({
               <p className="whitespace-pre-wrap break-words text-sm">{message.type === 'text' ? message.text : message.type === 'audio' ? 'Voice message (open Collaboration for playback)' : message.type === 'resource' ? 'Shared resource (open Collaboration for details)' : message.text}</p>
             </div>
           ))}
-          <div ref={bottomRef} />
         </div>
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         <form className="space-y-2" onSubmit={(event) => void sendMessage(event)}>
