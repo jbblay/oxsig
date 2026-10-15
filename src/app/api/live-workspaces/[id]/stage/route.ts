@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             AND c.status = 'active'
             AND EXISTS (
               SELECT 1 FROM live_workspace_resources r
-               WHERE r.collaboration_id = c.id AND r.id = $4
+               WHERE r.collaboration_id = c.id AND r.id = $4::uuid
                  AND r.status = 'attached' AND r.resource_type = $2
             )
           RETURNING c.id`,
