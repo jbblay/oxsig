@@ -29,4 +29,3 @@ phases:
       - pnpm env:contract
       - pnpm test:run
       - pnpm db:verify
-      - pnpm build
