@@ -25,6 +25,11 @@ const EXPORT_SOURCES: Array<{ key: string; table: string; ownerColumn: string; o
   { key: 'collaborationMemberships', table: 'collaboration_members', ownerColumn: 'user_id', orderBy: 'joined_at', omit: ['permissions'] },
   { key: 'collaborationMessages', table: 'collaboration_messages', ownerColumn: 'user_id', orderBy: 'created_at' },
   { key: 'activityLog', table: 'audit_logs', ownerColumn: 'user_id', orderBy: 'created_at', omit: ['ip_address', 'user_agent'] },
+  // Internal reviewer notes are an administrator work product, not applicant data.
+  { key: 'mentorApplications', table: 'mentor_applications', ownerColumn: 'applicant_id', orderBy: 'created_at', omit: ['reviewer_note', 'decided_by'] },
+  { key: 'mentorApplicationEvents', table: 'mentor_application_events', ownerColumn: 'applicant_id', orderBy: 'created_at', omit: ['actor_id'] },
+  { key: 'mentorProfile', table: 'mentor_profiles', ownerColumn: 'user_id', orderBy: 'created_at', omit: ['approved_by', 'status_changed_by'] },
+  { key: 'mentorQualifications', table: 'mentor_qualifications', ownerColumn: 'mentor_id', orderBy: 'granted_at', omit: ['granted_by', 'revoked_by'] },
 ];
 
 const ROW_LIMIT = 10_000;
