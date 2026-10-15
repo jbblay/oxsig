@@ -10,6 +10,7 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'academy_instructor_interventions',
   'academy_learning_reflections',
   'academy_mastery',
+  'academy_mission_progress',
   'academy_practice_attempts',
   'academy_progress',
   'academy_questions',
