@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import BoardStream from './BoardStream';
 import { createPortal } from 'react-dom';
 import {
   Check,
@@ -495,6 +496,7 @@ export default function BoardLiveReview() {
         </div>
       </div>
 
+      {!boardDeleted && <BoardStream key={activeBoard.id} boardId={activeBoard.id} owner={activeBoard.permission === 'owner'} canvas={canvas} />}
       {overlay}
 
       {panelOpen && (

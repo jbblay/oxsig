@@ -284,11 +284,11 @@ export default function InteractiveSsmDesktop({
       const failure = connectError instanceof DesktopRequestError ? connectError : new DesktopRequestError(connectError instanceof Error ? connectError.message : "Browser desktop connection failed");
       await endServerSession(false);
 
-      if (failure.code && RETRYABLE_BOOTSTRAP_CODES.has(failure.code) && bootstrapRetriesRef.current < 24) {
+      if (failure.code && RETRYABLE_BOOTSTRAP_CODES.has(failure.code) && bootstrapRetriesRef.current < 120) {
         bootstrapRetriesRef.current += 1;
         setState("connecting");
         setError(null);
-        setStatusDetail(`Preparing secure desktop access on ${machineLabel}… (${bootstrapRetriesRef.current}/24)`);
+        setStatusDetail(`Preparing secure desktop access on ${machineLabel}… (${bootstrapRetriesRef.current}/120)`);
         retryTimerRef.current = setTimeout(() => void connectRef.current(true), 5000);
         return;
       }
@@ -463,11 +463,12 @@ export default function InteractiveSsmDesktop({
 
       {platform === "windows" && !sessionEndpoint && state === "connected" && (
         <div className="space-y-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-xs">
+          <p>Standalone Windows labs use the oxsig-desktop account for automatic sign-in after startup. Existing signed-in sessions switch after their next restart; domain-managed machines keep their normal login. Administrator credentials are available below for tasks that need elevation.</p>
           <div className="font-semibold">Windows login</div>
           <p className="text-muted-foreground">OXSIG sign-in opens the private desktop. Windows also needs its own lab password.</p>
           <Button size="sm" variant="outline" onClick={() => void getWindowsAccess()} disabled={accessBusy}>
             {accessBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-            {windowsAccess ? "Rotate Windows password" : "Get Windows login"}
+            {windowsAccess ? "Rotate Windows password" : "Get administrator login"}
           </Button>
           {accessError && <p role="alert" className="text-destructive">{accessError}</p>}
           {windowsAccess && (

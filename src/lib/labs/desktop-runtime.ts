@@ -3,6 +3,7 @@ import 'server-only';
 import { SendCommandCommand, SSMClient, StartSessionCommand } from '@aws-sdk/client-ssm';
 import { awsClientConfig } from '@/lib/aws/client-config';
 import { executeLabCommand } from './aws-runtime';
+import { windowsAutoLogonSetup } from './windows-autologon';
 
 const REGION = process.env.LAB_AWS_REGION || process.env.AWS_REGION || 'eu-central-1';
 const INSTANCE_ID = /^i-[0-9a-f]+$/i;
@@ -85,9 +86,10 @@ $root = 'C:\ProgramData\Oxsig'
 $ready = Join-Path $root 'desktop-ready'
 $lock = Join-Path $root 'desktop-installing'
 New-Item -ItemType Directory -Force -Path $root | Out-Null
-if (Test-Path $ready) { exit 0 }
+if ((Test-Path $ready) -and (Test-Path (Join-Path $root 'desktop-autologon-v1'))) { exit 0 }
 try { New-Item -ItemType File -Path $lock -ErrorAction Stop | Out-Null } catch { exit 0 }
 try {
+  if (-not (Test-Path $ready)) {
   $msi = Join-Path $root 'tightvnc-2.8.88-gpl-setup-64bit.msi'
   $expectedSha256 = 'FA86D817AC29C5FFE1E8E7095E738D9BA5CA28AA62304AC234580916622A8CA2'
   Invoke-WebRequest -UseBasicParsing 'https://www.tightvnc.com/download/2.8.88/tightvnc-2.8.88-gpl-setup-64bit.msi' -OutFile $msi
@@ -102,6 +104,8 @@ try {
   Set-Service -Name tvnserver -StartupType Automatic
   Start-Service -Name tvnserver
   New-Item -ItemType File -Force -Path $ready | Out-Null
+  }
+${windowsAutoLogonSetup}
 } finally {
   Remove-Item -Force -ErrorAction SilentlyContinue $lock
 }`;
@@ -161,7 +165,7 @@ export async function inspectDesktopService(instanceId: string, platform: Deskto
 
 async function readiness(instanceId: string, platform: DesktopPlatform) {
   const command = platform === 'windows'
-    ? "$service=Get-Service tvnserver -ErrorAction SilentlyContinue; if($service -and $service.Status -eq 'Running'){exit 0}else{exit 1}"
+    ? "$service=Get-Service tvnserver -ErrorAction SilentlyContinue; if($service -and $service.Status -eq 'Running' -and (Test-Path 'C:\\ProgramData\\Oxsig\\desktop-autologon-v1')){exit 0}else{exit 1}"
     : "systemctl is-active --quiet oxsig-desktop-vnc.service && test -f /var/lib/oxsig/desktop-ready";
   try {
     const result = await executeLabCommand(instanceId, command, platform);
