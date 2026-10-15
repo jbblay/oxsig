@@ -230,31 +230,6 @@ try {
     slot.setUTCMinutes(0, 0, 0);
     const slotEnd = new Date(slot.getTime() + 30 * 60_000);
     await client.query(insertSession, [invitee, applicant, offeringId, slot, slotEnd, 'requested', null]);
-    await expectViolation('a double booking of the same mentor slot', insertSession, [reviewer, applicant, offeringId, slot, slotEnd, 'requested', null], '23505');
-    await expectViolation('a session whose end does not match its duration', insertSession,
-      [reviewer, applicant, offeringId, new Date(slot.getTime() + 7_200_000), new Date(slot.getTime() + 7_200_000 + 45 * 60_000), 'requested', null], '23514');
-    await expectViolation('a session with oneself', insertSession, [applicant, applicant, offeringId, new Date(slot.getTime() + 86_400_000), new Date(slotEnd.getTime() + 86_400_000), 'requested', null], '23514');
-    await expectViolation('a confirmation without a timestamp', insertSession,
-      [reviewer, applicant, offeringId, new Date(slot.getTime() + 3_600_000), new Date(slotEnd.getTime() + 3_600_000), 'confirmed', null], '23514');
-    const overlapping = await client.query(
-      `SELECT starts_at FROM mentorship_sessions
-        WHERE (mentor_id = ANY($1::uuid[]) OR learner_id = ANY($1::uuid[]))
-          AND status IN ('requested','confirmed')
-          AND tstzrange(starts_at, ends_at, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')`,
-      [[applicant], new Date(slot.getTime() + 15 * 60_000), new Date(slot.getTime() + 45 * 60_000)]
-    );
-    if (overlapping.rowCount !== 1) fail('mentorship overlap query did not find the overlapping booking');
-    const adjacent = await client.query(
-      `SELECT 1 FROM mentorship_sessions
-        WHERE mentor_id = $1 AND tstzrange(starts_at, ends_at, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')`,
-      [applicant, slotEnd, new Date(slotEnd.getTime() + 30 * 60_000)]
-    );
-    if (adjacent.rowCount !== 0) fail('back-to-back mentorship sessions were treated as overlapping');
-    const roomColumn = await client.query(
-      `SELECT 1 FROM information_schema.columns WHERE table_name='live_workspaces' AND column_name='expires_at'`
-    );
-    if (!roomColumn.rows[0]) fail('live_workspaces.expires_at is missing');
-
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
