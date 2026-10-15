@@ -49,7 +49,7 @@ export const SECURITY_HEADERS = {
   'X-XSS-Protection': '1; mode=block',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': [
-    'camera=()',
+    'camera=(self)',
     'microphone=(self)',
     'geolocation=()',
     'interest-cohort=()',

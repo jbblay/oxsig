@@ -50,6 +50,8 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'storyboard_invitations',
   'storyboard_sessions',
   'storyboard_shares',
+  'storyboard_stream_sessions',
+  'storyboard_stream_signals',
   'terminal_bridge_ticket_uses',
   'vault_items',
   'workspace_activity_events',
