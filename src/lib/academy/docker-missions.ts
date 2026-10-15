@@ -45,6 +45,7 @@ export const DOCKER_VERIFY_COMMAND = [
   "test \"$(curl -m 4 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ 2>/dev/null)\" = 200 && echo 'http=ok'",
   "docker inspect -f '{{range .Mounts}}{{if eq .Destination \"/usr/share/nginx/html\"}}{{.Name}}{{end}}{{end}}' oxsig-academy-web 2>/dev/null | grep -qx oxsig_academy_data && echo 'volume=ok'",
   "docker exec oxsig-academy-web grep -Fxq 'OXSIG Academy persistent' /usr/share/nginx/html/index.html 2>/dev/null && echo 'content=ok'",
+  'true',
 ].join('\n');
 
 export const DOCKER_FAULT_COMMAND = [
