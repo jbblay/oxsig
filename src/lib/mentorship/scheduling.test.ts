@@ -68,7 +68,7 @@ describe('slots and overlap', () => {
   });
 
   it('validates booking windows', () => {
-    expect(bookingWindowError(new Date('2026-10-18T12:10:00Z'), now)).toMatch(/30 minutes/);
+    expect(bookingWindowError(new Date('2026-10-18T12:15:00Z'), now)).toMatch(/30 minutes/);
     expect(bookingWindowError(new Date('2026-10-18T13:07:00Z'), now)).toMatch(/15-minute/);
     expect(bookingWindowError(new Date('2026-12-30T12:00:00Z'), now)).toMatch(/30 days/);
     expect(bookingWindowError(new Date('2026-10-19T09:00:00Z'), now)).toBeNull();
