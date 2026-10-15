@@ -255,6 +255,7 @@ try {
     );
     if (!roomColumn.rows[0]) fail('live_workspaces.expires_at is missing');
 
+    await client.query('ALTER TABLE mentorship_sessions DROP CONSTRAINT mentorship_sessions_offering_id_fkey');
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
