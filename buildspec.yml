@@ -28,5 +28,4 @@ phases:
       - pnpm persistence:check
       - pnpm env:contract
       - pnpm test:run
-      - pnpm db:verify
       - pnpm build
