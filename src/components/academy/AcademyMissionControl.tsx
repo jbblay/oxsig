@@ -79,8 +79,10 @@ export default function AcademyMissionControl() {
     if (!stateResponse.ok) throw new Error(await responseError(stateResponse));
     const data = await stateResponse.json() as { progress: Progress[] };
     setProgress(data.progress || []);
+    setNotes((data.progress || []).find(item => item.missionId === 'deploy')?.notes || '');
     if (snapshot.ok) {
-      const running = ((snapshot.data.instances || []) as Lab[]).filter(item => item.status === 'running');
+      const linuxSlugs = new Set((snapshot.data.catalog || []).filter(item => item.platform === 'linux').map(item => item.slug));
+      const running = ((snapshot.data.instances || []) as Lab[]).filter(item => item.status === 'running' && linuxSlugs.has(item.slug));
       setLabs(running);
       setLabId(current => running.some(item => item.id === current) ? current : (running[0]?.id || ''));
     }
