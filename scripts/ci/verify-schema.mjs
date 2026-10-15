@@ -255,6 +255,7 @@ try {
     );
     if (!roomColumn.rows[0]) fail('live_workspaces.expires_at is missing');
 
+    await client.query('DELETE FROM mentor_session_offerings WHERE mentor_id = $1', [applicant]);
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
