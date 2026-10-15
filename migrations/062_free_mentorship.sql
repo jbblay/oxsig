@@ -42,9 +42,15 @@ CREATE TABLE IF NOT EXISTS mentorship_sessions (
   -- their history if the mentor account is deleted.
   learner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   mentor_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  offering_id UUID REFERENCES mentor_session_offerings(id) ON DELETE SET NULL,
-  rescheduled_from UUID REFERENCES mentorship_sessions(id) ON DELETE SET NULL,
-  collaboration_id UUID REFERENCES collaborations(id) ON DELETE SET NULL,
+  -- Snapshot references, deliberately without foreign keys: the session copies
+  -- everything it needs (kind, duration, topic), and the application treats a
+  -- missing offering, original booking or room as "no longer available". FKs
+  -- here would put two referential actions on the same row during account
+  -- deletion (user -> profile -> offering, plus mentor_id), which PostgreSQL
+  -- rejects, so deleting a mentor or learner account would fail.
+  offering_id UUID,
+  rescheduled_from UUID,
+  collaboration_id UUID,
   kind VARCHAR(24) NOT NULL CHECK (kind IN ('quick_help', 'guided_coaching', 'deep_session', 'project_review')),
   duration_minutes SMALLINT NOT NULL CHECK (duration_minutes IN (15, 30, 45, 60)),
   price_cents INTEGER NOT NULL DEFAULT 0 CHECK (price_cents = 0),

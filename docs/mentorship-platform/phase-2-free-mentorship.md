@@ -38,6 +38,7 @@ Migration `062_free_mentorship.sql` is additive:
 Deletion rules:
 - Deleting a learner cascades their sessions.
 - Deleting a mentor sets `mentor_id` to NULL, so the learner keeps their history. Open sessions without a mentor are cancelled lazily.
+- `offering_id`, `rescheduled_from` and `collaboration_id` are snapshot references without foreign keys. With FKs, deleting a mentor account put two referential actions on the same session row (user → profile → offering, plus `mentor_id`), and PostgreSQL rejected the deletion. CI now guards this case. The application treats a missing offering, original booking or room as "no longer available".
 
 The new tables are added to the account export and `REQUIRED_RUNTIME_RELATIONS`. `db:verify` now exercises on real PostgreSQL:
 - paid offering rejected;

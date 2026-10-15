@@ -255,6 +255,15 @@ try {
     );
     if (!roomColumn.rows[0]) fail('live_workspaces.expires_at is missing');
 
+    // Several referential actions from one account deletion on the same rows:
+    // the mentor cancelled (cancelled_by) and authored an event (actor_id).
+    const sessionRow = await client.query(`SELECT id FROM mentorship_sessions WHERE learner_id=$1`, [invitee]);
+    await client.query(`UPDATE mentorship_sessions SET cancelled_by=$1 WHERE id=$2`, [applicant, sessionRow.rows[0].id]);
+    await client.query(
+      `INSERT INTO mentorship_session_events (session_id, actor_id, event_type) VALUES ($1, $2, 'confirmed'), ($1, $3, 'booked')`,
+      [sessionRow.rows[0].id, applicant, invitee]
+    );
+
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
@@ -278,10 +287,12 @@ try {
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
     const learnerHistory = await client.query(
-      `SELECT mentor_id, offering_id FROM mentorship_sessions WHERE learner_id=$1`,
+      `SELECT mentor_id FROM mentorship_sessions WHERE learner_id=$1`,
       [invitee]
     );
-    if (learnerHistory.rowCount !== 1 || learnerHistory.rows[0].mentor_id !== null || learnerHistory.rows[0].offering_id !== null) {
+    // Regression guard: this deletion cascades user -> profile -> offering while
+    // also nulling mentor_id. With an FK on offering_id it raised an error.
+    if (learnerHistory.rowCount !== 1 || learnerHistory.rows[0].mentor_id !== null) {
       fail('deleting a mentor account did not keep the learner session history with a nulled mentor');
     }
 
