@@ -7,6 +7,7 @@ import type {
   MentorTier,
   MentorTrack,
 } from './policy';
+import type { AvailabilityRule, SessionAction, SessionKind, SessionRole, SessionStatus } from './scheduling';
 
 /** Response contracts shared by mentorship routes and UI. */
 
@@ -77,7 +78,62 @@ export type PublicMentorProfile = {
   verifiedCredentials: VerifiedCredential[];
   qualifications: MentorQualificationView[];
   approvedAt: string;
-  /** Session booking and reviews arrive in later phases; never fabricated here. */
-  bookingAvailable: false;
+  offerings: MentorOfferingView[];
+  /** True only when the mentor is accepting bookings and has offerings plus weekly availability. */
+  bookingAvailable: boolean;
+  /** Reviews arrive with Proof of Help (Phase 3); never fabricated here. */
   reviewCount: 0;
+};
+
+export type MentorOfferingView = {
+  id: string;
+  kind: SessionKind;
+  title: string;
+  description: string;
+  durationMinutes: number;
+  specializationIds: string[];
+  isActive: boolean;
+};
+
+export type MentorScheduleState = {
+  timezone: string;
+  offerings: MentorOfferingView[];
+  rules: AvailabilityRule[];
+  qualifiedSpecializationIds: string[];
+};
+
+export type MentorAvailabilityView = {
+  mentorTimezone: string;
+  offering: MentorOfferingView;
+  slots: string[];
+};
+
+export type SharedSessionContext =
+  | { type: 'academy_lesson'; courseTitle: string; lessonTitle: string; lessonSummary: string; practiceTitle: string | null; practiceInstruction: string | null; sharedAt: string }
+  | Record<string, never>;
+
+export type MentorshipSessionView = {
+  id: string;
+  role: SessionRole;
+  status: SessionStatus;
+  kind: SessionKind;
+  durationMinutes: number;
+  specializationId: string;
+  startsAt: string;
+  endsAt: string;
+  learnerTimezone: string;
+  topic: string;
+  learnerGoal: string;
+  attemptedSummary: string;
+  sharedContext: SharedSessionContext;
+  mentorNote: string | null;
+  cancellationReason: string | null;
+  lateCancellation: boolean;
+  mentorSummary: string | null;
+  counterpart: { id: string | null; displayName: string; avatarUrl: string | null };
+  room: { open: boolean; opensAt: string; expiresAt: string; workspaceId: string | null };
+  allowedActions: SessionAction[];
+  rescheduledFrom: string | null;
+  offeringId: string | null;
+  createdAt: string;
 };

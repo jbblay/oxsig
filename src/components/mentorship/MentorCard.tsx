@@ -24,10 +24,10 @@ export function MentorTrackBadge({ track }: { track: 'academy' | 'external' }) {
   );
 }
 
-export default function MentorCard({ mentor }: { mentor: PublicMentorProfile }) {
+export default function MentorCard({ mentor, hrefSuffix = '' }: { mentor: PublicMentorProfile; hrefSuffix?: string }) {
   return (
     <Link
-      href={`/academy/mentors/${mentor.mentorId}`}
+      href={`/academy/mentors/${mentor.mentorId}${hrefSuffix}`}
       className="group flex h-full flex-col gap-3 rounded-xl border bg-card p-4 transition hover:border-primary/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-start gap-3">
@@ -40,6 +40,7 @@ export default function MentorCard({ mentor }: { mentor: PublicMentorProfile }) 
       <div className="flex flex-wrap gap-1.5">
         <Badge variant="outline" className="gap-1"><BadgeCheck className="h-3 w-3 text-primary" aria-hidden="true" /> {MENTOR_TIER_LABELS[mentor.tier]}</Badge>
         <MentorTrackBadge track={mentor.track} />
+        {mentor.bookingAvailable ? <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Booking open</Badge> : null}
       </div>
       <ul className="flex flex-wrap gap-1.5" aria-label="Approved specializations">
         {mentor.qualifications.map((item) => (

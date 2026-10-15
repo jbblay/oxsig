@@ -37,6 +37,7 @@ export async function assertTerminalWorkspaceControl(queryable, authorization) {
        JOIN live_workspaces workspace
          ON workspace.collaboration_id=lease.collaboration_id
         AND workspace.status='active'
+        AND (workspace.expires_at IS NULL OR workspace.expires_at > NOW())
        JOIN collaborations collaboration
          ON collaboration.id=lease.collaboration_id
         AND collaboration.status='active'

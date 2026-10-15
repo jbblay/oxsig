@@ -23,6 +23,7 @@ import { getMentorSpecialization, mentorSpecializationLabel } from './specializa
 import type {
   MentorApplicationSummary,
   MentorCenterState,
+  MentorOfferingView,
   MentorOwnProfile,
   MentorQualificationView,
   PublicMentorProfile,
@@ -125,7 +126,7 @@ function verifiedCredentials(value: unknown): VerifiedCredential[] {
   return Array.isArray(value) ? (value as VerifiedCredential[]) : [];
 }
 
-async function loadActiveQualifications(queryable: Queryable, mentorIds: string[]) {
+export async function loadActiveQualifications(queryable: Queryable, mentorIds: string[]) {
   const byMentor = new Map<string, MentorQualificationView[]>();
   if (!mentorIds.length) return byMentor;
   const result = await queryable.query(
@@ -484,7 +485,61 @@ const PUBLIC_PROFILE_SQL = `SELECT profile.user_id, profile.track, profile.tier,
           AND ($1::text IS NULL OR qualification.specialization_id=$1)
      )`;
 
-function mapPublicProfile(row: Record<string, any>, qualifications: MentorQualificationView[]): PublicMentorProfile {
+export const PUBLIC_MENTOR_PROFILE_SQL = PUBLIC_PROFILE_SQL;
+
+export function mapOffering(row: Record<string, any>): MentorOfferingView {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    description: row.description || '',
+    durationMinutes: Number(row.duration_minutes),
+    specializationIds: row.specialization_ids || [],
+    isActive: Boolean(row.is_active),
+  };
+}
+
+/** Active offerings (restricted to still-active qualifications) and whether weekly availability exists. */
+async function loadBookingSurface(queryable: Queryable, mentorIds: string[]) {
+  const offerings = new Map<string, MentorOfferingView[]>();
+  const withRules = new Set<string>();
+  if (!mentorIds.length) return { offerings, withRules };
+  try {
+    const [offeringRows, ruleRows] = await Promise.all([
+      queryable.query(
+        `SELECT offering.id, offering.mentor_id, offering.kind, offering.title, offering.description,
+                offering.duration_minutes, offering.specialization_ids, offering.is_active
+           FROM mentor_session_offerings offering
+          WHERE offering.mentor_id = ANY($1::uuid[]) AND offering.is_active=true
+          ORDER BY offering.duration_minutes ASC, offering.created_at ASC`,
+        [mentorIds]
+      ),
+      queryable.query(
+        `SELECT DISTINCT mentor_id FROM mentor_availability_rules WHERE mentor_id = ANY($1::uuid[])`,
+        [mentorIds]
+      ),
+    ]);
+    for (const row of offeringRows.rows) {
+      if (!offerings.has(row.mentor_id)) offerings.set(row.mentor_id, []);
+      offerings.get(row.mentor_id)!.push(mapOffering(row));
+    }
+    for (const row of ruleRows.rows) withRules.add(row.mentor_id);
+  } catch (error) {
+    // Before migration 062 the directory still works, without booking.
+    if ((error as { code?: string } | null)?.code !== '42P01') throw error;
+  }
+  return { offerings, withRules };
+}
+
+function mapPublicProfile(
+  row: Record<string, any>,
+  qualifications: MentorQualificationView[],
+  surface: { offerings: MentorOfferingView[]; hasRules: boolean }
+): PublicMentorProfile {
+  const qualified = new Set(qualifications.map((item) => item.specializationId));
+  const offerings = surface.offerings
+    .map((offering) => ({ ...offering, specializationIds: offering.specializationIds.filter((id) => qualified.has(id)) }))
+    .filter((offering) => offering.specializationIds.length > 0);
   return {
     mentorId: row.user_id,
     // Email is never exposed; fall back to a neutral label.
@@ -499,7 +554,8 @@ function mapPublicProfile(row: Record<string, any>, qualifications: MentorQualif
     verifiedCredentials: verifiedCredentials(row.verified_credentials),
     qualifications,
     approvedAt: iso(row.approved_at)!,
-    bookingAvailable: false,
+    offerings,
+    bookingAvailable: offerings.length > 0 && surface.hasRules,
     reviewCount: 0,
   };
 }
@@ -514,8 +570,14 @@ export async function listMentorDirectory(filters: { specializationId?: string |
      LIMIT $3`,
     [specialization, filters.track ?? null, Math.min(Math.max(filters.limit ?? 60, 1), 100)]
   );
-  const qualifications = await loadActiveQualifications(pool, result.rows.map((row) => row.user_id));
-  return result.rows.map((row) => mapPublicProfile(row, qualifications.get(row.user_id) ?? []));
+  const ids = result.rows.map((row) => row.user_id as string);
+  const [qualifications, surface] = await Promise.all([loadActiveQualifications(pool, ids), loadBookingSurface(pool, ids)]);
+  return result.rows.map((row) =>
+    mapPublicProfile(row, qualifications.get(row.user_id) ?? [], {
+      offerings: surface.offerings.get(row.user_id) ?? [],
+      hasRules: surface.withRules.has(row.user_id),
+    })
+  );
 }
 
 export async function getPublicMentorProfile(mentorId: string) {
@@ -523,6 +585,9 @@ export async function getPublicMentorProfile(mentorId: string) {
   const result = await pool.query(`${PUBLIC_PROFILE_SQL} AND profile.user_id=$2 LIMIT 1`, [null, mentorId]);
   const row = result.rows[0];
   if (!row) return null;
-  const qualifications = await loadActiveQualifications(pool, [mentorId]);
-  return mapPublicProfile(row, qualifications.get(mentorId) ?? []);
+  const [qualifications, surface] = await Promise.all([loadActiveQualifications(pool, [mentorId]), loadBookingSurface(pool, [mentorId])]);
+  return mapPublicProfile(row, qualifications.get(mentorId) ?? [], {
+    offerings: surface.offerings.get(mentorId) ?? [],
+    hasRules: surface.withRules.has(mentorId),
+  });
 }

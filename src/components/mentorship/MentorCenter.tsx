@@ -13,6 +13,7 @@ import { MENTOR_PROGRESSION, MENTOR_TIER_LABELS } from '@/lib/mentorship/policy'
 import { MENTOR_SPECIALIZATIONS, mentorSpecializationLabel } from '@/lib/mentorship/specializations';
 import type { MentorApplicationSummary, MentorCenterState, MentorOwnProfile } from '@/lib/mentorship/types';
 import MentorApplicationForm from './MentorApplicationForm';
+import MentorScheduleManager from './MentorScheduleManager';
 import { mentorshipGet, mentorshipMutate } from './mentorship-client';
 
 const STATUS_COPY: Record<MentorApplicationSummary['status'], { label: string; tone: string }> = {
@@ -246,6 +247,7 @@ export default function MentorCenter() {
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-5">
           {state.profile ? <ProfileEditor profile={state.profile} onSaved={() => void load()} /> : null}
+          {state.profile && (state.profile.status === 'active' || state.profile.status === 'paused') ? <MentorScheduleManager /> : null}
           {state.openApplication ? <OpenApplication application={state.openApplication} state={state} onChanged={() => void load()} /> : null}
 
           {!state.openApplication && !(state.profile && ['active', 'paused', 'suspended'].includes(state.profile.status)) ? (

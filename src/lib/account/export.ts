@@ -30,6 +30,10 @@ const EXPORT_SOURCES: Array<{ key: string; table: string; ownerColumn: string; o
   { key: 'mentorApplicationEvents', table: 'mentor_application_events', ownerColumn: 'applicant_id', orderBy: 'created_at', omit: ['actor_id'] },
   { key: 'mentorProfile', table: 'mentor_profiles', ownerColumn: 'user_id', orderBy: 'created_at', omit: ['approved_by', 'status_changed_by'] },
   { key: 'mentorQualifications', table: 'mentor_qualifications', ownerColumn: 'mentor_id', orderBy: 'granted_at', omit: ['granted_by', 'revoked_by'] },
+  { key: 'mentorSessionOfferings', table: 'mentor_session_offerings', ownerColumn: 'mentor_id', orderBy: 'created_at' },
+  { key: 'mentorAvailability', table: 'mentor_availability_rules', ownerColumn: 'mentor_id', orderBy: 'created_at' },
+  { key: 'mentorshipSessionsAsLearner', table: 'mentorship_sessions', ownerColumn: 'learner_id', orderBy: 'starts_at' },
+  { key: 'mentorshipSessionsAsMentor', table: 'mentorship_sessions', ownerColumn: 'mentor_id', orderBy: 'starts_at', omit: ['shared_context', 'attempted_summary'] },
 ];
 
 const ROW_LIMIT = 10_000;

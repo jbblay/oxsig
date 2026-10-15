@@ -135,8 +135,10 @@ describe('manageMentor', () => {
         ? { rows: [{ user_id: applicantId, track: 'external', tier: 'verified_mentor', status: 'active' }] }
         : { rows: [] }
     );
-    await expect(manageMentor({ adminId, mentorId: applicantId, command: { action: 'revoke', reason: 'Conduct violation' } })).resolves.toEqual({ status: 'revoked' });
+    await expect(manageMentor({ adminId, mentorId: applicantId, command: { action: 'revoke', reason: 'Conduct violation' } })).resolves.toEqual({ status: 'revoked', cancelledSessions: 0 });
     expect(calls().some(({ sql }) => sql.includes("UPDATE mentor_qualifications SET status='revoked'"))).toBe(true);
+    // Upcoming mentorship sessions are cancelled in the same transaction.
+    expect(calls().some(({ sql }) => sql.includes('UPDATE mentorship_sessions') && sql.includes("status IN ('requested','confirmed')"))).toBe(true);
   });
 
   it('re-checks Academy evidence before granting an extra qualification', async () => {

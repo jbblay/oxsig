@@ -207,6 +207,54 @@ try {
     const reapplied = (await client.query(insertApplication, [applicant])).rows[0].id;
     await client.query(`UPDATE mentor_applications SET status='withdrawn' WHERE id=$1`, [reapplied]);
 
+    // Free mentorship (migration 062): payments impossible, booking backstops.
+    await expectViolation(
+      'a paid session offering',
+      `INSERT INTO mentor_session_offerings (mentor_id, kind, title, duration_minutes, price_cents, specialization_ids)
+       VALUES ($1, 'quick_help', 'Paid help', 15, 500, ARRAY['networking-dns'])`,
+      [applicant],
+      '23514'
+    );
+    const offeringId = (await client.query(
+      `INSERT INTO mentor_session_offerings (mentor_id, kind, title, duration_minutes, specialization_ids)
+       VALUES ($1, 'guided_coaching', 'DNS coaching', 30, ARRAY['networking-dns']) RETURNING id`,
+      [applicant]
+    )).rows[0].id;
+    const insertSession = `INSERT INTO mentorship_sessions (
+         learner_id, mentor_id, offering_id, kind, duration_minutes, specialization_id, starts_at, ends_at,
+         learner_timezone, topic, learner_goal, status, confirmed_at
+       ) VALUES ($1, $2, $3, 'guided_coaching', 30, 'networking-dns', $4::timestamptz, $5::timestamptz,
+                 'UTC', 'DNS lookups fail', 'Understand why resolution fails', $6, $7)
+       RETURNING id`;
+    const slot = new Date(Date.now() + 2 * 86_400_000);
+    slot.setUTCMinutes(0, 0, 0);
+    const slotEnd = new Date(slot.getTime() + 30 * 60_000);
+    await client.query(insertSession, [invitee, applicant, offeringId, slot, slotEnd, 'requested', null]);
+    await expectViolation('a double booking of the same mentor slot', insertSession, [reviewer, applicant, offeringId, slot, slotEnd, 'requested', null], '23505');
+    await expectViolation('a session whose end does not match its duration', insertSession,
+      [reviewer, applicant, offeringId, new Date(slot.getTime() + 7_200_000), new Date(slot.getTime() + 7_200_000 + 45 * 60_000), 'requested', null], '23514');
+    await expectViolation('a session with oneself', insertSession, [applicant, applicant, offeringId, new Date(slot.getTime() + 86_400_000), new Date(slotEnd.getTime() + 86_400_000), 'requested', null], '23514');
+    await expectViolation('a confirmation without a timestamp', insertSession,
+      [reviewer, applicant, offeringId, new Date(slot.getTime() + 3_600_000), new Date(slotEnd.getTime() + 3_600_000), 'confirmed', null], '23514');
+    const overlapping = await client.query(
+      `SELECT starts_at FROM mentorship_sessions
+        WHERE (mentor_id = ANY($1::uuid[]) OR learner_id = ANY($1::uuid[]))
+          AND status IN ('requested','confirmed')
+          AND tstzrange(starts_at, ends_at, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')`,
+      [[applicant], new Date(slot.getTime() + 15 * 60_000), new Date(slot.getTime() + 45 * 60_000)]
+    );
+    if (overlapping.rowCount !== 1) fail('mentorship overlap query did not find the overlapping booking');
+    const adjacent = await client.query(
+      `SELECT 1 FROM mentorship_sessions
+        WHERE mentor_id = $1 AND tstzrange(starts_at, ends_at, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')`,
+      [applicant, slotEnd, new Date(slotEnd.getTime() + 30 * 60_000)]
+    );
+    if (adjacent.rowCount !== 0) fail('back-to-back mentorship sessions were treated as overlapping');
+    const roomColumn = await client.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name='live_workspaces' AND column_name='expires_at'`
+    );
+    if (!roomColumn.rows[0]) fail('live_workspaces.expires_at is missing');
+
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
@@ -229,6 +277,13 @@ try {
       [applicant]
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
+    const learnerHistory = await client.query(
+      `SELECT mentor_id, offering_id FROM mentorship_sessions WHERE learner_id=$1`,
+      [invitee]
+    );
+    if (learnerHistory.rowCount !== 1 || learnerHistory.rows[0].mentor_id !== null || learnerHistory.rows[0].offering_id !== null) {
+      fail('deleting a mentor account did not keep the learner session history with a nulled mentor');
+    }
 
     // Account deletion must not require hand-written FK patch-ups (migration 058).
     const collaboration = (await client.query(

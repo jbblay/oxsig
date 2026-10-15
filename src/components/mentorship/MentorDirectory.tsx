@@ -12,8 +12,15 @@ import { mentorshipGet } from './mentorship-client';
 
 type TrackFilter = 'all' | 'academy' | 'external';
 
-export default function MentorDirectory() {
-  const [specialization, setSpecialization] = React.useState('');
+export default function MentorDirectory({ helpTopic = '', shareLesson = false, initialSpecialization = '' }: { helpTopic?: string; shareLesson?: boolean; initialSpecialization?: string }) {
+  const [specialization, setSpecialization] = React.useState(initialSpecialization);
+  const helpQuery = React.useMemo(() => {
+    const params = new URLSearchParams();
+    if (helpTopic) params.set('topic', helpTopic);
+    if (shareLesson) params.set('share', 'lesson');
+    const value = params.toString();
+    return value ? `?${value}` : '';
+  }, [helpTopic, shareLesson]);
   const [track, setTrack] = React.useState<TrackFilter>('all');
   const [mentors, setMentors] = React.useState<PublicMentorProfile[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -42,9 +49,13 @@ export default function MentorDirectory() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
           Every mentor here passed administrator review. Academy-grown mentors earned their qualifications through verified capability evidence; industry professionals were reviewed on their experience and credentials.
         </p>
-        <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-muted-foreground">
-          Session booking and in-mission help requests are not available yet. They arrive with free mentorship in the next release.
-        </p>
+        {helpTopic ? (
+          <p className="mt-3 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2 text-xs">
+            Requesting human help with: <span className="font-medium">{helpTopic}</span>. Choose a mentor to book a free session.
+          </p>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">Sessions are free during the pilot.</p>
+        )}
       </section>
 
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:flex-row sm:items-end">
@@ -91,7 +102,7 @@ export default function MentorDirectory() {
         </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {mentors.map((mentor) => <li key={mentor.mentorId}><MentorCard mentor={mentor} /></li>)}
+          {mentors.map((mentor) => <li key={mentor.mentorId}><MentorCard mentor={mentor} hrefSuffix={helpQuery} /></li>)}
         </ul>
       )}
     </div>

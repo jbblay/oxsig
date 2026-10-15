@@ -141,6 +141,7 @@ export async function prepareLiveWorkspaceTerminal(args: {
         AND collaboration.status='active'
         AND collaboration.collaboration_type='live-workspace'
         AND workspace.status='active'
+        AND (workspace.expires_at IS NULL OR workspace.expires_at > NOW())
       LIMIT 1`,
     [args.bindingId, args.collaborationId]
   );

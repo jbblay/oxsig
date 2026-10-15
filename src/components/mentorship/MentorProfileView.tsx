@@ -9,10 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MENTOR_TIER_LABELS } from '@/lib/mentorship/policy';
 import { mentorSpecializationLabel } from '@/lib/mentorship/specializations';
 import type { PublicMentorProfile } from '@/lib/mentorship/types';
+import BookingPanel from './BookingPanel';
 import { MentorAvatar, MentorTrackBadge } from './MentorCard';
 import { mentorshipGet } from './mentorship-client';
 
-export default function MentorProfileView({ mentorId }: { mentorId: string }) {
+export default function MentorProfileView({ mentorId, helpTopic, shareLesson }: { mentorId: string; helpTopic?: string; shareLesson?: boolean }) {
   const [mentor, setMentor] = React.useState<PublicMentorProfile | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -94,10 +95,10 @@ export default function MentorProfileView({ mentorId }: { mentorId: string }) {
           ) : null}
 
           <Card>
-            <CardContent className="space-y-2 pt-6 text-xs text-muted-foreground">
-              <p className="flex items-center gap-1.5 font-medium text-foreground"><CalendarClock className="h-4 w-4" aria-hidden="true" /> Sessions</p>
-              <p>Booking is not open yet. Reviews appear only after real, completed sessions.</p>
-              <Button disabled className="w-full" aria-disabled="true">Booking coming soon</Button>
+            <CardHeader><CardTitle className="flex items-center gap-1.5 text-base"><CalendarClock className="h-4 w-4" aria-hidden="true" /> Book a free session</CardTitle></CardHeader>
+            <CardContent>
+              <BookingPanel mentor={mentor} initialTopic={helpTopic} initialShareContext={shareLesson} />
+              <p className="mt-3 text-[11px] text-muted-foreground">Reviews appear only after real, completed sessions (coming with Proof of Help).</p>
             </CardContent>
           </Card>
         </div>

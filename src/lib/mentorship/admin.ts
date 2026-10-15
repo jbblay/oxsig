@@ -23,6 +23,7 @@ import {
   mapQualification,
   type Queryable,
 } from './server';
+import { cancelMentorSessionsForStatusChange, notifyLearnersOfPlatformCancellation } from './sessions';
 import { getMentorSpecialization, mentorSpecializationLabel } from './specializations';
 
 /*
@@ -380,6 +381,7 @@ export async function manageMentor(input: { adminId: string; mentorId: string; c
   if (mentorId === adminId) {
     throw new MentorshipError('Administrators cannot manage their own mentor profile.', 'SELF_MANAGEMENT_FORBIDDEN', 403);
   }
+  let cancelledSessions: Array<{ sessionId: string; learnerId: string }> = [];
   const result = await transaction(async (client: PoolClient) => {
     const locked = await client.query(`SELECT user_id, track, tier, status FROM mentor_profiles WHERE user_id=$1 FOR UPDATE`, [mentorId]);
     const profile = locked.rows[0] as { user_id: string; track: MentorTrack; tier: MentorTier; status: MentorProfileStatus } | undefined;
@@ -399,7 +401,8 @@ export async function manageMentor(input: { adminId: string; mentorId: string; c
       case 'suspend':
         if (profile.status === 'suspended') throw new MentorshipError('Mentor is already suspended.', 'NO_CHANGE');
         await setStatus('suspended');
-        return { status: 'suspended' as const };
+        cancelledSessions = await cancelMentorSessionsForStatusChange(client, mentorId, adminId, command.reason);
+        return { status: 'suspended' as const, cancelledSessions: cancelledSessions.length };
       case 'reinstate':
         if (profile.status !== 'suspended') throw new MentorshipError('Only a suspended mentor can be reinstated.', 'INVALID_TRANSITION');
         await setStatus('active');
@@ -412,7 +415,8 @@ export async function manageMentor(input: { adminId: string; mentorId: string; c
             WHERE mentor_id=$1 AND status='active'`,
           [mentorId, adminId, command.reason]
         );
-        return { status: 'revoked' as const };
+        cancelledSessions = await cancelMentorSessionsForStatusChange(client, mentorId, adminId, command.reason);
+        return { status: 'revoked' as const, cancelledSessions: cancelledSessions.length };
       case 'set_tier':
         if (profile.tier === command.tier) throw new MentorshipError('Mentor already holds this tier.', 'NO_CHANGE');
         await client.query(`UPDATE mentor_profiles SET tier=$2, updated_at=NOW() WHERE user_id=$1`, [mentorId, command.tier]);
@@ -456,6 +460,7 @@ export async function manageMentor(input: { adminId: string; mentorId: string; c
     }
   });
 
+  await notifyLearnersOfPlatformCancellation(cancelledSessions);
   if (command.action === 'suspend' || command.action === 'revoke' || command.action === 'reinstate') {
     try {
       await createWorkspaceNotification({

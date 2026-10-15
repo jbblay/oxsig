@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import AcademyPracticeWorkspace from '@/components/academy/AcademyPracticeWorkspace';
+import RequestHumanHelp from '@/components/mentorship/RequestHumanHelp';
 import {
   useAcademyDurableState,
   type AcademyDurableState,
@@ -465,6 +466,8 @@ export default function AcademyPage() {
                       {!loadingLab && <Button asChild className="mt-4"><Link href="/labs"><Play className="h-4 w-4" /> Open Cyber Lab</Link></Button>}
                     </div>
                   )}
+
+                  <RequestHumanHelp topic={`${course.title}: ${activeLesson.title}`} />
 
                   {currentPracticeResult?.evaluation && (
                     <div className={`rounded-2xl border p-4 ${currentPracticeResult.evaluation.status === 'passed' ? 'border-primary/30 bg-primary/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
