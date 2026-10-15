@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Link2, ListChecks, Loader2, Plus, RadioTower, RefreshCw, UsersRound, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, Link2, Loader2, Plus, RadioTower, RefreshCw, UsersRound, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,9 @@ import {
 } from '@/lib/live-workspace/freshness';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 import LiveWorkspaceCoordinationPanel from './LiveWorkspaceCoordinationPanel';
+import LiveWorkspaceChatPanel from './LiveWorkspaceChatPanel';
+import LiveWorkspaceStage from './LiveWorkspaceStage';
+import type { LiveWorkspaceControlState } from './ControlLeasePanel';
 import LiveWorkspaceParticipantCard, {
   type LiveWorkspaceAvailability,
   type LiveWorkspaceRole,
@@ -84,6 +87,8 @@ type Detail = {
   participants: Participant[];
   resources: Resource[];
   attachableResources: AttachableResource[];
+  stage: { surface: 'board' | 'machine'; bindingId: string } | null;
+  control: LiveWorkspaceControlState;
 };
 
 const RESOURCE_LABELS: Record<ResourceType, string> = {
@@ -127,8 +132,9 @@ export default function LiveWorkspaceExperience() {
   const [freshnessNow, setFreshnessNow] = React.useState(0);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [showCreate, setShowCreate] = React.useState(false);
-  const [mobileSection, setMobileSection] = React.useState<'plan' | 'people' | 'resources'>('plan');
+  const [mobileSection, setMobileSection] = React.useState<'chat' | 'plan' | 'people' | 'resources'>('chat');
   const [coordinationRevision, setCoordinationRevision] = React.useState(0);
+  const [chatRevision, setChatRevision] = React.useState(0);
 
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -143,9 +149,12 @@ export default function LiveWorkspaceExperience() {
     setWorkspaces(body.workspaces);
     if (body.workspaces.length === 0) setShowCreate(true);
     setSelectedId((current) => {
+      const requested = typeof window !== 'undefined' ? new URL(window.location.href).searchParams.get('workspace') : null;
       const nextId = current && body.workspaces.some((item) => item.id === current)
         ? current
-        : body.workspaces[0]?.id || null;
+        : requested && body.workspaces.some((item) => item.id === requested)
+          ? requested
+          : body.workspaces[0]?.id || null;
       selectedIdRef.current = nextId;
       return nextId;
     });
@@ -193,6 +202,8 @@ export default function LiveWorkspaceExperience() {
   }, [loadDetail, loadList]);
 
   const realtimeCallbacks = React.useMemo(() => ({
+    onMessageCreated: () => setChatRevision((value) => value + 1),
+    onMessageChanged: () => setChatRevision((value) => value + 1),
     onMembersChanged: () => {
       const id = selectedIdRef.current;
       if (id) void reconcileWorkspace(id, { refreshList: true });
@@ -213,7 +224,7 @@ export default function LiveWorkspaceExperience() {
 
   React.useEffect(() => {
     detailRequestRef.current += 1;
-    setMobileSection('plan');
+    setMobileSection('chat');
     if (!selectedId) {
       detailRef.current = null;
       setDetail(null);
@@ -536,10 +547,30 @@ export default function LiveWorkspaceExperience() {
                 </CardContent>
               </Card>
 
-              <div className="grid grid-cols-3 gap-2 xl:hidden">
-                <Button variant={mobileSection === 'plan' ? 'secondary' : 'outline'} onClick={() => setMobileSection('plan')}><ListChecks className="h-4 w-4" /> <span className="hidden sm:inline">Plan</span></Button>
-                <Button variant={mobileSection === 'people' ? 'secondary' : 'outline'} onClick={() => setMobileSection('people')}><UsersRound className="h-4 w-4" /> <span className="hidden sm:inline">People</span></Button>
-                <Button variant={mobileSection === 'resources' ? 'secondary' : 'outline'} onClick={() => setMobileSection('resources')}><Link2 className="h-4 w-4" /> <span className="hidden sm:inline">Resources</span></Button>
+              <div className="grid grid-cols-4 gap-1.5 xl:hidden" role="group" aria-label="Room side panels">
+                <Button size="sm" variant={mobileSection === 'chat' ? 'secondary' : 'outline'} onClick={() => setMobileSection('chat')}>Chat</Button>
+                <Button size="sm" variant={mobileSection === 'people' ? 'secondary' : 'outline'} onClick={() => setMobileSection('people')}>People</Button>
+                <Button size="sm" variant={mobileSection === 'resources' ? 'secondary' : 'outline'} onClick={() => setMobileSection('resources')}>Resources</Button>
+                <Button size="sm" variant={mobileSection === 'plan' ? 'secondary' : 'outline'} onClick={() => setMobileSection('plan')}>Plan</Button>
+              </div>
+
+              <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(290px,0.9fr)]">
+                <LiveWorkspaceStage
+                  workspaceId={detail.workspace.id}
+                  viewerId={detail.viewerId}
+                  role={detail.workspace.role}
+                  capabilities={detail.workspace.capabilities}
+                  resources={detail.resources}
+                  stage={detail.stage}
+                  control={detail.control}
+                  onRefresh={async () => { await reconcileWorkspace(detail.workspace.id); }}
+                />
+                <LiveWorkspaceChatPanel
+                  key={detail.workspace.id}
+                  workspaceId={detail.workspace.id}
+                  refreshToken={chatRevision}
+                  className={mobileSection === 'chat' ? 'block' : 'hidden xl:block'}
+                />
               </div>
 
               <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]">

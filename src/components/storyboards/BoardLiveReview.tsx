@@ -105,6 +105,7 @@ export default function BoardLiveReview() {
   const [overlayGeometry, setOverlayGeometry] = React.useState<OverlayGeometry | null>(null);
   const [handoffOpen, setHandoffOpen] = React.useState(false);
   const [handoffLoading, setHandoffLoading] = React.useState(false);
+  const [goLiveBusy, setGoLiveBusy] = React.useState(false);
   const [liveTargets, setLiveTargets] = React.useState<LiveWorkspaceTarget[]>([]);
   const [collaborationTargets, setCollaborationTargets] = React.useState<CollaborationTarget[]>([]);
   const [selectedLiveId, setSelectedLiveId] = React.useState('');
@@ -354,6 +355,45 @@ export default function BoardLiveReview() {
     void loadHandoffTargets();
   };
 
+  // A Board goes live by creating a normal Live Workspace and attaching itself.
+  // No separate meeting instance, media permission, or AWS machine is created.
+  const goLive = async () => {
+    if (!activeBoard || activeBoard.permission !== 'owner' || goLiveBusy) return;
+    setGoLiveBusy(true);
+    let createdId: string | null = null;
+    let csrf = '';
+    try {
+      csrf = await getCsrfToken();
+      const created = await fetch('/api/live-workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ name: `${activeBoard.title.slice(0, 65)} · Live`.slice(0, 80) }),
+      });
+      const createdBody = await created.json().catch(() => ({}));
+      if (!created.ok || !createdBody.workspace?.id) throw new Error(createdBody.error || 'Could not create Live Workspace');
+      createdId = createdBody.workspace.id as string;
+      const attached = await fetch(`/api/live-workspaces/${createdId}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ resourceType: 'storyboard', resourceId: activeBoard.id }),
+      });
+      if (!attached.ok) {
+        const error = await attached.json().catch(() => ({}));
+        throw new Error(error.error || 'Could not attach the Board to Live Workspace');
+      }
+      window.location.assign(`/live?workspace=${encodeURIComponent(createdId)}`);
+    } catch (error) {
+      // Roll back an empty room if attaching its first Board failed.
+      if (createdId && csrf) {
+        await fetch(`/api/live-workspaces/${createdId}`, {
+          method: 'DELETE', headers: { 'x-csrf-token': csrf },
+        }).catch(() => undefined);
+      }
+      toast.error(error instanceof Error ? error.message : 'Could not open Live Workspace');
+      setGoLiveBusy(false);
+    }
+  };
+
   const attachToLiveWorkspace = async () => {
     if (!activeBoard || !selectedLiveId) return;
     setHandoffLoading(true);
@@ -485,6 +525,9 @@ export default function BoardLiveReview() {
           <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => setPanelOpen(true)}>
             <MessageCircle className="h-3.5 w-3.5" /> Review
           </Button>
+          {activeBoard.permission === 'owner' && <Button size="sm" variant="secondary" className="h-8 gap-1.5 px-2 text-xs" disabled={goLiveBusy || boardDeleted} onClick={() => void goLive()}>
+            {goLiveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Radio className="h-3.5 w-3.5" />} Go Live
+          </Button>}
           <Button size="sm" variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={openHandoffs}>
             <Send className="h-3.5 w-3.5" /> Handoff
           </Button>

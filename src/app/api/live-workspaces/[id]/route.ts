@@ -49,7 +49,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           ? listOwnerAttachableResources(pool, user.id).then((resources) => resources.filter((resource) => resource.type === 'lab-instance'))
           : Promise.resolve([]);
 
-      const [participants, resources, control, attachableResources] = await Promise.all([
+      const [participants, resources, control, attachableResources, stageSetting] = await Promise.all([
         listLiveWorkspaceParticipants(pool, id),
         pool.query(
           `SELECT resource.id, resource.resource_type, resource.resource_id, resource.resource_owner_id,
@@ -70,12 +70,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         ),
         listControlState({ pool, collaborationId: id, viewerId: user.id }),
         attachablePromise,
+        pool.query("SELECT settings->'liveWorkspaceStage' AS stage FROM collaborations WHERE id = $1", [id]),
       ]);
       const attachedKeys = new Set(resources.rows.map((row) => `${row.resource_type}:${row.resource_id}`));
+      const saved = stageSetting.rows[0]?.stage;
+      const matchesSaved = resources.rows.some((row) => row.id === saved?.bindingId && row.resource_type === (saved.surface === 'board' ? 'storyboard' : 'lab-instance') && (saved.surface === 'board' || saved.surface === 'machine'));
+      const defaultResource = resources.rows.find((row) => row.resource_type === 'storyboard' || row.resource_type === 'lab-instance');
+      const stage = matchesSaved
+        ? { surface: saved.surface as 'board' | 'machine', bindingId: saved.bindingId as string }
+        : defaultResource
+          ? { surface: (defaultResource.resource_type === 'storyboard' ? 'board' : 'machine') as 'board' | 'machine', bindingId: defaultResource.id as string }
+          : null;
 
       return NextResponse.json({
         viewerId: user.id,
         workspace: access,
+        stage,
         participants,
         resources: resources.rows.map((row) => ({
           id: row.id,
