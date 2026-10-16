@@ -115,7 +115,21 @@ for (const viewport of [
     expect(freshState.applications?.map(x => x.id), 'New mentor application was not returned by API').toContain(app.rows[0].id);
     // The application was created out-of-band through a fixture; exercise the
     // explicit client refresh instead of assuming the open tab auto-subscribes to DB writes.
+    const refreshedResponsePromise = page.waitForResponse(
+      response => response.url().includes('/api/mentorship/evidence') && response.request().method() === 'GET',
+      { timeout: 45000 },
+    );
     await page.getByRole('button', { name: 'Refresh evidence' }).click();
+    const refreshedResponse = await refreshedResponsePromise;
+    const refreshedState = await refreshedResponse.json();
+    console.log('[E2E refresh diagnostics]',JSON.stringify({
+      status:refreshedResponse.status(),
+      applications:refreshedState.applications?.map(x=>x.id),
+      expected:app.rows[0].id,
+      browserFaults,
+    }));
+    expect(refreshedState.applications?.map(x=>x.id),'Browser refresh has different owner or stale data')
+      .toContain(app.rows[0].id);
     const option = page.getByLabel("Application", { exact: true })
       .locator('option[value="'+app.rows[0].id+'"]');
     await expect(option, 'Rendered application selector did not receive API data').toHaveCount(1, { timeout: 30000 });
