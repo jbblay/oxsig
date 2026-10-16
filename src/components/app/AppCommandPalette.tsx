@@ -37,7 +37,7 @@ import {
 
 const destinations = [
   { href: '/home', label: 'Dashboard', hint: 'Open workspace dashboard', icon: Home, color: 'home' },
-  { href: '/academy', label: 'Academy', hint: 'Learning paths and capability evidence', icon: GraduationCap, color: 'home' },
+  { href: '/academy', label: 'Academy', hint: 'Engineering missions, live labs and verified skills', icon: GraduationCap, color: 'home' },
   { href: '/operations', label: 'Operations', hint: 'Preconfigured technical scenarios', icon: Crosshair, color: 'labs' },
   { href: '/warroom', label: 'WarRoom', hint: '2–4 player team lab', icon: Swords, color: 'live' },
   { href: '/labs', label: 'Cyber Lab', hint: 'Build, run and review', icon: Box, color: 'labs' },

@@ -154,8 +154,8 @@ function OperationBriefing({ operation, learningFocus, isAuthenticated }: { oper
   const teamRelevant = operationSupportsWarRoomRuntime(operation);
   const objectives = learningFocus?.objectives || operation.objectives;
   const evidence = learningFocus?.evidence || operation.evidence;
-  const backHref = learningFocus && isAuthenticated ? '/academy/paths' : '/operations';
-  const backLabel = learningFocus && isAuthenticated ? 'Learning paths' : 'All operations';
+  const backHref = learningFocus && isAuthenticated ? '/academy/missions' : '/operations';
+  const backLabel = learningFocus && isAuthenticated ? 'Mission Control' : 'All operations';
   const summary = learningFocus ? learningFocus.practiceLabel : operation.summary;
 
   return (

@@ -6,9 +6,10 @@ const ACTIVE_DIRECTORY_PATH_ID = 'active-directory-operations';
 
 /**
  * Mentoring specializations. `academyEvidence` names the curated-path
- * capabilities that count as Academy proof for the specialization. When it is
- * null, OXSIG has no verified Academy pathway yet, so only externally reviewed
- * professionals can be qualified for it.
+ * capabilities that count as previously verified Academy proof. `missionEvidence`
+ * is an alternative, server-verified qualification route using live missions.
+ * Specializations with neither kind cannot be granted to Academy applicants
+ * without a separately reviewed evidence pathway.
  */
 export type MentorSpecialization = {
   id: string;
@@ -17,6 +18,11 @@ export type MentorSpecialization = {
   academyEvidence: null | {
     pathId: string;
     capabilityIds: readonly string[];
+    minimumDemonstrated: number;
+  };
+  missionEvidence?: {
+    missionIds: readonly string[];
+    engineeringTemplateIds: readonly string[];
     minimumDemonstrated: number;
   };
 };
@@ -69,6 +75,13 @@ export const MENTOR_SPECIALIZATIONS: readonly MentorSpecialization[] = [
     label: 'Containers & Docker',
     description: 'Images, containers, ports, volumes and container troubleshooting.',
     academyEvidence: null,
+    missionEvidence: {
+      // Verified on an owned lab by the Docker and Engineering World engines;
+      // the same mission cannot contribute multiple times by replaying it.
+      missionIds: ['deploy', 'repair', 'persist'],
+      engineeringTemplateIds: ['docker-incident', 'docker-durability'],
+      minimumDemonstrated: 5,
+    },
   },
   {
     id: 'cloud-aws',

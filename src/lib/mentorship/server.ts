@@ -11,6 +11,7 @@ import {
   ineligibleSpecializations,
   mentorReapplyAvailableAt,
   type DemonstratedCapabilities,
+  type VerifiedMissionEvidence,
   type MentorApplicationInput,
   type MentorApplicationStatus,
   type MentorEligibility,
@@ -79,8 +80,49 @@ export async function loadDemonstratedCapabilities(queryable: Queryable, userId:
   }
 }
 
+/**
+ * Server-observed mission proofs, not UI completion, XP, hints or unverified
+ * attempts. Engineering proof must be a verified, individual practice run.
+ * Repeated attempts contribute at most one ID.
+ */
+export async function loadVerifiedMentorMissionEvidence(
+  queryable: Queryable,
+  userId: string
+): Promise<VerifiedMissionEvidence> {
+  try {
+    const [docker, engineering] = await Promise.all([
+      queryable.query(
+        `SELECT DISTINCT mission_id FROM academy_mission_progress
+          WHERE owner_id=$1 AND verified_at IS NOT NULL
+            AND mission_id = ANY($2::text[])`,
+        [userId, ['deploy', 'repair', 'persist']]
+      ),
+      queryable.query(
+        `SELECT DISTINCT template_id FROM academy_mission_runs
+          WHERE owner_id=$1 AND status='verified' AND verified_at IS NOT NULL
+            AND mode='practice' AND template_version=1
+            AND template_id = ANY($2::text[])`,
+        [userId, ['docker-incident', 'docker-durability']]
+      ),
+    ]);
+    return new Set([
+      ...docker.rows.map((r) => `mission:${r.mission_id}`),
+      ...engineering.rows.map((r) => `engineering:${r.template_id}`),
+    ]);
+  } catch (error) {
+    // Old installations without mission tables are not eligible; never
+    // fabricate positive evidence or hide other database failures.
+    if ((error as { code?: string } | null)?.code === '42P01') return new Set();
+    throw error;
+  }
+}
+
 export async function getMentorEligibility(userId: string, queryable: Queryable = getPool()): Promise<MentorEligibility> {
-  return evaluateMentorEligibility(await loadDemonstratedCapabilities(queryable, userId));
+  const [demonstrated, verifiedMissions] = await Promise.all([
+    loadDemonstratedCapabilities(queryable, userId),
+    loadVerifiedMentorMissionEvidence(queryable, userId),
+  ]);
+  return evaluateMentorEligibility(demonstrated, verifiedMissions);
 }
 
 /* ---------------------------------------------------------------- mapping */

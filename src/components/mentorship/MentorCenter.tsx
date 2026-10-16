@@ -56,13 +56,13 @@ function ProgressionLadder({ stage }: { stage: MentorCenterState['stage'] }) {
 }
 
 function EligibilityPanel({ state }: { state: MentorCenterState }) {
-  const academy = MENTOR_SPECIALIZATIONS.filter((item) => item.academyEvidence);
-  const externalOnly = MENTOR_SPECIALIZATIONS.filter((item) => !item.academyEvidence);
+  const academy = MENTOR_SPECIALIZATIONS.filter((item) => item.academyEvidence || item.missionEvidence);
+  const externalOnly = MENTOR_SPECIALIZATIONS.filter((item) => !item.academyEvidence && !item.missionEvidence);
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Academy evidence toward mentoring</CardTitle>
-        <CardDescription>Only verified capability evidence counts — assessments, or a passed practice plus a reflection. XP does not.</CardDescription>
+        <CardDescription>Only server-verified mission checks or previously demonstrated technical capabilities count. XP does not. An administrator must still review and approve each mentor.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {academy.map((item) => {
@@ -75,7 +75,7 @@ function EligibilityPanel({ state }: { state: MentorCenterState }) {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium">{item.label}</span>
                 <span className={result?.eligible ? 'font-medium text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
-                  {result?.eligible ? 'Eligible' : `${demonstrated}/${required} capabilities`}
+                  {result?.eligible ? 'Evidence eligible' : `${demonstrated}/${required} ${item.missionEvidence ? 'mission checks' : 'capabilities'}`}
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={required} aria-valuenow={demonstrated} aria-label={`${item.label} evidence`}>
@@ -87,7 +87,8 @@ function EligibilityPanel({ state }: { state: MentorCenterState }) {
         <p className="text-[11px] text-muted-foreground">
           No Academy evidence pathway yet for: {externalOnly.map((item) => item.label).join(', ')}. These are reviewed for industry professionals only.
         </p>
-        <Button variant="outline" size="sm" asChild><Link href="/academy/paths"><GraduationCap className="mr-1.5 h-4 w-4" aria-hidden="true" /> Build evidence in learning paths</Link></Button>
+        <p className="text-[11px] text-muted-foreground">Earlier verified capability records remain valid. The Docker specialization can also use five distinct, server-verified Docker and Engineering World checks. Meeting an evidence threshold only permits an application; it never grants mentor privileges.</p>
+        <Button variant="outline" size="sm" asChild><Link href="/academy/missions"><GraduationCap className="mr-1.5 h-4 w-4" aria-hidden="true" /> Practice verified missions</Link></Button>
       </CardContent>
     </Card>
   );

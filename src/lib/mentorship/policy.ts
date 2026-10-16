@@ -55,8 +55,9 @@ export const INITIAL_TIERS_BY_TRACK: Record<MentorTrack, readonly MentorTier[]> 
 
 /* ------------------------------------------------------------ eligibility */
 
-/** Demonstrated capability ids per curated path id. */
+/** Legacy proven capability ids per archived path; never inferred from XP. */
 export type DemonstratedCapabilities = ReadonlyMap<string, ReadonlySet<string>>;
+export type VerifiedMissionEvidence = ReadonlySet<string>;
 
 export type SpecializationEligibility = {
   specializationId: string;
@@ -74,8 +75,25 @@ export type MentorEligibility = {
 
 export function evaluateSpecializationEligibility(
   specialization: MentorSpecialization,
-  demonstrated: DemonstratedCapabilities
+  demonstrated: DemonstratedCapabilities,
+  verifiedMissions: VerifiedMissionEvidence = new Set<string>()
 ): SpecializationEligibility {
+  const missions = specialization.missionEvidence;
+  if (missions) {
+    const requested = [
+      ...missions.missionIds.map((id) => `mission:${id}`),
+      ...missions.engineeringTemplateIds.map((id) => `engineering:${id}`),
+    ];
+    const ids = requested.filter((id) => verifiedMissions.has(id));
+    return {
+      specializationId: specialization.id,
+      academyEvidenceAvailable: true,
+      demonstrated: ids.length,
+      required: missions.minimumDemonstrated,
+      demonstratedCapabilityIds: ids,
+      eligible: ids.length >= missions.minimumDemonstrated,
+    };
+  }
   const evidence = specialization.academyEvidence;
   if (!evidence) {
     return {
@@ -99,8 +117,12 @@ export function evaluateSpecializationEligibility(
   };
 }
 
-export function evaluateMentorEligibility(demonstrated: DemonstratedCapabilities): MentorEligibility {
-  const specializations = MENTOR_SPECIALIZATIONS.map((item) => evaluateSpecializationEligibility(item, demonstrated));
+export function evaluateMentorEligibility(
+  demonstrated: DemonstratedCapabilities,
+  verifiedMissions: VerifiedMissionEvidence = new Set<string>()
+): MentorEligibility {
+  const specializations = MENTOR_SPECIALIZATIONS.map((item) =>
+    evaluateSpecializationEligibility(item, demonstrated, verifiedMissions));
   return {
     advancedPractitioner: specializations.some((item) => item.eligible),
     specializations,
@@ -133,7 +155,7 @@ export type MentorProgressionStage =
   | MentorTier;
 
 export const MENTOR_PROGRESSION: ReadonlyArray<{ stage: MentorProgressionStage; label: string; requirement: string }> = [
-  { stage: 'learner', label: 'Learner', requirement: 'Complete missions and curated paths in the Academy.' },
+  { stage: 'learner', label: 'Learner', requirement: 'Complete authorized technical missions with verified outcomes.' },
   { stage: 'advanced_practitioner', label: 'Advanced Practitioner', requirement: 'Demonstrate enough verified capabilities in at least one specialization.' },
   { stage: 'peer_mentor_candidate', label: 'Peer Mentor Candidate', requirement: 'Submit a mentor application backed by that evidence.' },
   { stage: 'approved_peer_mentor', label: 'Approved Peer Mentor', requirement: 'Pass administrator review of competence, conduct and teaching ability.' },

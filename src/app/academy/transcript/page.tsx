@@ -65,7 +65,7 @@ export default function AcademyTranscriptPage() {
   }
 
   if (!transcript) {
-    return <div className="mx-auto max-w-3xl py-10"><Card><CardHeader><CardTitle>Transcript unavailable</CardTitle><CardDescription>OXSIG could not load your persisted capability evidence.</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link href="/academy/paths">Back to learning paths</Link></Button></CardContent></Card></div>;
+    return <div className="mx-auto max-w-3xl py-10"><Card><CardHeader><CardTitle>Transcript unavailable</CardTitle><CardDescription>OXSIG could not load your persisted capability evidence.</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link href="/academy/missions">Go to Mission Control</Link></Button></CardContent></Card></div>;
   }
 
   return (
@@ -82,15 +82,15 @@ export default function AcademyTranscriptPage() {
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border bg-background/70 p-3"><p className="text-2xl font-semibold">{transcript.totalDemonstrated}</p><p className="text-xs text-muted-foreground">Capabilities demonstrated</p></div>
-          <div className="rounded-xl border bg-background/70 p-3"><p className="text-2xl font-semibold">{transcript.pathsWithProof}</p><p className="text-xs text-muted-foreground">Learning paths with proof</p></div>
+          <div className="rounded-xl border bg-background/70 p-3"><p className="text-2xl font-semibold">{transcript.pathsWithProof}</p><p className="text-xs text-muted-foreground">Archived journeys with proof</p></div>
           <div className="rounded-xl border bg-background/70 p-3"><p className="text-sm font-semibold">{formatDate(transcript.lastDemonstratedAt)}</p><p className="mt-1 text-xs text-muted-foreground">Most recent demonstration</p></div>
         </div>
       </section>
 
       {transcript.items.length === 0 ? (
         <Card className="border-dashed">
-          <CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5" /> No proved skills yet</CardTitle><CardDescription>Your transcript starts when evidence demonstrates a capability. The fastest route is a curated path with its real practical checkpoint.</CardDescription></CardHeader>
-          <CardContent><Button asChild><Link href="/academy/paths">Choose a learning path</Link></Button></CardContent>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5" /> No proved skills yet</CardTitle><CardDescription>Your transcript starts when evidence demonstrates a capability. Start a live mission to build fresh verified evidence. Previous capability records remain archived here.</CardDescription></CardHeader>
+          <CardContent><Button asChild><Link href="/academy/missions">Start a verified mission</Link></Button></CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
