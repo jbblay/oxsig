@@ -140,6 +140,96 @@ try {
     const otherOwner = await client.query(vaultUpdate, [item.id, invitee, Number(item.version) + 1, 'takeover']);
     if (otherOwner.rowCount !== 0) fail('Vault update ignored the ownership guard');
 
+    // Mentor foundation (migration 061): database-enforced invariants.
+    const applicant = (await client.query(insertUser, ['ci_mentor_applicant', 'applicant@example.test', 'Applicant'])).rows[0].id;
+    const reviewer = (await client.query(insertUser, ['ci_mentor_reviewer', 'reviewer@example.test', 'Reviewer'])).rows[0].id;
+    const insertApplication = `INSERT INTO mentor_applications (
+         applicant_id, track, headline, bio, specializations, motivation, timezone,
+         code_of_conduct_version, code_of_conduct_accepted_at
+       ) VALUES ($1, 'external', 'Network engineer and coach', repeat('b', 90), ARRAY['networking-dns'],
+                 repeat('m', 50), 'Europe/London', '2026-10', NOW())
+       RETURNING id`;
+    const expectViolation = async (label, sql, params, sqlstate) => {
+      await client.query('SAVEPOINT mentor_expect');
+      try {
+        await client.query(sql, params);
+        fail(`mentor schema accepted ${label}`);
+      } catch (error) {
+        if (error.code !== sqlstate) fail(`mentor schema rejected ${label} with ${error.code}, expected ${sqlstate}`);
+      } finally {
+        await client.query('ROLLBACK TO SAVEPOINT mentor_expect');
+      }
+    };
+    const applicationId = (await client.query(insertApplication, [applicant])).rows[0].id;
+    await expectViolation('a second open application', insertApplication, [applicant], '23505');
+    await expectViolation(
+      'an approval without a decision timestamp',
+      `UPDATE mentor_applications SET status='approved' WHERE id=$1`,
+      [applicationId],
+      '23514'
+    );
+    await expectViolation(
+      'a non-https profile link',
+      `UPDATE mentor_applications SET profile_url='http://example.test' WHERE id=$1`,
+      [applicationId],
+      '23514'
+    );
+    await client.query(
+      `UPDATE mentor_applications SET status='approved', decided_by=$2, decided_at=NOW() WHERE id=$1`,
+      [applicationId, reviewer]
+    );
+    await client.query(
+      `INSERT INTO mentor_application_events (application_id, applicant_id, actor_id, actor_kind, from_status, to_status)
+       VALUES ($1, $2, $3, 'admin', 'submitted', 'approved')`,
+      [applicationId, applicant, reviewer]
+    );
+    await client.query(
+      `INSERT INTO mentor_profiles (user_id, application_id, track, tier, headline, bio, timezone, approved_by)
+       VALUES ($1, $2, 'external', 'verified_mentor', 'Network engineer and coach', 'bio', 'Europe/London', $3)`,
+      [applicant, applicationId, reviewer]
+    );
+    const insertQualification = `INSERT INTO mentor_qualifications (mentor_id, specialization_id, basis, granted_by)
+       VALUES ($1, 'networking-dns', 'professional_review', $2) RETURNING id`;
+    const qualificationId = (await client.query(insertQualification, [applicant, reviewer])).rows[0].id;
+    await expectViolation('a duplicate active qualification', insertQualification, [applicant, reviewer], '23505');
+    await expectViolation(
+      'a mentor tier outside the ladder',
+      `UPDATE mentor_profiles SET tier='xp_legend' WHERE user_id=$1`,
+      [applicant],
+      '23514'
+    );
+    await client.query(
+      `UPDATE mentor_qualifications SET status='revoked', revoked_at=NOW(), revoked_by=$2 WHERE id=$1`,
+      [qualificationId, reviewer]
+    );
+    await client.query(insertQualification, [applicant, reviewer]);
+    // A newly opened application is allowed once the previous one is closed.
+    const reapplied = (await client.query(insertApplication, [applicant])).rows[0].id;
+    await client.query(`UPDATE mentor_applications SET status='withdrawn' WHERE id=$1`, [reapplied]);
+
+    await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
+    const afterReviewer = await client.query(
+      `SELECT application.decided_by, profile.approved_by,
+              (SELECT COUNT(*)::int FROM mentor_qualifications WHERE mentor_id=$1 AND granted_by IS NOT NULL) AS attributed
+         FROM mentor_applications application
+         JOIN mentor_profiles profile ON profile.user_id=application.applicant_id
+        WHERE application.id=$2`,
+      [applicant, applicationId]
+    );
+    const reviewerRow = afterReviewer.rows[0];
+    if (!reviewerRow || reviewerRow.decided_by !== null || reviewerRow.approved_by !== null || reviewerRow.attributed !== 0) {
+      fail('deleting a reviewer did not keep mentor decisions with a nulled reviewer reference');
+    }
+    await client.query('DELETE FROM users WHERE id = $1', [applicant]);
+    const mentorLeft = await client.query(
+      `SELECT (SELECT COUNT(*) FROM mentor_applications WHERE applicant_id=$1)
+            + (SELECT COUNT(*) FROM mentor_application_events WHERE applicant_id=$1)
+            + (SELECT COUNT(*) FROM mentor_profiles WHERE user_id=$1)
+            + (SELECT COUNT(*) FROM mentor_qualifications WHERE mentor_id=$1) AS remaining`,
+      [applicant]
+    );
+    if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
+
     // Account deletion must not require hand-written FK patch-ups (migration 058).
     const collaboration = (await client.query(
       `INSERT INTO collaborations (name, owner_id) VALUES ('CI space', $1) RETURNING id`,
