@@ -44,23 +44,36 @@ for (const viewport of [
       );
     await page.setViewportSize(viewport);
     await login(context, "account-a");
-    // Wait for the real, owner-scoped API before asserting hydrated UI.
-    // Cold Next.js dev compilations in small CI workers can take >10 seconds.
-    const evidenceResponsePromise = page.waitForResponse(
-      response => response.url().includes('/api/mentorship/evidence') && response.request().method() === 'GET',
-      { timeout: 90000 },
-    );
-    await page.goto("/academy/mentor-forge");
-    await expect(
-      page.getByRole("heading", {
-        name: "Mentor Forge & Skills Passport",
-        exact: true,
-      }),
-    ).toBeVisible();
-    const evidenceResponse = await evidenceResponsePromise;
-    const evidenceBody = await evidenceResponse.text();
-    expect(evidenceResponse.status(), 'Evidence API response: '+evidenceBody.slice(0,1000)).toBe(200);
-    await expect(page.getByText("Loading evidence…")).toHaveCount(0, {timeout:30000});
+    // Diagnose SSR-only rendering and client hydration separately from API failures.
+    const browserFaults = [];
+    page.on('pageerror', error => browserFaults.push('pageerror: '+error.message.slice(0,400)));
+    page.on('console', message => {
+      if(message.type() === 'error') browserFaults.push('console: '+message.text().slice(0,400));
+    });
+    page.on('requestfailed', request => browserFaults.push('requestfailed: '+request.url()+' '+request.failure()?.errorText));
+    const navigation = await page.goto("/academy/mentor-forge");
+    await expect(page.getByRole("heading", {
+      name: "Mentor Forge & Skills Passport", exact: true,
+    })).toBeVisible();
+    const probe = await page.evaluate(async () => {
+      try {
+        const result = await fetch('/api/mentorship/evidence', {cache:'no-store'});
+        return {status: result.status, body: (await result.text()).slice(0,500)};
+      } catch(error) { return {status: 0, body: String(error)}; }
+    });
+    console.log('[E2E evidence] server=', navigation?.status(), 'api=', JSON.stringify(probe));
+    expect(probe.status, 'Evidence API: '+probe.body).toBe(200);
+    try {
+      await expect(page.getByText("Loading evidence…")).toHaveCount(0, {timeout:45000});
+    } catch(error) {
+      const client = await page.evaluate(() => ({
+        scripts: document.scripts.length,
+        e2eCookie: document.cookie.includes('oxsig-e2e-user='),
+        ready: document.readyState,
+        html: document.documentElement.getAttribute('class'),
+      }));
+      throw new Error('Evidence UI failed to hydrate: '+JSON.stringify({browserFaults,client})+'; '+String(error));
+    }
     await pool.query("DELETE FROM mentor_forge_attempts WHERE owner_id=$1", [
       owner,
     ]);
