@@ -60,6 +60,6 @@
     "057_platform_admin_and_account_lifecycle.sql": "79733b48bc1cbc7a78c2963af26efaa53141e745b487e73ea078a7e8db15c4e9",
     "058_identity_lifecycle_and_schema_drift_repair.sql": "d8e5b21ef42eff4d9359e19d8f8aebec33ea07dda3c941e6dd17b49d16284f88",
     "059_board_live_streams.sql": "9aa9ae23fb41875249d9cc6adb0c295406e3916b241c11cf9feb5b492f7e71d4",
-    "061_mentor_foundation.sql": "51de80cab72994f81f25b74ae4c8fe5353dd7081e71444e40b0a9e2aa355cf15"
+    "061_mentor_foundation.sql": "c197f0ee49fc48c818decb84433932b5458d90052fe4fd7e10b119035606381a"
   }
 }
