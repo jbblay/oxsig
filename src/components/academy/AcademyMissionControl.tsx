@@ -261,7 +261,7 @@ export default function AcademyMissionControl() {
             <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <CardTitle className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" /> Linux terminal</CardTitle>
+                  <CardTitle role="heading" aria-level={2} className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" /> Linux terminal</CardTitle>
                   <CardDescription className="mt-1 text-xs">Work directly on your isolated Linux machine. No Cyber Lab navigation required.</CardDescription>
                 </div>
                 {lab && <Badge variant="outline" className="max-w-full truncate">{lab.name}</Badge>}

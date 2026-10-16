@@ -8,7 +8,8 @@ async function login(context) {
   await context.addCookies([{ name: 'oxsig-e2e-user', value: 'account-a', url: baseURL, sameSite: 'Lax' }]);
 }
 async function screenshot(page, info, name) {
-  const bytes = await page.screenshot({ path: info.outputPath(name + '.png'), fullPage: true });
+  await page.evaluate(() => document.fonts.ready);
+  const bytes = await page.screenshot({ path: info.outputPath(name + '.png'), fullPage: true, animations: 'disabled' });
   await info.attach(name, { body: bytes, contentType: 'image/png' });
   // Explicit opt-in permits retrieval from an isolated review build without
   // publishing application data or introducing a persistent artifact service.
