@@ -77,10 +77,12 @@ export default function InteractiveSsmTerminal({
   labInstanceId,
   machineLabel,
   focusMode = false,
+  compact = false,
 }: {
   labInstanceId: string;
   machineLabel: string;
   focusMode?: boolean;
+  compact?: boolean;
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
@@ -596,9 +598,9 @@ export default function InteractiveSsmTerminal({
       </div>
 
       {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">{error}</div>}
-      {(statusDetail || ticketSecondsLeft !== null) && <div className="rounded-lg border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">{statusDetail}{ticketSecondsLeft !== null && state === "connecting" ? ` ${ticketSecondsLeft > 0 ? `(${ticketSecondsLeft}s secure connection window left)` : "(connection window expired; reconnect to retry)"}` : ""}</div>}
+      {(!compact || state !== "connected") && (statusDetail || ticketSecondsLeft !== null) && <div className="rounded-lg border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">{statusDetail}{ticketSecondsLeft !== null && state === "connecting" ? ` ${ticketSecondsLeft > 0 ? `(${ticketSecondsLeft}s secure connection window left)` : "(connection window expired; reconnect to retry)"}` : ""}</div>}
       <div className="overflow-hidden rounded-xl bg-black p-2"><div ref={hostRef} className={focusMode ? "h-[calc(100vh-235px)] min-h-[420px] w-full transition-[height] duration-300 ease-in-out" : "h-[420px] min-h-[280px] w-full transition-[height] duration-300 ease-in-out"} aria-label={`Interactive terminal for ${machineLabel}`} /></div>
-      <p className="text-[10px] text-muted-foreground">The shell stays persistent while its secure managed transport remains connected. If transport is interrupted, OXSIG makes up to three bounded recovery attempts using a fresh shell; shell-local state such as the working directory or exported variables can reset after recovery. Approved learning commands are bound to the exact active terminal session before they run visibly, and their browser-observed output is persisted against a one-time execution receipt before AI explanation or Academy evaluation.</p>
+      {compact ? <details className="text-[11px] text-muted-foreground"><summary className="cursor-pointer">Connection details</summary><p className="mt-2">Your shell lasts while connected. Reconnecting can start a fresh shell, resetting the working directory and environment variables. Machine files last until the lab expires.</p></details> : (<p className="text-[10px] text-muted-foreground">The shell stays persistent while its secure managed transport remains connected. If transport is interrupted, OXSIG makes up to three bounded recovery attempts using a fresh shell; shell-local state such as the working directory or exported variables can reset after recovery. Approved learning commands are bound to the exact active terminal session before they run visibly, and their browser-observed output is persisted against a one-time execution receipt before AI explanation or Academy evaluation.</p>)}
     </div>
   );
 }

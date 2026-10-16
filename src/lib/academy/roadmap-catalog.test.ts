@@ -19,10 +19,10 @@ describe('Academy shared skill roadmap', () => {
 
   it('preserves the vertical DevOps sequence without inventing Linux progress', () => {
     expect(ACADEMY_ROADMAPS.devops.skills.map(skill => skill.id)).toEqual([
-      'linux-fundamentals', 'networking', 'docker', 'kubernetes',
+      'linux-fundamentals', 'networking', 'git', 'scripting', 'cloud', 'docker', 'cicd', 'iac', 'kubernetes', 'observability', 'devsecops', 'reliability', 'devops-capstone',
     ]);
     expect(ACADEMY_ROADMAPS.devops.skills[0].availability).toBe('planned');
-    expect(ACADEMY_ROADMAPS.devops.skills[2].availability).toBe('live');
+    expect(ACADEMY_ROADMAPS.devops.skills.find(skill => skill.id === 'docker')?.availability).toBe('live');
   });
 
   it('counts verified Docker modules only when their real missions are verified', () => {

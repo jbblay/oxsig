@@ -101,7 +101,7 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h2 className="text-sm font-semibold">Linux environment</h2>
-        <p className="mt-1 text-xs text-muted-foreground" role="status">{message}</p>
+        <p className="mt-1 text-xs text-muted-foreground" role="status">{state === 'ready' ? 'Ready to practice.' : message}</p>
       </div>
       <span className={'rounded-full border px-2 py-1 text-[11px] font-medium ' + (state === 'ready' ? 'border-emerald-500/40 text-emerald-600' : 'text-muted-foreground')}>
         {state === 'ready' ? 'Ready' : state === 'starting' || state === 'preparing' || state === 'loading' ? 'Preparing' : state === 'empty' ? 'Not started' : 'Needs attention'}
@@ -117,7 +117,7 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     </div>
     {lab && <details className="mt-3 rounded-lg border p-2 text-xs" open={state === 'blocked' || state === 'error' ? true : undefined}>
       <summary className="cursor-pointer font-medium">Manage this environment</summary>
-      <p className="my-2 text-muted-foreground">Use these controls without leaving Academy. Stopping preserves the temporary machine only until its expiry; destroying permanently removes its files.</p>
+      <p className="my-2 text-muted-foreground">Stopping keeps files until expiry. Destroying removes them permanently.</p>
       {operationManaged && <p className="my-2 text-amber-700 dark:text-amber-300">This machine belongs to a multi-machine Operation. Finish or release it from <Link href="/operations" className="underline">Operations</Link> before starting Docker; Academy will not destroy unrelated exercise machines.</p>}
       {!operationManaged && <div className="flex flex-wrap gap-2">
         {lab.status === 'stopped' && new Date(lab.expiresAt).getTime() > Date.now() && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => manage('start'))}>Resume</Button>}
@@ -125,6 +125,6 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
         {!['destroyed', 'destroying', 'stopping'].includes(lab.status) && <Button size="sm" variant="destructive" disabled={busy} onClick={() => void run(() => manage('destroy'))}>Destroy machine</Button>}
       </div>}
     </details>}
-    <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Ubuntu preparation installs Docker and curl when required. Achievements survive expiry; machine files do not.</p>
+    <details className="mt-2 text-[11px] text-muted-foreground"><summary className="cursor-pointer">About this lab</summary><p className="mt-2">Docker and curl are prepared on Ubuntu. Achievements survive expiry; machine files do not.</p></details>
   </div>;
 }

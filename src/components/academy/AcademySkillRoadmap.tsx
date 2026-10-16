@@ -40,6 +40,7 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
   }, [previewId]);
   const status = (skillId: string) => getSkillRoadmapState(career, skillId, verified);
   const preview = career.skills.find(item => item.id === previewId && item.availability === 'planned');
+  const playable = career.skills.find(skill => skill.availability === 'live' && status(skill.id) !== 'locked');
   const liveCount = career.skills.filter(item => item.availability === 'live').length;
 
   return (
@@ -52,6 +53,7 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
         <Badge variant="outline"><CareerIcon className="mr-1 h-3.5 w-3.5" /> OXSIG Academy</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-4xl">{career.title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{career.subtitle} Follow the skill path below; open a ready workspace to start practicing.</p>
+        {playable?.href && <Link href={playable.href} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">{status(playable.id) === 'complete' ? 'Revisit' : 'Practice'} {playable.title}<ArrowRight className="h-4 w-4" /></Link>}
       </header>
 
       <section aria-label={career.title + ' skill roadmap'} className="academy-roadmap relative overflow-hidden rounded-3xl border border-slate-700/70 bg-[#090e1d] px-4 py-8 text-slate-100 shadow-2xl sm:px-8">

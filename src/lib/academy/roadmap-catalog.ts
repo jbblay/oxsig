@@ -30,7 +30,7 @@ export const DOCKER_LEARNING_MODULES: readonly AcademyModule[] = [
 
 export const ACADEMY_ROADMAPS: Record<CareerId, AcademyCareer> = {
   devops: {
-    id: 'devops', title: 'DevOps & Cloud', subtitle: 'Build, deploy and operate real systems.',
+    id: 'devops', title: 'DevOps & Cloud', subtitle: 'Your DevOps engineer roadmap: foundations, delivery and reliable operations.',
     skills: [
       {
         id: 'linux-fundamentals', title: 'Linux Fundamentals', summary: 'Learn to work confidently in a Linux environment.',
@@ -53,11 +53,21 @@ export const ACADEMY_ROADMAPS: Record<CareerId, AcademyCareer> = {
           { id: 'network-services', title: 'Network services', summary: 'DNS, ports and service reachability' },
         ],
       },
+      { id: 'git', title: 'Git & collaboration', summary: 'Track changes and review work.', availability: 'planned',
+        modules: [{ id: 'git-0', title: 'Version control', summary: 'Commits, branches, merges and pull requests' }] },
+      { id: 'scripting', title: 'Shell & Python automation', summary: 'Turn repeatable work into scripts.', availability: 'planned',
+        modules: [{ id: 'scripting-0', title: 'Shell scripting', summary: 'Pipes, variables, exit codes and safe scripts' }, { id: 'scripting-1', title: 'Python automation', summary: 'Files, APIs, dependencies and tests' }] },
+      { id: 'cloud', title: 'Cloud foundations', summary: 'Understand compute, identity and networks.', availability: 'planned',
+        modules: [{ id: 'cloud-0', title: 'AWS foundations', summary: 'IAM, VPC, EC2, storage and budgets' }] },
       {
         id: 'docker', title: 'Docker', summary: 'Deploy, repair and preserve a container service.',
         availability: 'live', href: '/academy/learn/docker',
         modules: DOCKER_LEARNING_MODULES,
       },
+      { id: 'cicd', title: 'CI/CD pipelines', summary: 'Build, test and deliver changes safely.', availability: 'planned',
+        modules: [{ id: 'cicd-0', title: 'Continuous integration', summary: 'Automated checks and artifact builds' }, { id: 'cicd-1', title: 'Delivery', summary: 'Environments, deployment strategies and rollback' }] },
+      { id: 'iac', title: 'Infrastructure as code', summary: 'Version and reproduce infrastructure.', availability: 'planned',
+        modules: [{ id: 'iac-0', title: 'Terraform', summary: 'Plans, state, modules and safe changes' }, { id: 'iac-1', title: 'Configuration management', summary: 'Idempotent configuration and secrets' }] },
       {
         id: 'kubernetes', title: 'Kubernetes', summary: 'Operate containerized workloads across a cluster.',
         availability: 'planned',
@@ -67,6 +77,14 @@ export const ACADEMY_ROADMAPS: Record<CareerId, AcademyCareer> = {
           { id: 'k8s-recovery', title: 'Workload recovery', summary: 'Diagnose and recover unhealthy applications' },
         ],
       },
+      { id: 'observability', title: 'Observability', summary: 'Understand systems through signals.', availability: 'planned',
+        modules: [{ id: 'observability-0', title: 'Metrics, logs and traces', summary: 'Dashboards, alerting and diagnosis' }] },
+      { id: 'devsecops', title: 'DevSecOps', summary: 'Build security into delivery.', availability: 'planned',
+        modules: [{ id: 'devsecops-0', title: 'Supply chain and access', summary: 'Image scanning, least privilege, policies and secrets' }] },
+      { id: 'reliability', title: 'Reliability engineering', summary: 'Operate services with confidence.', availability: 'planned',
+        modules: [{ id: 'reliability-0', title: 'SRE practice', summary: 'SLIs, SLOs, incidents, capacity and recovery' }] },
+      { id: 'devops-capstone', title: 'DevOps capstone', summary: 'Connect delivery and operations end to end.', availability: 'planned',
+        modules: [{ id: 'devops-capstone-0', title: 'Production service project', summary: 'Design, automate, secure and operate a service' }] },
     ],
   },
   cybersecurity: {
