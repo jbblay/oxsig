@@ -9,7 +9,7 @@ export const ENGINEERING_MISSIONS = [
     prerequisites: [],
     minutes: 20,
     ticket:
-      "Bring an nginx service online at host port 8080 using the reserved Academy container.",
+      "Bring an nginx service online at host port 18080 using the reserved Academy container.",
     hypotheses: [
       {
         id: "inspect-mapping",
