@@ -31,7 +31,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
+    command: process.env.OXSIG_E2E_PRODUCTION_SERVER === 'true'
+      ? `pnpm exec next start --hostname 127.0.0.1 --port ${port}`
+      : `pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
     cwd: repositoryRoot,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
