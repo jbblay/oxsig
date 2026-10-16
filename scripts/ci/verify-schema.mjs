@@ -110,6 +110,43 @@ try {
        ON CONFLICT (clerk_user_id) WHERE clerk_user_id IS NOT NULL DO NOTHING
        RETURNING id`;
     const owner = (await client.query(insertUser, ['ci_owner', 'owner@example.test', 'Owner'])).rows[0].id;
+
+    // Browser-simulator practice must be scoped to its owner and never accrue
+    // cash/mentor credits. Replay and invalid awards are rejected by PostgreSQL.
+    await client.query(
+      `INSERT INTO academy_simulation_progress
+        (owner_id,skill_id,stage_id,curriculum_version,attempts,checks,verified_at,sp_awarded)
+       VALUES ($1,'docker','container',1,1,'[]'::jsonb,NOW(),25)`, [owner]
+    );
+    await client.query('SAVEPOINT duplicate_simulator');
+    try {
+      await client.query(
+        `INSERT INTO academy_simulation_progress
+         (owner_id,skill_id,stage_id,curriculum_version,attempts,checks,verified_at,sp_awarded)
+         VALUES ($1,'docker','container',1,1,'[]'::jsonb,NOW(),25)`, [owner]
+      );
+      fail('duplicate simulation checkpoint was accepted');
+    } catch (error) {
+      if (error.code !== '23505') fail('simulator uniqueness failed with an unexpected error');
+    } finally {
+      await client.query('ROLLBACK TO SAVEPOINT duplicate_simulator');
+      await client.query('RELEASE SAVEPOINT duplicate_simulator');
+    }
+    await client.query('SAVEPOINT forged_simulator_sp');
+    try {
+      await client.query(
+        `INSERT INTO academy_simulation_progress
+         (owner_id,skill_id,stage_id,curriculum_version,attempts,checks,verified_at,sp_awarded)
+         VALUES ($1,'docker','network',1,1,'[]'::jsonb,NULL,999)`, [owner]
+      );
+      fail('simulator accepted impossible forged points');
+    } catch (error) {
+      if (error.code !== '23514') fail('forged simulator SP failed with an unexpected error');
+    } finally {
+      await client.query('ROLLBACK TO SAVEPOINT forged_simulator_sp');
+      await client.query('RELEASE SAVEPOINT forged_simulator_sp');
+    }
+
     const invitee = (await client.query(insertUser, ['ci_invitee', 'invitee@example.test', 'Invitee'])).rows[0].id;
     const duplicate = await client.query(insertUser, ['ci_owner', 'owner@example.test', 'Owner']);
     if (duplicate.rowCount !== 0) fail('Clerk provisioning ON CONFLICT did not deduplicate');
