@@ -18,16 +18,19 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await page.goto('/academy');
 
     await expect(page.getByRole('heading', {
-      name: 'Learn by doing. Prove it in a real environment.',
+      name: 'Choose your engineering path',
     })).toBeVisible();
     const nav = page.getByRole('navigation', { name: 'Academy navigation' });
     await expect(nav).toBeVisible();
     await expect(nav).toContainText('Engineering World');
     await expect(nav).toContainText('Mission Control');
+    await expect(nav).toContainText('Explore skills');
+    await expect(page.getByRole('button', { name: /DevOps & Cloud/ })).toBeVisible();
     await expect(nav).not.toContainText('Current lesson');
     await expect(nav).not.toContainText('Learning paths');
     await expect(nav).not.toContainText('Prove capability');
     await expect(page.getByRole('link', { name: 'Enter Engineering World' })).toHaveAttribute('href', '/academy/engineering-world');
+    await expect(page.getByRole('link', { name: 'Enter Docker Kingdom' })).toHaveAttribute('href','/academy/learn/docker');
     await expect(page.getByRole('link', { name: 'Open Mission Control' })).toHaveAttribute('href', '/academy/missions');
 
     await page.goto('/academy/paths');
