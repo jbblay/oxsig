@@ -110,7 +110,7 @@ export default function DockerSimulationWorkshop() {
   }
 
   const completed = state?.progress.filter(item => item.verifiedAt).length || 0;
-  const nextStage = DOCKER_SIMULATION_STAGES[stage.chapter];
+  const nextStage = DOCKER_SIMULATION_STAGES.find(item => item.chapter === stage.chapter + 1);
   if (loading) return <div className="flex items-center gap-3 p-8 text-sm"><Loader2 className="h-5 w-5 animate-spin" /> Loading your Docker workshop…</div>;
   if (error || !state) return <Card className="m-4"><CardHeader><CardTitle>Docker workshop unavailable</CardTitle><CardDescription>{error || 'Unable to load your practice progress.'}</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link href="/academy">Back to Academy</Link></Button></CardContent></Card>;
 
