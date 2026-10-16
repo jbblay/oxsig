@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { getLabsSnapshot, type ClientLabInstance } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
@@ -20,9 +21,10 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     if (!snapshot.ok) throw new Error(snapshot.status === 401 ? 'Your session expired. Sign in again, then refresh.' : snapshot.data.error || 'Cannot load environments. Retry below.');
     setConfigured(Boolean(snapshot.data.capabilities?.configured && snapshot.data.capabilities?.supportsTerminal));
     const instances = snapshot.data.instances || [];
-    const current = instances.find(item => !['destroyed', 'destroying'].includes(item.status)) || null;
+    const current = instances.find(item => item.status !== 'destroyed') || null;
     setLab(current);
     if (!current) { setCompatible(false); callback.current(null, false); setState('empty'); setMessage('Start a temporary Linux environment. Your account’s lab quota and session time limit apply.'); return; }
+    if (['destroying', 'stopping'].includes(current.status)) { callback.current(null, false); setState('starting'); setMessage('Updating the machine lifecycle. The next environment will be available after this finishes.'); return; }
     const linux = snapshot.data.catalog?.some(item => item.slug === current.slug && item.platform === 'linux' && item.launchSurface === 'cyber-lab') || false;
     setCompatible(linux);
     if (new Date(current.expiresAt).getTime() <= Date.now()) { callback.current(null, false); setState('blocked'); setMessage('This environment has expired. Your verified learning record is safe. Use the controls here to release it, then start fresh. Files on the expired machine cannot be restored.'); return; }
@@ -75,6 +77,7 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
   }
   async function manage(action: 'start' | 'stop' | 'destroy') {
     if (!lab) return;
+    if (lab.metadata?.operationRunId) throw new Error('This machine belongs to an active multi-machine Operation. Manage that Operation in its own workspace.');
     if (action === 'destroy' && !window.confirm('Destroy ' + lab.name + '? This permanently removes the temporary machine and its unsaved files. Your Academy achievements and notes remain saved. Continue?')) return;
     const response = await fetch('/api/labs/instances/' + encodeURIComponent(lab.id), {
       method: 'PATCH',
@@ -86,6 +89,8 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     callback.current(null, false);
     await inspect();
   }
+
+  const operationManaged = Boolean(lab?.metadata?.operationRunId);
 
   return <div className="rounded-xl border bg-card p-3 sm:p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -102,17 +107,18 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     <div className="mt-3 flex flex-wrap gap-2">
       {state === 'empty' && <Button size="sm" disabled={busy || !configured} onClick={() => void run(launch)}>Start Linux</Button>}
       {compatible && lab?.slug === 'ubuntu-security-lab' && ['missing', 'failed'].includes(state) && <Button size="sm" disabled={busy} onClick={() => void run(prepare)}>Prepare Docker</Button>}
-      {state === 'blocked' && lab?.status === 'stopped' && <Button size="sm" disabled={busy} onClick={() => void run(() => manage('start'))}>Resume Linux</Button>}
+      {state === 'blocked' && lab?.status === 'stopped' && !operationManaged && new Date(lab.expiresAt).getTime() > Date.now() && <Button size="sm" disabled={busy} onClick={() => void run(() => manage('start'))}>Resume Linux</Button>}
       <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(inspect)}>{busy ? 'Checking…' : 'Refresh status'}</Button>
     </div>
     {lab && <details className="mt-3 rounded-lg border p-2 text-xs" open={state === 'blocked' || state === 'error' ? true : undefined}>
       <summary className="cursor-pointer font-medium">Manage this environment</summary>
       <p className="my-2 text-muted-foreground">Use these controls without leaving Academy. Stopping preserves the temporary machine only until its expiry; destroying permanently removes its files.</p>
-      <div className="flex flex-wrap gap-2">
-        {lab.status === 'stopped' && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => manage('start'))}>Resume</Button>}
+      {operationManaged && <p className="my-2 text-amber-700 dark:text-amber-300">This machine belongs to a multi-machine Operation. Finish or release it from <Link href="/operations" className="underline">Operations</Link> before starting Docker; Academy will not destroy unrelated exercise machines.</p>}
+      {!operationManaged && <div className="flex flex-wrap gap-2">
+        {lab.status === 'stopped' && new Date(lab.expiresAt).getTime() > Date.now() && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => manage('start'))}>Resume</Button>}
         {lab.status === 'running' && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => manage('stop'))}>Stop</Button>}
         {!['destroyed', 'destroying', 'stopping'].includes(lab.status) && <Button size="sm" variant="destructive" disabled={busy} onClick={() => void run(() => manage('destroy'))}>Destroy machine</Button>}
-      </div>
+      </div>}
     </details>}
     <p className="mt-2 text-[11px] leading-4 text-muted-foreground">Ubuntu preparation installs Docker and curl when required. Achievements survive expiry; machine files do not.</p>
   </div>;
