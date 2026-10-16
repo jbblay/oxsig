@@ -87,7 +87,8 @@ function EligibilityPanel({ state }: { state: MentorCenterState }) {
         <p className="text-[11px] text-muted-foreground">
           No Academy evidence pathway yet for: {externalOnly.map((item) => item.label).join(', ')}. These are reviewed for industry professionals only.
         </p>
-        <Button variant="outline" size="sm" asChild><Link href="/academy/paths"><GraduationCap className="mr-1.5 h-4 w-4" aria-hidden="true" /> Build evidence in learning paths</Link></Button>
+        <p className="text-[11px] text-muted-foreground">Earlier verified capability records remain valid. New mission completions are recorded separately; they do not automatically award mentor qualifications until a specialization-specific evidence mapping is approved.</p>
+        <Button variant="outline" size="sm" asChild><Link href="/academy/missions"><GraduationCap className="mr-1.5 h-4 w-4" aria-hidden="true" /> Practice verified missions</Link></Button>
       </CardContent>
     </Card>
   );
