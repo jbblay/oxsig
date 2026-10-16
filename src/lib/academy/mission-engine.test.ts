@@ -59,6 +59,10 @@ function run(overrides: Record<string, unknown> = {}) {
   }));
 }
 describe("versioned mission engine security", () => {
+  it('publishes the same host port required by the real Docker verifier', () => {
+    expect(ENGINEERING_MISSIONS[0].ticket).toContain('18080');
+    expect(ENGINEERING_MISSIONS[0].ticket).not.toMatch(/\\b8080\\b/);
+  });
   it("does not accept client verification results or commands", () => {
     expect(
       engineCommandSchema.safeParse({
