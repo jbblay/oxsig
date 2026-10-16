@@ -47,12 +47,19 @@ export default function AcademyTrackExplorer() {
             const Icon = item.icon;
             const active = item.id === selected;
             return (
-              <button type="button" key={item.id} aria-pressed={active} onClick={() => setSelected(item.id)}
-                className={`rounded-xl border p-4 text-left transition hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? 'border-primary bg-primary/10' : 'bg-card'}`}>
-                <div className="flex justify-between"><Icon className="h-7 w-7 text-primary" />{active && <CheckCircle2 className="h-4 w-4 text-primary" />}</div>
-                <h3 className="mt-4 font-semibold">{item.name}</h3>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.caption}</p>
-              </button>
+              <React.Fragment key={item.id}>{item.id === 'devops'
+              ? <Link key={item.id} href="/academy/learn/devops" className="rounded-xl border border-primary bg-primary/10 p-4 text-left transition hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                  <div className="flex justify-between"><Icon className="h-7 w-7 text-primary" /><ArrowRight className="h-4 w-4 text-primary" /></div>
+                  <h3 className="mt-4 font-semibold">{item.name}</h3>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.caption}</p>
+                  <span className="mt-3 inline-block text-xs font-semibold text-primary">Explore DevOps skills →</span>
+                </Link>
+              : <button type="button" key={item.id} aria-pressed={active} onClick={() => setSelected(item.id)}
+                  className={`rounded-xl border p-4 text-left transition hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? 'border-primary bg-primary/10' : 'bg-card'}`}>
+                  <div className="flex justify-between"><Icon className="h-7 w-7 text-primary" />{active && <CheckCircle2 className="h-4 w-4 text-primary" />}</div>
+                  <h3 className="mt-4 font-semibold">{item.name}</h3>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.caption}</p>
+                </button>}</React.Fragment>
             );
           })}
         </div>
