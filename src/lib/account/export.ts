@@ -26,6 +26,10 @@ const EXPORT_SOURCES: Array<{ key: string; table: string; ownerColumn: string; o
   { key: 'collaborationMessages', table: 'collaboration_messages', ownerColumn: 'user_id', orderBy: 'created_at' },
   { key: 'activityLog', table: 'audit_logs', ownerColumn: 'user_id', orderBy: 'created_at', omit: ['ip_address', 'user_agent'] },
   // Internal reviewer notes are an administrator work product, not applicant data.
+  { key: 'mentorForge', table: 'mentor_forge_attempts', ownerColumn: 'owner_id', orderBy: 'created_at', omit: ['reviewer_id'] },
+  { key: 'helpOutcomes', table: 'mentorship_help_outcomes', ownerColumn: 'owner_id', orderBy: 'created_at' },
+  { key: 'mentorshipReviews', table: 'mentorship_reviews', ownerColumn: 'owner_id', orderBy: 'created_at', omit: ['reviewer_id','subject_id'] },
+  { key: 'passportShares', table: 'skills_passport_shares', ownerColumn: 'owner_id', orderBy: 'created_at', omit: ['token_hash'] },
   { key: 'mentorApplications', table: 'mentor_applications', ownerColumn: 'applicant_id', orderBy: 'created_at', omit: ['reviewer_note', 'decided_by'] },
   { key: 'mentorApplicationEvents', table: 'mentor_application_events', ownerColumn: 'applicant_id', orderBy: 'created_at', omit: ['actor_id'] },
   { key: 'mentorProfile', table: 'mentor_profiles', ownerColumn: 'user_id', orderBy: 'created_at', omit: ['approved_by', 'status_changed_by'] },

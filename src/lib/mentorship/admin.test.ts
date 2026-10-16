@@ -101,7 +101,7 @@ describe('decideMentorApplication', () => {
 
   it('publishes only reviewer-verified credentials for external professionals', async () => {
     setup({ track: 'external', credentials: [{ name: 'CCNP', issuer: 'Cisco' }, { name: 'Unverified', issuer: 'Somewhere' }] });
-    await decideMentorApplication({ adminId, applicationId, decision: approve({ tier: 'verified_mentor', specializationIds: ['databases'], verifiedCredentialIndexes: [0] }) });
+    await decideMentorApplication({ adminId, applicationId, decision: approve({ tier: 'approved_peer_mentor', specializationIds: ['databases'], verifiedCredentialIndexes: [0] }) });
     const profile = calls().find(({ sql }) => sql.includes('INSERT INTO mentor_profiles'))!;
     const published = JSON.parse(profile.params[7] as string);
     expect(published).toHaveLength(1);

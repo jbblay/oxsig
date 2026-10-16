@@ -609,7 +609,10 @@ export async function openRescueRoom(userId: string, sessionId: string) {
         `SELECT 1 FROM live_workspaces WHERE collaboration_id=$1 AND status='active' AND (expires_at IS NULL OR expires_at > NOW())`,
         [row.collaboration_id]
       );
-      if (existing.rows[0]) return { workspaceId: row.collaboration_id as string, created: false, role, counterpart: role === 'learner' ? row.mentor_id : row.learner_id };
+      if (existing.rows[0]) {
+        await client.query(`INSERT INTO mentorship_attendance(session_id,owner_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[sessionId,userId]);
+        return { workspaceId: row.collaboration_id as string, created: false, role, counterpart: role === 'learner' ? row.mentor_id : row.learner_id };
+      }
     }
 
     // The learner owns the room: they decide what to attach and who may control it.
@@ -642,6 +645,7 @@ export async function openRescueRoom(userId: string, sessionId: string) {
       [workspaceId, row.learner_id, row.mentor_id]
     );
     await client.query(`UPDATE mentorship_sessions SET collaboration_id=$2, updated_at=NOW() WHERE id=$1`, [sessionId, workspaceId]);
+    await client.query(`INSERT INTO mentorship_attendance(session_id,owner_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[sessionId,userId]);
     await recordSessionEvent(client, { sessionId, actorId: userId, type: 'room_opened', detail: workspaceId });
     return { workspaceId, created: true, role, counterpart: role === 'learner' ? row.mentor_id : row.learner_id };
   });

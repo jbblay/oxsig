@@ -264,6 +264,28 @@ try {
       [sessionRow.rows[0].id, applicant, invitee]
     );
 
+    // Phase 3: immutable version contracts, self-review, unique feedback and share TTL.
+    const audition = await client.query(
+      `INSERT INTO mentor_forge_attempts(owner_id,application_id,template_version,rubric_version,explanation,questions,reasoning)
+       VALUES($1,$2,'docker-ports-v1','teaching-v1',$3,$4,$3) RETURNING id`,
+      [applicant, applicationId, 'Guided explanation and safe next steps '.repeat(3), 'Which host port did you open?']
+    );
+    await expectViolation('audition self review',
+      `UPDATE mentor_forge_attempts SET reviewer_id=$2 WHERE id=$1`, [audition.rows[0].id, applicant], '23514');
+    await expectViolation('unversioned audition',
+      `UPDATE mentor_forge_attempts SET rubric_version='unknown' WHERE id=$1`, [audition.rows[0].id], '23514');
+    await client.query(`INSERT INTO mentorship_attendance(session_id,owner_id) VALUES($1,$2)`, [sessionRow.rows[0].id, applicant]);
+    const feedbackSql = `INSERT INTO mentorship_help_outcomes(session_id,owner_id,role,outcome,rating,reflection)
+      VALUES($1,$2,'mentor','progress',4,'Learner explained the next diagnostic step independently')`;
+    await client.query(feedbackSql,[sessionRow.rows[0].id,applicant]);
+    await expectViolation('duplicate feedback for role',feedbackSql,[sessionRow.rows[0].id,applicant],'23505');
+    await expectViolation('long-lived passport token',
+      `INSERT INTO skills_passport_shares(owner_id,token_hash,consent_version,expires_at) VALUES($1,'test-hash','passport-v1',NOW()+INTERVAL '8 days')`,[applicant],'23514');
+    await client.query(`INSERT INTO skills_passport_shares(owner_id,token_hash,consent_version,expires_at) VALUES($1,'valid-test-hash','passport-v1',NOW()+INTERVAL '1 day')`,[applicant]);
+    const review = await client.query(`INSERT INTO mentorship_reviews(owner_id,subject_id,kind,session_id,detail) VALUES($1,$2,'report',$3,'A detailed report for independent review') RETURNING id`,[invitee,applicant,sessionRow.rows[0].id]);
+    await expectViolation('moderation subject self review',`UPDATE mentorship_reviews SET reviewer_id=$2 WHERE id=$1`,[review.rows[0].id,applicant],'23514');
+    await client.query(`INSERT INTO mentorship_evidence_events(owner_id,actor_id,resource_id,action) VALUES($1,$2,$3,'test')`,[applicant,reviewer,audition.rows[0].id]);
+
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
@@ -282,7 +304,13 @@ try {
       `SELECT (SELECT COUNT(*) FROM mentor_applications WHERE applicant_id=$1)
             + (SELECT COUNT(*) FROM mentor_application_events WHERE applicant_id=$1)
             + (SELECT COUNT(*) FROM mentor_profiles WHERE user_id=$1)
-            + (SELECT COUNT(*) FROM mentor_qualifications WHERE mentor_id=$1) AS remaining`,
+            + (SELECT COUNT(*) FROM mentor_qualifications WHERE mentor_id=$1)
+            + (SELECT COUNT(*) FROM mentor_forge_attempts WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM mentorship_attendance WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM mentorship_help_outcomes WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM mentorship_reviews WHERE subject_id=$1 OR owner_id=$1)
+            + (SELECT COUNT(*) FROM mentorship_evidence_events WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM skills_passport_shares WHERE owner_id=$1) AS remaining`,
       [applicant]
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
