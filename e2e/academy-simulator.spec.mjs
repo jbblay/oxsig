@@ -44,7 +44,7 @@ test('Docker castles persist, unlock sequentially, award idempotent practice SP 
   await page.locator('#slot-image').selectOption('nginx:alpine');
   await page.locator('#slot-name').selectOption('oxsig-academy-web');
   await page.getByRole('button',{name:'Check configuration'}).click();
-  await expect(page.getByTestId('simulation-sp')).toContainText('25 SP'({timeout:30000});
+  await expect(page.getByTestId('simulation-sp')).toContainText('25 SP', {timeout:30000});
   await expect(page.getByRole('button',{name:/CASTLE 2/})).toBeEnabled();
   const retry = await command(page,'container',{image:'nginx:alpine',name:'oxsig-academy-web'});
   expect(retry.status).toBe(200);
@@ -55,23 +55,23 @@ test('Docker castles persist, unlock sequentially, award idempotent practice SP 
   await page.locator('#slot-url').selectOption('http://localhost:18080');
   await page.getByRole('button',{name:'Check configuration'}).click();
   await expect(page.getByText('Needs another configuration')).toBeVisible({timeout:20000});
-  await expect(page.getByTestId('simulation-sp')).toContainText('25 SP'();
+  await expect(page.getByTestId('simulation-sp')).toContainText('25 SP');
   await page.locator('#slot-publish').selectOption('18080:80');
   await page.getByRole('button',{name:'Check configuration'}).click();
-  await expect(page.getByTestId('simulation-sp')).toContainText('50 SP'({timeout:20000});
+  await expect(page.getByTestId('simulation-sp')).toContainText('50 SP', {timeout:20000});
   await expect(page.getByRole('button',{name:/CASTLE 3/})).toBeEnabled();
 
   await page.getByRole('button',{name:/CASTLE 3/}).click();
   await page.locator('#slot-mount').selectOption('oxsig_academy_data:/usr/share/nginx/html');
   await page.locator('#slot-marker').selectOption('OXSIG Academy persistent');
   await page.getByRole('button',{name:'Check configuration'}).click();
-  await expect(page.getByTestId('simulation-sp')).toContainText('75 SP'({timeout:20000});
+  await expect(page.getByTestId('simulation-sp')).toContainText('75 SP', {timeout:20000});
   const checkDb = await pool.query('SELECT count(*)::int n, sum(sp_awarded)::int sp FROM academy_simulation_progress WHERE owner_id=$1 AND verified_at IS NOT NULL',[ownerA]);
   expect(checkDb.rows[0]).toMatchObject({n:3,sp:75});
 
   await login(context,'account-b');
   await page.goto('/academy/learn/docker');
-  await expect(page.getByTestId('simulation-sp')).toContainText('0 SP'();
+  await expect(page.getByTestId('simulation-sp')).toContainText('0 SP');
   await expect(page.getByRole('button',{name:/CASTLE 2/})).toBeDisabled();
   const other = await command(page,'storage',{mount:'oxsig_academy_data:/usr/share/nginx/html',marker:'OXSIG Academy persistent'});
   expect(other.status).toBe(409);
