@@ -33,3 +33,4 @@ phases:
       - npm install --prefix e2e --no-package-lock
       - ./e2e/node_modules/.bin/playwright install --with-deps chromium
       - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs mentor-evidence.spec.mjs
+      - OXSIG_SANDBOX_COMMERCE_ENABLED=true DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs sandbox-commerce.spec.mjs
