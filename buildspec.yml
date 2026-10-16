@@ -30,3 +30,6 @@ phases:
       - pnpm test:run
       - pnpm db:verify
       - pnpm build
+      - npm install --prefix e2e --no-package-lock
+      - ./e2e/node_modules/.bin/playwright install --with-deps chromium
+      - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs mentor-evidence.spec.mjs

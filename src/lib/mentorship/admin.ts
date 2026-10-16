@@ -1,4 +1,5 @@
 import 'server-only';
+import { assertPromotionEvidence, evidenceEvent } from './evidence';
 
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '@/lib/db/pool';
@@ -267,6 +268,7 @@ export async function decideMentorApplication(input: { adminId: string; applicat
       if (unknown.length) {
         throw new MentorshipError('Only specializations the applicant requested can be approved.', 'SPECIALIZATION_NOT_REQUESTED', 400, { specializations: unknown });
       }
+      if (decision.tier !== 'approved_peer_mentor') await assertPromotionEvidence(client, application.applicant_id, decision.tier);
       const eligibility = await getMentorEligibility(application.applicant_id, client);
       assertAcademyEvidence(track, specializationIds, eligibility);
 
@@ -397,6 +399,7 @@ export async function manageMentor(input: { adminId: string; mentorId: string; c
         [mentorId, status, command.reason, adminId]
       );
 
+    await evidenceEvent(client, mentorId, adminId, mentorId, `mentor.${command.action}`, {reason:command.reason});
     switch (command.action) {
       case 'suspend':
         if (profile.status === 'suspended') throw new MentorshipError('Mentor is already suspended.', 'NO_CHANGE');
@@ -418,6 +421,11 @@ export async function manageMentor(input: { adminId: string; mentorId: string; c
         cancelledSessions = await cancelMentorSessionsForStatusChange(client, mentorId, adminId, command.reason);
         return { status: 'revoked' as const, cancelledSessions: cancelledSessions.length };
       case 'set_tier':
+        if (profile.status !== 'active') throw new MentorshipError('Only active mentors can change tier.', 'MENTOR_INACTIVE');
+        if (['approved_peer_mentor','verified_mentor','senior_mentor'].indexOf(command.tier) > ['approved_peer_mentor','verified_mentor','senior_mentor'].indexOf(profile.tier)) {
+          await assertPromotionEvidence(client, mentorId, command.tier);
+        }
+        await evidenceEvent(client, mentorId, adminId, mentorId, 'mentor.tier', {from:profile.tier,to:command.tier,reason:command.reason});
         if (profile.tier === command.tier) throw new MentorshipError('Mentor already holds this tier.', 'NO_CHANGE');
         await client.query(`UPDATE mentor_profiles SET tier=$2, updated_at=NOW() WHERE user_id=$1`, [mentorId, command.tier]);
         return { tier: command.tier };

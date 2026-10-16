@@ -1,0 +1,450 @@
+"use client";
+import { useEffect, useState, type FormEvent } from "react";
+import { mentorshipGet, mentorshipMutate } from "./mentorship-client";
+import { FORGE_SCENARIO } from "@/lib/mentorship/evidence-policy";
+
+type RecordView = {
+  id: string;
+  status?: string;
+  kind?: string;
+  reason?: string;
+  created_at?: string;
+  expires_at?: string;
+  revoked_at?: string;
+  [key: string]: unknown;
+};
+type State = {
+  applications?: RecordView[];
+  sessions?: RecordView[];
+  forge: RecordView[];
+  reviews: RecordView[];
+  outcomes?: RecordView[];
+  shares?: RecordView[];
+  events?: RecordView[];
+  passport?: unknown;
+};
+const inputStyle = "w-full rounded-lg border bg-background p-3 text-sm";
+export default function EvidenceCenter({ admin = false }: { admin?: boolean }) {
+  const [state, setState] = useState<State | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState("");
+  const endpoint = admin
+    ? "/api/admin/mentorship-evidence"
+    : "/api/mentorship/evidence";
+  const load = () =>
+    mentorshipGet<State>(endpoint)
+      .then(setState)
+      .catch((e) => setError(e.message));
+  useEffect(() => {
+    void load();
+  }, [endpoint]);
+  async function submit(command: unknown) {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await mentorshipMutate<{ token?: string }>(
+        endpoint,
+        "POST",
+        command,
+      );
+      if (result.token)
+        setLink(`${window.location.origin}/api/passport/${result.token}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Submission failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function form(action: string, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    void submit({
+      action,
+      ...values,
+      ...(action === "outcome" ? { rating: Number(values.rating) } : {}),
+    });
+  }
+  const panel = "space-y-4 rounded-xl border bg-card p-5";
+  return (
+    <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+      <header>
+        <p className="text-sm text-muted-foreground">
+          Academy · Evidence and teaching
+        </p>
+        <h1 className="text-3xl font-semibold">
+          {admin ? "Mentorship review queue" : "Mentor Forge & Skills Passport"}
+        </h1>
+        <p className="mt-2 text-muted-foreground">
+          Teaching earns human review. Feedback never grants technical proof or
+          mentor privileges.
+        </p>
+      </header>
+      <button type="button" disabled={busy} onClick={() => void load()} className="rounded-lg border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50">Refresh evidence</button>
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-500 p-3">
+          {error}
+        </p>
+      )}
+      {!state && <p>Loading evidence…</p>}
+      {!admin && (
+        <>
+          <section className={panel}>
+            <h2 className="text-xl font-semibold">Mentor Forge audition</h2>
+            <h3>{FORGE_SCENARIO.title}</h3>
+            <p>{FORGE_SCENARIO.situation}</p>
+            <p className="text-sm text-muted-foreground">
+              {FORGE_SCENARIO.task}
+            </p>
+            <p className="text-sm">
+              Review: technical accuracy, teaching clarity, safe operation,
+              learner independence. Each dimension needs 3/4. Resubmissions
+              require review and a 24-hour reflection period.
+            </p>
+            <form onSubmit={(e) => form("forge", e)} className="space-y-3">
+              <label className="block">
+                Application
+                <select required name="applicationId" className={inputStyle}>
+                  <option value="">Choose your application</option>
+                  {state?.applications?.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {String(a.headline)} · {a.status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {[
+                ["explanation", "Your guided explanation"],
+                ["questions", "Diagnostic questions"],
+                ["reasoning", "Safe next steps and reasoning"],
+              ].map(([name, label]) => (
+                <label key={name} className="block">
+                  {label}
+                  <textarea
+                    required
+                    minLength={name === "questions" ? 20 : 40}
+                    maxLength={name === "questions" ? 2000 : 4000}
+                    name={name}
+                    className={inputStyle}
+                  />
+                </label>
+              ))}
+              <button
+                disabled={busy}
+                className="rounded-lg bg-primary px-4 py-2 text-primary-foreground"
+              >
+                Submit for human review
+              </button>
+            </form>
+          </section>
+          <section className={panel}>
+            <h2 className="text-xl font-semibold">Proof of Help</h2>
+            <p>
+              Both participants must have joined the Rescue Room and the session
+              must be completed. Feedback can be edited for 24 hours until
+              quality review is requested.
+            </p>
+            <form className="space-y-3" onSubmit={(e) => form("outcome", e)}>
+              <label className="block">
+                Session
+                <select required name="sessionId" className={inputStyle}>
+                  <option value="">Choose your session</option>
+                  {state?.sessions?.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {String(s.topic)} · {s.status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                Outcome
+                <select name="outcome" className={inputStyle}>
+                  <option value="progress">Made progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="unresolved">Unresolved</option>
+                </select>
+              </label>
+              <label className="block">
+                Rating (1–5)
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  defaultValue="3"
+                  name="rating"
+                  className={inputStyle}
+                />
+              </label>
+              <label className="block">
+                Reflection
+                <textarea
+                  required
+                  minLength={20}
+                  maxLength={2000}
+                  name="reflection"
+                  className={inputStyle}
+                />
+              </label>
+              <button disabled={busy}>Save my feedback</button>
+            </form>
+          </section>
+          {["report", "quality"].map((action) => (
+            <section key={action} className={panel}>
+              <h2 className="text-xl font-semibold">
+                {action === "report"
+                  ? "Report a concern"
+                  : "Request teaching-quality review"}
+              </h2>
+              <p>
+                {action === "report"
+                  ? "Your report is visible to reviewers, not the other participant."
+                  : "Mentors may request review after both participants leave independent feedback. Explain teaching quality, learner independence and safe practice."}
+              </p>
+              <form className="space-y-3" onSubmit={(e) => form(action, e)}>
+                <label className="block">
+                  Session
+                  <select required name="sessionId" className={inputStyle}>
+                    <option value="">Choose your session</option>
+                    {state?.sessions?.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {String(s.topic)} · {s.status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  Details
+                  <textarea
+                    required
+                    minLength={20}
+                    maxLength={2000}
+                    name="detail"
+                    className={inputStyle}
+                  />
+                </label>
+                <button disabled={busy}>Submit {action}</button>
+              </form>
+            </section>
+          ))}
+          <section className={panel}>
+            <h2 className="text-xl font-semibold">
+              Skills Passport · Private by default
+            </h2>
+            <p>
+              Only verified capability summaries, mission outcomes and
+              qualifications are shared. Evidence older than one year is marked
+              expired. Withdrawn qualifications are identified. Sharing creates
+              a link valid for 24 hours; revoke it at any time.
+            </p>
+            <details>
+              <summary>Preview public summary</summary>
+              <pre className="overflow-auto text-xs">
+                {JSON.stringify(state?.passport, null, 2)}
+              </pre>
+            </details>
+            <button
+              disabled={busy}
+              onClick={() =>
+                submit({ action: "share", consent: true, hours: 24 })
+              }
+              className="rounded-lg border px-4 py-2"
+            >
+              I consent to share this summary for 24 hours
+            </button>
+            {link && (
+              <p className="break-all">
+                <a href={link} rel="noreferrer">
+                  {link}
+                </a>
+              </p>
+            )}
+            {state?.shares?.map((s) => (
+              <div key={s.id} className="flex flex-wrap justify-between gap-2">
+                <span>
+                  Expires {String(s.expires_at)} ·{" "}
+                  {s.revoked_at ? "Revoked" : "Active until expiry"}
+                </span>
+                <button
+                  disabled={busy || Boolean(s.revoked_at)}
+                  onClick={() => submit({ action: "revoke_share", id: s.id })}
+                >
+                  Revoke
+                </button>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
+      {!admin && (
+        <section className={panel}>
+          <h2 className="text-xl font-semibold">
+            Profile decisions and appeals
+          </h2>
+          {state?.events
+            ?.filter((e) =>
+              [
+                "mentor.suspend",
+                "mentor.revoke",
+                "mentor.set_tier",
+                "mentor.revoke_qualification",
+              ].includes(String(e.action)),
+            )
+            .map((e) => (
+              <article key={e.id} className="space-y-2 border-t py-3">
+                <p>
+                  {String(e.action)} · {String(e.created_at)}
+                </p>
+                <p>{String((e.detail as { reason?: string })?.reason || "")}</p>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    void submit({
+                      action: "appeal",
+                      managementEventId: e.id,
+                      detail: data.get("detail"),
+                    });
+                  }}
+                >
+                  <label className="block">
+                    Appeal rationale
+                    <textarea
+                      required
+                      minLength={20}
+                      maxLength={2000}
+                      name="detail"
+                      className={inputStyle}
+                    />
+                  </label>
+                  <button disabled={busy}>Request independent review</button>
+                </form>
+              </article>
+            ))}
+        </section>
+      )}
+      {(["forge", "reviews"] as const).map((group) => (
+        <section className={panel} key={group}>
+          <h2 className="text-xl font-semibold">
+            {group === "forge"
+              ? "Auditions"
+              : "Reports, quality reviews and appeals"}
+          </h2>
+          {state?.[group].length === 0 && <p>No submissions.</p>}
+          {state?.[group].map((row) => (
+            <article key={row.id} className="space-y-2 border-t pt-3">
+              <p>
+                {row.kind || "Audition"} · {row.status}
+              </p>
+              <p className="text-xs break-all">{row.id}</p>
+              {row.reason && <p>{row.reason}</p>}
+              {admin ? (
+                <>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs">
+                    {JSON.stringify(row, null, 2)}
+                  </pre>
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const data = new FormData(e.currentTarget);
+                      void submit({
+                        action: group === "forge" ? "forge" : "review",
+                        id: row.id,
+                        decision: data.get("decision"),
+                        reason: data.get("reason"),
+                        ...(group === "forge"
+                          ? {
+                              scores: Object.fromEntries(
+                                FORGE_SCENARIO.rubric.map((k) => [
+                                  k,
+                                  Number(data.get(k)),
+                                ]),
+                              ),
+                            }
+                          : {}),
+                      });
+                    }}
+                  >
+                    {group === "forge" &&
+                      FORGE_SCENARIO.rubric.map((k) => (
+                        <label className="block" key={k}>
+                          {k} (0–4)
+                          <input
+                            required
+                            type="number"
+                            min="0"
+                            max="4"
+                            name={k}
+                            className={inputStyle}
+                          />
+                        </label>
+                      ))}
+                    <label className="block">
+                      Decision
+                      <select name="decision" className={inputStyle}>
+                        {(group === "forge"
+                          ? ["changes_requested", "rejected", "accepted"]
+                          : ["dismissed", "upheld"]
+                        ).map((d) => (
+                          <option key={d}>{d}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      Evidence, risk and conduct rationale
+                      <textarea
+                        required
+                        minLength={20}
+                        maxLength={2000}
+                        name="reason"
+                        className={inputStyle}
+                      />
+                    </label>
+                    <button disabled={busy}>Record independent review</button>
+                  </form>
+                </>
+              ) : (
+                ((group === "forge" &&
+                  ["rejected", "changes_requested"].includes(
+                    row.status || "",
+                  )) ||
+                  (group === "reviews" &&
+                    row.kind !== "appeal" &&
+                    row.status !== "pending")) && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const data = new FormData(e.currentTarget);
+                      void submit({
+                        action: "appeal",
+                        ...(group === "forge"
+                          ? { forgeId: row.id }
+                          : { reviewId: row.id }),
+                        detail: data.get("detail"),
+                      });
+                    }}
+                  >
+                    <label className="block">
+                      Appeal rationale
+                      <textarea
+                        required
+                        minLength={20}
+                        maxLength={2000}
+                        name="detail"
+                        className={inputStyle}
+                      />
+                    </label>
+                    <button disabled={busy}>
+                      Request independent appeal review
+                    </button>
+                  </form>
+                )
+              )}
+            </article>
+          ))}
+        </section>
+      ))}
+    </main>
+  );
+}

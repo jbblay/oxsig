@@ -33,6 +33,7 @@ export default async function AcademyLayout({ children }: { children: ReactNode 
           <span className="mx-1 hidden h-4 w-px bg-border sm:inline-block" aria-hidden="true" />
           <Link href="/academy/mentors" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">Find a mentor</Link>
           <Link href="/academy/sessions" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">My sessions</Link>
+          <Link href="/academy/mentor-forge" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-muted">Mentor Forge & Passport</Link>
           <Link href="/academy/mentor-center" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">Mentor center</Link>
         </nav>
         {children}
