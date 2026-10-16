@@ -1,5 +1,3 @@
-import type { DockerMissionId } from './docker-missions';
-
 // One curriculum structure shared by career roadmaps and learning workspaces.
 // Only live skills are navigable. Roadmap previews never award progress.
 export type CareerId = 'devops' | 'cybersecurity' | 'systems' | 'programming';
@@ -7,7 +5,7 @@ export type AcademyModule = {
   id: string;
   title: string;
   summary: string;
-  missionIds?: readonly DockerMissionId[];
+  missionIds?: readonly string[];
 };
 export type AcademySkill = {
   id: string;
@@ -111,6 +109,27 @@ export function getCareerRoadmap(id: string): AcademyCareer | null {
     : null;
 }
 
-export function completedModuleCount(modules: readonly AcademyModule[], verifiedIds: ReadonlySet<DockerMissionId>): number {
+export function completedModuleCount(modules: readonly AcademyModule[], verifiedIds: ReadonlySet<string>): number {
   return modules.filter(module => Boolean(module.missionIds?.length) && module.missionIds!.every(id => verifiedIds.has(id))).length;
+}
+
+export type RoadmapSkillState = 'planned' | 'locked' | 'active' | 'complete';
+
+function fullyVerified(skill: AcademySkill, verifiedIds: ReadonlySet<string>): boolean {
+  const missionIds = skill.modules.flatMap(module => module.missionIds || []);
+  return missionIds.length > 0 && missionIds.every(id => verifiedIds.has(id));
+}
+
+// Planned curriculum is visible but does not prevent using already-live subjects.
+// When new live subjects launch, prior live subjects become actual prerequisites.
+export function getSkillRoadmapState(career: AcademyCareer, skillId: string, verifiedIds: ReadonlySet<string>): RoadmapSkillState {
+  const index = career.skills.findIndex(skill => skill.id === skillId);
+  if (index === -1) return 'planned';
+  const skill = career.skills[index];
+  if (skill.availability === 'planned') return 'planned';
+  if (fullyVerified(skill, verifiedIds)) return 'complete';
+  const unfinishedPredecessor = career.skills.slice(0, index).some(
+    previous => previous.availability === 'live' && !fullyVerified(previous, verifiedIds),
+  );
+  return unfinishedPredecessor ? 'locked' : 'active';
 }
