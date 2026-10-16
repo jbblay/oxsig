@@ -340,7 +340,7 @@ export default function AcademyMissionControl() {
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">{module.summary}</p>
                   <div className="mt-2 space-y-2">
                     {(module.missionIds || []).map(missionId => {
-                      const index = MISSION_IDS.indexOf(missionId);
+                      const index = MISSION_IDS.findIndex(id => id === missionId);
                       const item = DOCKER_MISSIONS[index];
                       if (!item) return null;
                       const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
