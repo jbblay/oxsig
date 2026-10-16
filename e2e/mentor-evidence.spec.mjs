@@ -113,7 +113,9 @@ for (const viewport of [
     expect(freshApi.status(), 'Fresh mentor evidence API response').toBe(200);
     const freshState = await freshApi.json();
     expect(freshState.applications?.map(x => x.id), 'New mentor application was not returned by API').toContain(app.rows[0].id);
-    await page.reload();
+    // The application was created out-of-band through a fixture; exercise the
+    // explicit client refresh instead of assuming the open tab auto-subscribes to DB writes.
+    await page.getByRole('button', { name: 'Refresh evidence' }).click();
     const option = page.getByLabel("Application", { exact: true })
       .locator('option[value="'+app.rows[0].id+'"]');
     await expect(option, 'Rendered application selector did not receive API data').toHaveCount(1, { timeout: 30000 });
