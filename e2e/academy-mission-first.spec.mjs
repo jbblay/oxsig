@@ -91,6 +91,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(page.getByRole('button', { name: 'Start Linux' })).toBeVisible();
 
     const missionPanel = page.getByRole('complementary', { name: 'Docker mission guidance' });
+    if (viewport.width < 1024) await page.getByRole('button', { name: 'Show mission panel' }).click();
     await expect(missionPanel).toBeVisible();
     await expect(missionPanel.getByText('Mission 01')).toBeVisible();
     await expect(missionPanel.getByText('Docker daemon is accessible')).toBeVisible();
@@ -102,8 +103,9 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(missionPanel).toBeHidden();
     await page.getByRole('button', { name: 'Show mission panel' }).click();
     await expect(missionPanel).toBeVisible();
-    await page.getByRole('button', { name: 'AI mentor' }).click();
-    await expect(page.getByRole('region', { name: 'AI mentor chat' })).toBeVisible();
+    if (viewport.width < 1024) await page.getByRole('button', { name: 'Close mission panel' }).click();
+    await page.getByRole('button', { name: 'Open AI mentor' }).click();
+    await expect(page.getByRole('dialog', { name: 'AI mentor chat' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Hide AI mentor' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Linux terminal' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

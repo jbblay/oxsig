@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, CheckCircle2, Copy, X, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
@@ -61,7 +62,7 @@ export default function AcademyMissionControl() {
   const [selected, setSelected] = React.useState(0);
   const [difficulty, setDifficulty] = React.useState<MissionDifficulty>('beginner');
   const [panel, setPanel] = React.useState<Panel>('terminal');
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [mentorOpen, setMentorOpen] = React.useState(false);
   const [notes, setNotes] = React.useState('');
   const [question, setQuestion] = React.useState('');
@@ -70,6 +71,15 @@ export default function AcademyMissionControl() {
   const [busy, setBusy] = React.useState<string | null>('loading');
   const [error, setError] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState('');
+  const sidebarRef = React.useRef<HTMLElement>(null);
+  const sidebarButtonRef = React.useRef<HTMLButtonElement>(null);
+  const mentorQuestionRef = React.useRef<HTMLTextAreaElement>(null);
+  const noteDrafts = React.useRef<Record<string, string>>({});
+  React.useEffect(() => { setSidebarOpen(window.matchMedia('(min-width: 1024px)').matches); }, []);
+  React.useEffect(() => {
+    if (sidebarOpen && window.matchMedia('(max-width: 1023px)').matches) sidebarRef.current?.focus({ preventScroll: true });
+  }, [sidebarOpen]);
+  function closeSidebar() { setSidebarOpen(false); sidebarButtonRef.current?.focus({ preventScroll: true }); }
 
   const mission = DOCKER_MISSIONS[selected];
   const record = progress.find(item => item.missionId === mission.id);
@@ -83,6 +93,7 @@ export default function AcademyMissionControl() {
     ...expected,
     passed: Boolean(observedChecks.find(check => check.key === expected.key)?.passed),
   }));
+  const historicalEvidence = !lastChecks && Boolean(record?.checks?.length) && (!labId || record?.labInstanceId !== labId);
   const verifiedTaskCount = taskChecks.filter(check => check.passed).length;
 
   const refresh = React.useCallback(async () => {
@@ -98,22 +109,28 @@ export default function AcademyMissionControl() {
 
   const resumed = React.useRef(false);
   React.useEffect(() => {
-    if (busy === 'loading' || resumed.current) return;
+    if (busy === 'loading' || error || resumed.current) return;
     resumed.current = true;
     const first = MISSION_IDS.findIndex(id => !progress.find(p => p.missionId === id)?.verifiedAt);
     const index = first < 0 ? 2 : first;
     setSelected(index);
-    setNotes(progress.find(p => p.missionId === MISSION_IDS[index])?.notes || '');
-  }, [busy, progress]);
+    const saved = progress.find(p => p.missionId === MISSION_IDS[index]);
+    setNotes(saved?.notes || '');
+    setDifficulty(saved?.difficulty || 'beginner');
+  }, [busy, error, progress]);
 
   function selectMission(index: number) {
+    if (busy !== null || index === selected) return;
+    noteDrafts.current[mission.id] = notes;
     if (index > 0 && !progress.find(item => item.missionId === MISSION_IDS[index - 1])?.verifiedAt) return;
     const existing = progress.find(item => item.missionId === MISSION_IDS[index]);
     setSelected(index);
-    setNotes(existing?.notes || '');
+    setNotes(noteDrafts.current[MISSION_IDS[index]] ?? existing?.notes ?? '');
     setDifficulty(existing?.difficulty || 'beginner');
     setLastChecks(null);
     setMessages([]);
+    setQuestion('');
+    setActionError('');
     setPanel('terminal');
   }
 
@@ -209,7 +226,7 @@ export default function AcademyMissionControl() {
   if (error) return <Card><CardHeader><CardTitle>Mission Control is unavailable</CardTitle><CardDescription>{error}</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => { setBusy('loading'); setError(null); void refresh().catch(e => setError(String(e))).finally(() => setBusy(null)); }}>Retry</Button></CardContent></Card>;
 
   return (
-    <div className="mx-auto max-w-[1700px] min-w-0 space-y-3 pb-8">
+    <div className="mx-auto max-w-[1700px] min-w-0 space-y-3 pb-24">
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/70 p-3 sm:px-4">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
@@ -222,13 +239,13 @@ export default function AcademyMissionControl() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={dockerReady ? 'default' : 'outline'}>{dockerReady ? 'Docker ready' : 'Environment not ready'}</Badge>
-          <Button type="button" size="sm" variant="outline" aria-expanded={sidebarOpen} aria-controls="docker-mission-sidebar" onClick={() => setSidebarOpen(value => !value)}>
+          <Button type="button" size="sm" variant="outline" ref={sidebarButtonRef} aria-expanded={sidebarOpen} aria-controls="docker-mission-sidebar" onClick={() => setSidebarOpen(value => !value)}>
             <BookOpen className="h-4 w-4" /> {sidebarOpen ? 'Hide mission panel' : 'Show mission panel'}
           </Button>
         </div>
       </header>
 
-      <div className={sidebarOpen ? 'grid min-w-0 items-start gap-3 xl:grid-cols-[minmax(0,1fr)_340px]' : 'grid min-w-0 items-start gap-3'}>
+      <div className={sidebarOpen ? 'grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]' : 'grid min-w-0 items-start gap-3'}>
         <main className="min-w-0 space-y-3" aria-label="Docker learning workbench">
           <section aria-label="Linux environment controls">
             <DockerLabAccess onChange={(current, ready) => {
@@ -289,7 +306,9 @@ export default function AcademyMissionControl() {
           </Card>}
         </main>
 
-        <aside id="docker-mission-sidebar" className={sidebarOpen ? 'min-w-0 space-y-3' : 'hidden'} aria-label="Docker mission guidance">
+        {sidebarOpen && <button type="button" tabIndex={-1} aria-label="Dismiss mission panel" className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={closeSidebar} />}
+        <aside id="docker-mission-sidebar" ref={sidebarRef} tabIndex={-1} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeSidebar(); } }} className={sidebarOpen ? 'fixed inset-x-3 bottom-20 z-40 max-h-[72dvh] min-w-0 space-y-3 overflow-y-auto overscroll-contain rounded-2xl border bg-background p-3 shadow-2xl outline-none lg:sticky lg:inset-x-auto lg:bottom-auto lg:top-4 lg:z-auto lg:max-h-[calc(100dvh-2rem)] lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none' : 'hidden'} aria-label="Docker mission guidance">
+          <div className="flex items-center justify-between lg:hidden"><h2 className="text-sm font-semibold">Mission panel</h2><Button size="sm" variant="ghost" aria-label="Close mission panel" onClick={closeSidebar}><X className="h-4 w-4" /></Button></div>
           <Card>
             <CardHeader className="p-4 pb-2">
               <div className="flex items-center justify-between gap-2">
@@ -309,6 +328,7 @@ export default function AcademyMissionControl() {
                   <h2 className="text-sm font-semibold">Objectives</h2>
                   <span className="text-xs text-muted-foreground">{verifiedTaskCount}/{taskChecks.length} checks passed</span>
                 </div>
+                {historicalEvidence && <p className="text-[11px] text-muted-foreground">Saved server verification from a previous environment. Recheck this machine to observe its current state.</p>}
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={verifiedTaskCount} aria-valuemin={0} aria-valuemax={taskChecks.length} aria-label="Mission checks passed">
                   <div className="h-full bg-emerald-500 transition-all" style={{ width: (verifiedTaskCount / taskChecks.length * 100) + '%' }} />
                 </div>
@@ -330,7 +350,7 @@ export default function AcademyMissionControl() {
               {DOCKER_LEARNING_MODULES.map((module, moduleIndex) => {
                 const moduleDone = Boolean(module.missionIds?.length) && module.missionIds!.every(id => Boolean(progress.find(p => p.missionId === id)?.verifiedAt));
                 const activeModule = Boolean(module.missionIds?.includes(mission.id));
-                return <details key={module.id} className={'rounded-lg border p-2 ' + (activeModule ? 'border-primary/50 bg-primary/5' : 'bg-background')}>
+                return <details key={module.id} open={Boolean(module.missionIds?.includes(mission.id)) || undefined} className={'rounded-lg border p-2 ' + (activeModule ? 'border-primary/50 bg-primary/5' : 'bg-background')}>
                   <summary className="cursor-pointer text-xs font-semibold">
                     <span className="inline-flex items-center gap-2">
                       {moduleDone ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : activeModule ? <Circle className="h-4 w-4 text-rose-500" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
@@ -345,7 +365,7 @@ export default function AcademyMissionControl() {
                       if (!item) return null;
                       const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
                       const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index-1])?.verifiedAt);
-                      return <button key={missionId} type="button" disabled={!available} onClick={() => selectMission(index)} aria-current={selected === index ? 'step' : undefined}
+                      return <button key={missionId} type="button" disabled={!available || busy !== null} onClick={() => selectMission(index)} aria-current={selected === index ? 'step' : undefined}
                         className={'flex w-full items-center gap-2 rounded-md border p-2 text-left text-xs transition ' + (selected === index ? 'border-primary bg-primary/10' : 'hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-50' : '')}>
                         {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : available ? <Circle className="h-4 w-4 shrink-0" /> : <LockKeyhole className="h-4 w-4 shrink-0" />}
                         <span>{item.title}<span className="block text-[11px] text-muted-foreground">{done ? 'Verified' : available ? 'Ready to practice' : 'Complete the previous mission first'}</span></span>
@@ -391,20 +411,21 @@ export default function AcademyMissionControl() {
           <p className="px-2 text-xs leading-5 text-muted-foreground">Your achievements and notes survive lab expiry. A fresh machine requires recreating the practical deployment. <Link href="/academy/learn/docker/simulator" className="underline">Optional visual practice</Link></p>
         </aside>
       </div>
-      <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6">
-        {mentorOpen && <section id="academy-mentor-chat" aria-label="AI mentor chat" className="flex max-h-[min(72vh,580px)] w-[min(92vw,385px)] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl">
+      <DialogPrimitive.Root open={mentorOpen} onOpenChange={setMentorOpen} modal={false}>
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6">
+        {mentorOpen && <DialogPrimitive.Content id="academy-mentor-chat" aria-label="AI mentor chat" onInteractOutside={event => event.preventDefault()} onOpenAutoFocus={event => { event.preventDefault(); mentorQuestionRef.current?.focus(); }} className="flex max-h-[min(72vh,580px)] w-[min(92vw,385px)] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl">
           <div className="flex items-center justify-between border-b bg-primary/5 px-4 py-3">
-            <div className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="h-4 w-4 text-primary" /> OXSIG AI mentor</div>
+            <DialogPrimitive.Title className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="h-4 w-4 text-primary" /> OXSIG AI mentor</DialogPrimitive.Title>
             <Button type="button" size="sm" variant="ghost" aria-label="Close AI mentor" onClick={() => setMentorOpen(false)}><X className="h-4 w-4" /></Button>
           </div>
-          <p className="px-4 pt-3 text-xs text-muted-foreground">Ask about Mission {mission.number}. The mentor gives guidance but cannot certify lab results or execute commands.</p>
+          <DialogPrimitive.Description className="px-4 pt-3 text-xs text-muted-foreground">Ask about Mission {mission.number}. The mentor gives guidance but cannot certify lab results or execute commands.</DialogPrimitive.Description>
           <div className="mt-2 min-h-[95px] flex-1 space-y-3 overflow-y-auto px-4 py-2" aria-live="polite">
             {messages.length === 0 && <p className="text-sm text-muted-foreground">What is confusing, or what did you observe in the terminal?</p>}
-            {messages.map((msg,i) => <div key={i} className="rounded-lg bg-muted/50 p-2 text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap">{msg.text}</p></div>)}
+            {messages.map((msg,i) => <div key={i} className="rounded-lg bg-muted/50 p-2 text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.text}</p></div>)}
           </div>
           <div className="space-y-2 border-t p-3">
             <label className="sr-only" htmlFor="docker-mentor-question">Ask the AI mentor</label>
-            <Textarea id="docker-mentor-question" rows={2} value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your mission…" />
+            <Textarea ref={mentorQuestionRef} id="docker-mentor-question" rows={2} value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your mission…" />
             <div className="flex flex-wrap gap-2">
               <Button size="sm" disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />} Send</Button>
               <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void showHint()}>Get hint</Button>
@@ -412,11 +433,12 @@ export default function AcademyMissionControl() {
             </div>
             <p className="text-[11px] text-muted-foreground">Assistance used: {record?.hintsUsed || 0}. Practice scores do not decrease for asking for help.</p>
           </div>
-        </section>}
-        <Button type="button" aria-controls="academy-mentor-chat" aria-expanded={mentorOpen} aria-label={mentorOpen ? 'Hide AI mentor' : 'Open AI mentor'} onClick={() => setMentorOpen(value => !value)} className="h-12 rounded-full px-4 shadow-lg shadow-primary/25">
+        </DialogPrimitive.Content>}
+        <DialogPrimitive.Trigger asChild><Button type="button" aria-controls="academy-mentor-chat" aria-expanded={mentorOpen} aria-label={mentorOpen ? 'Hide AI mentor' : 'Open AI mentor'} className="h-12 rounded-full px-4 shadow-lg shadow-primary/25">
           <MessageCircle className="h-5 w-5" /> <span className="text-sm">AI help</span>
-        </Button>
+        </Button></DialogPrimitive.Trigger>
       </div>
+      </DialogPrimitive.Root>
     </div>
   );
 }

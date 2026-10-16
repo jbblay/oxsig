@@ -37,3 +37,4 @@ phases:
       - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs academy-mission-first.spec.mjs
       - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs academy-simulator.spec.mjs
       - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs docker-workspace.spec.mjs
+      - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs academy-design-review.spec.mjs

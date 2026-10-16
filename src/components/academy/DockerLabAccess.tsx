@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { getLabsSnapshot, type ClientLabInstance } from '@/lib/labs/client';
+import { getLabsSnapshot, invalidateLabsSnapshot, type ClientLabInstance } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLabInstance | null, ready: boolean) => void }) {
@@ -13,6 +13,7 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
   const [busy, setBusy] = React.useState(false);
   const [compatible, setCompatible] = React.useState(false);
   const [configured, setConfigured] = React.useState(false);
+  const [operationManaged, setOperationManaged] = React.useState(false);
   const callback = React.useRef(onChange);
   callback.current = onChange;
 
@@ -21,8 +22,12 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     if (!snapshot.ok) throw new Error(snapshot.status === 401 ? 'Your session expired. Sign in again, then refresh.' : snapshot.data.error || 'Cannot load environments. Retry below.');
     setConfigured(Boolean(snapshot.data.capabilities?.configured && snapshot.data.capabilities?.supportsTerminal));
     const instances = snapshot.data.instances || [];
-    const current = instances.find(item => item.status !== 'destroyed') || null;
+    const current = instances.find(item => !['destroyed', 'failed'].includes(item.status)) || instances.find(item => item.status === 'failed') || null;
     setLab(current);
+    const definition = snapshot.data.catalog?.find(item => item.slug === current?.slug);
+    const managedOperation = Boolean(current?.metadata?.operationManaged || current?.metadata?.operationRunId || definition?.launchSurface === 'operation');
+    setOperationManaged(managedOperation);
+    if (managedOperation) { setCompatible(false); callback.current(null, false); setState('blocked'); setMessage('An Operation is using your lab allocation. Finish or release it in Operations before starting Docker. Academy will not manage its machines.'); return; }
     if (!current) { setCompatible(false); callback.current(null, false); setState('empty'); setMessage('Start a temporary Linux environment. Your account’s lab quota and session time limit apply.'); return; }
     if (['destroying', 'stopping'].includes(current.status)) { callback.current(null, false); setState('starting'); setMessage('Updating the machine lifecycle. The next environment will be available after this finishes.'); return; }
     const linux = snapshot.data.catalog?.some(item => item.slug === current.slug && item.platform === 'linux' && item.launchSurface === 'cyber-lab') || false;
@@ -77,8 +82,8 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
   }
   async function manage(action: 'start' | 'stop' | 'destroy') {
     if (!lab) return;
-    if (lab.metadata?.operationRunId) throw new Error('This machine belongs to an active multi-machine Operation. Manage that Operation in its own workspace.');
-    if (action === 'destroy' && !window.confirm('Destroy ' + lab.name + '? This permanently removes the temporary machine and its unsaved files. Your Academy achievements and notes remain saved. Continue?')) return;
+    if (operationManaged) throw new Error('This machine belongs to an active multi-machine Operation. Manage that Operation in its own workspace.');
+    if ((action === 'destroy' || !compatible) && !window.confirm((action === 'destroy' ? 'Destroy ' + lab.name + '? This permanently removes the temporary machine and its files.' : 'Change the state of ' + lab.name + '? This is not your Docker practice environment.') + ' Your Academy achievements and saved notes remain. Continue?')) return;
     const response = await fetch('/api/labs/instances/' + encodeURIComponent(lab.id), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': await getCsrfToken() },
@@ -87,10 +92,10 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'Unable to manage this environment. Refresh its status and try again.');
     callback.current(null, false);
+    invalidateLabsSnapshot();
     await inspect();
   }
 
-  const operationManaged = Boolean(lab?.metadata?.operationRunId);
 
   return <div className="rounded-xl border bg-card p-3 sm:p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">

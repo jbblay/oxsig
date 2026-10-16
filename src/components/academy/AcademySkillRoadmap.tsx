@@ -14,9 +14,13 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
   const CareerIcon = careerIcons[careerId];
   const [verified, setVerified] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   const [progressState, setProgressState] = React.useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const previewButton = React.useRef<HTMLButtonElement | null>(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
   const [previewId, setPreviewId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    setVerified(new Set());
+    setProgressState('loading');
     if (careerId !== 'devops') { setProgressState('ready'); return; }
     const controller = new AbortController();
     void fetch('/api/academy/missions', { cache: 'no-store', signal: controller.signal })
@@ -29,8 +33,11 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
       })
       .catch(() => { if (!controller.signal.aborted) setProgressState('unavailable'); });
     return () => controller.abort();
-  }, [careerId]);
+  }, [careerId, reloadKey]);
 
+  React.useEffect(() => {
+    if (previewId) document.getElementById('academy-planned-preview')?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  }, [previewId]);
   const status = (skillId: string) => getSkillRoadmapState(career, skillId, verified);
   const preview = career.skills.find(item => item.id === previewId && item.availability === 'planned');
   const liveCount = career.skills.filter(item => item.availability === 'live').length;
@@ -62,46 +69,46 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
           </div>
         </div>
 
-        <ol className="relative z-10 flex flex-col items-center" aria-label="Ordered skills">
+        <ol className="relative z-10 mx-auto flex max-w-2xl flex-col" aria-label="Ordered skills">
           {career.skills.map((skill, index) => {
             const state = status(skill.id);
             const SkillIcon = skillIcons[skill.id as keyof typeof skillIcons] || (careerId === 'cybersecurity' ? Shield : careerId === 'systems' ? Cpu : Wrench);
             const isLast = index === career.skills.length - 1;
-            const circle = <span className={'academy-roadmap__node relative flex h-24 w-24 items-center justify-center rounded-full border-2 transition-transform group-hover:scale-105 group-focus-visible:scale-105 sm:h-28 sm:w-28 ' + (state === 'active' ? 'academy-roadmap__node--active border-rose-400 bg-rose-950/70 text-rose-200' : state === 'complete' ? 'academy-roadmap__node--complete border-green-400 bg-green-950/70 text-green-200' : 'border-slate-600 bg-slate-900 text-slate-400')}>
+            const circle = <span className={'academy-roadmap__node relative z-10 flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-2 transition-[filter] group-hover:brightness-125 group-focus-visible:brightness-125 sm:h-28 sm:w-28 ' + (state === 'active' ? 'academy-roadmap__node--active border-rose-400 bg-rose-950/70 text-rose-200' : state === 'complete' ? 'academy-roadmap__node--complete border-green-400 bg-green-950/70 text-green-200' : 'border-slate-600 bg-slate-900 text-slate-400')}>
               <span className="flex flex-col items-center gap-1 text-center">
                 {state === 'complete' ? <CheckCircle2 className="h-7 w-7" /> : state === 'planned' ? <LockKeyhole className="h-6 w-6" /> : <SkillIcon className="h-7 w-7" />}
                 <span className="text-[10px] font-semibold uppercase tracking-widest">{String(index + 1).padStart(2, '0')}</span>
               </span>
             </span>;
             return (
-              <li key={skill.id} className="flex w-full flex-col items-center">
+              <li key={skill.id} className="relative w-full pb-12 last:pb-0">
                 {skill.availability === 'live' && state !== 'locked' && skill.href
-                  ? <Link href={skill.href} className="group relative flex flex-col items-center rounded-2xl p-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+                  ? <Link href={skill.href} className="group relative grid w-full grid-cols-[96px_minmax(0,1fr)] items-start gap-5 rounded-2xl text-left outline-offset-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:gap-8 outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
                       {circle}
-                      <span className="mt-3 text-base font-bold text-white">{skill.title}</span>
-                      <span className="mt-1 max-w-xs text-xs leading-5 text-slate-400">{skill.summary}</span>
-                      <span className={state === 'complete' ? 'mt-2 text-xs font-semibold text-green-300' : 'mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rose-300'}>{state === 'complete' ? 'Skill verified · Practice again' : 'Enter practical workspace'} <ArrowRight className="h-3.5 w-3.5" /></span>
+                      <span className="min-w-0 space-y-1 pt-1"><span className="block text-base font-bold text-white">{skill.title}</span>
+                      <span className="block max-w-md text-xs leading-5 text-slate-400">{skill.summary}</span>
+                      <span className={state === 'complete' ? 'mt-2 block text-xs font-semibold text-green-300' : 'mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rose-300'}>{state === 'complete' ? 'Skill verified · Practice again' : 'Enter practical workspace'} <ArrowRight className="h-3.5 w-3.5" /></span></span>
                     </Link>
-                  : <button type="button" disabled={state === 'locked'} onClick={() => setPreviewId(current => current === skill.id ? null : skill.id)}
-                      className="group relative flex flex-col items-center rounded-2xl p-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  : <button type="button" disabled={state === 'locked'} onClick={event => { previewButton.current = event.currentTarget; setPreviewId(current => current === skill.id ? null : skill.id); }}
+                      className="group relative grid w-full grid-cols-[96px_minmax(0,1fr)] items-start gap-5 rounded-2xl text-left outline-offset-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:gap-8 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                       aria-expanded={state === 'planned' ? previewId === skill.id : undefined} aria-controls={state === 'planned' ? 'academy-planned-preview' : undefined}>
                       {circle}
-                      <span className="mt-3 text-base font-semibold text-slate-200">{skill.title}</span>
-                      <span className="mt-1 max-w-xs text-xs leading-5 text-slate-400">{skill.summary}</span>
-                      <span className="mt-2 text-xs text-slate-400">{state === 'locked' ? 'Locked · Verify the previous skill' : 'Coming later · Preview modules'}</span>
+                      <span className="min-w-0 space-y-1 pt-1"><span className="block text-base font-semibold text-slate-200">{skill.title}</span>
+                      <span className="block max-w-md text-xs leading-5 text-slate-400">{skill.summary}</span>
+                      <span className="mt-2 text-xs text-slate-400">{state === 'locked' ? 'Locked · Verify the previous skill' : 'Coming later · Preview modules'}</span></span>
                     </button>}
-                {!isLast && <div className={'academy-roadmap__connector relative my-2 h-16 w-1.5 overflow-visible rounded-full ' + (state === 'active' ? 'academy-roadmap__connector--active bg-rose-900/70' : state === 'complete' ? 'academy-roadmap__connector--complete bg-green-500/70' : 'bg-slate-700/70')} aria-hidden="true">
+                {!isLast && <div className={'academy-roadmap__connector absolute bottom-0 left-[45px] top-24 w-1.5 overflow-hidden sm:left-[53px] sm:top-28 rounded-full ' + (state === 'active' ? 'academy-roadmap__connector--active bg-rose-900/70' : state === 'complete' ? 'academy-roadmap__connector--complete bg-green-500/70' : 'bg-slate-700/70')} aria-hidden="true">
                   {state === 'active' && <span className="academy-roadmap__beam absolute inset-0 rounded-full" />}
                 </div>}
               </li>
             );
           })}
         </ol>
-        {progressState === 'unavailable' && careerId === 'devops' && <p role="status" className="relative z-10 mt-4 text-center text-xs text-amber-200">Saved verification is temporarily unavailable. Your live Docker workspace can still be opened.</p>}
+        {progressState === 'unavailable' && careerId === 'devops' && <p role="status" className="relative z-10 mt-4 text-center text-xs text-amber-200">Saved verification is temporarily unavailable. Your live Docker workspace can still be opened. <button type="button" className="ml-2 underline" onClick={() => setReloadKey(key => key + 1)}>Retry saved progress</button></p>}
         {preview && <section id="academy-planned-preview" aria-label={preview.title + ' planned modules'} className="relative z-10 mx-auto mt-6 max-w-xl rounded-2xl border border-slate-600 bg-slate-900/90 p-4">
           <div className="flex items-start justify-between gap-3">
             <div><h3 className="text-base font-semibold">{preview.title} · Module preview</h3><p className="mt-1 text-xs text-slate-400">These are curriculum outlines, not playable lessons yet.</p></div>
-            <button type="button" className="rounded-md p-1 text-slate-400 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400" onClick={() => setPreviewId(null)} aria-label="Close module preview"><X className="h-4 w-4" /></button>
+            <button type="button" className="rounded-md p-1 text-slate-400 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400" onClick={() => { setPreviewId(null); previewButton.current?.focus(); }} aria-label="Close module preview"><X className="h-4 w-4" /></button>
           </div>
           <ol className="mt-3 space-y-2">{preview.modules.map((module,i) => <li key={module.id} className="flex gap-3 rounded-lg border border-slate-700 p-3 text-sm">
             <span className="font-mono text-xs text-slate-500">{String(i + 1).padStart(2, '0')}</span>

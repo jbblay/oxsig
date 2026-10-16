@@ -296,7 +296,8 @@ body > * {
 }
 .academy-roadmap__beam {
   background: linear-gradient(180deg, transparent 0%, rgba(251, 113, 133, 0.2) 20%, #fda4af 48%, #fb7185 60%, transparent 100%);
-  background-size: 100% 190%;
+  height: 45%;
+  bottom: auto;
   animation: academy-beam-flow 1.6s linear infinite;
   box-shadow: 0 0 14px rgba(244, 63, 94, 0.8);
 }
@@ -305,8 +306,8 @@ body > * {
   50% { box-shadow: 0 0 0 11px rgba(244, 63, 94, 0.09), 0 0 36px rgba(251, 113, 133, 0.8), inset 0 0 28px rgba(225, 29, 72, 0.38); }
 }
 @keyframes academy-beam-flow {
-  0% { background-position: 0% -100%; }
-  100% { background-position: 0% 100%; }
+  0% { top: -45%; }
+  100% { top: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .academy-roadmap__node--active,

@@ -40,6 +40,7 @@ export const ACADEMY_ROADMAPS: Record<CareerId, AcademyCareer> = {
           { id: 'linux-files', title: 'File management', summary: 'Directories, copying, moving and searching' },
           { id: 'linux-permissions', title: 'Users and permissions', summary: 'Accounts, groups and file ownership' },
           { id: 'linux-processes', title: 'Processes and services', summary: 'Inspecting processes and managing services' },
+          { id: 'linux-networking', title: 'Networking', summary: 'Interfaces, routes and connectivity diagnostics' },
           { id: 'linux-storage', title: 'Disk management', summary: 'Filesystem usage, mounts and storage' },
         ],
       },
