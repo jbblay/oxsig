@@ -30,12 +30,15 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(nav).not.toContainText('Learning paths');
     await expect(nav).not.toContainText('Prove capability');
     await expect(page.getByRole('link', { name: 'Enter Engineering World' })).toHaveAttribute('href', '/academy/engineering-world');
-    await expect(page.getByRole('link', { name: 'Enter Docker workspace' })).toHaveAttribute('href','/academy/learn/docker');
     await expect(page.getByRole('link', { name: 'Open Mission Control' })).toHaveAttribute('href', '/academy/missions');
 
     await page.getByRole('link', { name: /DevOps & Cloud/ }).click();
     await expect(page).toHaveURL(/\/academy\/learn\/devops$/);
-    await expect(page.getByRole('link', { name: 'Open Docker workspace' })).toHaveAttribute('href', '/academy/learn/docker');
+    await expect(page.getByRole('heading', { name: 'Your skill roadmap' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /Docker/ })).toHaveAttribute('href', '/academy/learn/docker');
+    await page.getByRole('button', { name: /Linux Fundamentals/ }).click();
+    await expect(page.getByRole('heading', { name: /Linux Fundamentals.*Module preview/ })).toBeVisible();
+    await expect(page.getByText('File management')).toBeVisible();
 
     await page.goto('/academy/paths');
     await expect(page).toHaveURL(/\/academy\/engineering-world$/);
@@ -91,13 +94,43 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(missionPanel).toBeVisible();
     await expect(missionPanel.getByText('Mission 01')).toBeVisible();
     await expect(missionPanel.getByText('Docker daemon is accessible')).toBeVisible();
+    await expect(missionPanel.getByText(/Modules & missions/)).toBeVisible();
+    await expect(missionPanel.getByText(/Container deployment/)).toBeVisible();
+    await missionPanel.getByText('Guidance and suggested commands').click();
+    await expect(missionPanel.getByRole('button', { name: /Copy command: docker info/ })).toBeVisible();
     await page.getByRole('button', { name: 'Hide mission panel' }).click();
     await expect(missionPanel).toBeHidden();
     await page.getByRole('button', { name: 'Show mission panel' }).click();
     await expect(missionPanel).toBeVisible();
     await page.getByRole('button', { name: 'AI mentor' }).click();
-    await expect(page.getByRole('heading', { name: 'AI mentor' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'AI mentor chat' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hide AI mentor' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Linux terminal' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }
+
+
+test('Roadmap reads trusted Docker progress and marks completed skill green', async ({ page, context }) => {
+  await context.addCookies([{ name: 'oxsig-e2e-user', value: 'account-a', url: baseURL, sameSite: 'Lax' }]);
+  await page.route('**/api/academy/missions', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ progress: ['deploy', 'repair', 'persist'].map(missionId => ({ missionId, verifiedAt: '2026-10-16T10:00:00Z' })) }),
+    });
+  });
+  await page.goto('/academy/learn/devops');
+  await expect(page.getByRole('link', { name: /Docker.*Skill verified/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Docker.*Skill verified/ })).toHaveAttribute('href', '/academy/learn/docker');
+});
+
+test('Other career roadmaps reveal planned modules without a fake terminal', async ({ page, context }) => {
+  await context.addCookies([{ name: 'oxsig-e2e-user', value: 'account-a', url: baseURL, sameSite: 'Lax' }]);
+  await page.goto('/academy/learn/systems');
+  await expect(page.getByRole('heading', { name: 'System Administration' })).toBeVisible();
+  await page.getByRole('button', { name: /Active Directory/ }).click();
+  await expect(page.getByRole('heading', { name: /Active Directory.*Module preview/ })).toBeVisible();
+  await expect(page.getByText('Group Policy')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Active Directory/ })).toHaveAttribute('aria-expanded', 'true');
+});
