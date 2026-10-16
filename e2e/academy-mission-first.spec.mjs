@@ -30,7 +30,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(nav).not.toContainText('Learning paths');
     await expect(nav).not.toContainText('Prove capability');
     await expect(page.getByRole('link', { name: 'Enter Engineering World' })).toHaveAttribute('href', '/academy/engineering-world');
-    await expect(page.getByRole('link', { name: 'Enter Docker Kingdom' })).toHaveAttribute('href','/academy/learn/docker');
+    await expect(page.getByRole('link', { name: 'Enter Docker workspace' })).toHaveAttribute('href','/academy/learn/docker');
     await expect(page.getByRole('link', { name: 'Open Mission Control' })).toHaveAttribute('href', '/academy/missions');
 
     await page.goto('/academy/paths');

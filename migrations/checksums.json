@@ -67,6 +67,7 @@
     "064_mentor_decision_appeals.sql": "45f1d75efa8b102b8cb3193530f6fcec1fbfde7b84526e372cd04f996497938c",
     "065_engineering_mission_runs.sql": "fc99318510c6a7f92dceb13cc3eb3469b73b9c62496da04189366e49b0520291",
     "066_sandbox_commerce.sql": "04026b3c31ac75a5717098165066c1729ff8cb754e4f81e7f4c3895a7e7e7113",
-    "067_academy_simulation_progress.sql": "215d5ea44cb5b6404364b35dde35ab7ee340eb31b19fddc16c7a6e7e12064b4b"
+    "067_academy_simulation_progress.sql": "215d5ea44cb5b6404364b35dde35ab7ee340eb31b19fddc16c7a6e7e12064b4b",
+    "068_docker_workspace_concept.sql": "c54f4507b82fe72e5db3dc361f3e83b198fe17248ef7d2d41fd19dbdb36ff17a"
   }
 }

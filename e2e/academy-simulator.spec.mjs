@@ -32,9 +32,9 @@ test('Docker castles persist, unlock sequentially, award idempotent practice SP 
   assertDisposableDb();
   await pool.query('DELETE FROM academy_simulation_progress WHERE owner_id=ANY($1::uuid[])', [[ownerA,ownerB]]);
   await login(context,'account-a');
-  const warmup=await request.get(base+'/academy/learn/docker',{headers:{Cookie:'oxsig-e2e-user=account-a'},timeout:90000});
+  const warmup=await request.get(base+'/academy/learn/docker/simulator',{headers:{Cookie:'oxsig-e2e-user=account-a'},timeout:90000});
   expect(warmup.status()).toBe(200);
-  await page.goto('/academy/learn/docker');
+  await page.goto('/academy/learn/docker/simulator');
   await expect(page.getByRole('heading',{name:'Docker Kingdom'})).toBeVisible();
 
   const locked = await command(page,'network',{publish:'18080:80',url:'http://localhost:18080'});
@@ -70,7 +70,7 @@ test('Docker castles persist, unlock sequentially, award idempotent practice SP 
   expect(checkDb.rows[0]).toMatchObject({n:3,sp:75});
 
   await login(context,'account-b');
-  await page.goto('/academy/learn/docker');
+  await page.goto('/academy/learn/docker/simulator');
   await expect(page.getByTestId('simulation-sp')).toContainText('0 SP');
   await expect(page.getByRole('button',{name:/CASTLE 2/})).toBeDisabled();
   const other = await command(page,'storage',{mount:'oxsig_academy_data:/usr/share/nginx/html',marker:'OXSIG Academy persistent'});
@@ -89,7 +89,9 @@ test('Career categories and Docker workbench fit mobile without launching labs',
   await page.getByRole('button',{name:/Cybersecurity/}).click();
   await expect(page.getByText('Network Fundamentals')).toBeVisible();
   await page.getByRole('button',{name:/DevOps & Cloud/}).click();
-  await page.getByRole('link',{name:'Enter Docker Kingdom'}).click();
+  await page.getByRole('link',{name:'Enter Docker workspace'}).click();
+  await expect(page.getByRole('heading',{name:'Docker learning workspace'})).toBeVisible();
+  await page.getByRole('link',{name:'Optional visual Docker practice'}).click();
   await expect(page.getByRole('heading',{name:'Docker Kingdom'})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });

@@ -4,17 +4,18 @@ import * as React from 'react';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, CheckCircle2, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Trophy, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
+import DockerLabAccess from './DockerLabAccess';
+import DockerConcept, { type ConceptRecord } from './DockerConcept';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { DOCKER_MISSIONS, MISSION_IDS, type DockerMissionId, type MissionDifficulty } from '@/lib/academy/docker-missions';
-import { getLabsSnapshot } from '@/lib/labs/client';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Check = { key: string; label: string; passed: boolean };
-type Progress = {
+type Progress = ConceptRecord & {
   missionId: DockerMissionId;
   labInstanceId: string | null;
   notes: string;
@@ -55,8 +56,9 @@ export default function AcademyMissionControl() {
   const [progress, setProgress] = React.useState<Progress[]>([]);
   const [labs, setLabs] = React.useState<Lab[]>([]);
   const [labId, setLabId] = React.useState('');
+  const [dockerReady, setDockerReady] = React.useState(false);
   const [selected, setSelected] = React.useState(0);
-  const [difficulty, setDifficulty] = React.useState<MissionDifficulty>('intermediate');
+  const [difficulty, setDifficulty] = React.useState<MissionDifficulty>('beginner');
   const [panel, setPanel] = React.useState<Panel>('terminal');
   const [notes, setNotes] = React.useState('');
   const [question, setQuestion] = React.useState('');
@@ -64,6 +66,7 @@ export default function AcademyMissionControl() {
   const [lastChecks, setLastChecks] = React.useState<Check[] | null>(null);
   const [busy, setBusy] = React.useState<string | null>('loading');
   const [error, setError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState('');
 
   const mission = DOCKER_MISSIONS[selected];
   const record = progress.find(item => item.missionId === mission.id);
@@ -72,32 +75,32 @@ export default function AcademyMissionControl() {
   const lab = labs.find(item => item.id === labId);
 
   const refresh = React.useCallback(async () => {
-    const [stateResponse, snapshot] = await Promise.all([
-      fetch('/api/academy/missions', { cache: 'no-store' }),
-      getLabsSnapshot(),
-    ]);
+    const stateResponse = await fetch('/api/academy/missions', { cache: 'no-store' });
     if (!stateResponse.ok) throw new Error(await responseError(stateResponse));
     const data = await stateResponse.json() as { progress: Progress[] };
     setProgress(data.progress || []);
-    setNotes((data.progress || []).find(item => item.missionId === 'deploy')?.notes || '');
-    if (snapshot.ok) {
-      const linuxSlugs = new Set((snapshot.data.catalog || []).filter(item => item.platform === 'linux').map(item => item.slug));
-      const running = ((snapshot.data.instances || []) as Lab[]).filter(item => item.status === 'running' && linuxSlugs.has(item.slug));
-      setLabs(running);
-      setLabId(current => running.some(item => item.id === current) ? current : (running[0]?.id || ''));
-    }
   }, []);
 
   React.useEffect(() => {
     void refresh().catch(e => setError(e instanceof Error ? e.message : 'Cannot load Mission Control')).finally(() => setBusy(null));
   }, [refresh]);
 
+  const resumed = React.useRef(false);
+  React.useEffect(() => {
+    if (busy === 'loading' || resumed.current) return;
+    resumed.current = true;
+    const first = MISSION_IDS.findIndex(id => !progress.find(p => p.missionId === id)?.verifiedAt);
+    const index = first < 0 ? 2 : first;
+    setSelected(index);
+    setNotes(progress.find(p => p.missionId === MISSION_IDS[index])?.notes || '');
+  }, [busy, progress]);
+
   function selectMission(index: number) {
     if (index > 0 && !progress.find(item => item.missionId === MISSION_IDS[index - 1])?.verifiedAt) return;
     const existing = progress.find(item => item.missionId === MISSION_IDS[index]);
     setSelected(index);
     setNotes(existing?.notes || '');
-    setDifficulty(existing?.difficulty || 'intermediate');
+    setDifficulty(existing?.difficulty || 'beginner');
     setLastChecks(null);
     setMessages([]);
     setPanel('terminal');
@@ -133,7 +136,7 @@ export default function AcademyMissionControl() {
       const text = difficulty === 'advanced'
         ? HINTS[mission.id][0]
         : difficulty === 'beginner'
-          ? HINTS[mission.id][Math.min(n + 1, 2)]
+          ? HINTS[mission.id][n]
           : HINTS[mission.id][n];
       setMessages(old => [...old, { who: 'mentor', text }]);
       setPanel('mentor');
@@ -141,16 +144,17 @@ export default function AcademyMissionControl() {
     finally { setBusy(null); }
   }
 
-  async function askMentor() {
-    const asked = question.trim();
+  async function askMentor(explain = false) {
+    const asked = explain ? 'Please give me a direct explanation of the current mission concept and a worked example. Clearly distinguish your example from my actual lab evidence.' : question.trim();
     if (!asked) return;
     setQuestion('');
     setMessages(old => [...old, { who: 'learner', text: asked }]);
     setBusy('mentor');
     try {
       const result = await action({ action: 'mentor', missionId: mission.id, question: asked, difficulty });
+      await refresh();
       setMessages(old => [...old, { who: 'mentor', text: result.answer.answer + (result.answer.suggestedAction ? '\nNext: ' + result.answer.suggestedAction : '') }]);
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'AI mentor unavailable'); }
+    } catch (e) { setMessages(old => [...old, { who: 'mentor', text: 'The AI mentor is unavailable. You can still use the progressive hints, terminal and live verification. Try asking again later.' }]); toast.error(e instanceof Error ? e.message : 'AI mentor unavailable'); }
     finally { setBusy(null); }
   }
 
@@ -163,19 +167,21 @@ export default function AcademyMissionControl() {
       setProgress(old => [...old.filter(p => p.missionId !== 'repair'), result.progress]);
       setLastChecks(null);
       toast.success('Real incident seeded in the selected learner-owned lab.');
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not prepare incident'); }
+    } catch (e) { setActionError(e instanceof Error ? e.message : 'Could not prepare incident. Refresh your environment and try again.'); }
     finally { setBusy(null); }
   }
 
   async function verify() {
     if (!labId) return toast.error('Select a running Linux lab first.');
+    setActionError('');
     setBusy('verify');
     try {
       const result = await action({ action: 'verify', missionId: mission.id, labInstanceId: labId, difficulty });
       setProgress(old => [...old.filter(p => p.missionId !== mission.id), result.progress]);
       setLastChecks(result.checks);
+      setPanel('verify');
       toast[result.passed ? 'success' : 'info'](result.passed ? 'Mission verified from the real lab. Next mission unlocked!' : 'Some checks failed. Inspect the evidence and try again.');
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Verification unavailable'); }
+    } catch (e) { setActionError(e instanceof Error ? e.message : 'Verification unavailable. Refresh your environment and try again.'); setPanel('verify'); }
     finally { setBusy(null); }
   }
 
@@ -188,8 +194,8 @@ export default function AcademyMissionControl() {
         <div className="flex flex-wrap justify-between gap-4">
           <div className="space-y-2">
             <Badge variant="secondary"><Trophy className="mr-1 h-3 w-3" /> Mission-based learning</Badge>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Academy Mission Control</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">Diagnose, build, test, and earn verified progress in your real disposable Cyber Lab.</p>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Docker learning workspace</h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">You have joined an engineering team. Your assignment is to launch a web service inside a Docker container and prove that it is reachable.</p>
           </div>
           <div className="rounded-xl border bg-background/80 p-3 text-right">
             <div className="text-2xl font-bold">{completedCount * 100} XP</div>
@@ -198,6 +204,8 @@ export default function AcademyMissionControl() {
         </div>
       </header>
 
+      <DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} />
+      <p className="text-xs text-muted-foreground">Your verified achievements, concept explanations and saved notes are retained in your account. Resume below; a fresh machine requires recreating the practical deployment.</p>
       <section className="grid gap-3 md:grid-cols-3" aria-label="Docker mission progression">
         {DOCKER_MISSIONS.map((item, index) => {
           const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
@@ -229,16 +237,12 @@ export default function AcademyMissionControl() {
                 </select>
                 <p className="text-[11px] text-muted-foreground">Difficulty changes mentoring, not the verification standard.</p>
               </div>
-              <div className="space-y-1">
-                <label htmlFor="mission-lab" className="text-xs font-semibold">Connected lab</label>
-                <select id="mission-lab" value={labId} onChange={e => setLabId(e.target.value)} className="w-full rounded-md border bg-background p-2 text-sm">
-                  {!labs.length && <option value="">No running labs</option>}
-                  {labs.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-                {!labs.length && <p className="text-xs text-amber-600">A running managed Linux lab is required. Docker must also be installed inside the machine.</p>}
-                <Button asChild variant="outline" size="sm" className="mt-2 w-full"><Link href="/labs">Open Cyber Labs <ArrowRight className="h-3.5 w-3.5" /></Link></Button>
-              </div>
-              {mission.id === 'repair' && !record?.verifiedAt && <Button variant="secondary" className="w-full" onClick={() => void prepareFault()} disabled={!labId || busy !== null}><Wrench className="h-4 w-4" />{busy === 'prepare' ? 'Seeding incident…' : record?.preparedAt && record.labInstanceId === labId ? 'Reset incident fault' : 'Seed broken deployment'}</Button>}
+              <DockerLabAccess onChange={(current, ready) => {
+                setLabs(current ? [current] : []);
+                setLabId(current?.id || '');
+                setDockerReady(ready);
+              }} />
+              {mission.id === 'repair' && !record?.verifiedAt && <Button variant="secondary" className="w-full" onClick={() => void prepareFault()} disabled={!labId || !dockerReady || busy !== null}><Wrench className="h-4 w-4" />{busy === 'prepare' ? 'Seeding incident…' : record?.preparedAt && record.labInstanceId === labId ? 'Reset incident fault' : 'Seed broken deployment'}</Button>}
               {record?.verifiedAt && <p className="flex items-center gap-2 text-xs text-primary"><ShieldCheck className="h-4 w-4" /> Passed with server-executed evidence</p>}
             </CardContent>
           </Card>
@@ -248,23 +252,25 @@ export default function AcademyMissionControl() {
               {(lastChecks || record?.checks || []).length
                 ? (lastChecks || record?.checks || []).map(check => <div key={check.key} className="flex gap-2 text-xs"><span>{check.passed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-amber-500" />}</span>{check.label}</div>)
                 : <p className="text-xs text-muted-foreground">Run verification to obtain observed checks from the lab.</p>}
+              {(lastChecks || record?.checks || []).some(check => !check.passed) && <p className="text-xs text-amber-600">Check Docker readiness, inspect docker ps and docker port oxsig-academy-web, then test curl http://localhost:18080 in the terminal. Ask for a hint if you need help interpreting the result.</p>}
               <p className="border-t pt-2 text-[11px] text-muted-foreground">Scores are never awarded for typing a command or asking AI. Only a verified live result counts.</p>
             </CardContent>
           </Card>
         </aside>
 
         <main className="min-w-0 space-y-4">
+          {actionError && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm">{actionError} Use Refresh status in your environment controls to reconnect or recover.</p>}
           <div role="tablist" aria-label="Mission tools" className="grid grid-cols-4 gap-2">
-            {([['terminal','Terminal',Terminal],['mentor','AI mentor',MessageCircle],['notes','Notes',NotebookPen],['verify','Tests',ClipboardCheck]] as const).map(([id,label,Icon]) => <Button key={id} role="tab" aria-selected={panel===id} size="sm" variant={panel===id ? 'default' : 'outline'} onClick={() => setPanel(id)}><Icon className="h-4 w-4" /><span className="hidden sm:inline">{label}</span></Button>)}
+            {([['terminal','Terminal',Terminal],['mentor','AI mentor',MessageCircle],['notes','Notes',NotebookPen],['verify','Tests',ClipboardCheck]] as const).map(([id,label,Icon]) => <Button key={id} role="tab" aria-selected={panel===id} size="sm" variant={panel===id ? 'default' : 'outline'} onClick={() => setPanel(id)}><Icon className="h-4 w-4" /><span className="text-[10px] sm:text-sm">{label}</span></Button>)}
           </div>
           <div className={panel === 'terminal' ? '' : 'hidden'}>
             <Card>
               <CardHeader><CardTitle className="text-base">Live lab terminal</CardTitle><CardDescription>Commands here execute in your own connected Linux lab, not inside ChatGPT. Use Docker only in an isolated disposable machine.</CardDescription></CardHeader>
               <CardContent className="space-y-3">
-                {lab ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} /> : <div className="rounded-xl border p-5 text-sm text-muted-foreground">Launch a Linux lab from Cyber Labs and select it here to access your live terminal.</div>}
+                {lab ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} /> : <div className="rounded-xl border p-5 text-sm text-muted-foreground">Start or refresh your Linux environment using the controls beside this terminal. Your mission and learning record remain here while it starts.</div>}
                 <div className="space-y-2">
                   <div className="text-xs font-medium">Suggested investigation commands</div>
-                  {mission.commands.map((cmd,i) => <div key={i} className="break-all rounded-md bg-muted p-2 font-mono text-xs">{cmd}</div>)}
+                  {mission.commands.filter(cmd => /^(docker (info|ps|port|logs)|curl)/.test(cmd)).map((cmd,i) => <div key={i} className="break-all rounded-md bg-muted p-2 font-mono text-xs">{cmd}</div>)}
                   <p className="text-[11px] text-muted-foreground">Suggested commands are examples, not auto-executed. Choose when and what to run.</p>
                 </div>
               </CardContent>
@@ -281,8 +287,9 @@ export default function AcademyMissionControl() {
               <div className="flex flex-wrap gap-2">
                 <Button disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Ask mentor</Button>
                 <Button variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Reveal progressive hint</Button>
+                <Button variant="ghost" disabled={busy !== null} onClick={() => void askMentor(true)}>Teach me directly</Button>
               </div>
-              <p className="text-[11px] text-muted-foreground">Hints requested: {record?.hintsUsed || 0}. AI guidance depends on server configuration and should be checked against actual command output.</p>
+              <p className="text-[11px] text-muted-foreground">Assistance requests: {record?.hintsUsed || 0}. Help does not reduce your practice XP. AI guidance depends on server configuration and should be checked against actual command output.</p>
             </CardContent>
           </Card>}
           {panel === 'notes' && <Card>
@@ -297,15 +304,16 @@ export default function AcademyMissionControl() {
             <CardContent className="space-y-3">
               {mission.id === 'repair' && !record?.preparedAt && <p className="rounded-lg border border-amber-500/30 p-3 text-sm">Seed the broken deployment first, then repair it using your terminal.</p>}
               <p className="text-sm text-muted-foreground">We check container state, published ports and a real HTTP response{mission.id === 'persist' ? ', plus the named volume and its stored content.' : '.'}</p>
-              <Button disabled={!labId || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>{busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Run live verification</Button>
+              <Button disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>{busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Run live verification</Button>
               {(lastChecks || record?.checks || []).map(check => <div key={check.key} className="flex items-center gap-2 rounded-lg border p-3 text-sm">{check.passed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-amber-600" />}{check.label}<span className="ml-auto text-xs">{check.passed ? 'PASS' : 'FAIL'}</span></div>)}
-              {record?.verifiedAt && <div className="rounded-lg border border-primary/30 p-3 text-sm">Verified: {new Date(record.verifiedAt).toLocaleString()} · 100 XP earned</div>}
-              {record?.verifiedAt && selected < DOCKER_MISSIONS.length - 1 && <Button className="w-full" onClick={() => selectMission(selected + 1)}>Unlock next mission <ArrowRight className="h-4 w-4" /></Button>}
+              {record?.verifiedAt && <div className="rounded-lg border border-primary/30 p-3 text-sm">Verified: {new Date(record.verifiedAt).toLocaleString()} · You demonstrated {mission.id === 'deploy' ? 'deploying a reachable container service' : mission.id === 'repair' ? 'diagnosing and repairing service connectivity' : 'serving content from a persistent Docker volume'}. Your achievement is saved independently of this machine.</div>}
+              {record?.verifiedAt && selected < DOCKER_MISSIONS.length - 1 && <Button className="w-full" onClick={() => selectMission(selected + 1)}>Continue the assignment <ArrowRight className="h-4 w-4" /></Button>}
             </CardContent>
           </Card>}
         </main>
       </div>
-      <p className="text-xs text-muted-foreground">Mission Control v1 · Three Docker challenges. Live validation requires a running AWS-backed Linux lab with Docker installed, online SSM, and migration 060. No public application ports need to be exposed.</p>
+      <Button variant="ghost" asChild><Link href="/academy/learn/docker/simulator">Optional visual Docker practice</Link></Button>
+      <p className="text-xs text-muted-foreground">Deploy → repair → preserve data. HTTP checks run inside your Linux environment; localhost:18080 refers to that machine. Your service does not need a public port.</p>
     </div>
   );
 }
