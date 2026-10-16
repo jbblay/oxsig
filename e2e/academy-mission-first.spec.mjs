@@ -35,7 +35,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await page.getByRole('link', { name: /DevOps & Cloud/ }).click();
     await expect(page).toHaveURL(/\/academy\/learn\/devops$/);
     await expect(page.getByRole('heading', { name: 'Your skill roadmap' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Docker/ })).toHaveAttribute('href', '/academy/learn/docker');
+    await expect(page.getByRole('region', { name: 'DevOps & Cloud skill roadmap' }).getByRole('link', { name: /Docker/ })).toHaveAttribute('href', '/academy/learn/docker');
     await page.getByRole('button', { name: /Linux Fundamentals/ }).click();
     await expect(page.getByRole('heading', { name: /Linux Fundamentals.*Module preview/ })).toBeVisible();
     await expect(page.getByText('File management')).toBeVisible();
