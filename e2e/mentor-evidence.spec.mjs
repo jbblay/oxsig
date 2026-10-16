@@ -32,6 +32,7 @@ for (const viewport of [
   test(`Mentor Forge and Passport persist and enforce ownership at ${viewport.width}px`, async ({
     page,
     context,
+    request,
   }) => {
     test.setTimeout(240000);
     if (
@@ -44,6 +45,13 @@ for (const viewport of [
       );
     await page.setViewportSize(viewport);
     await login(context, "account-a");
+    // Prewarm Next dev's server and API route before opening Chromium. Without
+    // this, first-route compilation can trigger a full client reload and abort fetch.
+    const warmHeaders = { Cookie: 'oxsig-e2e-user=account-a' };
+    const warmPage = await request.get(baseURL+'/academy/mentor-forge', { headers: warmHeaders, timeout: 90000 });
+    expect(warmPage.status(), 'Prewarmed Mentor Forge page').toBe(200);
+    const warmEvidence = await request.get(baseURL+'/api/mentorship/evidence', { headers: warmHeaders, timeout: 90000 });
+    expect(warmEvidence.status(), 'Prewarmed authenticated evidence API: '+(await warmEvidence.text()).slice(0,500)).toBe(200);
     // Diagnose SSR-only rendering and client hydration separately from API failures.
     const browserFaults = [];
     page.on('pageerror', error => browserFaults.push('pageerror: '+error.message.slice(0,400)));
