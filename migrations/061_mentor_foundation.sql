@@ -1,3 +1,8 @@
+-- The production Neon branch has pgcrypto but not uuid-ossp. This migration
+-- uses uuid_generate_v4() for mentor records, so install its required extension
+-- explicitly before creating the tables. This is safe on an existing database.
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Migration: Mentor foundation (mentorship programme, Phase 1)
 -- Description: Mentor applications (Academy-grown and external professionals),
 -- an append-only review trail, approved mentor profiles and per-specialization
