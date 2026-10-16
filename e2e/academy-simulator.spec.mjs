@@ -93,7 +93,15 @@ test('Career categories and Docker workbench fit mobile without launching labs',
   await page.getByRole('link',{name:/Docker.*Enter practical workspace/}).click();
   await expect(page.getByRole('heading',{name:'Docker Workspace'})).toBeVisible();
   await page.getByRole('button',{name:'Show mission panel'}).click();
+  // Client navigation must load the simulator's saved state before it can
+  // render its heading. Wait for that contract rather than timing hydration
+  // and development compilation against the heading's short assertion timeout.
+  const simulatorState = page.waitForResponse(response =>
+    response.url() === base + '/api/academy/simulator' && response.request().method() === 'GET',
+  );
   await page.getByRole('link',{name:'Optional visual practice'}).click();
+  await expect(page).toHaveURL(base + '/academy/learn/docker/simulator');
+  expect((await simulatorState).status()).toBe(200);
   await expect(page.getByRole('heading',{name:'Docker Kingdom'})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });
