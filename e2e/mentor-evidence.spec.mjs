@@ -33,7 +33,7 @@ for (const viewport of [
     page,
     context,
   }) => {
-    test.setTimeout(120000);
+    test.setTimeout(240000);
     if (
       !/^postgres(?:ql)?:\/\/[^@]*@(?:127\.0\.0\.1|localhost):5432\/oxsig_ci$/.test(
         databaseUrl,
@@ -44,6 +44,12 @@ for (const viewport of [
       );
     await page.setViewportSize(viewport);
     await login(context, "account-a");
+    // Wait for the real, owner-scoped API before asserting hydrated UI.
+    // Cold Next.js dev compilations in small CI workers can take >10 seconds.
+    const evidenceResponsePromise = page.waitForResponse(
+      response => response.url().includes('/api/mentorship/evidence') && response.request().method() === 'GET',
+      { timeout: 90000 },
+    );
     await page.goto("/academy/mentor-forge");
     await expect(
       page.getByRole("heading", {
@@ -51,7 +57,10 @@ for (const viewport of [
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.getByText("Loading evidence…")).toHaveCount(0);
+    const evidenceResponse = await evidenceResponsePromise;
+    const evidenceBody = await evidenceResponse.text();
+    expect(evidenceResponse.status(), 'Evidence API response: '+evidenceBody.slice(0,1000)).toBe(200);
+    await expect(page.getByText("Loading evidence…")).toHaveCount(0, {timeout:30000});
     await pool.query("DELETE FROM mentor_forge_attempts WHERE owner_id=$1", [
       owner,
     ]);
