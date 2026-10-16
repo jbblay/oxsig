@@ -150,7 +150,11 @@ export async function applySandboxCommerceCommand(ownerId: string, command: Comm
     // is calculated from the free session price and no payouts can be requested.
     const attendance = await db.query(
       `SELECT session.id FROM mentorship_sessions session
+         JOIN mentor_profiles profile ON profile.user_id=session.mentor_id AND profile.status='active'
          WHERE session.id=$1 AND session.mentor_id=$2 AND session.status='completed'
+           AND EXISTS (SELECT 1 FROM mentor_qualifications qualification
+                       WHERE qualification.mentor_id=$2 AND qualification.specialization_id=session.specialization_id
+                         AND qualification.status='active')
            AND (SELECT COUNT(DISTINCT a.owner_id) FROM mentorship_attendance a
                 WHERE a.session_id=session.id AND a.owner_id IN (session.learner_id,session.mentor_id))=2`,
       [command.sessionId, ownerId]
