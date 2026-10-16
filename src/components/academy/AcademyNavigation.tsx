@@ -2,17 +2,18 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getCareerRoadmap } from '@/lib/academy/roadmap-catalog';
 
 export default function AcademyNavigation() {
   const pathname = usePathname();
-  if (pathname.startsWith('/academy/learn/docker')) {
+  const careerId = pathname.startsWith('/academy/learn/') ? pathname.split('/')[3] : '';
+  const career = getCareerRoadmap(careerId);
+  if (pathname.startsWith('/academy/learn/docker') || (career && pathname === '/academy/learn/' + career.id)) {
     return (
       <nav aria-label="Academy navigation" className="flex flex-wrap items-center gap-2 rounded-lg border bg-card/70 px-3 py-2 text-xs">
         <Link href="/academy" className="font-medium text-muted-foreground hover:text-foreground">Academy</Link>
         <span aria-hidden="true" className="text-muted-foreground">/</span>
-        <Link href="/academy/learn/devops" className="font-medium text-muted-foreground hover:text-foreground">DevOps &amp; Cloud</Link>
-        <span aria-hidden="true" className="text-muted-foreground">/</span>
-        <span className="font-semibold text-foreground">Docker workspace</span>
+        {career ? <span className="font-semibold text-foreground">{career.title} roadmap</span> : <><Link href="/academy/learn/devops" className="font-medium text-muted-foreground hover:text-foreground">DevOps &amp; Cloud</Link><span aria-hidden="true" className="text-muted-foreground">/</span>        <span className="font-semibold text-foreground">Docker workspace</span></>}
       </nav>
     );
   }
