@@ -56,5 +56,5 @@ export function sandboxCreditsAfter(current: number, delta: number) {
 
 /** Explicitly disabled unless switched on. The flag changes fake ledger access, never real charging. */
 export function sandboxCommerceEnabled() {
-  return process.env.OXSIG_SANDBOX_COMMERCE_ENABLED === 'true';
+  return process.env.OXSIG_SANDBOX_COMMERCE_ENABLED === 'true' && process.env.OXSIG_DEPLOY_ENV !== 'production' && process.env.VERCEL_ENV !== 'production';
 }
