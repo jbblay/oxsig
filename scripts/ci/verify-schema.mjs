@@ -361,6 +361,13 @@ try {
       [applicant]
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
+    const sandboxRemaining = await client.query(
+      `SELECT (SELECT COUNT(*) FROM sandbox_checkouts WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM sandbox_subscriptions WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM sandbox_credit_entries WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM sandbox_mentor_earnings WHERE mentor_id=$1) AS remaining`,[applicant]
+    );
+    if (Number(sandboxRemaining.rows[0].remaining) !== 0) fail('deleting a mentor account left sandbox data behind');
     const learnerHistory = await client.query(
       `SELECT mentor_id FROM mentorship_sessions WHERE learner_id=$1`,
       [invitee]
