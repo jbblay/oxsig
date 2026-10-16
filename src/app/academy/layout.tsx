@@ -23,7 +23,7 @@ export default async function AcademyLayout({ children }: { children: ReactNode 
   return (
     <AcademyDurableStateProvider initialState={initialState}>
       <div className="space-y-3">
-        <AcademyNavigation />  </nav>
+        <AcademyNavigation />
         {children}
       </div>
     </AcademyDurableStateProvider>
