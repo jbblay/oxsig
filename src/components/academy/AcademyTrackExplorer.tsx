@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 const worlds = [
   { id: 'devops', name: 'DevOps & Cloud', caption: 'Build, ship and restore real systems', icon: Cloud, skills: [
-    { name: 'Docker', status: 'playable', icon: Boxes, href: '/academy/learn/docker', caption: 'Three interactive castles with persistent checkpoints' },
+    { name: 'Docker', status: 'playable', icon: Boxes, href: '/academy/learn/docker', caption: 'Launch, repair and preserve a real container service' },
     { name: 'Linux', status: 'planned', icon: TerminalSquare, caption: 'Command-line workshops' },
     { name: 'Kubernetes', status: 'planned', icon: Network, caption: 'Workload orchestration' },
   ] },
@@ -37,8 +37,8 @@ export default function AcademyTrackExplorer() {
       <header className="rounded-2xl border bg-gradient-to-br from-blue-500/10 via-background to-emerald-500/10 p-5 sm:p-8">
         <Badge variant="outline"><Compass className="mr-1 h-3 w-3" /> OXSIG Academy · Your learning world</Badge>
         <h1 className="mt-3 max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">Choose your engineering path</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">Pick a career world, then enter an interactive skill. Configure things, test your work, and watch your verified practice checkpoints unlock the next castle. Explanations are available when you need them.</p>
-        <p className="mt-2 text-xs text-muted-foreground">Docker is our first playable simulation. Other subjects shown below are planned, not live lessons.</p>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground">Pick a career world, then enter an interactive skill. Configure things, test your work, and watch your verified practical achievements unlock your next assignment. Explanations are available when you need them.</p>
+        <p className="mt-2 text-xs text-muted-foreground">Docker is our first live learning workspace. Other subjects shown below are planned, not live lessons.</p>
       </header>
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Choose a career world</h2>
@@ -80,7 +80,7 @@ export default function AcademyTrackExplorer() {
                 </CardHeader>
                 <CardContent>
                   {skill.status === 'playable'
-                    ? <Button asChild className="w-full"><Link href={skill.href}>Enter Docker Kingdom <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+                    ? <Button asChild className="w-full"><Link href={skill.href}>Enter Docker workspace <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
                     : <div className="flex items-center gap-2 text-xs text-muted-foreground"><LockKeyhole className="h-4 w-4" /> Curriculum in development</div>}
                 </CardContent>
               </Card>
@@ -90,7 +90,7 @@ export default function AcademyTrackExplorer() {
       </section>
       <section className="rounded-xl border bg-card p-5">
         <h2 className="flex items-center gap-2 text-base font-semibold"><GraduationCap className="h-5 w-5" /> Already using the advanced Academy?</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Your existing real-world missions and verified achievements stay available. The new practice simulator does not replace practical lab assessments.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Your existing real-world missions and verified achievements stay available. Beginner practice and advanced assessments remain separate.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button variant="outline" asChild><Link href="/academy/engineering-world">Enter Engineering World</Link></Button>
           <Button variant="outline" asChild><Link href="/academy/missions">Open Mission Control</Link></Button>

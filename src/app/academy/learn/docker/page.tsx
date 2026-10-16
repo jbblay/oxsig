@@ -1,5 +1,5 @@
-import DockerSimulationWorkshop from '@/components/academy/DockerSimulationWorkshop';
+import AcademyMissionControl from '@/components/academy/AcademyMissionControl';
 
-export default function DockerSimulationPage() {
-  return <DockerSimulationWorkshop />;
+export default function DockerLearningPage() {
+  return <AcademyMissionControl />;
 }

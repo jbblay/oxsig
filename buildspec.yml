@@ -36,3 +36,4 @@ phases:
       - OXSIG_SANDBOX_COMMERCE_ENABLED=true DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs sandbox-commerce.spec.mjs
       - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs academy-mission-first.spec.mjs
       - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs academy-simulator.spec.mjs
+      - DATABASE_URL="$OXSIG_CI_DATABASE_URL" ./e2e/node_modules/.bin/playwright test --config=e2e/playwright.config.mjs docker-workspace.spec.mjs

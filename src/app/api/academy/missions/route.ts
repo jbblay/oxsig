@@ -11,6 +11,8 @@ import {
   prepareRepairMission,
   saveMissionNotes,
   verifyDockerMission,
+  prepareDockerWorkspace,
+  reviewDockerConcept,
 } from '@/lib/academy/mission-control';
 
 export const runtime = 'nodejs';
@@ -19,6 +21,8 @@ export const dynamic = 'force-dynamic';
 const id = z.enum(['deploy', 'repair', 'persist']);
 const level = z.enum(['beginner', 'intermediate', 'advanced']);
 const payload = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('readiness'), labInstanceId: z.string().uuid(), install: z.boolean() }).strict(),
+  z.object({ action: z.literal('concept'), answer: z.string().trim().min(3).max(2000) }).strict(),
   z.object({ action: z.literal('notes'), missionId: id, notes: z.string().max(4000) }).strict(),
   z.object({ action: z.literal('hint'), missionId: id }).strict(),
   z.object({ action: z.literal('prepare'), missionId: z.literal('repair'), labInstanceId: z.string().uuid(), confirm: z.literal(true) }).strict(),
@@ -34,7 +38,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(await listMissionProgress(user.id), { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
       console.error('Academy mission state read failed:', error);
-      return NextResponse.json({ error: 'Mission progress is temporarily unavailable. Check that migration 060 has been applied.' }, { status: 503 });
+      return NextResponse.json({ error: 'Mission progress is temporarily unavailable. Check that migrations through 068 have been applied.' }, { status: 503 });
     }
   });
 }
@@ -52,6 +56,12 @@ export async function POST(request: NextRequest) {
     try {
       let result: unknown;
       switch (input.action) {
+        case 'readiness':
+          result = await prepareDockerWorkspace(user.id, input.labInstanceId, input.install);
+          break;
+        case 'concept':
+          result = await reviewDockerConcept(user.id, input.answer);
+          break;
         case 'notes':
           result = { progress: await saveMissionNotes(user.id, input.missionId, input.notes) };
           break;

@@ -94,6 +94,11 @@ export async function commandMission(
       );
       if (!lab.rows.length)
         return fail("Running learner-owned lab not found.", 404);
+      const conflict = await db.query(
+        `SELECT id FROM academy_mission_runs WHERE owner_id=$1 AND lab_instance_id=$2 AND status='active' AND (deadline IS NULL OR deadline>NOW()) LIMIT 1`,
+        [owner, command.labInstanceId],
+      );
+      if (conflict.rows.length) return fail('This lab already has an active run. Finish or abandon it before starting another.');
       const active = await db.query(
         `SELECT COUNT(*)::int AS n FROM academy_mission_runs WHERE owner_id=$1 AND status='active' AND (deadline IS NULL OR deadline>NOW())`,
         [owner],
@@ -130,6 +135,11 @@ export async function commandMission(
     if (!template)
       return fail("This template version is no longer executable.");
     if (command.action === "fork") {
+      const conflict = await db.query(
+        `SELECT id FROM academy_mission_runs WHERE owner_id=$1 AND lab_instance_id=$2 AND status='active' AND (deadline IS NULL OR deadline>NOW()) LIMIT 1`,
+        [owner, run.lab_instance_id],
+      );
+      if (conflict.rows.length) return fail('Finish or abandon the active run on this lab before forking another approach.');
       // Forks branch the learning approach, never clone a VM or inherit technical proof.
       const count = await db.query(
         `SELECT COUNT(*)::int AS n FROM academy_mission_runs WHERE owner_id=$1 AND status='active' AND (deadline IS NULL OR deadline>NOW())`,
@@ -199,7 +209,7 @@ export async function commandMission(
         return fail("This mission has no injected incident.");
       if (run.prepared_at)
         return fail("This incident has already been seeded for this run.");
-      await seedDockerIncident(owner, run.lab_instance_id);
+      await seedDockerIncident(owner, run.lab_instance_id, run.id);
       await db.query(
         `UPDATE academy_mission_runs SET prepared_at=NOW(),revision=$2,updated_at=NOW() WHERE id=$1`,
         [run.id, revision],
