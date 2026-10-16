@@ -98,6 +98,20 @@ async function runningLab(ownerId: string, labInstanceId: string) {
   return lab.runtime_external_id as string;
 }
 
+/** Shared server-only adapters for versioned mission runs. Never accepts commands from clients. */
+export async function observeDockerMission(ownerId: string, id: DockerMissionId, labInstanceId: string) {
+  const externalId = await runningLab(ownerId, labInstanceId);
+  const output = await executeLabCommand(externalId, DOCKER_VERIFY_COMMAND, 'linux');
+  if (output.status !== 'Success') throw new MissionControlError('Lab verification unavailable.', 'VERIFICATION_UNAVAILABLE', 503);
+  const assessment = assessDockerMission(id, output.stdout);
+  return { passed: output.exitCode === 0 && assessment.passed, checks: assessment.checks };
+}
+export async function seedDockerIncident(ownerId: string, labInstanceId: string) {
+  const externalId = await runningLab(ownerId, labInstanceId);
+  const output = await executeLabCommand(externalId, DOCKER_FAULT_COMMAND, 'linux');
+  if (output.status !== 'Success' || output.exitCode !== 0) throw new MissionControlError('Incident seeding failed.', 'FAULT_SEED_FAILED', 502);
+}
+
 export async function saveMissionNotes(ownerId: string, id: DockerMissionId, notes: string) {
   await ensureUnlocked(ownerId, id);
   const rows = await getPool().query(

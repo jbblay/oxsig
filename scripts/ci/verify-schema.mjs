@@ -286,6 +286,13 @@ try {
     await expectViolation('moderation subject self review',`UPDATE mentorship_reviews SET reviewer_id=$2 WHERE id=$1`,[review.rows[0].id,applicant],'23514');
     await client.query(`INSERT INTO mentorship_evidence_events(owner_id,actor_id,resource_id,action) VALUES($1,$2,$3,'test')`,[applicant,reviewer,audition.rows[0].id]);
 
+    const missionRun = await client.query(`INSERT INTO academy_mission_runs(owner_id,template_id,template_version,mode) VALUES($1,'docker-delivery',1,'practice') RETURNING id`,[applicant]);
+    await expectViolation('mission verified without timestamp',`UPDATE academy_mission_runs SET status='verified' WHERE id=$1`,[missionRun.rows[0].id],'23514');
+    await expectViolation('Troublefest without deadline',`UPDATE academy_mission_runs SET mode='troublefest' WHERE id=$1`,[missionRun.rows[0].id],'23514');
+    const flightSql=`INSERT INTO academy_flight_events(run_id,owner_id,sequence,event_type,summary) VALUES($1,$2,0,'started','{}')`;
+    await client.query(flightSql,[missionRun.rows[0].id,applicant]);
+    await expectViolation('duplicate flight recorder sequence',flightSql,[missionRun.rows[0].id,applicant],'23505');
+
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
@@ -310,7 +317,9 @@ try {
             + (SELECT COUNT(*) FROM mentorship_help_outcomes WHERE owner_id=$1)
             + (SELECT COUNT(*) FROM mentorship_reviews WHERE subject_id=$1 OR owner_id=$1)
             + (SELECT COUNT(*) FROM mentorship_evidence_events WHERE owner_id=$1)
-            + (SELECT COUNT(*) FROM skills_passport_shares WHERE owner_id=$1) AS remaining`,
+            + (SELECT COUNT(*) FROM skills_passport_shares WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM academy_mission_runs WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM academy_flight_events WHERE owner_id=$1) AS remaining`,
       [applicant]
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
