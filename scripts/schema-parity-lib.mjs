@@ -11,6 +11,7 @@ export const REQUIRED_RUNTIME_RELATIONS = [
   'academy_learning_reflections',
   'academy_mastery',
   'academy_mission_progress',
+  'academy_simulation_progress',
   'academy_mission_runs',
   'academy_flight_events',
   'sandbox_checkouts',
