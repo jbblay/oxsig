@@ -13,7 +13,8 @@ at `/academy/learn/docker/simulator`; its simulation records are unchanged.
    learner-owned Linux lab. Launch still enforces the original quota, cost rate
    limit, TTL, AWS configuration and lifecycle checks.
 3. On Ubuntu, choose **Prepare Docker on this lab**. The server runs a fixed
-   bounded preparation job using signed Ubuntu packages. No installation command
+   bounded preparation job using signed Ubuntu packages. It grants the standard
+   SSM shell user Docker group access before the terminal opens. No installation command
    is accepted from the browser. Compatible labs with Docker already ready skip
    preparation; other Linux profiles are checked but never automatically modified.
 4. Use the existing interactive SSM terminal. Tool tabs keep the terminal mounted.

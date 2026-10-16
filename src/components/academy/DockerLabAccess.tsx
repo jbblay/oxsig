@@ -38,7 +38,7 @@ export default function DockerLabAccess({ onChange }: { onChange: (lab: ClientLa
     if (!response.ok) { if (body.code === 'LAB_RUN_CONFLICT' || response.status === 401) callback.current(null, false); throw new Error(body.error || 'Cannot reach Linux yet. Wait a moment, then refresh.'); }
     setState(body.state);
     setMessage(body.state === 'ready' ? 'Docker is ready. Connect to the terminal and begin your assignment.' : body.state === 'preparing' ? 'Preparing Docker from Ubuntu’s package repositories. This may take up to ten minutes.' : body.state === 'failed' ? 'Docker preparation failed. Retry preparation or open lab controls for diagnostics.' : 'Linux is available, but Docker is not ready. Prepare Docker below on Ubuntu, or use a Docker-ready Linux environment.');
-    callback.current(current, body.state === 'ready');
+    callback.current(body.state === 'ready' ? current : null, body.state === 'ready');
   }, []);
 
   const inFlight = React.useRef(false);
