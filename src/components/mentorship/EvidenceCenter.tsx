@@ -81,6 +81,7 @@ export default function EvidenceCenter({ admin = false }: { admin?: boolean }) {
           mentor privileges.
         </p>
       </header>
+      <button type="button" disabled={busy} onClick={() => void load()} className="rounded-lg border px-4 py-2 text-sm hover:bg-muted disabled:opacity-50">Refresh evidence</button>
       {error && (
         <p role="alert" className="rounded-lg border border-red-500 p-3">
           {error}
