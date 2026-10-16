@@ -29,5 +29,6 @@ export default function AcademyNavigation() {
           <Link href="/academy/sessions" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">My sessions</Link>
           <Link href="/academy/sandbox-commerce" className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted">Commerce Sandbox</Link>
           <Link href="/academy/mentor-center" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">Mentor center</Link>
+      </nav>
   );
 }
