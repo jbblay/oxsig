@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Activity, Boxes, Gauge, ServerCog, ShieldCheck, Users } from 'lucide-react';
+import { Activity, BadgeCheck, Boxes, Gauge, ServerCog, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth/use-auth';
 import { cn } from '@/lib/utils';
 import AdminActivity from './AdminActivity';
+import AdminMentors from './AdminMentors';
 import AdminOverviewPanel from './AdminOverview';
 import AdminResources from './AdminResources';
 import AdminSystem from './AdminSystem';
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'resources', label: 'Labs & operations', icon: Boxes },
+  { id: 'mentors', label: 'Mentors', icon: BadgeCheck },
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'system', label: 'System', icon: ServerCog },
 ] as const;
@@ -99,6 +101,7 @@ export default function AdminConsole() {
         {tab === 'overview' && <AdminOverviewPanel navigation={navigation} />}
         {tab === 'users' && <AdminUsers navigation={navigation} />}
         {tab === 'resources' && <AdminResources navigation={navigation} />}
+        {tab === 'mentors' && <AdminMentors currentAdminId={user?.id ?? null} />}
         {tab === 'activity' && <AdminActivity navigation={navigation} />}
         {tab === 'system' && <AdminSystem />}
       </section>
