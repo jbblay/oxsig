@@ -62,7 +62,8 @@ describe('sandbox commerce security and replay resistance', () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT COALESCE(SUM(delta),0)::int AS total FROM sandbox_credit_entries'))
         return { rows: [{ total: 10 }] };
-      return { rows: [{ n: 0 }] };
+      if (sql.includes('COUNT(*)::int AS n')) return { rows: [{ n: 0 }] };
+      return { rows: [] };
     });
     await expect(applySandboxCommerceCommand(owner, { action: 'redeem', amount: 25, requestId }))
       .rejects.toThrow('Insufficient simulated learning credits');
