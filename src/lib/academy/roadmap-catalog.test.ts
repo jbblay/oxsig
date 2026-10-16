@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACADEMY_ROADMAPS, completedModuleCount, DOCKER_LEARNING_MODULES, getCareerRoadmap } from './roadmap-catalog';
-import type { DockerMissionId } from './docker-missions';
+import { ACADEMY_ROADMAPS, completedModuleCount, DOCKER_LEARNING_MODULES, getCareerRoadmap, getSkillRoadmapState, type AcademyCareer } from './roadmap-catalog';
 
 describe('Academy shared skill roadmap', () => {
   it('defines every career and keeps only genuinely playable skills navigable', () => {
@@ -27,10 +26,27 @@ describe('Academy shared skill roadmap', () => {
   });
 
   it('counts verified Docker modules only when their real missions are verified', () => {
-    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<DockerMissionId>())).toBe(0);
-    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<DockerMissionId>(['deploy']))).toBe(1);
-    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<DockerMissionId>(['deploy', 'repair']))).toBe(2);
-    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<DockerMissionId>(['deploy', 'repair', 'persist']))).toBe(3);
-    expect(completedModuleCount(ACADEMY_ROADMAPS.devops.skills[0].modules, new Set<DockerMissionId>(['deploy', 'repair', 'persist']))).toBe(0);
+    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<string>())).toBe(0);
+    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<string>(['deploy']))).toBe(1);
+    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<string>(['deploy', 'repair']))).toBe(2);
+    expect(completedModuleCount(DOCKER_LEARNING_MODULES, new Set<string>(['deploy', 'repair', 'persist']))).toBe(3);
+    expect(completedModuleCount(ACADEMY_ROADMAPS.devops.skills[0].modules, new Set<string>(['deploy', 'repair', 'persist']))).toBe(0);
   });
+  it('unlocks each live skill only after the preceding live skill is verified', () => {
+    const career: AcademyCareer = {
+      id: 'devops', title: 'Test roadmap', subtitle: 'test',
+      skills: [
+        { id: 'planned-intro', title: 'Planned', summary: 'preview', availability: 'planned', modules: [{ id: 'preview', title: 'Preview', summary: 'Not live' }] },
+        { id: 'first', title: 'First', summary: 'test', availability: 'live', href: '/academy/learn/first', modules: [{ id: 'one', title: 'One', summary: 'task', missionIds: ['mission-one'] }] },
+        { id: 'second', title: 'Second', summary: 'test', availability: 'live', href: '/academy/learn/second', modules: [{ id: 'two', title: 'Two', summary: 'task', missionIds: ['mission-two'] }] },
+      ],
+    };
+    expect(getSkillRoadmapState(career, 'planned-intro', new Set<string>())).toBe('planned');
+    expect(getSkillRoadmapState(career, 'first', new Set<string>())).toBe('active');
+    expect(getSkillRoadmapState(career, 'second', new Set<string>())).toBe('locked');
+    expect(getSkillRoadmapState(career, 'first', new Set<string>(['mission-one']))).toBe('complete');
+    expect(getSkillRoadmapState(career, 'second', new Set<string>(['mission-one']))).toBe('active');
+    expect(getSkillRoadmapState(career, 'second', new Set<string>(['mission-one', 'mission-two']))).toBe('complete');
+  });
+
 });
