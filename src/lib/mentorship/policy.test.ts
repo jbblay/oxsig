@@ -51,10 +51,26 @@ describe('mentor eligibility', () => {
     expect(eligibility.specializations.find((item) => item.specializationId === 'linux-systems')?.demonstrated).toBe(0);
   });
 
-  it('never makes specializations without an Academy pathway eligible', () => {
+  it('does not accept Docker specialization without server-verified missions', () => {
     const eligibility = evaluateMentorEligibility(proved('program-becomes-process', LINUX));
     const docker = eligibility.specializations.find((item) => item.specializationId === 'containers-docker');
-    expect(docker).toMatchObject({ academyEvidenceAvailable: false, eligible: false });
+    expect(docker).toMatchObject({ academyEvidenceAvailable: true, demonstrated: 0, required: 5, eligible: false });
+  });
+
+  it('requires five distinct verified Docker and Engineering World checks before a peer application', () => {
+    const four = new Set(['mission:deploy', 'mission:repair', 'mission:persist', 'engineering:docker-incident']);
+    const almost = evaluateMentorEligibility(new Map(), four);
+    expect(almost.specializations.find((item) => item.specializationId === 'containers-docker')).toMatchObject({
+      demonstrated: 4, required: 5, eligible: false,
+    });
+    const all = new Set([...four, 'engineering:docker-durability', 'unknown:xp=1000000']);
+    const complete = evaluateMentorEligibility(new Map(), all);
+    expect(complete.advancedPractitioner).toBe(true);
+    expect(complete.specializations.find((item) => item.specializationId === 'containers-docker')).toMatchObject({
+      demonstrated: 5, required: 5, eligible: true,
+    });
+    expect(ineligibleSpecializations('academy', ['containers-docker'], complete)).toEqual([]);
+    expect(ineligibleSpecializations('academy', ['cloud-aws'], complete)).toEqual(['cloud-aws']);
   });
 
   it('restricts Academy-track claims to evidenced specializations but not external claims', () => {
