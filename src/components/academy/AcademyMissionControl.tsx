@@ -417,7 +417,7 @@ export default function AcademyMissionControl() {
       </div>
       <DialogPrimitive.Root open={mentorOpen} onOpenChange={setMentorOpen} modal={false}>
       <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6">
-        {mentorOpen && <DialogPrimitive.Content id="academy-mentor-chat" aria-label="AI mentor chat" onInteractOutside={event => event.preventDefault()} onOpenAutoFocus={event => { event.preventDefault(); mentorQuestionRef.current?.focus(); }} className="flex max-h-[min(72vh,580px)] w-[min(92vw,385px)] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl">
+        {mentorOpen && <DialogPrimitive.Content id="academy-mentor-chat" aria-label="AI mentor chat" aria-labelledby={undefined} onInteractOutside={event => event.preventDefault()} onOpenAutoFocus={event => { event.preventDefault(); mentorQuestionRef.current?.focus(); }} className="flex max-h-[min(72vh,580px)] w-[min(92vw,385px)] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl">
           <div className="flex items-center justify-between border-b bg-primary/5 px-4 py-3">
             <DialogPrimitive.Title className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="h-4 w-4 text-primary" /> OXSIG AI mentor</DialogPrimitive.Title>
             <Button type="button" size="sm" variant="ghost" aria-label="Close AI mentor" onClick={() => setMentorOpen(false)}><X className="h-4 w-4" /></Button>

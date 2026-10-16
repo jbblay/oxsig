@@ -9,7 +9,9 @@ async function login(context) {
 }
 async function screenshot(page, info, name) {
   await page.evaluate(() => document.fonts.ready);
-  const bytes = await page.screenshot({ path: info.outputPath(name + '.png'), fullPage: true, animations: 'disabled' });
+  console.log('REVIEW264 geometry', name, await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight })));
+  // Viewport captures on desktop match the working area; mobile captures include the scrollable page.
+  const bytes = await page.screenshot({ path: info.outputPath(name + '.png'), fullPage: page.viewportSize().width < 1024, animations: 'disabled' });
   await info.attach(name, { body: bytes, contentType: 'image/png' });
   // Explicit opt-in permits retrieval from an isolated review build without
   // publishing application data or introducing a persistent artifact service.
@@ -65,6 +67,7 @@ for (const width of [1440, 390]) {
     await expect(page.getByRole('button', { name: /Linux Fundamentals/ })).toBeFocused();
     await page.getByRole('link', { name: /Docker.*Enter practical workspace/ }).click();
     await expect(page.getByRole('heading', { name: 'Docker Workspace' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start Linux', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Linux terminal' })).toBeInViewport();
     const panel = page.getByRole('complementary', { name: 'Docker mission guidance' });
     if (width < 1024) {
