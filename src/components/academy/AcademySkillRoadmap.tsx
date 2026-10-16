@@ -3,8 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Cloud, Code2, Cpu, LockKeyhole, Network, Shield, TerminalSquare, Wrench, X } from 'lucide-react';
-import { ACADEMY_ROADMAPS, type AcademySkill, type CareerId } from '@/lib/academy/roadmap-catalog';
-import type { DockerMissionId } from '@/lib/academy/docker-missions';
+import { ACADEMY_ROADMAPS, getSkillRoadmapState, type CareerId } from '@/lib/academy/roadmap-catalog';
 import { Badge } from '@/components/ui/badge';
 
 const careerIcons = { devops: Cloud, cybersecurity: Shield, systems: Cpu, programming: Code2 };
@@ -13,7 +12,7 @@ const skillIcons = { docker: Boxes, 'linux-fundamentals': TerminalSquare, networ
 export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }) {
   const career = ACADEMY_ROADMAPS[careerId];
   const CareerIcon = careerIcons[careerId];
-  const [verified, setVerified] = React.useState<ReadonlySet<DockerMissionId>>(() => new Set());
+  const [verified, setVerified] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   const [progressState, setProgressState] = React.useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [previewId, setPreviewId] = React.useState<string | null>(null);
 
@@ -23,7 +22,7 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
     void fetch('/api/academy/missions', { cache: 'no-store', signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error('Cannot read verified mission progress');
-        const result = await response.json() as { progress?: { missionId: DockerMissionId; verifiedAt: string | null }[] };
+        const result = await response.json() as { progress?: { missionId: string; verifiedAt: string | null }[] };
         if (controller.signal.aborted) return;
         setVerified(new Set((result.progress || []).filter(item => Boolean(item.verifiedAt)).map(item => item.missionId)));
         setProgressState('ready');
@@ -32,11 +31,7 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
     return () => controller.abort();
   }, [careerId]);
 
-  function status(skill: AcademySkill): 'complete' | 'active' | 'planned' {
-    if (skill.availability !== 'live') return 'planned';
-    const ids = skill.modules.flatMap(module => module.missionIds || []);
-    return progressState === 'ready' && ids.length > 0 && ids.every(id => verified.has(id)) ? 'complete' : 'active';
-  }
+  const status = (skillId: string) => getSkillRoadmapState(career, skillId, verified);
   const preview = career.skills.find(item => item.id === previewId && item.availability === 'planned');
   const liveCount = career.skills.filter(item => item.availability === 'live').length;
 
@@ -69,7 +64,7 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
 
         <ol className="relative z-10 flex flex-col items-center" aria-label="Ordered skills">
           {career.skills.map((skill, index) => {
-            const state = status(skill);
+            const state = status(skill.id);
             const SkillIcon = skillIcons[skill.id as keyof typeof skillIcons] || (careerId === 'cybersecurity' ? Shield : careerId === 'systems' ? Cpu : Wrench);
             const isLast = index === career.skills.length - 1;
             const circle = <span className={'academy-roadmap__node relative flex h-24 w-24 items-center justify-center rounded-full border-2 transition-transform group-hover:scale-105 group-focus-visible:scale-105 sm:h-28 sm:w-28 ' + (state === 'active' ? 'academy-roadmap__node--active border-rose-400 bg-rose-950/70 text-rose-200' : state === 'complete' ? 'academy-roadmap__node--complete border-green-400 bg-green-950/70 text-green-200' : 'border-slate-600 bg-slate-900 text-slate-400')}>
@@ -80,20 +75,20 @@ export default function AcademySkillRoadmap({ careerId }: { careerId: CareerId }
             </span>;
             return (
               <li key={skill.id} className="flex w-full flex-col items-center">
-                {skill.availability === 'live' && skill.href
+                {skill.availability === 'live' && state !== 'locked' && skill.href
                   ? <Link href={skill.href} className="group relative flex flex-col items-center rounded-2xl p-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
                       {circle}
                       <span className="mt-3 text-base font-bold text-white">{skill.title}</span>
                       <span className="mt-1 max-w-xs text-xs leading-5 text-slate-400">{skill.summary}</span>
                       <span className={state === 'complete' ? 'mt-2 text-xs font-semibold text-green-300' : 'mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rose-300'}>{state === 'complete' ? 'Skill verified · Practice again' : 'Enter practical workspace'} <ArrowRight className="h-3.5 w-3.5" /></span>
                     </Link>
-                  : <button type="button" onClick={() => setPreviewId(current => current === skill.id ? null : skill.id)}
+                  : <button type="button" disabled={state === 'locked'} onClick={() => setPreviewId(current => current === skill.id ? null : skill.id)}
                       className="group relative flex flex-col items-center rounded-2xl p-2 text-center outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                      aria-expanded={previewId === skill.id} aria-controls="academy-planned-preview">
+                      aria-expanded={state === 'planned' ? previewId === skill.id : undefined} aria-controls={state === 'planned' ? 'academy-planned-preview' : undefined}>
                       {circle}
                       <span className="mt-3 text-base font-semibold text-slate-200">{skill.title}</span>
                       <span className="mt-1 max-w-xs text-xs leading-5 text-slate-400">{skill.summary}</span>
-                      <span className="mt-2 text-xs text-slate-400">Coming later · Preview modules</span>
+                      <span className="mt-2 text-xs text-slate-400">{state === 'locked' ? 'Locked · Verify the previous skill' : 'Coming later · Preview modules'}</span>
                     </button>}
                 {!isLast && <div className={'academy-roadmap__connector relative my-2 h-16 w-1.5 overflow-visible rounded-full ' + (state === 'active' ? 'academy-roadmap__connector--active bg-rose-900/70' : state === 'complete' ? 'academy-roadmap__connector--complete bg-green-500/70' : 'bg-slate-700/70')} aria-hidden="true">
                   {state === 'active' && <span className="academy-roadmap__beam absolute inset-0 rounded-full" />}
