@@ -63,6 +63,7 @@
     "060_academy_mission_control.sql": "8972e816191145038306f76bd70e9b2e7d09911ee31a835642dc4bf229f08922",
     "061_mentor_foundation.sql": "51de80cab72994f81f25b74ae4c8fe5353dd7081e71444e40b0a9e2aa355cf15",
     "062_free_mentorship.sql": "24919ae2b231f9f930557db03dfa67fbbbac65089328a0564b34b5f49871947b",
-    "063_mentor_evidence.sql": "3f5db9b9b18b8e4db8e0f6a06aa7f4e10b7008a26d93bff572a2ca80a5e6cf1c"
+    "063_mentor_evidence.sql": "3f5db9b9b18b8e4db8e0f6a06aa7f4e10b7008a26d93bff572a2ca80a5e6cf1c",
+    "064_mentor_decision_appeals.sql": "45f1d75efa8b102b8cb3193530f6fcec1fbfde7b84526e372cd04f996497938c"
   }
 }
