@@ -61,7 +61,20 @@ for (const viewport of [
         return {status: result.status, body: (await result.text()).slice(0,500)};
       } catch(error) { return {status: 0, body: String(error)}; }
     });
-    console.log('[E2E evidence] server=', navigation?.status(), 'api=', JSON.stringify(probe));
+    const connectivity = await page.evaluate(async () => {
+      const check = async path => {
+        try { const response = await fetch(path); return {status:response.status,url:response.url}; }
+        catch(error) { return {failure:String(error)}; }
+      };
+      return { origin: location.origin, page: await check('/'), csrf: await check('/api/csrf-token') };
+    });
+    console.log('[E2E evidence diagnostics]', JSON.stringify({
+      server: navigation?.status(),
+      headers: Object.fromEntries(Object.entries((await navigation?.allHeaders()) || {}).filter(([k]) => /content-security-policy|cross-origin|location/.test(k))),
+      api: probe,
+      connectivity,
+      browserFaults,
+    }));
     expect(probe.status, 'Evidence API: '+probe.body).toBe(200);
     try {
       await expect(page.getByText("Loading evidence…")).toHaveCount(0, {timeout:45000});
