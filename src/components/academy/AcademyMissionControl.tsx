@@ -148,9 +148,9 @@ export default function AcademyMissionControl() {
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success('Command copied. Paste it into your terminal when you are ready.');
+      toast.success('Command copied. Paste it into your terminal when you are ready.', { position: 'top-center' });
     } catch {
-      toast.error('Copy is unavailable in this browser. Select the command text to copy it.');
+      toast.error('Copy is unavailable in this browser. Select the command text to copy it.', { position: 'top-center' });
     }
   }
 
@@ -159,8 +159,8 @@ export default function AcademyMissionControl() {
     try {
       const result = await action({ action: 'notes', missionId: mission.id, notes });
       setProgress(old => [...old.filter(p => p.missionId !== mission.id), result.progress]);
-      toast.success('Engineering notes saved to your Academy account.');
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save notes'); }
+      toast.success('Engineering notes saved to your Academy account.', { position: 'top-center' });
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save notes', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
@@ -177,7 +177,7 @@ export default function AcademyMissionControl() {
           : HINTS[mission.id][n];
       setMessages(old => [...old, { who: 'mentor', text }]);
       setMentorOpen(true);
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Hint unavailable'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Hint unavailable', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
@@ -191,25 +191,25 @@ export default function AcademyMissionControl() {
       const result = await action({ action: 'mentor', missionId: mission.id, question: asked, difficulty });
       await refresh().catch(() => undefined);
       setMessages(old => [...old, { who: 'mentor', text: result.answer.answer + (result.answer.suggestedAction ? '\nNext: ' + result.answer.suggestedAction : '') }]);
-    } catch (e) { setMessages(old => [...old, { who: 'mentor', text: 'The AI mentor is unavailable. You can still use the progressive hints, terminal and live verification. Try asking again later.' }]); toast.error(e instanceof Error ? e.message : 'AI mentor unavailable'); }
+    } catch (e) { setMessages(old => [...old, { who: 'mentor', text: 'The AI mentor is unavailable. You can still use the progressive hints, terminal and live verification. Try asking again later.' }]); toast.error(e instanceof Error ? e.message : 'AI mentor unavailable', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
   async function prepareFault() {
-    if (!labId) return toast.error('Select a running Linux lab first.');
+    if (!labId) return toast.error('Select a running Linux lab first.', { position: 'top-center' });
     if (!window.confirm('This action will remove and replace ONLY the reserved oxsig-academy-web container in your selected lab. It will intentionally publish the wrong port (18081) for troubleshooting. Continue?')) return;
     setBusy('prepare');
     try {
       const result = await action({ action: 'prepare', missionId: 'repair', labInstanceId: labId, confirm: true });
       setProgress(old => [...old.filter(p => p.missionId !== 'repair'), result.progress]);
       setLastChecks(null);
-      toast.success('Real incident seeded in the selected learner-owned lab.');
+      toast.success('Real incident seeded in the selected learner-owned lab.', { position: 'top-center' });
     } catch (e) { setActionError(e instanceof Error ? e.message : 'Could not prepare incident. Refresh your environment and try again.'); }
     finally { setBusy(null); }
   }
 
   async function verify() {
-    if (!labId) return toast.error('Select a running Linux lab first.');
+    if (!labId) return toast.error('Select a running Linux lab first.', { position: 'top-center' });
     setActionError('');
     setBusy('verify');
     try {

@@ -90,6 +90,7 @@ for (const width of [1440, 390]) {
     await page.getByLabel('Ask the AI mentor').fill('Help me understand ports');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(page.getByText(/The AI mentor is unavailable/)).toBeVisible();
+    await page.getByRole('button', { name: 'Hide AI mentor', exact: true }).click({ trial: true });
     await screenshot(page, info, `mentor-${width}`);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'AI mentor chat' })).toBeHidden();
