@@ -56,16 +56,16 @@ const SURFACE_PATH: Record<GuestSurface, string> = {
 const SURFACES: Record<GuestSurface, SurfaceConfig> = {
   academy: {
     title: 'Academy',
-    kicker: 'Guest preview // Learning paths',
-    description: 'See how guided learning connects lessons, practice, evidence and capability proof before creating an account.',
-    icon: BookOpen,
+    kicker: 'Guest preview // Engineering missions',
+    description: 'Practice with connected engineering challenges, authorized live labs, and server-verified technical outcomes instead of static lessons.',
+    icon: Terminal,
     capabilities: [
-      { title: 'Guided paths', detail: 'Move from concept to hands-on capability instead of a disconnected course list.', icon: BookOpen },
-      { title: 'Practice in context', detail: 'Exercises connect directly to OXSIG missions and technical environments.', icon: Terminal },
-      { title: 'Evidence-backed progress', detail: 'Proof comes from technical outcomes, not a completion click.', icon: FileCheck2 },
+      { title: 'Engineering World', detail: 'Investigate realistic incidents and follow connected technical assignments.', icon: Network },
+      { title: 'Real mission environments', detail: 'Use owned labs to deploy, troubleshoot and recover systems.', icon: Terminal },
+      { title: 'Verified skills', detail: 'Technical checks and approved evidence—not page views—determine completion.', icon: FileCheck2 },
     ],
-    sampleTitle: 'Sample learning path',
-    sampleLines: ['01 · Active Directory discovery', '02 · Kerberos and DNS reasoning', '03 · Service recovery practice', '04 · Evidence review and capability proof'],
+    sampleTitle: 'Sample engineering mission',
+    sampleLines: ['01 · Deploy Nginx in Docker', '02 · Diagnose a broken port mapping', '03 · Restore service with persistent storage', '04 · Verify outcomes and capture evidence'],
   },
   warroom: {
     title: 'WarRoom',
