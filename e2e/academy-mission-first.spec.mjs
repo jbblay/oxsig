@@ -99,7 +99,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(missionPanel.getByText(/Container deployment/)).toBeVisible();
     await missionPanel.getByText('Guidance and suggested commands').click();
     await expect(missionPanel.getByRole('button', { name: /Copy command: docker info/ })).toBeVisible();
-    await page.getByRole('button', { name: 'Hide mission panel' }).click();
+    await page.getByRole('button', { name: viewport.width < 1024 ? 'Close mission panel' : 'Hide mission panel', exact: true }).click();
     await expect(missionPanel).toBeHidden();
     await page.getByRole('button', { name: 'Show mission panel' }).click();
     await expect(missionPanel).toBeVisible();
