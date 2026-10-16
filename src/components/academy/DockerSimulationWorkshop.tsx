@@ -125,7 +125,7 @@ export default function DockerSimulationWorkshop() {
             <p className="max-w-xl text-sm leading-6 text-muted-foreground">Build a container, wire its network and protect its data. Drag components into the workbench, or tap to select them on mobile. Every passing checkpoint lights up the road ahead.</p>
           </div>
           <div className="rounded-xl border bg-background/90 px-5 py-3 text-center">
-            <div className="flex items-center justify-center gap-2 text-2xl font-bold"><Trophy className="h-5 w-5 text-amber-500" /> {state.practiceSp} SP</div>
+            <div data-testid="simulation-sp" className="flex items-center justify-center gap-2 text-2xl font-bold"><Trophy className="h-5 w-5 text-amber-500" /> {state.practiceSp} SP</div>
             <p className="text-xs text-muted-foreground">{completed}/3 practice stations</p>
           </div>
         </div>
