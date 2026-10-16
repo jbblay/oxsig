@@ -340,7 +340,24 @@ export default function AcademyMissionControl() {
             </CardContent>
           </Card>
 
-          <details className="rounded-xl border bg-card p-3" open>
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">{coaching.approach}</p>
+              {showExample && <p className="text-xs text-amber-700 dark:text-amber-300">Worked example: review every command. Container removal stops the Academy service.</p>}
+              {(showExample ? coaching.workedCommands : coaching.commands).map((cmd,i) => <div key={i} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-emerald-300">
+                {difficulty === 'beginner' && <p className="mb-2 text-xs text-slate-300">{commandPurpose(cmd)}</p>}
+                <div className="flex items-start justify-between gap-2">
+                  <code className="min-w-0 flex-1 select-text whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs leading-5">{cmd}</code>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => void copyCommand(cmd)} aria-label={'Copy command: ' + cmd}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+                </div>
+              </div>)}
+              <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>{!showExample && <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void revealExample()}>Reveal worked commands</Button>}</div>
+              <p className="text-[11px] text-muted-foreground">Copy only. Review commands before running them. Revealing an example records help used.</p>
+            </div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
             <summary className="cursor-pointer text-sm font-semibold">Modules &amp; missions · {completedCount}/3 verified</summary>
             <div className="mt-3 space-y-2" aria-label="Docker learning modules">
               {DOCKER_LEARNING_MODULES.map((module, moduleIndex) => {
@@ -380,23 +397,6 @@ export default function AcademyMissionControl() {
           <details className="rounded-xl border bg-card p-3">
             <summary className="cursor-pointer text-sm font-semibold">Learn · Containers and virtual machines</summary>
             <div className="mt-3"><DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} /></div>
-          </details>
-
-          <details className="rounded-xl border bg-card p-3">
-            <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
-            <div className="mt-3 space-y-3">
-              <p className="text-xs text-muted-foreground">{coaching.approach}</p>
-              {showExample && <p className="text-xs text-amber-700 dark:text-amber-300">Worked example: review every command. Container removal stops the Academy service.</p>}
-              {(showExample ? coaching.workedCommands : coaching.commands).map((cmd,i) => <div key={i} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-emerald-300">
-                {difficulty === 'beginner' && <p className="mb-2 text-xs text-slate-300">{commandPurpose(cmd)}</p>}
-                <div className="flex items-start justify-between gap-2">
-                  <code className="min-w-0 flex-1 select-text whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs leading-5">{cmd}</code>
-                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => void copyCommand(cmd)} aria-label={'Copy command: ' + cmd}><Copy className="h-3.5 w-3.5" /> Copy</Button>
-                </div>
-              </div>)}
-              <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>{!showExample && <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void revealExample()}>Reveal worked commands</Button>}</div>
-              <p className="text-[11px] text-muted-foreground">Copy only. Review commands before running them. Revealing an example records help used.</p>
-            </div>
           </details>
 
           <p className="px-2 text-xs leading-5 text-muted-foreground">Your achievements and notes survive lab expiry. A fresh machine requires recreating the practical deployment. <Link href="/academy/learn/docker/simulator" className="underline">Optional visual practice</Link></p>

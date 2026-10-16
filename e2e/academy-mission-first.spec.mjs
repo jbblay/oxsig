@@ -96,6 +96,7 @@ for (const viewport of [{ width: 1365, height: 900 }, { width: 390, height: 844 
     await expect(missionPanel.getByText('Mission 01')).toBeVisible();
     await expect(missionPanel.getByText('Docker daemon is accessible')).toBeVisible();
     await expect(missionPanel.getByText(/Modules & missions/)).toBeVisible();
+    await missionPanel.getByText(/Modules & missions/).click();
     await expect(missionPanel.getByText(/Container deployment/)).toBeVisible();
     await missionPanel.getByText('Guidance and suggested commands').click();
     await expect(missionPanel.getByRole('button', { name: /Copy command: docker info/ })).toBeVisible();

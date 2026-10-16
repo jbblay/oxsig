@@ -39,6 +39,7 @@ test('coaching levels reveal help deliberately without awarding practical succes
   await page.getByRole('button', { name: 'Show mission panel' }).click();
   await expect(panel.getByText('Check that Docker is running and accessible.')).toBeVisible();
   await expect(panel.getByRole('button', { name: /^Copy command: docker run/ })).toHaveCount(0);
+  await panel.getByText('Check that Docker is running and accessible.').scrollIntoViewIfNeeded();
   await screenshot(page, info, 'beginner-coaching-mobile');
   await page.getByRole('button', { name: 'Close mission panel' }).click();
   await page.getByLabel('Coaching level', { exact: true }).selectOption('intermediate');
@@ -118,8 +119,9 @@ for (const width of [1440, 390]) {
       await screenshot(page, info, `workspace-${width}`);
       await page.getByRole('button', { name: 'Show mission panel' }).click();
     }
-    await expect(panel.getByRole('button', { name: /First Deployment.*Ready to practice/ })).toBeVisible();
     await screenshot(page, info, width < 1024 ? 'mission-panel-mobile' : 'workspace-desktop');
+    await panel.getByText('Modules & missions · 0/3 verified', { exact: true }).click();
+    await expect(panel.getByRole('button', { name: /First Deployment.*Ready to practice/ })).toBeVisible();
     await panel.getByText('Guidance and suggested commands', { exact: true }).click();
     await panel.getByRole('button', { name: 'Copy command: docker info', exact: true }).click();
     expect(await page.evaluate(() => window.__copiedCommand)).toBe('docker info');

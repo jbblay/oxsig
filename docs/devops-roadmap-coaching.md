@@ -7,7 +7,7 @@ the only implemented practical skill. Every other node is a curriculum preview;
 those nodes never block the Practice Docker shortcut or award achievements.
 
 The Docker workbench puts the objective and coaching selector in the header.
-Assignment detail, lab explanation and terminal connection details expand on
+The module tree, assignment detail, lab explanation and terminal connection details expand on
 request. Connection errors and recovery controls remain visible. Compact terminal
 presentation is opt-in for Academy; other terminal consumers retain their layout.
 
