@@ -22,6 +22,7 @@ import {
   submitMentorApplication,
   updateOwnMentorProfile,
   withdrawMentorApplication,
+  loadVerifiedMentorMissionEvidence,
 } from './server';
 
 const userId = '11111111-1111-4111-8111-111111111111';
@@ -69,13 +70,15 @@ function router(handlers: Handler[]) {
 
 const evidenceRows = (ids: string[]) => ids.map((capability_id) => ({ path_id: 'program-becomes-process', capability_id }));
 
-function baseHandlers(overrides: Partial<Record<'evidence' | 'profile' | 'open' | 'rejected', Record<string, unknown>[]>> = {}): Handler[] {
+function baseHandlers(overrides: Partial<Record<'evidence' | 'profile' | 'open' | 'rejected' | 'missions' | 'engineering', Record<string, unknown>[]>> = {}): Handler[] {
   return [
     [/FROM users WHERE id=\$1 AND is_active=true FOR UPDATE/, () => ({ rows: [{ id: userId }] })],
     [/FROM mentor_profiles WHERE user_id=\$1 LIMIT 1/, () => ({ rows: overrides.profile ?? [] })],
     [/status IN \('submitted','under_review','changes_requested'\) LIMIT 1/, () => ({ rows: overrides.open ?? [] })],
     [/MAX\(decided_at\) AS last_rejected_at/, () => ({ rows: overrides.rejected ?? [{ last_rejected_at: null }] })],
     [/capability_proof/, () => ({ rows: overrides.evidence ?? [] })],
+    [/SELECT DISTINCT mission_id FROM academy_mission_progress/, () => ({ rows: overrides.missions ?? [] })],
+    [/SELECT DISTINCT template_id FROM academy_mission_runs/, () => ({ rows: overrides.engineering ?? [] })],
     [/INSERT INTO mentor_applications/, () => ({ rows: [applicationRow] })],
   ];
 }
@@ -112,6 +115,42 @@ describe('submitMentorApplication', () => {
     expect(snapshot.specializations).toEqual([expect.objectContaining({ specializationId: 'linux-systems', demonstrated: 6, eligible: true })]);
     expect(sqlCalls().some((sql) => sql.includes('INSERT INTO mentor_application_events'))).toBe(true);
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ ownerId: 'admin-1', href: '/admin?tab=mentors' }));
+  });
+
+  it('accepts an Academy Docker mentor candidate only after individual server-verified mission proofs', async () => {
+    mocks.clientQuery.mockImplementation(router(baseHandlers({
+      missions: [{ mission_id: 'deploy' }, { mission_id: 'repair' }, { mission_id: 'persist' }],
+      engineering: [{ template_id: 'docker-incident' }, { template_id: 'docker-durability' }],
+    })));
+    const dockerApplication = { ...application, specializations: ['containers-docker'] };
+    const result = await submitMentorApplication(userId, dockerApplication);
+    expect(result.status).toBe('submitted');
+    const sql = sqlCalls().join('\n');
+    expect(sql).toMatch(/verified_at IS NOT NULL/);
+    expect(sql).toContain("mode='practice'");
+    expect(sql).not.toMatch(/academy_mastery|\\bxp\\b/i);
+    const insert = mocks.clientQuery.mock.calls.find(([query]) => String(query).includes('INSERT INTO mentor_applications'))!;
+    const snapshot = JSON.parse(insert[1][11] as string);
+    expect(snapshot.specializations).toEqual([expect.objectContaining({
+      specializationId: 'containers-docker', demonstrated: 5, required: 5, eligible: true,
+    })]);
+  });
+
+  it('cannot qualify from missing mission rows or team-only incident runs', async () => {
+    const query = vi.fn().mockImplementation(router(baseHandlers({
+      missions: [{ mission_id: 'deploy' }, { mission_id: 'repair' }, { mission_id: 'persist' }],
+      engineering: [{ template_id: 'docker-incident' }],
+    })));
+    const verified = await loadVerifiedMentorMissionEvidence({ query } as never, userId);
+    expect(verified).toEqual(new Set(['mission:deploy','mission:repair','mission:persist','engineering:docker-incident']));
+    expect(query.mock.calls.find(([sql]) => String(sql).includes('FROM academy_mission_runs'))?.[0])
+      .toContain("mode='practice'");
+    mocks.clientQuery.mockImplementation(router(baseHandlers({
+      missions: [{ mission_id: 'deploy' }, { mission_id: 'repair' }, { mission_id: 'persist' }],
+      engineering: [{ template_id: 'docker-incident' }],
+    })));
+    await expect(submitMentorApplication(userId, { ...application, specializations: ['containers-docker'] }))
+      .rejects.toMatchObject({ code: 'NOT_ELIGIBLE', status: 403 });
   });
 
   it('does not use XP or mastery anywhere in eligibility', async () => {
