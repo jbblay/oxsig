@@ -71,6 +71,7 @@ function mapInstance(row: Record<string, any>) {
     reconciliationWarning: hasNoProviderRuntime ? null : freshness.reconciliationWarning,
     metadata: {
       accessMode: row.metadata?.accessMode === 'desktop' ? 'desktop' : 'terminal',
+      operationManaged: Boolean(row.metadata?.operationRunId),
     },
   };
 }

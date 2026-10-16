@@ -86,12 +86,22 @@ test('Career categories and Docker workbench fit mobile without launching labs',
   await page.setViewportSize({width:390,height:844});
   await page.goto('/academy');
   await expect(page.getByRole('heading',{name:'Choose your engineering path'})).toBeVisible();
-  await page.getByRole('button',{name:/Cybersecurity/}).click();
+  await page.getByRole('link',{name:/Cybersecurity/}).click();
   await expect(page.getByText('Network Fundamentals')).toBeVisible();
-  await page.getByRole('button',{name:/DevOps & Cloud/}).click();
-  await page.getByRole('link',{name:'Enter Docker workspace'}).click();
-  await expect(page.getByRole('heading',{name:'Docker learning workspace'})).toBeVisible();
-  await page.getByRole('link',{name:'Optional visual Docker practice'}).click();
+  await page.goto('/academy');
+  await page.getByRole('link',{name:/DevOps & Cloud/}).click();
+  await page.getByRole('link',{name:/Docker.*Enter practical workspace/}).click();
+  await expect(page.getByRole('heading',{name:'Docker Workspace'})).toBeVisible();
+  await page.getByRole('button',{name:'Show mission panel'}).click();
+  // Client navigation must load the simulator's saved state before it can
+  // render its heading. Wait for that contract rather than timing hydration
+  // and development compilation against the heading's short assertion timeout.
+  const simulatorState = page.waitForResponse(response =>
+    response.url() === base + '/api/academy/simulator' && response.request().method() === 'GET',
+  );
+  await page.getByRole('link',{name:'Optional visual practice'}).click();
+  await expect(page).toHaveURL(base + '/academy/learn/docker/simulator');
+  expect((await simulatorState).status()).toBe(200);
   await expect(page.getByRole('heading',{name:'Docker Kingdom'})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });

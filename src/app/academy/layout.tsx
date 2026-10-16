@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { getServerAuthState } from '@/lib/auth/server-auth';
+import AcademyNavigation from '@/components/academy/AcademyNavigation';
 import AcademyDurableStateProvider from '@/components/academy/AcademyDurableStateProvider';
 import GuestProductSurface from '@/components/auth/GuestProductSurface';
 import { getAcademyState } from '@/lib/academy/persistence';
@@ -23,19 +23,7 @@ export default async function AcademyLayout({ children }: { children: ReactNode 
   return (
     <AcademyDurableStateProvider initialState={initialState}>
       <div className="space-y-3">
-        <nav className="mx-auto flex max-w-[1800px] flex-wrap items-center gap-1 rounded-lg border bg-card/70 p-1" aria-label="Academy navigation">
-          <Link href="/academy" className="rounded-md px-3 py-1.5 text-xs font-semibold text-primary hover:bg-muted">Academy home</Link>
-          <Link href="/academy/learn" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-muted">Explore skills</Link>
-          <Link href="/academy/learn/docker" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-muted">Docker workshop</Link>
-          <Link href="/academy/engineering-world" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-muted">Engineering World</Link>
-          <Link href="/academy/missions" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-muted">Mission Control</Link>
-          <Link href="/academy/mentor-forge" className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-muted">Skills Passport & Mentor Forge</Link>
-          <span className="mx-1 hidden h-4 w-px bg-border sm:inline-block" aria-hidden="true" />
-          <Link href="/academy/mentors" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">Find a mentor</Link>
-          <Link href="/academy/sessions" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">My sessions</Link>
-          <Link href="/academy/sandbox-commerce" className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted">Commerce Sandbox</Link>
-          <Link href="/academy/mentor-center" className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">Mentor center</Link>
-        </nav>
+        <AcademyNavigation />
         {children}
       </div>
     </AcademyDurableStateProvider>

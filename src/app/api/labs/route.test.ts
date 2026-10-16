@@ -103,6 +103,18 @@ describe('GET /api/labs fast persisted read model', () => {
     expect(mocks.destroyLabVm).not.toHaveBeenCalled();
   });
 
+  it('exposes Operation ownership without leaking private instance metadata', async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [{
+      id: 'operation-lab', slug: 'operation-black-domain-operator', status: 'running',
+      metadata: { accessMode: 'terminal', operationRunId: '11111111-1111-4111-8111-111111111111', privateValue: 'must-not-leak' },
+    }] });
+    const response = await GET(new NextRequest('http://localhost/api/labs'));
+    const body = await response.json();
+    expect(body.instances[0].metadata).toEqual({ accessMode: 'terminal', operationManaged: true });
+    expect(JSON.stringify(body)).not.toContain('must-not-leak');
+    expect(JSON.stringify(body)).not.toContain('11111111-1111-4111-8111-111111111111');
+  });
+
   it('reports an unobserved persisted state as stale instead of treating it as provider-confirmed', async () => {
     mocks.query.mockResolvedValueOnce({
       rows: [{

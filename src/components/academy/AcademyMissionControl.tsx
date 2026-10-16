@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, CheckCircle2, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Trophy, Wrench } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, Copy, X, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import DockerLabAccess from './DockerLabAccess';
 import DockerConcept, { type ConceptRecord } from './DockerConcept';
@@ -11,7 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { DOCKER_MISSIONS, MISSION_IDS, type DockerMissionId, type MissionDifficulty } from '@/lib/academy/docker-missions';
+import { DOCKER_LEARNING_MODULES } from '@/lib/academy/roadmap-catalog';
+import { DOCKER_CHECKS, DOCKER_MISSIONS, MISSION_IDS, type DockerMissionId, type MissionDifficulty } from '@/lib/academy/docker-missions';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Check = { key: string; label: string; passed: boolean };
@@ -27,7 +29,7 @@ type Progress = ConceptRecord & {
 };
 type Lab = { id: string; name: string; status: string; slug: string };
 type MentorEntry = { who: 'learner' | 'mentor'; text: string };
-type Panel = 'terminal' | 'mentor' | 'notes' | 'verify';
+type Panel = 'terminal' | 'notes' | 'verify';
 
 const HINTS: Record<DockerMissionId, string[]> = {
   deploy: [
@@ -60,6 +62,8 @@ export default function AcademyMissionControl() {
   const [selected, setSelected] = React.useState(0);
   const [difficulty, setDifficulty] = React.useState<MissionDifficulty>('beginner');
   const [panel, setPanel] = React.useState<Panel>('terminal');
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [mentorOpen, setMentorOpen] = React.useState(false);
   const [notes, setNotes] = React.useState('');
   const [question, setQuestion] = React.useState('');
   const [messages, setMessages] = React.useState<MentorEntry[]>([]);
@@ -67,12 +71,30 @@ export default function AcademyMissionControl() {
   const [busy, setBusy] = React.useState<string | null>('loading');
   const [error, setError] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState('');
+  const sidebarRef = React.useRef<HTMLElement>(null);
+  const sidebarButtonRef = React.useRef<HTMLButtonElement>(null);
+  const mentorQuestionRef = React.useRef<HTMLTextAreaElement>(null);
+  const noteDrafts = React.useRef<Record<string, string>>({});
+  React.useEffect(() => { setSidebarOpen(window.matchMedia('(min-width: 1024px)').matches); }, []);
+  React.useEffect(() => {
+    if (sidebarOpen && window.matchMedia('(max-width: 1023px)').matches) sidebarRef.current?.focus({ preventScroll: true });
+  }, [sidebarOpen]);
+  function closeSidebar() { setSidebarOpen(false); sidebarButtonRef.current?.focus({ preventScroll: true }); }
 
   const mission = DOCKER_MISSIONS[selected];
   const record = progress.find(item => item.missionId === mission.id);
   const unlocked = selected === 0 || Boolean(progress.find(item => item.missionId === MISSION_IDS[selected - 1])?.verifiedAt);
   const completedCount = progress.filter(item => item.verifiedAt).length;
   const lab = labs.find(item => item.id === labId);
+  // Show expected acceptance criteria even before the learner requests verification.
+  // Only the server-observed checks can turn a requirement green.
+  const observedChecks = lastChecks || (record?.checks?.length ? record.checks : []);
+  const taskChecks = DOCKER_CHECKS[mission.id].map(expected => ({
+    ...expected,
+    passed: Boolean(observedChecks.find(check => check.key === expected.key)?.passed),
+  }));
+  const historicalEvidence = !lastChecks && Boolean(record?.checks?.length) && (!labId || record?.labInstanceId !== labId);
+  const verifiedTaskCount = taskChecks.filter(check => check.passed).length;
 
   const refresh = React.useCallback(async () => {
     const stateResponse = await fetch('/api/academy/missions', { cache: 'no-store' });
@@ -87,22 +109,28 @@ export default function AcademyMissionControl() {
 
   const resumed = React.useRef(false);
   React.useEffect(() => {
-    if (busy === 'loading' || resumed.current) return;
+    if (busy === 'loading' || error || resumed.current) return;
     resumed.current = true;
     const first = MISSION_IDS.findIndex(id => !progress.find(p => p.missionId === id)?.verifiedAt);
     const index = first < 0 ? 2 : first;
     setSelected(index);
-    setNotes(progress.find(p => p.missionId === MISSION_IDS[index])?.notes || '');
-  }, [busy, progress]);
+    const saved = progress.find(p => p.missionId === MISSION_IDS[index]);
+    setNotes(saved?.notes || '');
+    setDifficulty(saved?.difficulty || 'beginner');
+  }, [busy, error, progress]);
 
   function selectMission(index: number) {
+    if (busy !== null || index === selected) return;
+    noteDrafts.current[mission.id] = notes;
     if (index > 0 && !progress.find(item => item.missionId === MISSION_IDS[index - 1])?.verifiedAt) return;
     const existing = progress.find(item => item.missionId === MISSION_IDS[index]);
     setSelected(index);
-    setNotes(existing?.notes || '');
+    setNotes(noteDrafts.current[MISSION_IDS[index]] ?? existing?.notes ?? '');
     setDifficulty(existing?.difficulty || 'beginner');
     setLastChecks(null);
     setMessages([]);
+    setQuestion('');
+    setActionError('');
     setPanel('terminal');
   }
 
@@ -117,13 +145,22 @@ export default function AcademyMissionControl() {
     return response.json();
   }
 
+  async function copyCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success('Command copied. Paste it into your terminal when you are ready.', { position: 'top-center' });
+    } catch {
+      toast.error('Copy is unavailable in this browser. Select the command text to copy it.', { position: 'top-center' });
+    }
+  }
+
   async function saveNotes() {
     setBusy('notes');
     try {
       const result = await action({ action: 'notes', missionId: mission.id, notes });
       setProgress(old => [...old.filter(p => p.missionId !== mission.id), result.progress]);
-      toast.success('Engineering notes saved to your Academy account.');
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save notes'); }
+      toast.success('Engineering notes saved to your Academy account.', { position: 'top-center' });
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save notes', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
@@ -139,8 +176,8 @@ export default function AcademyMissionControl() {
           ? HINTS[mission.id][n]
           : HINTS[mission.id][n];
       setMessages(old => [...old, { who: 'mentor', text }]);
-      setPanel('mentor');
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Hint unavailable'); }
+      setMentorOpen(true);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Hint unavailable', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
@@ -152,27 +189,27 @@ export default function AcademyMissionControl() {
     setBusy('mentor');
     try {
       const result = await action({ action: 'mentor', missionId: mission.id, question: asked, difficulty });
-      await refresh();
+      await refresh().catch(() => undefined);
       setMessages(old => [...old, { who: 'mentor', text: result.answer.answer + (result.answer.suggestedAction ? '\nNext: ' + result.answer.suggestedAction : '') }]);
-    } catch (e) { setMessages(old => [...old, { who: 'mentor', text: 'The AI mentor is unavailable. You can still use the progressive hints, terminal and live verification. Try asking again later.' }]); toast.error(e instanceof Error ? e.message : 'AI mentor unavailable'); }
+    } catch (e) { setMessages(old => [...old, { who: 'mentor', text: 'The AI mentor is unavailable. You can still use the progressive hints, terminal and live verification. Try asking again later.' }]); toast.error(e instanceof Error ? e.message : 'AI mentor unavailable', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
   async function prepareFault() {
-    if (!labId) return toast.error('Select a running Linux lab first.');
+    if (!labId) return toast.error('Select a running Linux lab first.', { position: 'top-center' });
     if (!window.confirm('This action will remove and replace ONLY the reserved oxsig-academy-web container in your selected lab. It will intentionally publish the wrong port (18081) for troubleshooting. Continue?')) return;
     setBusy('prepare');
     try {
       const result = await action({ action: 'prepare', missionId: 'repair', labInstanceId: labId, confirm: true });
       setProgress(old => [...old.filter(p => p.missionId !== 'repair'), result.progress]);
       setLastChecks(null);
-      toast.success('Real incident seeded in the selected learner-owned lab.');
+      toast.success('Real incident seeded in the selected learner-owned lab.', { position: 'top-center' });
     } catch (e) { setActionError(e instanceof Error ? e.message : 'Could not prepare incident. Refresh your environment and try again.'); }
     finally { setBusy(null); }
   }
 
   async function verify() {
-    if (!labId) return toast.error('Select a running Linux lab first.');
+    if (!labId) return toast.error('Select a running Linux lab first.', { position: 'top-center' });
     setActionError('');
     setBusy('verify');
     try {
@@ -189,131 +226,223 @@ export default function AcademyMissionControl() {
   if (error) return <Card><CardHeader><CardTitle>Mission Control is unavailable</CardTitle><CardDescription>{error}</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => { setBusy('loading'); setError(null); void refresh().catch(e => setError(String(e))).finally(() => setBusy(null)); }}>Retry</Button></CardContent></Card>;
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-4 pb-8">
-      <header className="rounded-2xl border bg-gradient-to-r from-primary/10 via-background to-background p-5">
-        <div className="flex flex-wrap justify-between gap-4">
-          <div className="space-y-2">
-            <Badge variant="secondary"><Trophy className="mr-1 h-3 w-3" /> Mission-based learning</Badge>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Docker learning workspace</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">You have joined an engineering team. Your assignment is to launch a web service inside a Docker container and prove that it is reachable.</p>
+    <div className="mx-auto max-w-[1700px] min-w-0 space-y-3 pb-24">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/70 p-3 sm:px-4">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            <Link href="/academy/learn/devops" className="hover:text-foreground">DevOps &amp; Cloud</Link>
+            <span aria-hidden="true">/</span>
+            <span>Docker</span>
           </div>
-          <div className="rounded-xl border bg-background/80 p-3 text-right">
-            <div className="text-2xl font-bold">{completedCount * 100} XP</div>
-            <div className="text-xs text-muted-foreground">{completedCount}/3 missions verified</div>
-          </div>
+          <h1 className="text-lg font-bold tracking-tight sm:text-xl">Docker Workspace</h1>
+          <p className="text-xs text-muted-foreground">Mission {mission.number}: {mission.title} · {completedCount}/3 missions verified</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={dockerReady ? 'default' : 'outline'}>{dockerReady ? 'Docker ready' : 'Environment not ready'}</Badge>
+          <Button type="button" size="sm" variant="outline" ref={sidebarButtonRef} aria-expanded={sidebarOpen} aria-controls="docker-mission-sidebar" onClick={() => setSidebarOpen(value => !value)}>
+            <BookOpen className="h-4 w-4" /> {sidebarOpen ? 'Hide mission panel' : 'Show mission panel'}
+          </Button>
         </div>
       </header>
 
-      <DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} />
-      <p className="text-xs text-muted-foreground">Your verified achievements, concept explanations and saved notes are retained in your account. Resume below; a fresh machine requires recreating the practical deployment.</p>
-      <section className="grid gap-3 md:grid-cols-3" aria-label="Docker mission progression">
-        {DOCKER_MISSIONS.map((item, index) => {
-          const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
-          const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index - 1])?.verifiedAt);
-          return <button key={item.id} type="button" disabled={!available} onClick={() => selectMission(index)}
-            className={'rounded-xl border p-4 text-left transition ' + (selected === index ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-60' : '')}>
-            <div className="mb-2 flex items-center justify-between">
-              <Badge variant="outline">Mission {item.number}</Badge>
-              {done ? <CheckCircle2 className="h-4 w-4 text-primary" /> : available ? <Circle className="h-4 w-4 text-muted-foreground" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
-            </div>
-            <div className="font-semibold">{item.title}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{item.category} · {done ? 'Verified' : available ? 'Available' : 'Locked'}</div>
-          </button>;
-        })}
-      </section>
+      <div className={sidebarOpen ? 'grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]' : 'grid min-w-0 items-start gap-3'}>
+        <main className="min-w-0 space-y-3" aria-label="Docker learning workbench">
+          <section aria-label="Linux environment controls">
+            <DockerLabAccess onChange={(current, ready) => {
+              setLabs(current ? [current] : []);
+              setLabId(current?.id || '');
+              setDockerReady(ready);
+            }} />
+          </section>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Mission {mission.number}: {mission.title}</CardTitle><CardDescription>{mission.ticket}</CardDescription></CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm font-medium">{mission.objective}</p>
-              <div className="space-y-1">
-                <label htmlFor="mission-difficulty" className="text-xs font-semibold">Coaching difficulty</label>
-                <select id="mission-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value as MissionDifficulty)} className="w-full rounded-md border bg-background p-2 text-sm">
-                  <option value="beginner">Beginner — direct support</option>
-                  <option value="intermediate">Intermediate — guided diagnosis</option>
-                  <option value="advanced">Advanced — limited hints</option>
-                </select>
-                <p className="text-[11px] text-muted-foreground">Difficulty changes mentoring, not the verification standard.</p>
-              </div>
-              <DockerLabAccess onChange={(current, ready) => {
-                setLabs(current ? [current] : []);
-                setLabId(current?.id || '');
-                setDockerReady(ready);
-              }} />
-              {mission.id === 'repair' && !record?.verifiedAt && <Button variant="secondary" className="w-full" onClick={() => void prepareFault()} disabled={!labId || !dockerReady || busy !== null}><Wrench className="h-4 w-4" />{busy === 'prepare' ? 'Seeding incident…' : record?.preparedAt && record.labInstanceId === labId ? 'Reset incident fault' : 'Seed broken deployment'}</Button>}
-              {record?.verifiedAt && <p className="flex items-center gap-2 text-xs text-primary"><ShieldCheck className="h-4 w-4" /> Passed with server-executed evidence</p>}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Objectives & evidence</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {(lastChecks || record?.checks || []).length
-                ? (lastChecks || record?.checks || []).map(check => <div key={check.key} className="flex gap-2 text-xs"><span>{check.passed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-amber-500" />}</span>{check.label}</div>)
-                : <p className="text-xs text-muted-foreground">Run verification to obtain observed checks from the lab.</p>}
-              {(lastChecks || record?.checks || []).some(check => !check.passed) && <p className="text-xs text-amber-600">Check Docker readiness, inspect docker ps and docker port oxsig-academy-web, then test curl http://localhost:18080 in the terminal. Ask for a hint if you need help interpreting the result.</p>}
-              <p className="border-t pt-2 text-[11px] text-muted-foreground">Scores are never awarded for typing a command or asking AI. Only a verified live result counts.</p>
-            </CardContent>
-          </Card>
-        </aside>
+          {actionError && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">{actionError} Refresh the environment status here before trying again.</p>}
 
-        <main className="min-w-0 space-y-4">
-          {actionError && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm">{actionError} Use Refresh status in your environment controls to reconnect or recover.</p>}
-          <div role="tablist" aria-label="Mission tools" className="grid grid-cols-4 gap-2">
-            {([['terminal','Terminal',Terminal],['mentor','AI mentor',MessageCircle],['notes','Notes',NotebookPen],['verify','Tests',ClipboardCheck]] as const).map(([id,label,Icon]) => <Button key={id} role="tab" aria-selected={panel===id} size="sm" variant={panel===id ? 'default' : 'outline'} onClick={() => setPanel(id)}><Icon className="h-4 w-4" /><span className="text-[10px] sm:text-sm">{label}</span></Button>)}
-          </div>
-          <div className={panel === 'terminal' ? '' : 'hidden'}>
-            <Card>
-              <CardHeader><CardTitle className="text-base">Live lab terminal</CardTitle><CardDescription>Commands here execute in your own connected Linux lab, not inside ChatGPT. Use Docker only in an isolated disposable machine.</CardDescription></CardHeader>
-              <CardContent className="space-y-3">
-                {lab ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} /> : <div className="rounded-xl border p-5 text-sm text-muted-foreground">Start or refresh your Linux environment using the controls beside this terminal. Your mission and learning record remain here while it starts.</div>}
-                <div className="space-y-2">
-                  <div className="text-xs font-medium">Suggested investigation commands</div>
-                  {mission.commands.filter(cmd => /^(docker (info|ps|port|logs)|curl)/.test(cmd)).map((cmd,i) => <div key={i} className="break-all rounded-md bg-muted p-2 font-mono text-xs">{cmd}</div>)}
-                  <p className="text-[11px] text-muted-foreground">Suggested commands are examples, not auto-executed. Choose when and what to run.</p>
+          <Card className="min-w-0 overflow-hidden">
+            <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle role="heading" aria-level={2} className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" /> Linux terminal</CardTitle>
+                  <CardDescription className="mt-1 text-xs">Work directly on your isolated Linux machine. No Cyber Lab navigation required.</CardDescription>
                 </div>
-              </CardContent>
-            </Card>
+                {lab && <Badge variant="outline" className="max-w-full truncate">{lab.name}</Badge>}
+              </div>
+            </CardHeader>
+            <CardContent className="min-w-0 space-y-3 p-2 pt-0 sm:p-4 sm:pt-0">
+              {lab
+                ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} />
+                : <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border bg-muted/20 p-5 text-center sm:min-h-[420px]">
+                    <Terminal className="h-9 w-9 text-muted-foreground" />
+                    <p className="text-sm font-medium">Your live terminal will appear here</p>
+                    <p className="max-w-md text-xs leading-5 text-muted-foreground">Start Linux using the environment controls above. The terminal connects here when Docker is ready. Your saved mission record stays available.</p>
+                  </div>}
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap items-center gap-2" aria-label="Workspace tools">
+            <Button size="sm" variant={mentorOpen ? 'default' : 'outline'} onClick={() => setMentorOpen(value => !value)} aria-pressed={mentorOpen}><MessageCircle className="h-4 w-4" /> AI mentor</Button>
+            <Button size="sm" variant={panel === 'notes' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'notes' ? 'terminal' : 'notes')} aria-pressed={panel === 'notes'}><NotebookPen className="h-4 w-4" /> Notes</Button>
+            <Button size="sm" variant={panel === 'verify' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'verify' ? 'terminal' : 'verify')} aria-pressed={panel === 'verify'}><ClipboardCheck className="h-4 w-4" /> Results</Button>
+            <Button size="sm" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
+              {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Check progress
+            </Button>
           </div>
-          {panel === 'mentor' && <Card>
-            <CardHeader><CardTitle className="text-base">Mission AI mentor</CardTitle><CardDescription>Ask questions about the scenario. AI can guide, but cannot mark a mission as completed.</CardDescription></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg bg-muted/40 p-3" aria-live="polite">
-                {messages.length === 0 && <p className="text-xs text-muted-foreground">Try: “My container runs but the website doesn't open. What should I check?”</p>}
-                {messages.map((msg,i) => <div key={i} className="text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap">{msg.text}</p></div>)}
-              </div>
-              <Textarea value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="Describe what you observed, or ask why something failed…"/>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Ask mentor</Button>
-                <Button variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Reveal progressive hint</Button>
-                <Button variant="ghost" disabled={busy !== null} onClick={() => void askMentor(true)}>Teach me directly</Button>
-              </div>
-              <p className="text-[11px] text-muted-foreground">Assistance requests: {record?.hintsUsed || 0}. Help does not reduce your practice XP. AI guidance depends on server configuration and should be checked against actual command output.</p>
-            </CardContent>
-          </Card>}
+
           {panel === 'notes' && <Card>
-            <CardHeader><CardTitle className="text-base">Engineering notebook</CardTitle><CardDescription>Record observations, root cause, fixes, and evidence. Notes are persisted to your account.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base">Engineering notes</CardTitle><CardDescription>Save your investigation and reasoning to your account.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
-              <Textarea rows={10} maxLength={4000} value={notes} onChange={e => setNotes(e.target.value)} placeholder={'Observation:\nRoot cause:\nFix:\nVerification:\nWhat I learned:'}/>
-              <Button onClick={() => void saveNotes()} disabled={busy !== null}>{busy === 'notes' ? <Loader2 className="h-4 w-4 animate-spin" /> : <NotebookPen className="h-4 w-4" />} Save engineering notes</Button>
+              <Textarea rows={8} maxLength={4000} value={notes} onChange={e => setNotes(e.target.value)} placeholder={'Observation:\nRoot cause:\nFix:\nVerification:\nWhat I learned:'} />
+              <Button onClick={() => void saveNotes()} disabled={busy !== null}>{busy === 'notes' ? <Loader2 className="h-4 w-4 animate-spin" /> : <NotebookPen className="h-4 w-4" />} Save notes</Button>
             </CardContent>
           </Card>}
+
           {panel === 'verify' && <Card>
-            <CardHeader><CardTitle className="text-base">Server-verified acceptance tests</CardTitle><CardDescription>OXSIG executes fixed read-only checks through AWS Systems Manager. Progress cannot be awarded from browser-only claims.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base">Verification results</CardTitle><CardDescription>Only trusted server-executed checks of the real lab can complete a mission.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
-              {mission.id === 'repair' && !record?.preparedAt && <p className="rounded-lg border border-amber-500/30 p-3 text-sm">Seed the broken deployment first, then repair it using your terminal.</p>}
-              <p className="text-sm text-muted-foreground">We check container state, published ports and a real HTTP response{mission.id === 'persist' ? ', plus the named volume and its stored content.' : '.'}</p>
-              <Button disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>{busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Run live verification</Button>
-              {(lastChecks || record?.checks || []).map(check => <div key={check.key} className="flex items-center gap-2 rounded-lg border p-3 text-sm">{check.passed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-amber-600" />}{check.label}<span className="ml-auto text-xs">{check.passed ? 'PASS' : 'FAIL'}</span></div>)}
-              {record?.verifiedAt && <div className="rounded-lg border border-primary/30 p-3 text-sm">Verified: {new Date(record.verifiedAt).toLocaleString()} · You demonstrated {mission.id === 'deploy' ? 'deploying a reachable container service' : mission.id === 'repair' ? 'diagnosing and repairing service connectivity' : 'serving content from a persistent Docker volume'}. Your achievement is saved independently of this machine.</div>}
-              {record?.verifiedAt && selected < DOCKER_MISSIONS.length - 1 && <Button className="w-full" onClick={() => selectMission(selected + 1)}>Continue the assignment <ArrowRight className="h-4 w-4" /></Button>}
+              {observedChecks.length === 0 && <p className="text-sm text-muted-foreground">No live verification evidence yet. Start your Linux environment, work through the objective, then choose Check progress.</p>}
+              {observedChecks.map(check => <div key={check.key} className="flex items-center gap-2 rounded-lg border p-3 text-sm">{check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <Circle className="h-4 w-4 shrink-0 text-amber-600" />}{check.label}<span className="ml-auto text-xs">{check.passed ? 'PASS' : 'NOT YET'}</span></div>)}
+              {record?.verifiedAt && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">Verified {new Date(record.verifiedAt).toLocaleString()}. This achievement is saved independently of your temporary machine.</div>}
+              {record?.verifiedAt && selected < DOCKER_MISSIONS.length - 1 && <Button onClick={() => selectMission(selected + 1)}>Continue to next mission <ArrowRight className="h-4 w-4" /></Button>}
             </CardContent>
           </Card>}
         </main>
+
+        {sidebarOpen && <button type="button" tabIndex={-1} aria-label="Dismiss mission panel" className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={closeSidebar} />}
+        <aside id="docker-mission-sidebar" ref={sidebarRef} tabIndex={-1} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeSidebar(); } }} className={sidebarOpen ? 'fixed inset-x-3 bottom-20 z-40 max-h-[72dvh] min-w-0 space-y-3 overflow-y-auto overscroll-contain rounded-2xl border bg-background p-3 shadow-2xl outline-none lg:sticky lg:inset-x-auto lg:bottom-auto lg:top-4 lg:z-auto lg:max-h-[calc(100dvh-2rem)] lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none' : 'hidden'} aria-label="Docker mission guidance">
+          <div className="flex items-center justify-between lg:hidden"><h2 className="text-sm font-semibold">Mission panel</h2><Button size="sm" variant="ghost" aria-label="Close mission panel" onClick={closeSidebar}><X className="h-4 w-4" /></Button></div>
+          <Card>
+            <CardHeader className="p-4 pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant="secondary">Mission {mission.number}</Badge>
+                <Badge variant={record?.verifiedAt ? 'default' : 'outline'}>{record?.verifiedAt ? 'Verified' : 'In progress'}</Badge>
+              </div>
+              <CardTitle className="pt-1 text-base">{mission.title}</CardTitle>
+              <CardDescription className="text-xs leading-5">{mission.ticket}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4 pt-1">
+              <p className="text-sm font-medium">{mission.objective}</p>
+              {mission.id === 'repair' && !record?.verifiedAt && <Button variant="outline" size="sm" className="w-full" onClick={() => void prepareFault()} disabled={!labId || !dockerReady || busy !== null}>
+                <Wrench className="h-4 w-4" /> {busy === 'prepare' ? 'Preparing incident…' : record?.preparedAt && record.labInstanceId === labId ? 'Reset incident fault' : 'Seed broken deployment'}
+              </Button>}
+              <div className="space-y-2 border-t pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">Objectives</h2>
+                  <span className="text-xs text-muted-foreground">{verifiedTaskCount}/{taskChecks.length} checks passed</span>
+                </div>
+                {historicalEvidence && <p className="text-[11px] text-muted-foreground">Saved server verification from a previous environment. Recheck this machine to observe its current state.</p>}
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={verifiedTaskCount} aria-valuemin={0} aria-valuemax={taskChecks.length} aria-label="Mission checks passed">
+                  <div className="h-full bg-emerald-500 transition-all" style={{ width: (verifiedTaskCount / taskChecks.length * 100) + '%' }} />
+                </div>
+                {taskChecks.map((check,index) => <div key={check.key} className="flex items-start gap-2 rounded-md p-1.5 text-xs">
+                  {check.passed ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+                  <span><span className="font-semibold text-muted-foreground">Task {index+1}. </span>{check.label}</span>
+                </div>)}
+                <Button className="w-full" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
+                  {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Verify with real lab
+                </Button>
+                <p className="text-[11px] leading-4 text-muted-foreground">Checks turn green only from server-observed results, not from typing a suggested command.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <details className="rounded-xl border bg-card p-3" open>
+            <summary className="cursor-pointer text-sm font-semibold">Modules &amp; missions · {completedCount}/3 verified</summary>
+            <div className="mt-3 space-y-2" aria-label="Docker learning modules">
+              {DOCKER_LEARNING_MODULES.map((module, moduleIndex) => {
+                const moduleDone = Boolean(module.missionIds?.length) && module.missionIds!.every(id => Boolean(progress.find(p => p.missionId === id)?.verifiedAt));
+                const activeModule = Boolean(module.missionIds?.includes(mission.id));
+                const moduleAvailable = (module.missionIds || []).every(id => {
+                  const position = MISSION_IDS.findIndex(missionId => missionId === id);
+                  return position === 0 || (position > 0 && Boolean(progress.find(p => p.missionId === MISSION_IDS[position - 1])?.verifiedAt));
+                });
+                return <details key={module.id} open={Boolean(module.missionIds?.includes(mission.id)) || undefined} className={'rounded-lg border p-2 ' + (activeModule ? 'border-primary/50 bg-primary/5' : 'bg-background')}>
+                  <summary className="cursor-pointer text-xs font-semibold">
+                    <span className="inline-flex items-center gap-2">
+                      {moduleDone ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : activeModule ? <Circle className="h-4 w-4 text-rose-500" /> : moduleAvailable ? <Circle className="h-4 w-4 text-muted-foreground" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
+                      Module {moduleIndex+1}: {module.title}
+                    </span>
+                  </summary>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{module.summary}</p>
+                  <div className="mt-2 space-y-2">
+                    {(module.missionIds || []).map(missionId => {
+                      const index = MISSION_IDS.findIndex(id => id === missionId);
+                      const item = DOCKER_MISSIONS[index];
+                      if (!item) return null;
+                      const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
+                      const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index-1])?.verifiedAt);
+                      return <button key={missionId} type="button" disabled={!available || busy !== null} onClick={() => selectMission(index)} aria-current={selected === index ? 'step' : undefined}
+                        className={'flex w-full items-center gap-2 rounded-md border p-2 text-left text-xs transition ' + (selected === index ? 'border-primary bg-primary/10' : 'hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-50' : '')}>
+                        {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : available ? <Circle className="h-4 w-4 shrink-0" /> : <LockKeyhole className="h-4 w-4 shrink-0" />}
+                        <span>{item.title}<span className="block text-[11px] text-muted-foreground">{done ? 'Verified' : available ? 'Ready to practice' : 'Complete the previous mission first'}</span></span>
+                      </button>;
+                    })}
+                  </div>
+                </details>;
+              })}
+            </div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Learn · Containers and virtual machines</summary>
+            <div className="mt-3"><DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} /></div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">Work through the task in your own way. These commands are optional examples, not automatic actions.</p>
+              {mission.commands.map((cmd,i) => <div key={i} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-emerald-300">
+                <div className="flex items-start justify-between gap-2">
+                  <code className="min-w-0 flex-1 select-text break-all font-mono text-xs leading-5">{cmd}</code>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => void copyCommand(cmd)} aria-label={'Copy command: ' + cmd}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+                </div>
+              </div>)}
+              <Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>
+            </div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Coaching level</summary>
+            <div className="mt-3 space-y-2">
+              <label htmlFor="mission-difficulty" className="text-xs font-medium">How much help would you like?</label>
+              <select id="mission-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value as MissionDifficulty)} className="w-full rounded-md border bg-background p-2 text-sm">
+                <option value="beginner">Beginner — direct support</option>
+                <option value="intermediate">Intermediate — guided diagnosis</option>
+                <option value="advanced">Advanced — limited hints</option>
+              </select>
+              <p className="text-xs text-muted-foreground">All levels use the same trusted practical verification.</p>
+            </div>
+          </details>
+          <p className="px-2 text-xs leading-5 text-muted-foreground">Your achievements and notes survive lab expiry. A fresh machine requires recreating the practical deployment. <Link href="/academy/learn/docker/simulator" className="underline">Optional visual practice</Link></p>
+        </aside>
       </div>
-      <Button variant="ghost" asChild><Link href="/academy/learn/docker/simulator">Optional visual Docker practice</Link></Button>
-      <p className="text-xs text-muted-foreground">Deploy → repair → preserve data. HTTP checks run inside your Linux environment; localhost:18080 refers to that machine. Your service does not need a public port.</p>
+      <DialogPrimitive.Root open={mentorOpen} onOpenChange={setMentorOpen} modal={false}>
+      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6">
+        {mentorOpen && <DialogPrimitive.Content id="academy-mentor-chat" aria-label="AI mentor chat" aria-labelledby={undefined} onInteractOutside={event => event.preventDefault()} onOpenAutoFocus={event => { event.preventDefault(); mentorQuestionRef.current?.focus(); }} className="flex max-h-[min(72vh,580px)] w-[min(92vw,385px)] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl">
+          <div className="flex items-center justify-between border-b bg-primary/5 px-4 py-3">
+            <DialogPrimitive.Title className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="h-4 w-4 text-primary" /> OXSIG AI mentor</DialogPrimitive.Title>
+            <Button type="button" size="sm" variant="ghost" aria-label="Close AI mentor" onClick={() => setMentorOpen(false)}><X className="h-4 w-4" /></Button>
+          </div>
+          <DialogPrimitive.Description className="px-4 pt-3 text-xs text-muted-foreground">Ask about Mission {mission.number}. The mentor gives guidance but cannot certify lab results or execute commands.</DialogPrimitive.Description>
+          <div className="mt-2 min-h-[95px] flex-1 space-y-3 overflow-y-auto px-4 py-2" aria-live="polite">
+            {messages.length === 0 && <p className="text-sm text-muted-foreground">What is confusing, or what did you observe in the terminal?</p>}
+            {messages.map((msg,i) => <div key={i} className="rounded-lg bg-muted/50 p-2 text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.text}</p></div>)}
+          </div>
+          <div className="space-y-2 border-t p-3">
+            <label className="sr-only" htmlFor="docker-mentor-question">Ask the AI mentor</label>
+            <Textarea ref={mentorQuestionRef} id="docker-mentor-question" rows={2} value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your mission…" />
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />} Send</Button>
+              <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void showHint()}>Get hint</Button>
+              <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void askMentor(true)}>Explain</Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Assistance used: {record?.hintsUsed || 0}. Practice scores do not decrease for asking for help.</p>
+          </div>
+        </DialogPrimitive.Content>}
+        <DialogPrimitive.Trigger asChild><Button type="button" aria-controls="academy-mentor-chat" aria-expanded={mentorOpen} aria-label={mentorOpen ? 'Hide AI mentor' : 'Open AI mentor'} className="h-12 rounded-full px-4 shadow-lg shadow-primary/25">
+          <MessageCircle className="h-5 w-5" /> <span className="text-sm">AI help</span>
+        </Button></DialogPrimitive.Trigger>
+      </div>
+      </DialogPrimitive.Root>
     </div>
   );
 }
