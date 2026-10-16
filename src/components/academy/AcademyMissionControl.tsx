@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowRight, BookOpen, CheckCircle2, Copy, X, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import DockerLabAccess from './DockerLabAccess';
+import { coachingHint, commandPurpose, dockerCoaching } from '@/lib/academy/docker-coaching';
 import DockerConcept, { type ConceptRecord } from './DockerConcept';
 import InteractiveSsmTerminal from '@/components/labs/InteractiveSsmTerminal';
 import { Badge } from '@/components/ui/badge';
@@ -31,24 +32,6 @@ type Lab = { id: string; name: string; status: string; slug: string };
 type MentorEntry = { who: 'learner' | 'mentor'; text: string };
 type Panel = 'terminal' | 'notes' | 'verify';
 
-const HINTS: Record<DockerMissionId, string[]> = {
-  deploy: [
-    'Begin with docker info. Is Docker installed and is the daemon responding?',
-    'Inspect docker ps -a and look for a container called oxsig-academy-web.',
-    'Publish port 18080 on the host to port 80 inside the Nginx container.',
-  ],
-  repair: [
-    'Compare the port in the incident ticket with the host port shown by docker ps.',
-    'A running container can expose the wrong host port. Run docker port oxsig-academy-web.',
-    'Recreate only oxsig-academy-web with host port 18080 mapped to port 80.',
-  ],
-  persist: [
-    'Volumes are independent from their container. Start by inspecting docker volume ls.',
-    'Mount oxsig_academy_data at /usr/share/nginx/html when creating the container.',
-    'A fresh volume hides the bundled index page. Write the requested line into index.html inside the mounted volume.',
-  ],
-};
-
 async function responseError(res: Response) {
   const json = await res.json().catch(() => ({}));
   return String(json.error || 'Mission request failed');
@@ -65,6 +48,7 @@ export default function AcademyMissionControl() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [mentorOpen, setMentorOpen] = React.useState(false);
   const [notes, setNotes] = React.useState('');
+  const [showExample, setShowExample] = React.useState(false);
   const [question, setQuestion] = React.useState('');
   const [messages, setMessages] = React.useState<MentorEntry[]>([]);
   const [lastChecks, setLastChecks] = React.useState<Check[] | null>(null);
@@ -82,6 +66,7 @@ export default function AcademyMissionControl() {
   function closeSidebar() { setSidebarOpen(false); sidebarButtonRef.current?.focus({ preventScroll: true }); }
 
   const mission = DOCKER_MISSIONS[selected];
+  const coaching = dockerCoaching(mission.id, difficulty);
   const record = progress.find(item => item.missionId === mission.id);
   const unlocked = selected === 0 || Boolean(progress.find(item => item.missionId === MISSION_IDS[selected - 1])?.verifiedAt);
   const completedCount = progress.filter(item => item.verifiedAt).length;
@@ -130,6 +115,7 @@ export default function AcademyMissionControl() {
     setLastChecks(null);
     setMessages([]);
     setQuestion('');
+    setShowExample(false);
     setActionError('');
     setPanel('terminal');
   }
@@ -169,15 +155,20 @@ export default function AcademyMissionControl() {
     try {
       const result = await action({ action: 'hint', missionId: mission.id });
       setProgress(old => [...old.filter(p => p.missionId !== mission.id), result.progress]);
-      const n = Math.min(result.progress.hintsUsed - 1, 2);
-      const text = difficulty === 'advanced'
-        ? HINTS[mission.id][0]
-        : difficulty === 'beginner'
-          ? HINTS[mission.id][n]
-          : HINTS[mission.id][n];
+      const text = coachingHint(mission.id, difficulty, result.progress.hintsUsed);
       setMessages(old => [...old, { who: 'mentor', text }]);
       setMentorOpen(true);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Hint unavailable', { position: 'top-center' }); }
+    finally { setBusy(null); }
+  }
+
+  async function revealExample() {
+    setBusy('example');
+    try {
+      const result = await action({ action: 'hint', missionId: mission.id });
+      setProgress(old => [...old.filter(p => p.missionId !== mission.id), result.progress]);
+      setShowExample(true);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Example unavailable', { position: 'top-center' }); }
     finally { setBusy(null); }
   }
 
@@ -236,8 +227,13 @@ export default function AcademyMissionControl() {
           </div>
           <h1 className="text-lg font-bold tracking-tight sm:text-xl">Docker Workspace</h1>
           <p className="text-xs text-muted-foreground">Mission {mission.number}: {mission.title} · {completedCount}/3 missions verified</p>
+          <p className="max-w-2xl text-sm">{mission.objective}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="mission-difficulty">Coaching level</label>
+          <select id="mission-difficulty" value={difficulty} disabled={busy !== null} onChange={e => { setDifficulty(e.target.value as MissionDifficulty); setShowExample(false); }} className="h-9 max-w-full rounded-md border bg-background px-2 text-xs">
+            <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
+          </select>
           <Badge variant={dockerReady ? 'default' : 'outline'}>{dockerReady ? 'Docker ready' : 'Environment not ready'}</Badge>
           <Button type="button" size="sm" variant="outline" ref={sidebarButtonRef} aria-expanded={sidebarOpen} aria-controls="docker-mission-sidebar" onClick={() => setSidebarOpen(value => !value)}>
             <BookOpen className="h-4 w-4" /> {sidebarOpen ? 'Hide mission panel' : 'Show mission panel'}
@@ -262,14 +258,14 @@ export default function AcademyMissionControl() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <CardTitle role="heading" aria-level={2} className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" /> Linux terminal</CardTitle>
-                  <CardDescription className="mt-1 text-xs">Work directly on your isolated Linux machine. No Cyber Lab navigation required.</CardDescription>
+                  <CardDescription className="mt-1 text-xs">Your Linux shell.</CardDescription>
                 </div>
                 {lab && <Badge variant="outline" className="max-w-full truncate">{lab.name}</Badge>}
               </div>
             </CardHeader>
             <CardContent className="min-w-0 space-y-3 p-2 pt-0 sm:p-4 sm:pt-0">
               {lab
-                ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} />
+                ? <InteractiveSsmTerminal compact key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} />
                 : <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border bg-muted/20 p-5 text-center sm:min-h-[420px]">
                     <Terminal className="h-9 w-9 text-muted-foreground" />
                     <p className="text-sm font-medium">Your live terminal will appear here</p>
@@ -296,7 +292,7 @@ export default function AcademyMissionControl() {
           </Card>}
 
           {panel === 'verify' && <Card>
-            <CardHeader><CardTitle className="text-base">Verification results</CardTitle><CardDescription>Only trusted server-executed checks of the real lab can complete a mission.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base">Verification results</CardTitle><CardDescription>Observed on your lab.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
               {observedChecks.length === 0 && <p className="text-sm text-muted-foreground">No live verification evidence yet. Start your Linux environment, work through the objective, then choose Check progress.</p>}
               {observedChecks.map(check => <div key={check.key} className="flex items-center gap-2 rounded-lg border p-3 text-sm">{check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <Circle className="h-4 w-4 shrink-0 text-amber-600" />}{check.label}<span className="ml-auto text-xs">{check.passed ? 'PASS' : 'NOT YET'}</span></div>)}
@@ -316,7 +312,7 @@ export default function AcademyMissionControl() {
                 <Badge variant={record?.verifiedAt ? 'default' : 'outline'}>{record?.verifiedAt ? 'Verified' : 'In progress'}</Badge>
               </div>
               <CardTitle className="pt-1 text-base">{mission.title}</CardTitle>
-              <CardDescription className="text-xs leading-5">{mission.ticket}</CardDescription>
+              <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Assignment details</summary><p className="mt-2 leading-5">{mission.ticket}</p></details>
             </CardHeader>
             <CardContent className="space-y-3 p-4 pt-1">
               <p className="text-sm font-medium">{mission.objective}</p>
@@ -339,12 +335,29 @@ export default function AcademyMissionControl() {
                 <Button className="w-full" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
                   {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Verify with real lab
                 </Button>
-                <p className="text-[11px] leading-4 text-muted-foreground">Checks turn green only from server-observed results, not from typing a suggested command.</p>
+                <p className="text-[11px] leading-4 text-muted-foreground">Checks use your real lab.</p>
               </div>
             </CardContent>
           </Card>
 
-          <details className="rounded-xl border bg-card p-3" open>
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">{coaching.approach}</p>
+              {showExample && <p className="text-xs text-amber-700 dark:text-amber-300">Worked example: review every command. Container removal stops the Academy service.</p>}
+              {(showExample ? coaching.workedCommands : coaching.commands).map((cmd,i) => <div key={i} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-emerald-300">
+                {difficulty === 'beginner' && <p className="mb-2 text-xs text-slate-300">{commandPurpose(cmd)}</p>}
+                <div className="flex items-start justify-between gap-2">
+                  <code className="min-w-0 flex-1 select-text whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs leading-5">{cmd}</code>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => void copyCommand(cmd)} aria-label={'Copy command: ' + cmd}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+                </div>
+              </div>)}
+              <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>{!showExample && <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void revealExample()}>Reveal worked commands</Button>}</div>
+              <p className="text-[11px] text-muted-foreground">Copy only. Review commands before running them. Revealing an example records help used.</p>
+            </div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
             <summary className="cursor-pointer text-sm font-semibold">Modules &amp; missions · {completedCount}/3 verified</summary>
             <div className="mt-3 space-y-2" aria-label="Docker learning modules">
               {DOCKER_LEARNING_MODULES.map((module, moduleIndex) => {
@@ -386,32 +399,6 @@ export default function AcademyMissionControl() {
             <div className="mt-3"><DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} /></div>
           </details>
 
-          <details className="rounded-xl border bg-card p-3">
-            <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
-            <div className="mt-3 space-y-3">
-              <p className="text-xs text-muted-foreground">Work through the task in your own way. These commands are optional examples, not automatic actions.</p>
-              {mission.commands.map((cmd,i) => <div key={i} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-emerald-300">
-                <div className="flex items-start justify-between gap-2">
-                  <code className="min-w-0 flex-1 select-text break-all font-mono text-xs leading-5">{cmd}</code>
-                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => void copyCommand(cmd)} aria-label={'Copy command: ' + cmd}><Copy className="h-3.5 w-3.5" /> Copy</Button>
-                </div>
-              </div>)}
-              <Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>
-            </div>
-          </details>
-
-          <details className="rounded-xl border bg-card p-3">
-            <summary className="cursor-pointer text-sm font-semibold">Coaching level</summary>
-            <div className="mt-3 space-y-2">
-              <label htmlFor="mission-difficulty" className="text-xs font-medium">How much help would you like?</label>
-              <select id="mission-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value as MissionDifficulty)} className="w-full rounded-md border bg-background p-2 text-sm">
-                <option value="beginner">Beginner — direct support</option>
-                <option value="intermediate">Intermediate — guided diagnosis</option>
-                <option value="advanced">Advanced — limited hints</option>
-              </select>
-              <p className="text-xs text-muted-foreground">All levels use the same trusted practical verification.</p>
-            </div>
-          </details>
           <p className="px-2 text-xs leading-5 text-muted-foreground">Your achievements and notes survive lab expiry. A fresh machine requires recreating the practical deployment. <Link href="/academy/learn/docker/simulator" className="underline">Optional visual practice</Link></p>
         </aside>
       </div>

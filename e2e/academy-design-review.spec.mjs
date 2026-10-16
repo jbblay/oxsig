@@ -4,6 +4,50 @@ const baseURL = 'http://127.0.0.1:3100';
 const labId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const lab = { id: labId, slug: 'ubuntu-security-lab', name: 'Review Linux', status: 'running', expiresAt: '2099-01-01T00:00:00Z' };
 const catalog = [{ slug: lab.slug, platform: 'linux', launchSurface: 'cyber-lab' }];
+
+test('coaching levels reveal help deliberately without awarding practical success', async ({ page, context }, info) => {
+  test.setTimeout(90000);
+  await login(context);
+  await page.setViewportSize({ width: 390, height: 960 });
+  let helpRequests = 0;
+  let verificationRequests = 0;
+  await page.route('**/api/academy/missions', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { progress: [] } });
+    const body = route.request().postDataJSON();
+    if (body.action === 'hint') {
+      helpRequests++;
+      return route.fulfill({ json: { progress: { missionId: 'deploy', hintsUsed: helpRequests, verifiedAt: null, checks: [] } } });
+    }
+    if (body.action === 'verify') verificationRequests++;
+    return route.fulfill({ status: 503, json: { error: 'Not available in this fixture' } });
+  });
+  await page.route('**/api/labs/reconcile', route => route.fulfill({ json: {} }));
+  await page.route('**/api/labs', route => route.fulfill({ json: { instances: [], catalog, capabilities: { configured: true, supportsTerminal: true } } }));
+  await page.goto('/academy/learn/docker');
+  await expect(page.getByRole('button', { name: 'Show mission panel' })).toBeVisible();
+  await page.getByLabel('Coaching level', { exact: true }).selectOption('advanced');
+  await page.getByRole('button', { name: 'Show mission panel' }).click();
+  await page.getByText('Guidance and suggested commands', { exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Docker mission guidance' });
+  await expect(panel.getByRole('button', { name: /^Copy command:/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Reveal worked commands' }).click();
+  await expect(panel.getByRole('button', { name: /^Copy command: docker run/ })).toBeVisible();
+  expect(helpRequests).toBe(1);
+  expect(verificationRequests).toBe(0);
+  await page.getByRole('button', { name: 'Close mission panel' }).click();
+  await page.getByLabel('Coaching level', { exact: true }).selectOption('beginner');
+  await page.getByRole('button', { name: 'Show mission panel' }).click();
+  await expect(panel.getByText('Check that Docker is running and accessible.')).toBeVisible();
+  await expect(panel.getByRole('button', { name: /^Copy command: docker run/ })).toHaveCount(0);
+  await panel.getByText('Check that Docker is running and accessible.').scrollIntoViewIfNeeded();
+  await screenshot(page, info, 'beginner-coaching-mobile');
+  await page.getByRole('button', { name: 'Close mission panel' }).click();
+  await page.getByLabel('Coaching level', { exact: true }).selectOption('intermediate');
+  await page.getByRole('button', { name: 'Show mission panel' }).click();
+  await expect(panel.getByText('Form a hypothesis, inspect the evidence, then test one change.')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 async function login(context) {
   await context.addCookies([{ name: 'oxsig-e2e-user', value: 'account-a', url: baseURL, sameSite: 'Lax' }]);
 }
@@ -45,10 +89,10 @@ for (const width of [1440, 390]) {
     await page.getByRole('link', { name: /DevOps & Cloud.*Open career roadmap/ }).click();
     await expect(page).toHaveURL(/\/academy\/learn\/devops$/);
     const nodes = page.locator('.academy-roadmap__node');
-    await expect(nodes).toHaveCount(4);
+    await expect(nodes).toHaveCount(13);
     const geometry = await nodes.evaluateAll(elements => elements.map(el => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, top: r.top, bottom: r.bottom }; }));
     expect(Math.max(...geometry.map(r => r.x)) - Math.min(...geometry.map(r => r.x))).toBeLessThan(1);
-    await expect(page.locator('.academy-roadmap__connector')).toHaveCount(3);
+    await expect(page.locator('.academy-roadmap__connector')).toHaveCount(12);
     const rails = await page.locator('.academy-roadmap__connector').evaluateAll(elements => elements.map(el => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, top: r.top, bottom: r.bottom }; }));
     for (let i = 0; i < rails.length; i++) {
       expect(Math.abs(rails[i].x - geometry[i].x)).toBeLessThan(1);
@@ -75,8 +119,9 @@ for (const width of [1440, 390]) {
       await screenshot(page, info, `workspace-${width}`);
       await page.getByRole('button', { name: 'Show mission panel' }).click();
     }
-    await expect(panel.getByRole('button', { name: /First Deployment.*Ready to practice/ })).toBeVisible();
     await screenshot(page, info, width < 1024 ? 'mission-panel-mobile' : 'workspace-desktop');
+    await panel.getByText('Modules & missions · 0/3 verified', { exact: true }).click();
+    await expect(panel.getByRole('button', { name: /First Deployment.*Ready to practice/ })).toBeVisible();
     await panel.getByText('Guidance and suggested commands', { exact: true }).click();
     await panel.getByRole('button', { name: 'Copy command: docker info', exact: true }).click();
     expect(await page.evaluate(() => window.__copiedCommand)).toBe('docker info');
