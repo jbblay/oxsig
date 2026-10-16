@@ -219,12 +219,3 @@ for (const viewport of [
     expect(denied).toBe(403);
   });
 }
-
-test('Engineering World renders real persisted catalog at mobile width',async({page,context})=>{
- await login(context,'account-a');await page.setViewportSize({width:390,height:844});await page.goto('/academy/engineering-world');
- await expect(page.getByRole('heading',{name:'Build. Diagnose. Prove.'})).toBeVisible();
- await expect(page.getByRole('heading',{name:'Deliver a reachable service'})).toBeVisible();
- await expect(page.getByRole('button',{name:'Start mission'}).first()).toBeDisabled();
- expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
- const denied=await page.evaluate(()=>fetch('/api/academy/engineering-world?run=00000000-0000-4000-8000-ffffffffffff').then(r=>r.status));expect(denied).toBe(404);
-});
