@@ -293,6 +293,44 @@ try {
     await client.query(flightSql,[missionRun.rows[0].id,applicant]);
     await expectViolation('duplicate flight recorder sequence',flightSql,[missionRun.rows[0].id,applicant],'23505');
 
+    // Phase 5: real PostgreSQL constraints on SIMULATED transactions only.
+    const sandboxCheckout = await client.query(
+      `INSERT INTO sandbox_checkouts(owner_id,request_id,product_type,product_id,price_cents)
+       VALUES($1,'11111111-1111-4111-8111-111111111111','credit_pack','starter',200) RETURNING id`,
+      [applicant]
+    );
+    const checkoutId = sandboxCheckout.rows[0].id;
+    await expectViolation('replayed demo checkout',
+      `INSERT INTO sandbox_checkouts(owner_id,request_id,product_type,product_id,price_cents)
+       VALUES($1,'11111111-1111-4111-8111-111111111111','credit_pack','starter',200)`,[applicant],'23505');
+    await expectViolation('real payment processor name',
+      `INSERT INTO sandbox_checkouts(owner_id,request_id,product_type,product_id,price_cents,processor)
+       VALUES($1,'22222222-2222-4222-8222-222222222222','plan','plus',800,'stripe')`,[applicant],'23514');
+    await client.query(
+      `INSERT INTO sandbox_credit_entries(owner_id,request_id,delta,reason,checkout_id)
+       VALUES($1,'33333333-3333-4333-8333-333333333333',100,'simulated_checkout',$2)`,[applicant,checkoutId]
+    );
+    await expectViolation('duplicate sandbox credit award',
+      `INSERT INTO sandbox_credit_entries(owner_id,request_id,delta,reason,checkout_id)
+       VALUES($1,'33333333-3333-4333-8333-333333333333',100,'simulated_checkout',$2)`,[applicant,checkoutId],'23505');
+    await expectViolation('redemption with positive delta',
+      `INSERT INTO sandbox_credit_entries(owner_id,request_id,delta,reason)
+       VALUES($1,'44444444-4444-4444-8444-444444444444',10,'simulated_redemption')`,[applicant],'23514');
+    await client.query(
+      `INSERT INTO sandbox_subscriptions(owner_id,plan_id,ends_at,checkout_id)
+       VALUES($1,'plus',NOW()+INTERVAL '30 days',$2)`,[applicant,checkoutId]
+    );
+    await client.query(
+      `INSERT INTO sandbox_mentor_earnings(mentor_id,session_id,amount_cents) VALUES($1,$2,200)`,
+      [applicant,sessionRow.rows[0].id]
+    );
+    await expectViolation('double mentor earning from one session',
+      `INSERT INTO sandbox_mentor_earnings(mentor_id,session_id,amount_cents) VALUES($1,$2,200)`,
+      [applicant,sessionRow.rows[0].id],'23505');
+    await expectViolation('real amount in fixed simulation',
+      `UPDATE sandbox_mentor_earnings SET amount_cents=300 WHERE session_id=$1`,
+      [sessionRow.rows[0].id],'23514');
+
     await client.query('DELETE FROM users WHERE id = $1', [reviewer]);
     const afterReviewer = await client.query(
       `SELECT application.decided_by, profile.approved_by,
@@ -323,6 +361,13 @@ try {
       [applicant]
     );
     if (Number(mentorLeft.rows[0].remaining) !== 0) fail('deleting a mentor account left mentor rows behind');
+    const sandboxRemaining = await client.query(
+      `SELECT (SELECT COUNT(*) FROM sandbox_checkouts WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM sandbox_subscriptions WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM sandbox_credit_entries WHERE owner_id=$1)
+            + (SELECT COUNT(*) FROM sandbox_mentor_earnings WHERE mentor_id=$1) AS remaining`,[applicant]
+    );
+    if (Number(sandboxRemaining.rows[0].remaining) !== 0) fail('deleting a mentor account left sandbox data behind');
     const learnerHistory = await client.query(
       `SELECT mentor_id FROM mentorship_sessions WHERE learner_id=$1`,
       [invitee]

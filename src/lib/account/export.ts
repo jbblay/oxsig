@@ -8,6 +8,10 @@ import type { Pool } from 'pg';
  * is returned verbatim so the export is a faithful copy of their OXSIG record.
  */
 const EXPORT_SOURCES: Array<{ key: string; table: string; ownerColumn: string; orderBy: string; omit?: string[] }> = [
+  { key: 'sandboxCheckouts', table: 'sandbox_checkouts', ownerColumn: 'owner_id', orderBy: 'created_at' },
+  { key: 'sandboxSubscriptions', table: 'sandbox_subscriptions', ownerColumn: 'owner_id', orderBy: 'updated_at' },
+  { key: 'sandboxLearningCredits', table: 'sandbox_credit_entries', ownerColumn: 'owner_id', orderBy: 'created_at' },
+  { key: 'sandboxMentorEarnings', table: 'sandbox_mentor_earnings', ownerColumn: 'mentor_id', orderBy: 'created_at' },
   { key: 'missionRuns', table: 'academy_mission_runs', ownerColumn: 'owner_id', orderBy: 'created_at', omit: ['lab_instance_id'] },
   { key: 'flightRecorder', table: 'academy_flight_events', ownerColumn: 'owner_id', orderBy: 'created_at' },
   { key: 'labs', table: 'lab_instances', ownerColumn: 'owner_id', orderBy: 'created_at', omit: ['runtime_external_id'] },
