@@ -57,6 +57,7 @@ async function getControlAccess(
        AND c.collaboration_type = 'live-workspace'
        AND c.status = 'active'
        AND lw.status = 'active'
+       AND (lw.expires_at IS NULL OR lw.expires_at > NOW())
        AND (c.owner_id = $2 OR cm.status = 'active')
      LIMIT 1`,
     [collaborationId, userId]
@@ -332,7 +333,11 @@ export async function approveControlRequest(args: {
       `INSERT INTO live_workspace_control_leases (
          request_id, collaboration_id, participant_id, resource_binding_id, lab_instance_id,
          surface, granted_by, status, expires_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',NOW() + ($8 * INTERVAL '1 minute'))
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',LEAST(
+         NOW() + ($8 * INTERVAL '1 minute'),
+         -- Time-limited rooms (Rescue Rooms) never grant control past their end.
+         (SELECT COALESCE(room.expires_at, 'infinity'::timestamptz) FROM live_workspaces room WHERE room.collaboration_id=$2)
+       ))
        RETURNING id, request_id, participant_id, resource_binding_id, lab_instance_id, surface,
                  granted_by, status, granted_at, expires_at, revoked_at, revoked_by, revocation_reason`,
       [args.requestId, args.collaborationId, request.participant_id, request.resource_binding_id,
@@ -514,6 +519,7 @@ export async function getActiveControlLease(args: {
             COALESCE(resource.metadata->>'label', 'Cyber Lab') AS lab_label
      FROM live_workspace_control_leases lease
      JOIN live_workspaces workspace ON workspace.collaboration_id = lease.collaboration_id AND workspace.status='active'
+      AND (workspace.expires_at IS NULL OR workspace.expires_at > NOW())
      JOIN collaborations c ON c.id = lease.collaboration_id AND c.status='active' AND c.collaboration_type='live-workspace'
      JOIN live_workspace_resources resource
        ON resource.id = lease.resource_binding_id

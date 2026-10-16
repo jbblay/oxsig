@@ -126,6 +126,7 @@ export async function getLiveWorkspaceAccess(
        AND c.collaboration_type = 'live-workspace'
        AND c.status = 'active'
        AND lw.status = 'active'
+       AND (lw.expires_at IS NULL OR lw.expires_at > NOW())
        AND (c.owner_id = $2 OR cm.status = 'active')
      LIMIT 1`,
     [collaborationId, userId]

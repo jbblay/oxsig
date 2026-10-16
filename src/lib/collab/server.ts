@@ -26,9 +26,13 @@ export async function getCollaborationAccess(
        ON cm.collaboration_id = c.id
       AND cm.user_id = $1
       AND cm.status = 'active'
+     LEFT JOIN live_workspaces lw
+       ON lw.collaboration_id = c.id
      WHERE c.id = $2
        AND c.status = 'active'
        AND (c.owner_id = $1 OR cm.user_id = $1)
+       -- Members of a time-limited room (Rescue Room) lose access when it expires.
+       AND (c.owner_id = $1 OR lw.expires_at IS NULL OR lw.expires_at > NOW())
      LIMIT 1`,
     [userId, collaborationId]
   );

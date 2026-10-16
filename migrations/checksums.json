@@ -61,6 +61,7 @@
     "058_identity_lifecycle_and_schema_drift_repair.sql": "d8e5b21ef42eff4d9359e19d8f8aebec33ea07dda3c941e6dd17b49d16284f88",
     "059_board_live_streams.sql": "9aa9ae23fb41875249d9cc6adb0c295406e3916b241c11cf9feb5b492f7e71d4",
     "060_academy_mission_control.sql": "8972e816191145038306f76bd70e9b2e7d09911ee31a835642dc4bf229f08922",
-    "061_mentor_foundation.sql": "c197f0ee49fc48c818decb84433932b5458d90052fe4fd7e10b119035606381a"
+    "061_mentor_foundation.sql": "c197f0ee49fc48c818decb84433932b5458d90052fe4fd7e10b119035606381a",
+    "062_free_mentorship.sql": "24919ae2b231f9f930557db03dfa67fbbbac65089328a0564b34b5f49871947b"
   }
 }
