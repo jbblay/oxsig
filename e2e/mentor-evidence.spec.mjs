@@ -130,10 +130,17 @@ for (const viewport of [
     }));
     expect(refreshedState.applications?.map(x=>x.id),'Browser refresh has different owner or stale data')
       .toContain(app.rows[0].id);
-    const option = page.getByLabel("Application", { exact: true })
-      .locator('option[value="'+app.rows[0].id+'"]');
-    await expect(option, 'Rendered application selector did not receive API data').toHaveCount(1, { timeout: 30000 });
-    await page.getByLabel("Application", { exact: true }).selectOption(app.rows[0].id);
+    // Inspect the actual select, independently of how nested label text is named.
+    const applicationSelect = page.locator('select[name="applicationId"]');
+    const optionsBefore = await applicationSelect.locator('option').evaluateAll(items =>
+      items.map(item => ({value:item.value,text:item.textContent})));
+    console.log('[E2E selector diagnostics]', JSON.stringify({optionsBefore,
+      selectCount:await applicationSelect.count(),
+      labels:await page.locator('label').allTextContents()}));
+    await expect(applicationSelect).toBeVisible();
+    await expect(applicationSelect.locator('option[value="'+app.rows[0].id+'"]'),
+      'Rendered application selector did not receive API data').toHaveCount(1, {timeout:30000});
+    await applicationSelect.selectOption(app.rows[0].id);
     await page
       .getByLabel("Your guided explanation")
       .fill(
