@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, CheckCircle2, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Wrench } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, Copy, X, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import DockerLabAccess from './DockerLabAccess';
 import DockerConcept, { type ConceptRecord } from './DockerConcept';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { DOCKER_LEARNING_MODULES } from '@/lib/academy/roadmap-catalog';
 import { DOCKER_CHECKS, DOCKER_MISSIONS, MISSION_IDS, type DockerMissionId, type MissionDifficulty } from '@/lib/academy/docker-missions';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
@@ -27,7 +28,7 @@ type Progress = ConceptRecord & {
 };
 type Lab = { id: string; name: string; status: string; slug: string };
 type MentorEntry = { who: 'learner' | 'mentor'; text: string };
-type Panel = 'terminal' | 'mentor' | 'notes' | 'verify';
+type Panel = 'terminal' | 'notes' | 'verify';
 
 const HINTS: Record<DockerMissionId, string[]> = {
   deploy: [
@@ -61,6 +62,7 @@ export default function AcademyMissionControl() {
   const [difficulty, setDifficulty] = React.useState<MissionDifficulty>('beginner');
   const [panel, setPanel] = React.useState<Panel>('terminal');
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [mentorOpen, setMentorOpen] = React.useState(false);
   const [notes, setNotes] = React.useState('');
   const [question, setQuestion] = React.useState('');
   const [messages, setMessages] = React.useState<MentorEntry[]>([]);
@@ -126,6 +128,15 @@ export default function AcademyMissionControl() {
     return response.json();
   }
 
+  async function copyCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success('Command copied. Paste it into your terminal when you are ready.');
+    } catch {
+      toast.error('Copy is unavailable in this browser. Select the command text to copy it.');
+    }
+  }
+
   async function saveNotes() {
     setBusy('notes');
     try {
@@ -148,7 +159,7 @@ export default function AcademyMissionControl() {
           ? HINTS[mission.id][n]
           : HINTS[mission.id][n];
       setMessages(old => [...old, { who: 'mentor', text }]);
-      setPanel('mentor');
+      setMentorOpen(true);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Hint unavailable'); }
     finally { setBusy(null); }
   }
@@ -251,30 +262,13 @@ export default function AcademyMissionControl() {
           </Card>
 
           <div className="flex flex-wrap items-center gap-2" aria-label="Workspace tools">
-            <Button size="sm" variant={panel === 'mentor' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'mentor' ? 'terminal' : 'mentor')} aria-pressed={panel === 'mentor'}><MessageCircle className="h-4 w-4" /> AI mentor</Button>
+            <Button size="sm" variant={mentorOpen ? 'default' : 'outline'} onClick={() => setMentorOpen(value => !value)} aria-pressed={mentorOpen}><MessageCircle className="h-4 w-4" /> AI mentor</Button>
             <Button size="sm" variant={panel === 'notes' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'notes' ? 'terminal' : 'notes')} aria-pressed={panel === 'notes'}><NotebookPen className="h-4 w-4" /> Notes</Button>
             <Button size="sm" variant={panel === 'verify' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'verify' ? 'terminal' : 'verify')} aria-pressed={panel === 'verify'}><ClipboardCheck className="h-4 w-4" /> Results</Button>
             <Button size="sm" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
               {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Check progress
             </Button>
           </div>
-
-          {panel === 'mentor' && <Card>
-            <CardHeader><CardTitle className="text-base">AI mentor</CardTitle><CardDescription>Ask about the current mission, Docker concepts or a result you observed. AI guidance cannot award practical completion.</CardDescription></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg bg-muted/40 p-3" aria-live="polite">
-                {messages.length === 0 && <p className="text-xs text-muted-foreground">Try: “My container runs but the website doesn't open. What should I check?”</p>}
-                {messages.map((msg,i) => <div key={i} className="text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap">{msg.text}</p></div>)}
-              </div>
-              <Textarea value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="What did you try? What happened?" />
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Ask mentor</Button>
-                <Button variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Progressive hint</Button>
-                <Button variant="ghost" disabled={busy !== null} onClick={() => void askMentor(true)}>Teach me directly</Button>
-              </div>
-              <p className="text-xs text-muted-foreground">Assistance requests: {record?.hintsUsed || 0}. Asking for help does not reduce practice XP. Commands are not executed by this chat.</p>
-            </CardContent>
-          </Card>}
 
           {panel === 'notes' && <Card>
             <CardHeader><CardTitle className="text-base">Engineering notes</CardTitle><CardDescription>Save your investigation and reasoning to your account.</CardDescription></CardHeader>
@@ -330,17 +324,35 @@ export default function AcademyMissionControl() {
             </CardContent>
           </Card>
 
-          <details className="rounded-xl border bg-card p-3">
-            <summary className="cursor-pointer text-sm font-semibold">Missions · {completedCount} of 3 complete</summary>
-            <div className="mt-3 space-y-2" aria-label="Docker mission progression">
-              {DOCKER_MISSIONS.map((item,index) => {
-                const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
-                const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index-1])?.verifiedAt);
-                return <button key={item.id} type="button" disabled={!available} onClick={() => selectMission(index)} aria-current={selected === index ? 'step' : undefined}
-                  className={'flex w-full items-start gap-2 rounded-lg border p-2 text-left text-xs transition ' + (selected === index ? 'border-primary bg-primary/5' : 'hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-50' : '')}>
-                  {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : available ? <Circle className="h-4 w-4 shrink-0" /> : <LockKeyhole className="h-4 w-4 shrink-0" />}
-                  <span><span className="block font-medium">Mission {item.number}: {item.title}</span><span className="block text-muted-foreground">{done ? 'Verified' : available ? 'Available' : 'Locked until previous mission is verified'}</span></span>
-                </button>;
+          <details className="rounded-xl border bg-card p-3" open>
+            <summary className="cursor-pointer text-sm font-semibold">Modules &amp; missions · {completedCount}/3 verified</summary>
+            <div className="mt-3 space-y-2" aria-label="Docker learning modules">
+              {DOCKER_LEARNING_MODULES.map((module, moduleIndex) => {
+                const moduleDone = Boolean(module.missionIds?.length) && module.missionIds!.every(id => Boolean(progress.find(p => p.missionId === id)?.verifiedAt));
+                const activeModule = Boolean(module.missionIds?.includes(mission.id));
+                return <details key={module.id} className={'rounded-lg border p-2 ' + (activeModule ? 'border-primary/50 bg-primary/5' : 'bg-background')}>
+                  <summary className="cursor-pointer text-xs font-semibold">
+                    <span className="inline-flex items-center gap-2">
+                      {moduleDone ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : activeModule ? <Circle className="h-4 w-4 text-rose-500" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
+                      Module {moduleIndex+1}: {module.title}
+                    </span>
+                  </summary>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{module.summary}</p>
+                  <div className="mt-2 space-y-2">
+                    {(module.missionIds || []).map(missionId => {
+                      const index = MISSION_IDS.indexOf(missionId);
+                      const item = DOCKER_MISSIONS[index];
+                      if (!item) return null;
+                      const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
+                      const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index-1])?.verifiedAt);
+                      return <button key={missionId} type="button" disabled={!available} onClick={() => selectMission(index)} aria-current={selected === index ? 'step' : undefined}
+                        className={'flex w-full items-center gap-2 rounded-md border p-2 text-left text-xs transition ' + (selected === index ? 'border-primary bg-primary/10' : 'hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-50' : '')}>
+                        {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : available ? <Circle className="h-4 w-4 shrink-0" /> : <LockKeyhole className="h-4 w-4 shrink-0" />}
+                        <span>{item.title}<span className="block text-[11px] text-muted-foreground">{done ? 'Verified' : available ? 'Ready to practice' : 'Complete the previous mission first'}</span></span>
+                      </button>;
+                    })}
+                  </div>
+                </details>;
               })}
             </div>
           </details>
@@ -354,7 +366,12 @@ export default function AcademyMissionControl() {
             <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
             <div className="mt-3 space-y-3">
               <p className="text-xs text-muted-foreground">Work through the task in your own way. These commands are optional examples, not automatic actions.</p>
-              {mission.commands.filter(cmd => /^(docker (info|ps|port|logs)|curl)/.test(cmd)).map((cmd,i) => <div key={i} className="break-all rounded-md bg-muted p-2 font-mono text-xs">{cmd}</div>)}
+              {mission.commands.map((cmd,i) => <div key={i} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-emerald-300">
+                <div className="flex items-start justify-between gap-2">
+                  <code className="min-w-0 flex-1 select-text break-all font-mono text-xs leading-5">{cmd}</code>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 border border-slate-600 text-slate-200 hover:bg-slate-800 hover:text-white" onClick={() => void copyCommand(cmd)} aria-label={'Copy command: ' + cmd}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+                </div>
+              </div>)}
               <Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>
             </div>
           </details>
@@ -373,6 +390,32 @@ export default function AcademyMissionControl() {
           </details>
           <p className="px-2 text-xs leading-5 text-muted-foreground">Your achievements and notes survive lab expiry. A fresh machine requires recreating the practical deployment. <Link href="/academy/learn/docker/simulator" className="underline">Optional visual practice</Link></p>
         </aside>
+      </div>
+      <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6">
+        {mentorOpen && <section id="academy-mentor-chat" aria-label="AI mentor chat" className="flex max-h-[min(72vh,580px)] w-[min(92vw,385px)] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-2xl">
+          <div className="flex items-center justify-between border-b bg-primary/5 px-4 py-3">
+            <div className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="h-4 w-4 text-primary" /> OXSIG AI mentor</div>
+            <Button type="button" size="sm" variant="ghost" aria-label="Close AI mentor" onClick={() => setMentorOpen(false)}><X className="h-4 w-4" /></Button>
+          </div>
+          <p className="px-4 pt-3 text-xs text-muted-foreground">Ask about Mission {mission.number}. The mentor gives guidance but cannot certify lab results or execute commands.</p>
+          <div className="mt-2 min-h-[95px] flex-1 space-y-3 overflow-y-auto px-4 py-2" aria-live="polite">
+            {messages.length === 0 && <p className="text-sm text-muted-foreground">What is confusing, or what did you observe in the terminal?</p>}
+            {messages.map((msg,i) => <div key={i} className="rounded-lg bg-muted/50 p-2 text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap">{msg.text}</p></div>)}
+          </div>
+          <div className="space-y-2 border-t p-3">
+            <label className="sr-only" htmlFor="docker-mentor-question">Ask the AI mentor</label>
+            <Textarea id="docker-mentor-question" rows={2} value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="Ask about your mission…" />
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />} Send</Button>
+              <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void showHint()}>Get hint</Button>
+              <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void askMentor(true)}>Explain</Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Assistance used: {record?.hintsUsed || 0}. Practice scores do not decrease for asking for help.</p>
+          </div>
+        </section>}
+        <Button type="button" aria-controls="academy-mentor-chat" aria-expanded={mentorOpen} aria-label={mentorOpen ? 'Hide AI mentor' : 'Open AI mentor'} onClick={() => setMentorOpen(value => !value)} className="h-12 rounded-full px-4 shadow-lg shadow-primary/25">
+          <MessageCircle className="h-5 w-5" /> <span className="text-sm">AI help</span>
+        </Button>
       </div>
     </div>
   );
