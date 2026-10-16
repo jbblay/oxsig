@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, CheckCircle2, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Trophy, Wrench } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, Circle, ClipboardCheck, LockKeyhole, Loader2, MessageCircle, NotebookPen, ShieldCheck, Terminal, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import DockerLabAccess from './DockerLabAccess';
 import DockerConcept, { type ConceptRecord } from './DockerConcept';
