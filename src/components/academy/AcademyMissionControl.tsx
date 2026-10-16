@@ -335,7 +335,7 @@ export default function AcademyMissionControl() {
                 <Button className="w-full" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
                   {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Verify with real lab
                 </Button>
-                <p className="text-[11px] leading-4 text-muted-foreground">Verified on your real lab.</p>
+                <p className="text-[11px] leading-4 text-muted-foreground">Checks use your real lab.</p>
               </div>
             </CardContent>
           </Card>
