@@ -278,3 +278,42 @@ body > * {
 
 }
 
+
+
+/* OXSIG Academy vertical skill roadmap: active red beam, verified green nodes. */
+.academy-roadmap__node--active {
+  box-shadow: 0 0 0 8px rgba(244, 63, 94, 0.08), 0 0 24px rgba(251, 113, 133, 0.7), inset 0 0 22px rgba(225, 29, 72, 0.3);
+  animation: academy-node-heartbeat 2.8s ease-in-out infinite;
+}
+.academy-roadmap__node--complete {
+  box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.06), 0 0 23px rgba(74, 222, 128, 0.45);
+}
+.academy-roadmap__connector--active {
+  box-shadow: 0 0 12px rgba(251, 113, 133, 0.42);
+}
+.academy-roadmap__connector--complete {
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.32);
+}
+.academy-roadmap__beam {
+  background: linear-gradient(180deg, transparent 0%, rgba(251, 113, 133, 0.2) 20%, #fda4af 48%, #fb7185 60%, transparent 100%);
+  background-size: 100% 190%;
+  animation: academy-beam-flow 1.6s linear infinite;
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.8);
+}
+@keyframes academy-node-heartbeat {
+  0%, 100% { box-shadow: 0 0 0 8px rgba(244, 63, 94, 0.08), 0 0 20px rgba(251, 113, 133, 0.55), inset 0 0 22px rgba(225, 29, 72, 0.3); }
+  50% { box-shadow: 0 0 0 11px rgba(244, 63, 94, 0.09), 0 0 36px rgba(251, 113, 133, 0.8), inset 0 0 28px rgba(225, 29, 72, 0.38); }
+}
+@keyframes academy-beam-flow {
+  0% { background-position: 0% -100%; }
+  100% { background-position: 0% 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .academy-roadmap__node--active,
+  .academy-roadmap__beam {
+    animation: none;
+  }
+  .academy-roadmap__beam {
+    background: #fb7185;
+  }
+}
