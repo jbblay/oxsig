@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { DOCKER_MISSIONS, MISSION_IDS, type DockerMissionId, type MissionDifficulty } from '@/lib/academy/docker-missions';
+import { DOCKER_CHECKS, DOCKER_MISSIONS, MISSION_IDS, type DockerMissionId, type MissionDifficulty } from '@/lib/academy/docker-missions';
 import { getCsrfToken } from '@/lib/security/csrf-client';
 
 type Check = { key: string; label: string; passed: boolean };
@@ -60,6 +60,7 @@ export default function AcademyMissionControl() {
   const [selected, setSelected] = React.useState(0);
   const [difficulty, setDifficulty] = React.useState<MissionDifficulty>('beginner');
   const [panel, setPanel] = React.useState<Panel>('terminal');
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [notes, setNotes] = React.useState('');
   const [question, setQuestion] = React.useState('');
   const [messages, setMessages] = React.useState<MentorEntry[]>([]);
@@ -73,6 +74,14 @@ export default function AcademyMissionControl() {
   const unlocked = selected === 0 || Boolean(progress.find(item => item.missionId === MISSION_IDS[selected - 1])?.verifiedAt);
   const completedCount = progress.filter(item => item.verifiedAt).length;
   const lab = labs.find(item => item.id === labId);
+  // Show expected acceptance criteria even before the learner requests verification.
+  // Only the server-observed checks can turn a requirement green.
+  const observedChecks = lastChecks || (record?.checks?.length ? record.checks : []);
+  const taskChecks = DOCKER_CHECKS[mission.id].map(expected => ({
+    ...expected,
+    passed: Boolean(observedChecks.find(check => check.key === expected.key)?.passed),
+  }));
+  const verifiedTaskCount = taskChecks.filter(check => check.passed).length;
 
   const refresh = React.useCallback(async () => {
     const stateResponse = await fetch('/api/academy/missions', { cache: 'no-store' });
@@ -189,131 +198,182 @@ export default function AcademyMissionControl() {
   if (error) return <Card><CardHeader><CardTitle>Mission Control is unavailable</CardTitle><CardDescription>{error}</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => { setBusy('loading'); setError(null); void refresh().catch(e => setError(String(e))).finally(() => setBusy(null)); }}>Retry</Button></CardContent></Card>;
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-4 pb-8">
-      <header className="rounded-2xl border bg-gradient-to-r from-primary/10 via-background to-background p-5">
-        <div className="flex flex-wrap justify-between gap-4">
-          <div className="space-y-2">
-            <Badge variant="secondary"><Trophy className="mr-1 h-3 w-3" /> Mission-based learning</Badge>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Docker learning workspace</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">You have joined an engineering team. Your assignment is to launch a web service inside a Docker container and prove that it is reachable.</p>
+    <div className="mx-auto max-w-[1700px] min-w-0 space-y-3 pb-8">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/70 p-3 sm:px-4">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            <Link href="/academy/learn/devops" className="hover:text-foreground">DevOps &amp; Cloud</Link>
+            <span aria-hidden="true">/</span>
+            <span>Docker</span>
           </div>
-          <div className="rounded-xl border bg-background/80 p-3 text-right">
-            <div className="text-2xl font-bold">{completedCount * 100} XP</div>
-            <div className="text-xs text-muted-foreground">{completedCount}/3 missions verified</div>
-          </div>
+          <h1 className="text-lg font-bold tracking-tight sm:text-xl">Docker Workspace</h1>
+          <p className="text-xs text-muted-foreground">Mission {mission.number}: {mission.title} · {completedCount}/3 missions verified</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={dockerReady ? 'default' : 'outline'}>{dockerReady ? 'Docker ready' : 'Environment not ready'}</Badge>
+          <Button type="button" size="sm" variant="outline" aria-expanded={sidebarOpen} aria-controls="docker-mission-sidebar" onClick={() => setSidebarOpen(value => !value)}>
+            <BookOpen className="h-4 w-4" /> {sidebarOpen ? 'Hide mission panel' : 'Show mission panel'}
+          </Button>
         </div>
       </header>
 
-      <DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} />
-      <p className="text-xs text-muted-foreground">Your verified achievements, concept explanations and saved notes are retained in your account. Resume below; a fresh machine requires recreating the practical deployment.</p>
-      <section className="grid gap-3 md:grid-cols-3" aria-label="Docker mission progression">
-        {DOCKER_MISSIONS.map((item, index) => {
-          const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
-          const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index - 1])?.verifiedAt);
-          return <button key={item.id} type="button" disabled={!available} onClick={() => selectMission(index)}
-            className={'rounded-xl border p-4 text-left transition ' + (selected === index ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-60' : '')}>
-            <div className="mb-2 flex items-center justify-between">
-              <Badge variant="outline">Mission {item.number}</Badge>
-              {done ? <CheckCircle2 className="h-4 w-4 text-primary" /> : available ? <Circle className="h-4 w-4 text-muted-foreground" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
-            </div>
-            <div className="font-semibold">{item.title}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{item.category} · {done ? 'Verified' : available ? 'Available' : 'Locked'}</div>
-          </button>;
-        })}
-      </section>
+      <div className={sidebarOpen ? 'grid min-w-0 items-start gap-3 xl:grid-cols-[minmax(0,1fr)_340px]' : 'grid min-w-0 items-start gap-3'}>
+        <main className="min-w-0 space-y-3" aria-label="Docker learning workbench">
+          <section aria-label="Linux environment controls">
+            <DockerLabAccess onChange={(current, ready) => {
+              setLabs(current ? [current] : []);
+              setLabId(current?.id || '');
+              setDockerReady(ready);
+            }} />
+          </section>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Mission {mission.number}: {mission.title}</CardTitle><CardDescription>{mission.ticket}</CardDescription></CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm font-medium">{mission.objective}</p>
-              <div className="space-y-1">
-                <label htmlFor="mission-difficulty" className="text-xs font-semibold">Coaching difficulty</label>
-                <select id="mission-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value as MissionDifficulty)} className="w-full rounded-md border bg-background p-2 text-sm">
-                  <option value="beginner">Beginner — direct support</option>
-                  <option value="intermediate">Intermediate — guided diagnosis</option>
-                  <option value="advanced">Advanced — limited hints</option>
-                </select>
-                <p className="text-[11px] text-muted-foreground">Difficulty changes mentoring, not the verification standard.</p>
-              </div>
-              <DockerLabAccess onChange={(current, ready) => {
-                setLabs(current ? [current] : []);
-                setLabId(current?.id || '');
-                setDockerReady(ready);
-              }} />
-              {mission.id === 'repair' && !record?.verifiedAt && <Button variant="secondary" className="w-full" onClick={() => void prepareFault()} disabled={!labId || !dockerReady || busy !== null}><Wrench className="h-4 w-4" />{busy === 'prepare' ? 'Seeding incident…' : record?.preparedAt && record.labInstanceId === labId ? 'Reset incident fault' : 'Seed broken deployment'}</Button>}
-              {record?.verifiedAt && <p className="flex items-center gap-2 text-xs text-primary"><ShieldCheck className="h-4 w-4" /> Passed with server-executed evidence</p>}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Objectives & evidence</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {(lastChecks || record?.checks || []).length
-                ? (lastChecks || record?.checks || []).map(check => <div key={check.key} className="flex gap-2 text-xs"><span>{check.passed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-amber-500" />}</span>{check.label}</div>)
-                : <p className="text-xs text-muted-foreground">Run verification to obtain observed checks from the lab.</p>}
-              {(lastChecks || record?.checks || []).some(check => !check.passed) && <p className="text-xs text-amber-600">Check Docker readiness, inspect docker ps and docker port oxsig-academy-web, then test curl http://localhost:18080 in the terminal. Ask for a hint if you need help interpreting the result.</p>}
-              <p className="border-t pt-2 text-[11px] text-muted-foreground">Scores are never awarded for typing a command or asking AI. Only a verified live result counts.</p>
-            </CardContent>
-          </Card>
-        </aside>
+          {actionError && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">{actionError} Refresh the environment status here before trying again.</p>}
 
-        <main className="min-w-0 space-y-4">
-          {actionError && <p role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm">{actionError} Use Refresh status in your environment controls to reconnect or recover.</p>}
-          <div role="tablist" aria-label="Mission tools" className="grid grid-cols-4 gap-2">
-            {([['terminal','Terminal',Terminal],['mentor','AI mentor',MessageCircle],['notes','Notes',NotebookPen],['verify','Tests',ClipboardCheck]] as const).map(([id,label,Icon]) => <Button key={id} role="tab" aria-selected={panel===id} size="sm" variant={panel===id ? 'default' : 'outline'} onClick={() => setPanel(id)}><Icon className="h-4 w-4" /><span className="text-[10px] sm:text-sm">{label}</span></Button>)}
-          </div>
-          <div className={panel === 'terminal' ? '' : 'hidden'}>
-            <Card>
-              <CardHeader><CardTitle className="text-base">Live lab terminal</CardTitle><CardDescription>Commands here execute in your own connected Linux lab, not inside ChatGPT. Use Docker only in an isolated disposable machine.</CardDescription></CardHeader>
-              <CardContent className="space-y-3">
-                {lab ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} /> : <div className="rounded-xl border p-5 text-sm text-muted-foreground">Start or refresh your Linux environment using the controls beside this terminal. Your mission and learning record remain here while it starts.</div>}
-                <div className="space-y-2">
-                  <div className="text-xs font-medium">Suggested investigation commands</div>
-                  {mission.commands.filter(cmd => /^(docker (info|ps|port|logs)|curl)/.test(cmd)).map((cmd,i) => <div key={i} className="break-all rounded-md bg-muted p-2 font-mono text-xs">{cmd}</div>)}
-                  <p className="text-[11px] text-muted-foreground">Suggested commands are examples, not auto-executed. Choose when and what to run.</p>
+          <Card className="min-w-0 overflow-hidden">
+            <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base"><Terminal className="h-4 w-4" /> Linux terminal</CardTitle>
+                  <CardDescription className="mt-1 text-xs">Work directly on your isolated Linux machine. No Cyber Lab navigation required.</CardDescription>
                 </div>
-              </CardContent>
-            </Card>
+                {lab && <Badge variant="outline" className="max-w-full truncate">{lab.name}</Badge>}
+              </div>
+            </CardHeader>
+            <CardContent className="min-w-0 space-y-3 p-2 pt-0 sm:p-4 sm:pt-0">
+              {lab
+                ? <InteractiveSsmTerminal key={lab.id} labInstanceId={lab.id} machineLabel={lab.name} />
+                : <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border bg-muted/20 p-5 text-center sm:min-h-[420px]">
+                    <Terminal className="h-9 w-9 text-muted-foreground" />
+                    <p className="text-sm font-medium">Your live terminal will appear here</p>
+                    <p className="max-w-md text-xs leading-5 text-muted-foreground">Start Linux using the environment controls above. The terminal connects here when Docker is ready. Your saved mission record stays available.</p>
+                  </div>}
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap items-center gap-2" aria-label="Workspace tools">
+            <Button size="sm" variant={panel === 'mentor' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'mentor' ? 'terminal' : 'mentor')} aria-pressed={panel === 'mentor'}><MessageCircle className="h-4 w-4" /> AI mentor</Button>
+            <Button size="sm" variant={panel === 'notes' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'notes' ? 'terminal' : 'notes')} aria-pressed={panel === 'notes'}><NotebookPen className="h-4 w-4" /> Notes</Button>
+            <Button size="sm" variant={panel === 'verify' ? 'default' : 'outline'} onClick={() => setPanel(panel === 'verify' ? 'terminal' : 'verify')} aria-pressed={panel === 'verify'}><ClipboardCheck className="h-4 w-4" /> Results</Button>
+            <Button size="sm" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
+              {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Check progress
+            </Button>
           </div>
+
           {panel === 'mentor' && <Card>
-            <CardHeader><CardTitle className="text-base">Mission AI mentor</CardTitle><CardDescription>Ask questions about the scenario. AI can guide, but cannot mark a mission as completed.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base">AI mentor</CardTitle><CardDescription>Ask about the current mission, Docker concepts or a result you observed. AI guidance cannot award practical completion.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
               <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg bg-muted/40 p-3" aria-live="polite">
                 {messages.length === 0 && <p className="text-xs text-muted-foreground">Try: “My container runs but the website doesn't open. What should I check?”</p>}
                 {messages.map((msg,i) => <div key={i} className="text-sm"><span className="mb-1 block text-xs font-semibold">{msg.who === 'mentor' ? 'OXSIG Mentor' : 'You'}</span><p className="whitespace-pre-wrap">{msg.text}</p></div>)}
               </div>
-              <Textarea value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="Describe what you observed, or ask why something failed…"/>
+              <Textarea value={question} maxLength={1500} onChange={e => setQuestion(e.target.value)} placeholder="What did you try? What happened?" />
               <div className="flex flex-wrap gap-2">
                 <Button disabled={!question.trim() || busy !== null} onClick={() => void askMentor()}>{busy === 'mentor' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Ask mentor</Button>
-                <Button variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Reveal progressive hint</Button>
+                <Button variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Progressive hint</Button>
                 <Button variant="ghost" disabled={busy !== null} onClick={() => void askMentor(true)}>Teach me directly</Button>
               </div>
-              <p className="text-[11px] text-muted-foreground">Assistance requests: {record?.hintsUsed || 0}. Help does not reduce your practice XP. AI guidance depends on server configuration and should be checked against actual command output.</p>
+              <p className="text-xs text-muted-foreground">Assistance requests: {record?.hintsUsed || 0}. Asking for help does not reduce practice XP. Commands are not executed by this chat.</p>
             </CardContent>
           </Card>}
+
           {panel === 'notes' && <Card>
-            <CardHeader><CardTitle className="text-base">Engineering notebook</CardTitle><CardDescription>Record observations, root cause, fixes, and evidence. Notes are persisted to your account.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base">Engineering notes</CardTitle><CardDescription>Save your investigation and reasoning to your account.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
-              <Textarea rows={10} maxLength={4000} value={notes} onChange={e => setNotes(e.target.value)} placeholder={'Observation:\nRoot cause:\nFix:\nVerification:\nWhat I learned:'}/>
-              <Button onClick={() => void saveNotes()} disabled={busy !== null}>{busy === 'notes' ? <Loader2 className="h-4 w-4 animate-spin" /> : <NotebookPen className="h-4 w-4" />} Save engineering notes</Button>
+              <Textarea rows={8} maxLength={4000} value={notes} onChange={e => setNotes(e.target.value)} placeholder={'Observation:\nRoot cause:\nFix:\nVerification:\nWhat I learned:'} />
+              <Button onClick={() => void saveNotes()} disabled={busy !== null}>{busy === 'notes' ? <Loader2 className="h-4 w-4 animate-spin" /> : <NotebookPen className="h-4 w-4" />} Save notes</Button>
             </CardContent>
           </Card>}
+
           {panel === 'verify' && <Card>
-            <CardHeader><CardTitle className="text-base">Server-verified acceptance tests</CardTitle><CardDescription>OXSIG executes fixed read-only checks through AWS Systems Manager. Progress cannot be awarded from browser-only claims.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base">Verification results</CardTitle><CardDescription>Only trusted server-executed checks of the real lab can complete a mission.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
-              {mission.id === 'repair' && !record?.preparedAt && <p className="rounded-lg border border-amber-500/30 p-3 text-sm">Seed the broken deployment first, then repair it using your terminal.</p>}
-              <p className="text-sm text-muted-foreground">We check container state, published ports and a real HTTP response{mission.id === 'persist' ? ', plus the named volume and its stored content.' : '.'}</p>
-              <Button disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>{busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Run live verification</Button>
-              {(lastChecks || record?.checks || []).map(check => <div key={check.key} className="flex items-center gap-2 rounded-lg border p-3 text-sm">{check.passed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4 text-amber-600" />}{check.label}<span className="ml-auto text-xs">{check.passed ? 'PASS' : 'FAIL'}</span></div>)}
-              {record?.verifiedAt && <div className="rounded-lg border border-primary/30 p-3 text-sm">Verified: {new Date(record.verifiedAt).toLocaleString()} · You demonstrated {mission.id === 'deploy' ? 'deploying a reachable container service' : mission.id === 'repair' ? 'diagnosing and repairing service connectivity' : 'serving content from a persistent Docker volume'}. Your achievement is saved independently of this machine.</div>}
-              {record?.verifiedAt && selected < DOCKER_MISSIONS.length - 1 && <Button className="w-full" onClick={() => selectMission(selected + 1)}>Continue the assignment <ArrowRight className="h-4 w-4" /></Button>}
+              {observedChecks.length === 0 && <p className="text-sm text-muted-foreground">No live verification evidence yet. Start your Linux environment, work through the objective, then choose Check progress.</p>}
+              {observedChecks.map(check => <div key={check.key} className="flex items-center gap-2 rounded-lg border p-3 text-sm">{check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <Circle className="h-4 w-4 shrink-0 text-amber-600" />}{check.label}<span className="ml-auto text-xs">{check.passed ? 'PASS' : 'NOT YET'}</span></div>)}
+              {record?.verifiedAt && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">Verified {new Date(record.verifiedAt).toLocaleString()}. This achievement is saved independently of your temporary machine.</div>}
+              {record?.verifiedAt && selected < DOCKER_MISSIONS.length - 1 && <Button onClick={() => selectMission(selected + 1)}>Continue to next mission <ArrowRight className="h-4 w-4" /></Button>}
             </CardContent>
           </Card>}
         </main>
+
+        <aside id="docker-mission-sidebar" className={sidebarOpen ? 'min-w-0 space-y-3' : 'hidden'} aria-label="Docker mission guidance">
+          <Card>
+            <CardHeader className="p-4 pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant="secondary">Mission {mission.number}</Badge>
+                <Badge variant={record?.verifiedAt ? 'default' : 'outline'}>{record?.verifiedAt ? 'Verified' : 'In progress'}</Badge>
+              </div>
+              <CardTitle className="pt-1 text-base">{mission.title}</CardTitle>
+              <CardDescription className="text-xs leading-5">{mission.ticket}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4 pt-1">
+              <p className="text-sm font-medium">{mission.objective}</p>
+              {mission.id === 'repair' && !record?.verifiedAt && <Button variant="outline" size="sm" className="w-full" onClick={() => void prepareFault()} disabled={!labId || !dockerReady || busy !== null}>
+                <Wrench className="h-4 w-4" /> {busy === 'prepare' ? 'Preparing incident…' : record?.preparedAt && record.labInstanceId === labId ? 'Reset incident fault' : 'Seed broken deployment'}
+              </Button>}
+              <div className="space-y-2 border-t pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">Objectives</h2>
+                  <span className="text-xs text-muted-foreground">{verifiedTaskCount}/{taskChecks.length} checks passed</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={verifiedTaskCount} aria-valuemin={0} aria-valuemax={taskChecks.length} aria-label="Mission checks passed">
+                  <div className="h-full bg-emerald-500 transition-all" style={{ width: (verifiedTaskCount / taskChecks.length * 100) + '%' }} />
+                </div>
+                {taskChecks.map((check,index) => <div key={check.key} className="flex items-start gap-2 rounded-md p-1.5 text-xs">
+                  {check.passed ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
+                  <span><span className="font-semibold text-muted-foreground">Task {index+1}. </span>{check.label}</span>
+                </div>)}
+                <Button className="w-full" disabled={!labId || !dockerReady || !unlocked || busy !== null || (mission.id === 'repair' && (!record?.preparedAt || record.labInstanceId !== labId))} onClick={() => void verify()}>
+                  {busy === 'verify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Verify with real lab
+                </Button>
+                <p className="text-[11px] leading-4 text-muted-foreground">Checks turn green only from server-observed results, not from typing a suggested command.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Missions · {completedCount} of 3 complete</summary>
+            <div className="mt-3 space-y-2" aria-label="Docker mission progression">
+              {DOCKER_MISSIONS.map((item,index) => {
+                const done = Boolean(progress.find(p => p.missionId === item.id)?.verifiedAt);
+                const available = index === 0 || Boolean(progress.find(p => p.missionId === MISSION_IDS[index-1])?.verifiedAt);
+                return <button key={item.id} type="button" disabled={!available} onClick={() => selectMission(index)} aria-current={selected === index ? 'step' : undefined}
+                  className={'flex w-full items-start gap-2 rounded-lg border p-2 text-left text-xs transition ' + (selected === index ? 'border-primary bg-primary/5' : 'hover:bg-muted/50') + (!available ? ' cursor-not-allowed opacity-50' : '')}>
+                  {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : available ? <Circle className="h-4 w-4 shrink-0" /> : <LockKeyhole className="h-4 w-4 shrink-0" />}
+                  <span><span className="block font-medium">Mission {item.number}: {item.title}</span><span className="block text-muted-foreground">{done ? 'Verified' : available ? 'Available' : 'Locked until previous mission is verified'}</span></span>
+                </button>;
+              })}
+            </div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Learn · Containers and virtual machines</summary>
+            <div className="mt-3"><DockerConcept record={progress.find(p => p.missionId === 'deploy')} onSave={refresh} /></div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Guidance and suggested commands</summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">Work through the task in your own way. These commands are optional examples, not automatic actions.</p>
+              {mission.commands.filter(cmd => /^(docker (info|ps|port|logs)|curl)/.test(cmd)).map((cmd,i) => <div key={i} className="break-all rounded-md bg-muted p-2 font-mono text-xs">{cmd}</div>)}
+              <Button size="sm" variant="outline" onClick={() => void showHint()} disabled={busy !== null}><BookOpen className="h-4 w-4" /> Get a hint</Button>
+            </div>
+          </details>
+
+          <details className="rounded-xl border bg-card p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Coaching level</summary>
+            <div className="mt-3 space-y-2">
+              <label htmlFor="mission-difficulty" className="text-xs font-medium">How much help would you like?</label>
+              <select id="mission-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value as MissionDifficulty)} className="w-full rounded-md border bg-background p-2 text-sm">
+                <option value="beginner">Beginner — direct support</option>
+                <option value="intermediate">Intermediate — guided diagnosis</option>
+                <option value="advanced">Advanced — limited hints</option>
+              </select>
+              <p className="text-xs text-muted-foreground">All levels use the same trusted practical verification.</p>
+            </div>
+          </details>
+          <p className="px-2 text-xs leading-5 text-muted-foreground">Your achievements and notes survive lab expiry. A fresh machine requires recreating the practical deployment. <Link href="/academy/learn/docker/simulator" className="underline">Optional visual practice</Link></p>
+        </aside>
       </div>
-      <Button variant="ghost" asChild><Link href="/academy/learn/docker/simulator">Optional visual Docker practice</Link></Button>
-      <p className="text-xs text-muted-foreground">Deploy → repair → preserve data. HTTP checks run inside your Linux environment; localhost:18080 refers to that machine. Your service does not need a public port.</p>
     </div>
   );
 }
