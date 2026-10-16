@@ -189,7 +189,7 @@ export default function AcademyMissionControl() {
     setBusy('mentor');
     try {
       const result = await action({ action: 'mentor', missionId: mission.id, question: asked, difficulty });
-      await refresh();
+      await refresh().catch(() => undefined);
       setMessages(old => [...old, { who: 'mentor', text: result.answer.answer + (result.answer.suggestedAction ? '\nNext: ' + result.answer.suggestedAction : '') }]);
     } catch (e) { setMessages(old => [...old, { who: 'mentor', text: 'The AI mentor is unavailable. You can still use the progressive hints, terminal and live verification. Try asking again later.' }]); toast.error(e instanceof Error ? e.message : 'AI mentor unavailable'); }
     finally { setBusy(null); }
@@ -350,10 +350,14 @@ export default function AcademyMissionControl() {
               {DOCKER_LEARNING_MODULES.map((module, moduleIndex) => {
                 const moduleDone = Boolean(module.missionIds?.length) && module.missionIds!.every(id => Boolean(progress.find(p => p.missionId === id)?.verifiedAt));
                 const activeModule = Boolean(module.missionIds?.includes(mission.id));
+                const moduleAvailable = (module.missionIds || []).every(id => {
+                  const position = MISSION_IDS.findIndex(missionId => missionId === id);
+                  return position === 0 || (position > 0 && Boolean(progress.find(p => p.missionId === MISSION_IDS[position - 1])?.verifiedAt));
+                });
                 return <details key={module.id} open={Boolean(module.missionIds?.includes(mission.id)) || undefined} className={'rounded-lg border p-2 ' + (activeModule ? 'border-primary/50 bg-primary/5' : 'bg-background')}>
                   <summary className="cursor-pointer text-xs font-semibold">
                     <span className="inline-flex items-center gap-2">
-                      {moduleDone ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : activeModule ? <Circle className="h-4 w-4 text-rose-500" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
+                      {moduleDone ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : activeModule ? <Circle className="h-4 w-4 text-rose-500" /> : moduleAvailable ? <Circle className="h-4 w-4 text-muted-foreground" /> : <LockKeyhole className="h-4 w-4 text-muted-foreground" />}
                       Module {moduleIndex+1}: {module.title}
                     </span>
                   </summary>

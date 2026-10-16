@@ -117,6 +117,7 @@ export function completedModuleCount(modules: readonly AcademyModule[], verified
 export type RoadmapSkillState = 'planned' | 'locked' | 'active' | 'complete';
 
 function fullyVerified(skill: AcademySkill, verifiedIds: ReadonlySet<string>): boolean {
+  if (!skill.modules.length || skill.modules.some(module => !module.missionIds?.length)) return false;
   const missionIds = skill.modules.flatMap(module => module.missionIds || []);
   return missionIds.length > 0 && missionIds.every(id => verifiedIds.has(id));
 }

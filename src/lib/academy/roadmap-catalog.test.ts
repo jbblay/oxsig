@@ -49,4 +49,12 @@ describe('Academy shared skill roadmap', () => {
     expect(getSkillRoadmapState(career, 'second', new Set<string>(['mission-one', 'mission-two']))).toBe('complete');
   });
 
+  it('does not certify a future live skill with an unimplemented module', () => {
+    const career: AcademyCareer = { id: 'devops', title: 'Test', subtitle: '', skills: [{
+      id: 'future', title: 'Future', summary: '', availability: 'live', href: '/academy/learn/future',
+      modules: [{ id: 'done', title: 'Done', summary: '', missionIds: ['deploy'] }, { id: 'unfinished', title: 'Unfinished', summary: '' }],
+    }] };
+    expect(getSkillRoadmapState(career, 'future', new Set(['deploy']))).toBe('active');
+  });
+
 });

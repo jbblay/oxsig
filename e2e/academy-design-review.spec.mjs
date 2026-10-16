@@ -72,11 +72,12 @@ for (const width of [1440, 390]) {
       await page.getByRole('button', { name: 'Show mission panel' }).click();
     }
     await expect(panel.getByRole('button', { name: /First Deployment.*Ready to practice/ })).toBeVisible();
+    await screenshot(page, info, width < 1024 ? 'mission-panel-mobile' : 'workspace-desktop');
     await panel.getByText('Guidance and suggested commands', { exact: true }).click();
     await panel.getByRole('button', { name: 'Copy command: docker info', exact: true }).click();
     expect(await page.evaluate(() => window.__copiedCommand)).toBe('docker info');
     expect(verificationRequests).toBe(0);
-    await screenshot(page, info, width < 1024 ? 'mission-panel-mobile' : 'workspace-desktop');
+    await screenshot(page, info, width < 1024 ? 'commands-mobile' : 'commands-desktop');
     await page.getByRole('button', { name: width < 1024 ? 'Close mission panel' : 'Hide mission panel', exact: true }).click();
     await expect(panel).toBeHidden();
     await page.getByRole('button', { name: 'Open AI mentor', exact: true }).click();

@@ -39,3 +39,33 @@ The terminal remains mounted as the learner opens results or AI chat. The mentor
 ## Validation
 
 Added/updated src/lib/academy/roadmap-catalog.test.ts and e2e/academy-mission-first.spec.mjs. Verify typecheck, unit tests, build, and desktop/mobile E2E on a machine with the repository and dependencies; preview the design before merging. Live AWS provisioning was deliberately not changed by the roadmap feature.
+
+## PR 264 review refinements
+
+The circles share one vertical rail, with descriptions beside the nodes so the
+beam reaches both circle edges. Planned module previews open on request, and
+closing the preview returns keyboard focus to its node. Reduced motion disables
+both the active-node pulse and moving energy beam.
+
+Desktop keeps a scrollable curriculum panel beside the terminal. On mobile it is
+initially collapsed and opens as a bounded drawer, with Escape and a close control.
+The mentor uses the established non-modal dialog primitive for keyboard focus and
+Escape support. Neither panel replaces or unmounts the terminal. Per-mission note
+drafts survive navigation, and mission selection is disabled during async actions.
+Saved task evidence from another machine is labeled as historical verification.
+
+The lab read model exposes only an `operationManaged` boolean, never private
+Operation metadata. Academy hides lifecycle actions for Operation-owned profiles,
+even when only the profile catalog identifies them. Failed allocations do not hide
+an active compatible machine. Lifecycle actions still use existing owner-scoped,
+CSRF-protected, rate-limited APIs; stopping/destroying unrelated machines requires
+an explicit confirmation. No database migration or new service is introduced.
+
+`e2e/academy-design-review.spec.mjs` opens the actual Next.js application in Chromium
+at desktop and mobile sizes. It checks circle/beam geometry, reduced motion, saved
+completion states, previews, clipboard-only command copying, mentor keyboard
+behavior, terminal DOM preservation, and Operation protection. Screenshots are
+captured from that running application with test-account and API fixtures. These
+are browser/UI tests, not claims of live AWS or AI-provider behavior. Setting
+`OXSIG_REVIEW_EMIT_SCREENSHOTS=true` in an isolated review build emits the fixture
+screenshots in chunks for retrieval when artifact storage is unavailable.
